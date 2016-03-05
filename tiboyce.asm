@@ -36,6 +36,7 @@ tAsm84CeCmp = $7B
 mpLcdBase = $E30010
 mpLcdCtrl = $E30018
 mpLcdPalette = $E30200
+mpLcdCursorImg = $E30800
 
 mpIntEnable = $F00004
 mpIntAcknowledge = $F00008
@@ -130,7 +131,8 @@ WX = $ff4b
 IE = $ffff
 
 ; Memory areas used by the emulator
-cursormem = $E30800
+palettemem = mpLcdPalette
+cursormem = mpLcdCursorImg
 
 z80codebase = vRam
 myz80stack = $FE00
@@ -206,18 +208,10 @@ mbc_valid:
 	ld hl,(mpLcdCtrl)
 	push hl
 	
-	ld hl,mpLcdPalette
-	push hl
-	pop de
-	inc de
-	ld bc,16*2-1
-	ld (hl),l
+	ld hl,palettecode
+	ld de,palettemem
+	ld bc,palettecodesize
 	ldir
-	dec hl
-	dec hl
-	dec (hl)
-	dec hl
-	dec (hl)
 	
 	ld hl,$0D25
 	ld (mpLcdCtrl),hl

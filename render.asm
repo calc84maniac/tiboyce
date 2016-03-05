@@ -39,6 +39,8 @@ _
 	
 cursorcode:
 	.org cursormem
+#include "opgenroutines.asm"
+	
 draw_sprites_done:
 draw_sprites_save_sp = $+1
 	ld sp,0
@@ -305,6 +307,89 @@ write_vram_pixels:
 	ld (mpTimerCtrl),a
 	ex af,af'
 	ret.l
+	 
+	; Input: C=Start X+7, B=End X+7, HL=pixel base pointer, SPS=tilemap pointer
+scanline_do_render:
+	ld a,c
+	sub b
+	ret nc
+	
+	ld (render_save_spl),sp
+	ld sp,hl
+	add a,167
+	and $F8
+	ld e,a
+	ld d,6*32
+	mlt de
+	ld b,e
+	ld e,d
+	ld d,b
+	ld ix,scanline_unrolled
+	add ix,de
+	
+scanline_ptr = $+1
+	ld hl,(scanlineLUT+(15*3))
+current_buffer = $+1
+	ld de,gb_frame_buffer_1
+	add hl,de
+	ex de,hl
+	ld a,c
+	sub 7
+	jr nc,no_clip
+	
+	cpl
+	pop.s hl
+	adc a,l
+	ld l,a
+	add hl,sp
+	inc c
+	ldir
+	ld a,8
+	jp (ix)
+	 
+no_clip:
+	ld c,a
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	ld a,8
+	jp (ix)
+	
+scanline_unrolled:
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	
+render_save_spl = $+1
+	ld sp,0
+	ret
+cursorcodesize = $-cursormem
+	.org cursorcode+cursorcodesize
+	
+	.echo "Cursor memory code size: ", cursorcodesize
+	
+palettecode:
+	.org palettemem
+
+	.dw 0,0,0,0,0,0,0,0
+	.dw 0,0,0,0,0,0,-1,0
 	
 render_scanline:
 	push ix
@@ -413,80 +498,8 @@ scanline_no_window:
 	 ld.sis sp,(render_save_sps)
 	pop ix
 	ret.l
-	 
-	; Input: C=Start X+7, B=End X+7, HL=pixel base pointer, SPS=tilemap pointer
-scanline_do_render:
-	ld a,c
-	sub b
-	ret nc
 	
-	ld (render_save_spl),sp
-	ld sp,hl
-	add a,167
-	and $F8
-	ld e,a
-	ld d,6*32
-	mlt de
-	ld b,e
-	ld e,d
-	ld d,b
-	ld ix,scanline_unrolled
-	add ix,de
+palettecodesize = $-palettemem
+	.org palettecode+palettecodesize
 	
-scanline_ptr = $+1
-	ld hl,(scanlineLUT+(15*3))
-current_buffer = $+1
-	ld de,gb_frame_buffer_1
-	add hl,de
-	ex de,hl
-	ld a,c
-	sub 7
-	jr nc,no_clip
-	
-	cpl
-	pop.s hl
-	adc a,l
-	ld l,a
-	add hl,sp
-	inc c
-	ldir
-	ld a,8
-	jp (ix)
-	 
-no_clip:
-	ld c,a
-	ex de,hl
-	add hl,bc
-	ex de,hl
-	ld a,8
-	jp (ix)
-	
-scanline_unrolled:
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	
-render_save_spl = $+1
-	ld sp,0
-	ret
-cursorcodesize = $-cursormem
-	.org cursorcode+cursorcodesize
-	
-	.echo "Cursor memory code size: ", cursorcodesize
+	.echo "Palette memory code size: ", palettecodesize
