@@ -38,8 +38,9 @@ r_call:
 r_push:
 	pop ix
 	exx
-	pop hl
-	jr do_push
+	pop de
+	jr do_push_no_write
+r_push_jr_end:
 	
 	.block $28-$
 r_pop:
@@ -51,8 +52,9 @@ r_pop:
 r_interrupt:
 	di
 	ex af,af'
-	pop ix
-	push hl
+	exx
+	pop hl
+	dec hl
 	jp do_interrupt
 	
 	.block $38-$
@@ -83,12 +85,10 @@ do_call:
 	ld de,(hl)
 	inc hl
 	inc hl
-	lea.l iy,iy-2
-	ld.l (iy),e
-	ld.l (iy+1),d
 	push hl
 	push de
-	call do_call_finish
+do_call_write_smc = $+1
+	call do_push_no_write
 	; Call stack return here!
 	ex af,af'
 	exx
@@ -105,9 +105,10 @@ do_call:
 	ret
 	
 do_push:
+	ld.l (iy-2),e
+	ld.l (iy-1),d
+do_push_no_write:
 	lea.l iy,iy-2
-	ld.l (iy),l
-	ld.l (iy+1),h
 do_call_finish:
 	exx
 	ei
@@ -283,53 +284,46 @@ do_render:
 	ret
 	
 do_interrupt:
-	 xor a
-	 ld.lil (mpTimerCtrl),a
-intsavecode = $+3
-	 ld (ix-1),0
-	 push de
-intretaddr = $+1
-	  ld de,0
-	  lea.l iy,iy-2
-	  ld.l (iy),e
-	  ld.l (iy+1),d
-	  ld hl,IF
+	xor a
+	ld.lil (mpTimerCtrl),a
+intsavecode = $+1
+	ld (hl),0
+	ld hl,IF
 intmask = $+1
-	  ld a,0
-	  rrca
-	  jr nc,_
-	  ld a,1
-	  ld (waitloop_request),a
-	  res 0,(hl)
-	  ld e,$40
-	  jr dispatch_int
+	ld a,0
+	rrca
+	jr nc,_
+	ld a,1
+	ld (waitloop_request),a
+	res 0,(hl)
+	ld de,$0040
+	jr dispatch_int
 _
-	  rrca
-	  jr nc,_
-	  res 1,(hl)
-	  ld e,$48
-	  jr dispatch_int
+	rrca
+	jr nc,_
+	res 1,(hl)
+	ld de,$0048
+	jr dispatch_int
 _
-	  rrca
-	  jr nc,_
-	  res 2,(hl)
-	  ld e,$50
-	  jr dispatch_int
+	rrca
+	jr nc,_
+	res 2,(hl)
+	ld de,$0050
+	jr dispatch_int
 _
-	  res 3,(hl)
-	  ld e,$58
+	res 3,(hl)
+	ld de,$0058
 dispatch_int:
-	  ld d,$00
-	  push bc
-	   call.il lookup_code_cached
-	  pop bc
-	 pop de
-	pop hl
+	push bc
+	 call.il lookup_code_cached
+	pop bc
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
 	ex af,af'
-	ei
-	jp (ix)
+intretaddr = $+1
+	ld de,0
+do_interrupt_write_smc = $+1
+	jp do_push_no_write
 	
 do_branch_slow:
 	di
@@ -709,16 +703,13 @@ ophandlerRETI:
 	ld.lil (mpTimerCtrl),a
 	inc a
 	ld (intstate),a
-	push hl
-	 push de
-	  push bc
-	   call.il pop_and_lookup_code_cached
-	  pop bc
-	 pop de
-	pop hl
+	exx
+	push bc
+	 call.il pop_and_lookup_code_cached
+	pop bc
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
-	call checkIntPostEnable
+	call checkIntPostEnableExx
 	ei
 	jp (ix)
 	
@@ -1045,12 +1036,13 @@ writeINTswap:
 	or a
 	jr z,_
 checkIntPostEnable:
-	push hl
-	 ld hl,IF
-	 ld a,(hl)
-	 ld l,h
-	 and (hl)
-	pop hl
+	exx
+checkIntPostEnableExx:
+	ld hl,IF
+	ld a,(hl)
+	ld l,h
+	and (hl)
+	exx
 	jr z,_
 	; Do a software interrupt!
 	ld a,$11
