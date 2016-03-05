@@ -32,6 +32,50 @@ appVarObj = $15
 tExtTok = $EF
 tAsm84CeCmp = $7B
 
+; 84+CE IO definitions
+mpLcdBase = $E30010
+mpLcdCtrl = $E30018
+mpLcdPalette = $E30200
+
+mpIntEnable = $F00004
+mpIntAcknowledge = $F00008
+mpIntLatch = $F0000C
+mpIntMaskedStatus = $F00014
+
+TMR_ENABLE = 5
+mpTimer1Count = $F20000
+mpTimer1Reset = $F20004
+mpTimer1Match1 = $F20008
+mpTimer1Match2 = $F2000C
+mpTimer2Count = $F20010
+mpTimer2Reset = $F20014
+mpTimer2Match1 = $F20018
+mpTimer2Match2 = $F2001C
+mpTimer3Count = $F20020
+mpTimer3Reset = $F20024
+mpTimer3Match1 = $F20028
+mpTimer3Match2 = $F2002C
+mpTimerCtrl = $F20030
+mpTimerIntStatus = $F20034
+
+mpRtcSecondCount = $F30000
+
+mpKeypadScanMode = $F50000
+mpKeypadGrp0 = $F50010
+mpKeypadGrp1 = $F50012
+mpKeypadGrp2 = $F50014
+mpKeypadGrp3 = $F50016
+mpKeypadGrp4 = $F50018
+mpKeypadGrp5 = $F5001A
+mpKeypadGrp6 = $F5001C
+mpKeypadGrp7 = $F5001E
+
+#ifdef CEMU
+mpCEmuDbg = $FA0000
+#endif
+
+mpZeroPage = $FF0000
+
 ;GB IO equates
 ioregs = $ff00
 P1 = $ff00
@@ -85,6 +129,7 @@ WY = $ff4a
 WX = $ff4b
 IE = $ffff
 
+; Memory areas used by the emulator
 cursormem = $E30800
 
 z80codebase = vRam
@@ -148,33 +193,36 @@ mbc_valid:
 	
 	di
 	push iy
-	ld hl,($F00004)
+	ld hl,(mpIntEnable)
 	push hl
-	ld hl,($F0000C)
+	ld hl,(mpIntLatch)
 	push hl
 	ld hl,$000003
-	ld ($F00004),hl
-	ld ($F0000C),hl
+	ld (mpIntEnable),hl
+	ld (mpIntLatch),hl
 	
-	ld hl,($E30010)
+	ld hl,(mpLcdBase)
 	push hl
-	ld hl,($E30018)
+	ld hl,(mpLcdCtrl)
 	push hl
 	
-	ld hl,$E30200
+	ld hl,mpLcdPalette
 	push hl
 	pop de
 	inc de
 	ld bc,16*2-1
 	ld (hl),l
 	ldir
-	ld hl,$FFFF
-	ld ($E3021C),hl
+	dec hl
+	dec hl
+	dec (hl)
+	dec hl
+	dec (hl)
 	
 	ld hl,$0D25
-	ld ($E30018),hl
+	ld (mpLcdCtrl),hl
 	ld hl,gb_frame_buffer_1
-	ld ($E30010),hl
+	ld (mpLcdBase),hl
 	push hl
 	pop de
 	inc de
@@ -204,22 +252,22 @@ mbc_valid:
 #endif
 	
 	ld a,3
-	ld ($F50000),a
+	ld (mpKeypadScanMode),a
 	
-	ld hl,($F20030)
+	ld hl,(mpTimerCtrl)
 	push hl
 	xor a
 	sbc hl,hl
-	ld ($F20030),hl
-	ld ($F20008),hl
-	ld ($F2000B),a
-	ld ($F2000C),hl
-	ld ($F2000F),a
+	ld (mpTimerCtrl),hl
+	ld (mpTimer1Match1),hl
+	ld (mpTimer1Match1+3),a
+	ld (mpTimer1Match2),hl
+	ld (mpTimer1Match2+3),a
 	ld hl,SCANDELAY*256
-	ld ($F20000),hl
-	ld ($F20003),a
-	ld ($F20004),hl
-	ld ($F20007),a
+	ld (mpTimer1Count),hl
+	ld (mpTimer1Count+3),a
+	ld (mpTimer1Reset),hl
+	ld (mpTimer1Reset+3),a
 	
 	ld (saveSP),sp
 	
@@ -302,8 +350,8 @@ _
 	ld de,$0100
 	call lookup_code
 	
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	
 	ld bc,(CALL_STACK_DEPTH+1)*256
 	exx
@@ -323,15 +371,15 @@ saveSP = $+1
 	ld a,$D0
 	ld mb,a
 	pop hl
-	ld ($F20030),hl
+	ld (mpTimerCtrl),hl
 	pop hl
-	ld ($E30018),hl
+	ld (mpLcdCtrl),hl
 	pop hl
-	ld ($E30010),hl
+	ld (mpLcdBase),hl
 	pop hl
-	ld ($F0000C),hl
+	ld (mpIntLatch),hl
 	pop hl
-	ld ($F00004),hl
+	ld (mpIntEnable),hl
 	pop iy
 	ei
 	ret
@@ -373,7 +421,7 @@ _
 	jr LoadROMLoop
 	
 LoadRAM:
-	ld hl,$FF0000
+	ld hl,mpZeroPage
 	ld (cram_start),hl
 	ld hl,ROMName
 	ld bc,9

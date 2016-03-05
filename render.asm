@@ -13,7 +13,7 @@ curr_palettes = $+1
 	ret z
 	add hl,de
 	ld (curr_palettes),hl
-	ld de,$E30200 + (12*2)-1
+	ld de,mpLcdPalette + (12*2)-1
 	push bc
 	 push ix
 	  ld bc,12*2
@@ -226,7 +226,7 @@ write_vram_and_expand:
 	   ld c,a
 	   ex af,af'
 	   xor a
-	   ld ($F20030),a
+	   ld (mpTimerCtrl),a
 	   ld hl,vram_base
 	   lea de,ix
 	   add hl,de
@@ -275,8 +275,8 @@ _
 	  pop hl
 	 pop de
 	pop bc
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ex af,af'
 	ret.l
 write_vram_pixels:
@@ -301,8 +301,8 @@ write_vram_pixels:
 	  pop hl
 	 pop de
 	pop bc
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ex af,af'
 	ret.l
 	

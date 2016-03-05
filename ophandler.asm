@@ -32,21 +32,21 @@ set_gb_stack_done:
 decode_branch_slow:
 	ex af,af'
 	xor a
-	ld.lil ($F20030),a
+	ld (mpTimerCtrl),a
 	dec hl
 	dec hl
 	dec hl
 	ex de,hl
 	call.il lookup_gb_code_address
 	inc hl
-	ld a,5
-	ld.lil ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ret.l
 	
 decode_branch:
 	ex af,af'
 	xor a
-	ld ($F20030),a
+	ld (mpTimerCtrl),a
 	call get_base_address
 	add hl,de
 	ld a,(hl)
@@ -67,8 +67,8 @@ decode_call:
 	inc hl
 	ld d,(hl)
 	call lookup_code
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ld a,RST_CALL
 	ret.l
 	
@@ -78,8 +78,8 @@ decode_rst:
 	ld e,a
 	ld d,0
 	call lookup_code
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ld a,RST_CALL
 	ret.l
 	
@@ -93,8 +93,8 @@ _
 	add a,$C4-$C2
 	ld ix,do_branch_slow
 	ld e,a
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ld a,e
 	ret.l
 _
@@ -106,8 +106,8 @@ decode_jp:
 	 inc hl
 	 ld d,(hl)
 	 call lookup_code
-	 ld a,5
-	 ld ($F20030),a
+	 ld a,TMR_ENABLE
+	 ld (mpTimerCtrl),a
 	pop af
 	ret.l
 	
@@ -120,8 +120,8 @@ _
 	add a,$C4-$20
 	ld ix,do_branch_slow
 	ld e,a
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ld a,e
 	ret.l
 decode_jr:
@@ -145,14 +145,14 @@ _
 	 add.s hl,de
 	 ex de,hl
 	 call lookup_code
-	 ld a,5
-	 ld ($F20030),a
+	 ld a,TMR_ENABLE
+	 ld (mpTimerCtrl),a
 	pop af
 	ret.l
 	
 decode_mem:
 	xor a
-	ld ($F20030),a
+	ld (mpTimerCtrl),a
 	dec ix
 	
 	; Get index 0-31
@@ -212,7 +212,7 @@ _
 	jr nz,memroutine_gen_ret
 	
 	; Routine doesn't exist, let's generate it!
-	ld ($F20030),a ;A=0
+	ld (mpTimerCtrl),a ;A=0
 	
 	push bc \ push hl
 	 ex de,hl
@@ -304,8 +304,8 @@ _
 	dec h
 	ld (hl),e
 memroutine_gen_ret:
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ret.l
 	
 memroutine_gen_flush:
@@ -595,7 +595,7 @@ memroutine_gen_load_ix:
 flush_normal:
 	ex af,af'
 	xor a
-	ld ($F20030),a
+	ld (mpTimerCtrl),a
 	push hl
 	 push de
 	  push bc
@@ -608,8 +608,8 @@ flush_normal:
 	exx
 	ld b,CALL_STACK_DEPTH+1
 	exx
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ex af,af'
 	ei
 	jp.s (ix)
@@ -617,7 +617,7 @@ flush_normal:
 flush_mem:
 	ex af,af'
 	xor a
-	ld ($F20030),a
+	ld (mpTimerCtrl),a
 	push hl
 	 push de
 	  push bc
@@ -631,8 +631,8 @@ flush_mem:
 	exx
 	ld b,CALL_STACK_DEPTH+1
 	exx
-	ld a,5
-	ld ($F20030),a
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ex af,af'
 	ei
 	jp.s (ix)
@@ -641,7 +641,7 @@ vblank_stuff:
 	; Get keys
 	scf
 	sbc hl,hl
-	ld a,($F5001E)
+	ld a,(mpKeypadGrp7)
 	rra		;Down
 	jr nc,_
 	res 3,l	;Down
@@ -658,7 +658,7 @@ _
 	jr nc,_
 	res 2,l	;Up
 _
-	ld a,($F50012)
+	ld a,(mpKeypadGrp1)
 	rla \ rla	;MODE
 	jr nc,_
 	res 3,h	;START
@@ -667,12 +667,12 @@ _
 	jr nc,_
 	dec h	;A
 _
-	ld a,($F50014)
+	ld a,(mpKeypadGrp2)
 	rla		;ALPHA
 	jr nc,_
 	res 1,h	;B
 _
-	ld a,($F50016)
+	ld a,(mpKeypadGrp3)
 	rla		;XT0n
 	jr nc,_
 	res 2,h	;SELECT
@@ -729,7 +729,7 @@ _
 _
 	  ld (hl),a
 	  
-	  ld a,($F30000)
+	  ld a,(mpRtcSecondCount)
 last_second = $+1
 	  cp -1
 	  jr z,_
@@ -754,12 +754,12 @@ _
 	 pop bc
 	 
 	 ; Swap buffers
-	 ld hl,($E30010)
+	 ld hl,(mpLcdBase)
 	 ld (current_buffer),hl
 	 ld a,h
 	 xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	 ld h,a
-	 ld ($E30010),hl
+	 ld (mpLcdBase),hl
 	 ld hl,scanlineLUT + (15*3)
 	 ld (scanline_ptr),hl
 	 ld hl,vram_tiles_start

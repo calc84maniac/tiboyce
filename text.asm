@@ -32,7 +32,7 @@ PutString:
 	inc hl
 	or a
 	ret z
-	ld ($FB0000),a
+	ld (mpCEmuDbg),a
 	jr PutString
 #else
 	; HL points to string
@@ -51,17 +51,17 @@ PutString:
 	
 Wait:
 _
-	ld a,($F00014)
+	ld a,(mpIntMaskedStatus)
 	rra
 	ret c
-	ld a,($F5001C)
+	ld a,(mpKeypadGrp6)
 	rra
 	jr c,-_
 _
-	ld a,($F00014)
+	ld a,(mpIntMaskedStatus)
 	rra
 	ret c
-	ld a,($F5001C)
+	ld a,(mpKeypadGrp6)
 	rra
 	jr nc,-_
 	ret

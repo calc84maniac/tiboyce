@@ -58,18 +58,18 @@ r_interrupt:
 	.block $38-$
 rst38h:
 	push af
-	ld.lil a,($F00014)
-	rra
-	jr c,on_interrupt
-	rra
-	jr c,timer_interrupt
+	 ld.lil a,(mpIntMaskedStatus)
+	 rra
+	 jr c,on_interrupt
+	 rra
+	 jr c,timer_interrupt
 	pop af
 	ei
 	ret
 	
 on_interrupt:
 	ld a,1
-	ld.lil ($F00008),a
+	ld.lil (mpIntAcknowledge),a
 	jp.lil exit
 	
 do_call_reset_callstack:
@@ -123,11 +123,11 @@ ophandlerRETnomatch:
 	ld sp,myz80stack
 ophandlerRET:
 	di
-	dec sp
-	dec sp
 	ex af,af'
 	xor a
-	ld.lil ($F20030),a
+	ld.lil (mpTimerCtrl),a
+	dec sp
+	dec sp
 	push hl
 	 push de
 	  push bc
@@ -135,15 +135,15 @@ ophandlerRET:
 	  pop bc
 	 pop de
 	pop hl
-	ld a,5
-	ld.lil ($F20030),a
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ei
 	jp (ix)
 	
 timer_interrupt:
 	 push hl
-	  ld.lil hl,$F20030
+	  ld.lil hl,mpTimerCtrl
 	  xor a
 	  cp.l (hl)
 	  jr z,test_interrupts
@@ -162,7 +162,7 @@ timer_interrupt:
 	  cp 154
 	  jr c,_
 	  ld hl,SCANDELAY*2*256
-	  ld.lil ($F20000),hl
+	  ld.lil (mpTimer1Count),hl
 	  ld hl,LY
 screen_off:
 	  xor a
@@ -191,10 +191,10 @@ test_interrupts:
 	  jr nz,interrupt_get
 noints:
 	 pop hl
-	 ld a,5
-	 ld.lil ($F20030),a
+	 ld a,TMR_ENABLE
+	 ld.lil (mpTimerCtrl),a
 	 ld a,2
-	 ld.lil ($F00008),a
+	 ld.lil (mpIntAcknowledge),a
 	pop af
 	ei
 	ret
@@ -251,10 +251,10 @@ waitloop_done:
 	   pop bc
 	  pop de
 	 pop hl
-	 ld a,5
-	 ld.lil ($F20030),a
+	 ld a,TMR_ENABLE
+	 ld.lil (mpTimerCtrl),a
 	 ld a,2
-	 ld.lil ($F00008),a
+	 ld.lil (mpIntAcknowledge),a
 	pop af
 	ex (sp),hl
 	ei
@@ -280,7 +280,7 @@ do_render:
 	
 do_interrupt:
 	 xor a
-	 ld.lil ($F20030),a
+	 ld.lil (mpTimerCtrl),a
 intsavecode = $+3
 	 ld (ix-1),0
 	 push de
@@ -321,8 +321,8 @@ dispatch_int:
 	  pop bc
 	 pop de
 	pop hl
-	ld a,5
-	ld.lil ($F20030),a
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ei
 	jp (ix)
@@ -587,11 +587,11 @@ waitloop_target = $+2
 haltloop:
 	di
 	xor a
-	ld.lil ($F20030),a
+	ld.lil (mpTimerCtrl),a
 	ld ix,1
-	ld.lil ($F20000),ix
-	ld a,5
-	ld.lil ($F20030),a
+	ld.lil (mpTimer1Count),ix
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ei
 	halt
@@ -634,7 +634,7 @@ ophandlerE9:
 	di
 	ex af,af'
 	xor a
-	ld.lil ($F20030),a
+	ld.lil (mpTimerCtrl),a
 	push hl
 	 push bc
 	  push de
@@ -643,8 +643,8 @@ ophandlerE9:
 	  pop de
 	 pop bc
 	pop hl
-	ld a,5
-	ld.lil ($F20030),a
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ei
 	jp (ix)
@@ -711,7 +711,7 @@ ophandlerRETI:
 	di
 	ex af,af'
 	xor a
-	ld.lil ($F20030),a
+	ld.lil (mpTimerCtrl),a
 	inc a
 	ld (intstate),a
 	push hl
@@ -721,8 +721,8 @@ ophandlerRETI:
 	  pop bc
 	 pop de
 	pop hl
-	ld a,5
-	ld.lil ($F20030),a
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ei
 	jp (ix)
@@ -830,7 +830,7 @@ _
 	ret
 	
 readDIV:
-	ld.lil a,($F20000)
+	ld.lil a,(mpTimer1Count)
 	cpl
 	ld ixl,a
 	ex af,af'
@@ -848,7 +848,7 @@ readSTAT:
 	cp 144
 	jr nc,++_
 	or a
-	ld.lil a,($F20001)
+	ld.lil a,(mpTimer1Count+1)
 	jr nz,_
 	cp SCANDELAY
 	jr nc,++_

@@ -1375,7 +1375,7 @@ opgenCONSTwrite:
 	
 opgenWRAMwrite:
 	push hl
-	 ld hl,wram_start-$C000
+	 ld hl,wram_base
 	 add hl,bc
 	 ex de,hl
 	 ld (hl),$5B ;LD.LIL (addr),A
