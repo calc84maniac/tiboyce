@@ -222,87 +222,84 @@ draw_sprite_priority_vclip:
 	jp draw_next_sprite
 	
 write_vram_and_expand:
+	exx
 	push bc
-	 push de
-	  push hl
-	   ld c,a
-	   ex af,af'
-	   xor a
-	   ld (mpTimerCtrl),a
-	   ld hl,vram_base
-	   lea de,ix
-	   add hl,de
-	   ld (hl),c
-	   ld a,d
-	   sub $98
-	   jr c,write_vram_pixels
-	   ld h,a
-	   ld a,e
-	   and $E0
-	   ld l,a
-	   xor e
-	   add a,a
-	   ld e,a
-	   ld a,c
-	   add hl,hl
-	   add hl,hl
-	   add.s hl,hl
-	   ld bc,vram_tiles_start
-	   add hl,bc
-	   ld d,0
-	   add hl,de
-	   ld e,64
-	   ld c,a
-	   ld b,e
-	   mlt bc
-	   ld (hl),c
-	   inc hl
-	   ld (hl),b
-	   add hl,de
-	   ld (hl),b
-	   dec hl
-	   ld (hl),c
-	   add hl,de
-	   add a,a
-	   jr c,_
-	   set 6,b
+	 ld c,a
+	 ex af,af'
+	 xor a
+	 ld (mpTimerCtrl),a
+	 ld hl,vram_base
+	 lea de,ix
+	 add hl,de
+	 ld (hl),c
+	 ld a,d
+	 sub $98
+	 jr c,write_vram_pixels
+	 ld h,a
+	 ld a,e
+	 and $E0
+	 ld l,a
+	 xor e
+	 add a,a
+	 ld e,a
+	 ld a,c
+	 add hl,hl
+	 add hl,hl
+	 add.s hl,hl
+	 ld bc,vram_tiles_start
+	 add hl,bc
+	 ld d,0
+	 add hl,de
+	 ld e,64
+	 ld c,a
+	 ld b,e
+	 mlt bc
+	 ld (hl),c
+	 inc hl
+	 ld (hl),b
+	 add hl,de
+	 ld (hl),b
+	 dec hl
+	 ld (hl),c
+	 add hl,de
+	 add a,a
+	 jr c,_
+	 set 6,b
 _
-	   ld (hl),c
-	   inc hl
-	   ld (hl),b
-	   add hl,de
-	   ld (hl),b
-	   dec hl
-	   ld (hl),c
-	  pop hl
-	 pop de
+	 ld (hl),c
+	 inc hl
+	 ld (hl),b
+	 add hl,de
+	 ld (hl),b
+	 dec hl
+	 ld (hl),c
 	pop bc
+	exx
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
 	ex af,af'
 	ret.l
 write_vram_pixels:
-	   res 0,l
-	   ld hl,(hl)
-	   ex de,hl
-	   res 0,l
-	   add hl,hl
-	   add hl,hl
-	   ld bc,vram_pixels_start-($8000*4)
-	   add hl,bc
-	   ld b,0
-	   ld a,17
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	   sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c
-	  pop hl
-	 pop de
+	 res 0,l
+	 ld hl,(hl)
+	 ex de,hl
+	 res 0,l
+	 add hl,hl
+	 add hl,hl
+	 ld bc,vram_pixels_start-($8000*4)
+	 add hl,bc
+	 ld b,0
+	 ld a,17
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
+	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c
 	pop bc
+	exx
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
 	ex af,af'

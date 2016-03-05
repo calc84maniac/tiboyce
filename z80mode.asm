@@ -868,11 +868,6 @@ _
 	ex af,af'
 	ret
 	
-mem_read_bail:
-	pop ix
-	lea ix,ix-8
-	jp (ix)
-	
 	;IX=GB address, reads into IXL
 mem_read_ports:
 	ex af,af'
@@ -947,6 +942,13 @@ _
 	ld a,(hl)
 	ret
 	
+
+mem_read_bail:
+	pop ix
+mem_write_bail_a:
+	lea ix,ix-8
+	jp (ix)
+	
 	;HL=GB address, A=data, preserves AF, destroys AF'
 mem_write_any:
 	ex af,af'
@@ -985,11 +987,15 @@ mem_write_any_vram:
 	
 mem_write_bail:
 	pop ix
-	pop af
+	ld a,(ix-8)
+	cp RST_MEM
+	jr z,mem_write_bail_a
 	lea ix,ix-10
+	pop af
+	ex af,af'
 	jp (ix)
 	
-	;IX=GB address, A=data
+	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_vram:
 	ex af,af'
 	ld a,ixh
@@ -1003,7 +1009,7 @@ mem_write_vram_always:
 	call.lil write_vram_and_expand
 	ret
 	
-	;IX=GB address, A=data
+	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_ports:
 	ex af,af'
 	ld a,ixh
@@ -1015,7 +1021,7 @@ mem_write_oam_swap:
 	ex af,af'
 	ld (ix),a
 	ret
-	;IX=GB address, A=data
+	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_ports_always:
 	ex af,af'
 mem_write_ports_swap:
@@ -1055,7 +1061,7 @@ _
 	ex af,af'
 	ret
 	
-	;IX=GB address, A=data
+	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart:
 	ex af,af'
 	ld a,ixh
@@ -1063,7 +1069,7 @@ mem_write_cart:
 	jr c,mem_write_bail
 mem_write_cart_swap:
 	ex af,af'
-	;IX=GB address, A=data
+	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart_always:
 	ex af,af'
 	ld a,ixh

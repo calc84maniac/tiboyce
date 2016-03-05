@@ -338,7 +338,7 @@ _
 	 ; Set carry if write instruction
 	 ld a,d
 	 sub $70
-	 cp 8
+	 sub 8
 	 
 	 djnz memroutine_gen_not_cart0
 	 jr c,memroutine_gen_write_cart
@@ -369,18 +369,23 @@ _
 memroutine_gen_write_ports:
 	 ld de,mem_write_ports
 memroutine_gen_write:
+	 inc a
+	 jr z,_
 	 ld (hl),$F1	;POP AF
 	 dec hl
+_
 	 ld (hl),d
 	 dec hl
 	 ld (hl),e
 	 dec hl
 	 ld (hl),$CD	;CALL routine
+	 jr z,_
 	 dec hl
-	 add a,$78	;LD A,r
+	 add a,$7F	;LD A,r
 	 ld (hl),a
 	 dec hl
 	 ld (hl),$F5	;PUSH AF
+_
 	 call memroutine_gen_load_ix
 	 jp memroutine_gen_end
 	 
