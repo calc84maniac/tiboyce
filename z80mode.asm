@@ -62,7 +62,9 @@ rst38h:
 	 rra
 	 jr c,on_interrupt
 	 rra
-	 jr c,timer_interrupt
+	 jp c,timer_interrupt
+	 bit 2,a
+	 jr nz,soft_interrupt
 	pop af
 	ei
 	ret
@@ -141,13 +143,20 @@ ophandlerRET:
 	ei
 	jp (ix)
 	
+soft_interrupt:
+	 push hl
+	  xor a
+	  ld.lil (mpTimerCtrl),a
+	  ld a,$03
+	  ld.lil (mpIntEnable),a
+	  jr test_interrupts
+	  
 timer_interrupt:
 	 push hl
-	  ld.lil hl,mpTimerCtrl
 	  xor a
-	  cp.l (hl)
-	  jr z,test_interrupts
-	  ld.l (hl),a
+	  ld.lil (mpTimerCtrl),a
+	  ld a,2
+	  ld.lil (mpIntAcknowledge),a
 	  
 	  ld a,(LCDC)
 	  add a,a
@@ -193,8 +202,6 @@ noints:
 	 pop hl
 	 ld a,TMR_ENABLE
 	 ld.lil (mpTimerCtrl),a
-	 ld a,2
-	 ld.lil (mpIntAcknowledge),a
 	pop af
 	ei
 	ret
@@ -224,6 +231,9 @@ _
 	 jr z,_
 	 inc hl
 _
+	 ; Do a software interrupt!
+	 ld a,$11
+	 ld.lil (mpIntEnable),a
 	pop af
 	ex (sp),hl
 	ret
@@ -253,8 +263,6 @@ waitloop_done:
 	 pop hl
 	 ld a,TMR_ENABLE
 	 ld.lil (mpTimerCtrl),a
-	 ld a,2
-	 ld.lil (mpIntAcknowledge),a
 	pop af
 	ex (sp),hl
 	ei
@@ -703,7 +711,7 @@ ophandlerFB:
 	ex af,af'
 	ld a,1
 	ld (intstate),a
-	ex af,af'
+	call checkIntPostEnable
 	ei
 	ret
 	
@@ -723,7 +731,7 @@ ophandlerRETI:
 	pop hl
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
-	ex af,af'
+	call checkIntPostEnable
 	ei
 	jp (ix)
 	
@@ -810,6 +818,18 @@ readSTAThandler:
 writeDMAhandler:
 	ex af,af'
 	call writeDMA
+	ei
+	ret
+	
+writeIFhandler:
+	ld ix,IF
+	call writeINTswap
+	ei
+	ret
+	
+writeIEhandler:
+	ld ix,IE
+	call writeINTswap
 	ei
 	ret
 	
@@ -1017,13 +1037,39 @@ mem_write_ports_always:
 	ex af,af'
 mem_write_ports_swap:
 	ld a,ixl
-	add a,a
-	jr c,mem_write_oam_swap
-	cp DMA*2 & $FF
+	inc a
+	jp m,mem_write_oam_swap
+	jr z,writeINT
+	cp (IF & $FF) + 1
+	jr z,writeINT
+	cp (DMA & $FF) + 1
 	jr nz,mem_write_oam_swap
 writeDMA:
 	di
 	call.il oam_transfer
+	ret
+	
+writeINT:
+	ex af,af'
+writeINTswap:
+	ld (ix),a
+	ex af,af'
+	ld a,(intstate)
+	or a
+	jr z,_
+checkIntPostEnable:
+	push hl
+	 ld hl,IF
+	 ld a,(hl)
+	 ld l,h
+	 and (hl)
+	pop hl
+	jr z,_
+	; Do a software interrupt!
+	ld a,$11
+	ld.lil (mpIntEnable),a
+_
+	ex af,af'
 	ret
 	
 	;IX=GB address, A=data

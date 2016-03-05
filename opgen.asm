@@ -1165,9 +1165,18 @@ opgenFFwrite:
 _
 	ex de,hl
 	ld a,c
-	add a,a
-	jr c,opgenHRAMwrite
-	cp DMA*2 & $FF
+	inc a
+	jp m,opgenHRAMwrite
+	jr nz,_
+	ld bc,writeIEhandler
+	jr opgenHMEMwriteroutine
+_
+	cp (IF & $FF)+1
+	jr nz,_
+	ld bc,writeIFhandler
+	jr opgenHMEMwriteroutine
+_
+	cp (DMA & $FF)+1
 	jr nz,opgenHRAMwrite
 	ld bc,writeDMAhandler
 opgenHMEMwriteroutine:

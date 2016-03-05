@@ -189,6 +189,7 @@ _
 	ld a,d
 	cp $FE
 	jr c,_
+	inc e	; Exclude $FFFF from region 0
 	rrca
 	and e
 	rrca
