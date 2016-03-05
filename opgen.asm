@@ -386,8 +386,9 @@ int_cached_code = $+2
 	ret.l
 	
 pop_and_lookup_code_cached:
-	ld e,(iy)
-	ld d,(iy+1)
+	ld de,(iy)
+	inc de
+	dec.s de
 	lea iy,iy+2
 lookup_code_cached:
 	call get_base_address

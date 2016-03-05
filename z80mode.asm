@@ -21,10 +21,10 @@ r_mem:
 	.block $10-$
 r_branch:
 	di
-	ex (sp),hl
-	push de
-	 ld de,(hl)
-	 jp do_branch
+	exx
+	pop hl
+	ld de,(hl)
+	jp do_branch
 	
 	.block $18-$
 r_call:
@@ -119,7 +119,6 @@ do_pop:
 	jp (ix)
 	
 ophandlerRETnomatch:
-	ld b,CALL_STACK_DEPTH+1
 	exx
 	ex af,af'
 	ld sp,myz80stack
@@ -130,15 +129,12 @@ ophandlerRET:
 	ld.lil (mpTimerCtrl),a
 	dec sp
 	dec sp
-	push hl
-	 push de
-	  push bc
-	   call.il pop_and_lookup_code_cached
-	  pop bc
-	 pop de
-	pop hl
-	ld a,TMR_ENABLE
+	exx
+	call.il pop_and_lookup_code_cached
+	ld bc,(CALL_STACK_DEPTH+1)*256 + TMR_ENABLE
+	ld a,c
 	ld.lil (mpTimerCtrl),a
+	exx
 	ex af,af'
 	ei
 	jp (ix)
@@ -337,17 +333,16 @@ dispatch_int:
 	
 do_branch_slow:
 	di
-	ex (sp),hl
-	push de
-	 push bc
-	  call.il decode_branch_slow
-	  ld (hl),de
-	  dec hl
-	  ld (hl),RST_BRANCH
-	 pop bc
-	pop de
-	ex (sp),hl
-	ex af,af'
+	exx
+	pop hl
+	push bc
+	 call.il decode_branch_slow
+	pop bc
+	ld (hl),de
+	dec hl
+	ld (hl),RST_BRANCH
+	push hl
+	exx
 	ei
 	ret
 	
@@ -377,29 +372,31 @@ _
 	jp (ix)
 	
 do_branch:
-	 push bc
-	  push hl
-	   call.il decode_branch
-	  pop hl
-	  ld (hl),ix
-	 pop bc
-	pop de
+	push bc
+	 push hl
+	  call.il decode_branch
+	 pop hl
+	pop bc
+	ld (hl),ix
 	dec hl
 	ld (hl),a
-	ex (sp),hl
+	push hl
+	exx
 	ex af,af'
 	ei
 	ret
 	
 flush_handler:
 	di
-flush_address = $+2
-	ld ix,0
+	exx
+flush_address = $+1
+	ld de,0
 	jp.lil flush_normal
 	
 flush_mem_handler:
 	di
-	pop ix
+	exx
+	pop de
 	jp.lil flush_mem
 	
 do_swap:
@@ -485,21 +482,21 @@ do_bits_readonly_smc = $+1
 ophandler08:
 	pop ix
 	pea ix+2
-	push hl
+	exx
+	push af
+	 lea hl,iy
+	 ld de,(sp_base_address)
+	 or a
+	 sbc hl,de
+	 ex de,hl
 	 ld hl,(ix)
-	 push af
-	  scf
-	  ld a,(sp_base_address)
-	  cpl
-	  adc a,iyl
-	  call mem_write_any
-	  ld a,(sp_base_address+1)
-	  cpl
-	  adc a,iyh
-	  inc hl
-	  call mem_write_any
-	 pop af
-	pop hl
+	 ld a,e
+	 call mem_write_any
+	 inc hl
+	 ld a,d
+	 call mem_write_any
+	pop af
+	exx
 	ei
 	ret
 	
@@ -509,11 +506,6 @@ ophandler31:
 	lea ix,ix+2
 	di
 	jp.lil set_gb_stack
-	
-ophandler33:
-	dec iy
-	ei
-	ret
 	
 ophandler34:
 	ex af,af'
@@ -566,11 +558,6 @@ ophandler39:
 	 ex af,af'
 	 add hl,de
 	pop de
-	ei
-	ret
-	
-ophandler3B:
-	inc iy
 	ei
 	ret
 	

@@ -41,6 +41,7 @@ decode_branch_slow:
 	inc hl
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
+	ex af,af'
 	ret.l
 	
 decode_branch:
@@ -597,20 +598,12 @@ flush_normal:
 	ex af,af'
 	xor a
 	ld (mpTimerCtrl),a
-	push hl
-	 push de
-	  push bc
-	   lea de,ix
-	   call lookup_code
-	  pop bc
-	 pop de
-	pop hl
+	call lookup_code
 	ld.sis sp,myz80stack-2
-	exx
-	ld b,CALL_STACK_DEPTH+1
-	exx
+	ld bc,(CALL_STACK_DEPTH+1)*256
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
+	exx
 	ex af,af'
 	ei
 	jp.s (ix)
@@ -619,21 +612,16 @@ flush_mem:
 	ex af,af'
 	xor a
 	ld (mpTimerCtrl),a
-	push hl
-	 push de
-	  push bc
-	   lea de,ix-3
-	   call.il lookup_gb_code_address
-	   call lookup_code
-	  pop bc
-	 pop de
-	pop hl
+	dec de
+	dec de
+	dec de
+	call.il lookup_gb_code_address
+	call lookup_code
 	ld.sis sp,myz80stack-2
-	exx
-	ld b,CALL_STACK_DEPTH+1
-	exx
+	ld bc,(CALL_STACK_DEPTH+1)*256
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
+	exx
 	ex af,af'
 	ei
 	jp.s (ix)

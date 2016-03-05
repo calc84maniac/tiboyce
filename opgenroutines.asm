@@ -23,56 +23,6 @@ opgenF0:
 opgenFA:
 	jp opgenCONSTread
 	
-opgenCB:
-	ldi
-	ld a,(hl)
-#ifdef CEMU
-	sub $30
-	cp $08
-	jr c,opgenswap
-#endif
-	and $07
-	cp $06
-	jr nz,opgen1byte
-opgenswap:
-	dec de
-	ld a,RST_BITS
-	ld (de),a
-	inc de
-	jr opgen1byte
-	
-opgenMEM:
-	ld a,RST_MEM
-	ld (de),a
-	inc de
-	ldi
-	xor a
-	ld (de),a
-	inc de
-	jr opgen_next_fast
-	
-opgenPUSH:
-	ldi
-	ld a,RST_PUSH
-	ld (de),a
-	inc de
-	jr opgen_next_fast
-	
-opgenPOP:
-	ld a,RST_POP
-	ld (de),a
-	inc de
-	jr opgen1byte
-	
-opgen_next_swap_skip:
-	ex de,hl
-opgen_next_skip:
-	inc hl
-	inc de
-opgen_next:
-	ld bc,opgentable
-	jr opgen_next_fast
-	
 opgenJRcond:
 	call opgen_emitbranch
 	inc hl
@@ -106,6 +56,66 @@ opgenRST:
 	call opgen_emitbranch
 	jr _opgenRST
 	
+opgenMEM:
+	ld a,RST_MEM
+	ld (de),a
+	inc de
+	ldi
+	xor a
+	ld (de),a
+	inc de
+	jr opgen_next_fast
+	
+opgenPUSH:
+	ldi
+	ld a,RST_PUSH
+	ld (de),a
+	inc de
+	jr opgen_next_fast
+	
+opgenPOP:
+	ld a,RST_POP
+	ld (de),a
+	inc de
+	jr opgen1byte
+	
+opgen33:
+opgen3B:
+	ex de,hl
+	ld (hl),$5B	; .LIL
+	inc hl
+	ld (hl),$FD	; IY
+	inc hl
+	res 4,c
+	ld (hl),c	; INC/DEC
+opgen_next_swap_skip:
+	ex de,hl
+opgen_next_skip:
+	inc de
+opgen0byte:
+	inc hl
+opgen_next:
+	ld bc,opgentable
+	jr opgen_next_fast
+	
+opgenCB:
+	ldi
+	ld a,(hl)
+#ifdef CEMU
+	sub $30
+	cp $08
+	jr c,opgenswap
+#endif
+	and $07
+	cp $06
+	jr nz,opgen1byte
+opgenswap:
+	dec de
+	ld a,RST_BITS
+	ld (de),a
+	inc de
+	jr opgen1byte
+	
 opgenRET:
 	ld a,c
 	ld (de),a
@@ -132,9 +142,6 @@ opgenF8:
 	ld c,ophandlerF8 & $FF
 	jr opgenroutinecall1byte
 	
-opgen0byte:
-	inc hl
-	jr opgen_next_fast
 opgen3byte_low:
 	inc b
 opgen3byte:
@@ -148,11 +155,6 @@ opgen_next_fast:
 	ld a,(bc)
 	ld ixl,a
 	jp (ix)
-	
-opgen33:
-	ld a,ophandler33 >> 8
-	ld c,ophandler33 & $FF
-	jr opgenroutinecall
 	
 opgen34:
 	ld a,ophandler34 >> 8
@@ -172,11 +174,6 @@ opgen36:
 opgen39:
 	ld a,ophandler39 >> 8
 	ld c,ophandler39 & $FF
-	jr opgenroutinecall
-	
-opgen3B:
-	ld a,ophandler3B >> 8
-	ld c,ophandler3B & $FF
 	jr opgenroutinecall
 	
 opgen76:
