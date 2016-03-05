@@ -38,6 +38,7 @@ mpLcdCtrl = $E30018
 mpLcdPalette = $E30200
 mpLcdCursorImg = $E30800
 
+mpIntRawStatus = $F00000
 mpIntEnable = $F00004
 mpIntAcknowledge = $F00008
 mpIntLatch = $F0000C
@@ -201,6 +202,7 @@ mbc_valid:
 	push hl
 	ld hl,$000003
 	ld (mpIntEnable),hl
+	set 4,l
 	ld (mpIntLatch),hl
 	
 	ld hl,(mpLcdBase)
@@ -264,6 +266,8 @@ mbc_valid:
 	ld (mpTimer1Reset+3),a
 	
 	ld (saveSP),sp
+	
+	ld sp,palettemem + $0200
 	
 	ld hl,z80codebase
 	push hl
@@ -350,6 +354,10 @@ _
 	ld bc,(CALL_STACK_DEPTH+1)*256
 	exx
 	
+_
+	ld a,(mpIntRawStatus)
+	bit 4,a
+	jr z,-_
 	
 	ld a,1
 	ld (z80codebase+curr_rom_bank),a
