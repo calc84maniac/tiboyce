@@ -141,7 +141,7 @@ ophandlerRET:
 	jp (ix)
 	
 soft_interrupt:
-	 push hl
+	 push.l hl
 	  xor a
 	  ld.lil (mpTimerCtrl),a
 	  ld a,$03
@@ -149,7 +149,7 @@ soft_interrupt:
 	  jr test_interrupts
 	  
 timer_interrupt:
-	 push hl
+	 push.l hl
 	  xor a
 	  ld.lil (mpTimerCtrl),a
 	  ld a,2
@@ -196,7 +196,7 @@ test_interrupts:
 	  and (hl)
 	  jr nz,interrupt_get
 noints:
-	 pop hl
+	 pop.l hl
 	 ld a,TMR_ENABLE
 	 ld.lil (mpTimerCtrl),a
 	pop af
@@ -205,37 +205,36 @@ noints:
 	
 interrupt_get:
 	  ld (intmask),a
-	 pop hl
-	pop af
-	ex (sp),hl
-	push af
-	 ;call.il yourkidding
-	 ld a,l
-	 sub z80codesize & $FF
-	 ld a,h
-	 sbc a,z80codesize >> 8
-	 jr c,_
-	 ld a,(memroutine_next)
-	 sub l
-	 ld a,(memroutine_next+1)
-	 sbc a,h
-	 jr nc,+++_
+	 pop af
+	pop hl
+	push hl
+	 push af
+	  ;call.il yourkidding
+	  ld a,l
+	  sub z80codesize & $FF
+	  ld a,h
+	  sbc a,z80codesize >> 8
+	  jr c,_
+	  ld a,(memroutine_next)
+	  sub l
+	  ld a,(memroutine_next+1)
+	  sbc a,h
+	  jr nc,+++_
 _
-	 ; Handle interrupt triggering after EI
-	 dec hl
-	 ld a,(hl)
-	 cp $FB	;EI
-	 jr z,_
-	 inc hl
+	  ; Handle interrupt triggering after EI
+	  dec hl
+	  ld a,(hl)
+	  cp $FB	;EI
+	  jr z,_
+	  inc hl
 _
-	 ; Do a software interrupt!
-	 ld a,$11
-	 ld.lil (mpIntEnable),a
-	pop af
-	ex (sp),hl
+	  ; Do a software interrupt!
+	  ld a,$11
+	  ld.lil (mpIntEnable),a
+	 pop af
+	pop.l hl
 	ret
 _
-	 push hl
 	  push de
 	   push bc
 	    push.l ix
@@ -257,11 +256,10 @@ waitloop_done:
 	    pop.l ix
 	   pop bc
 	  pop de
-	 pop hl
-	 ld a,TMR_ENABLE
-	 ld.lil (mpTimerCtrl),a
-	pop af
-	ex (sp),hl
+	  ld a,TMR_ENABLE
+	  ld.lil (mpTimerCtrl),a
+	 pop af
+	pop.l hl
 	ei
 	ret
 	
@@ -707,9 +705,10 @@ ophandlerRETI:
 	push bc
 	 call.il pop_and_lookup_code_cached
 	pop bc
+	exx
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
-	call checkIntPostEnableExx
+	call checkIntPostEnable
 	ei
 	jp (ix)
 	
@@ -734,42 +733,48 @@ write_cart_handler:
 	ret
 	
 write_cram_bank_handler:
-	pop ix
-	pea ix+2
-	push de
-	 ld de,(ix)
-	 ld.lil ix,(cram_bank_base)
-	 ex af,af'
-	 add.l ix,de
-	 ex af,af'
-	 ld.l (ix),a
-	pop de
+	exx
+	pop hl
+	ld de,(hl)
+	inc hl
+	inc hl
+	push hl
+	ld.lil hl,(cram_bank_base)
+	ex af,af'
+	add.l hl,de
+	ex af,af'
+	ld.l (hl),a
+	exx
 	ret
 	
 read_rom_bank_handler:
-	pop ix
-	pea ix+2
-	push de
-	 ld de,(ix)
-	 ld.lil ix,(rom_bank_base)
-	 ex af,af'
-	 add.l ix,de
-	 ex af,af'
-	 ld.l a,(ix)
-	pop de
+	exx
+	pop hl
+	ld de,(hl)
+	inc hl
+	inc hl
+	push hl
+	ld.lil hl,(rom_bank_base)
+	ex af,af'
+	add.l hl,de
+	ex af,af'
+	ld.l a,(hl)
+	exx
 	ret
 	
 read_cram_bank_handler:
-	pop ix
-	pea ix+2
-	push de
-	 ld de,(ix)
-	 ld.lil ix,(cram_bank_base)
-	 ex af,af'
-	 add.l ix,de
-	 ex af,af'
-	 ld.l a,(ix)
-	pop de
+	exx
+	pop hl
+	ld de,(hl)
+	inc hl
+	inc hl
+	push hl
+	ld.lil hl,(cram_bank_base)
+	ex af,af'
+	add.l ix,de
+	ex af,af'
+	ld.l a,(hl)
+	exx
 	ret
 	
 readP1handler:
@@ -800,13 +805,13 @@ writeDMAhandler:
 	ret
 	
 writeIFhandler:
-	ld ix,IF
+	ld (IF),a
 	call writeINTswap
 	ei
 	ret
 	
 writeIEhandler:
-	ld ix,IE
+	ld (IE),a
 	call writeINTswap
 	ei
 	ret
@@ -1029,20 +1034,19 @@ writeDMA:
 	
 writeINT:
 	ex af,af'
-writeINTswap:
 	ld (ix),a
+writeINTswap:
 	ex af,af'
 	ld a,(intstate)
 	or a
 	jr z,_
 checkIntPostEnable:
-	exx
-checkIntPostEnableExx:
-	ld hl,IF
-	ld a,(hl)
-	ld l,h
-	and (hl)
-	exx
+	push hl
+	 ld hl,IF
+	 ld a,(hl)
+	 ld l,h
+	 and (hl)
+	pop hl
 	jr z,_
 	; Do a software interrupt!
 	ld a,$11
