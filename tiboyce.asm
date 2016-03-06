@@ -298,6 +298,14 @@ mbc_valid:
 	ld bc,174*3-1
 	ldir
 	
+	ld hl,vram_tiles_start
+	ld (hl),c
+	push hl
+	pop de
+	inc de
+	ld bc,$4000 + $6000 - 1
+	ldir
+	
 	call generate_digits
 	
 	ld a,z80codebase >> 16
