@@ -292,32 +292,11 @@ mbc_valid:
 	
 	ld hl,scanlineLUT
 	push hl
-	pop ix
-	lea de,ix+1
+	pop de
+	inc de
 	ld (hl),$FF
 	ld bc,174*3-1
 	ldir
-	
-	push bc
-	pop hl
-	ld c,160
-	ld a,144/3
-_
-	ld (ix+(15*3)),hl
-	add hl,bc
-#ifndef DBGNOSCALE
-	add hl,bc
-#endif
-	ld (ix+(16*3)),hl
-	add hl,bc
-	ld (ix+(17*3)),hl
-	add hl,bc
-#ifndef DBGNOSCALE
-	add hl,bc
-#endif
-	lea ix,ix+9
-	dec a
-	jr nz,-_
 	
 	call generate_digits
 	
@@ -341,6 +320,7 @@ _
 	ld (z80codebase+cram_base_0),hl
 	ld (cram_bank_base),hl
 	
+	call prepare_next_frame
 	call update_palettes
 	
 	call flush_code

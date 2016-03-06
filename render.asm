@@ -47,9 +47,6 @@ draw_sprites_save_sp = $+1
 	ret
 	
 draw_sprites:
-	ld a,(hram_base+LCDC)
-	bit 1,a
-	ret z
 	ld (draw_sprites_save_sp),sp
 	ld ix,hram_base+$FEA0
 draw_next_sprite:
@@ -80,7 +77,8 @@ draw_next_sprite:
 	add hl,de
 	ex de,hl
 	
-	ld hl,(current_buffer)
+	; Set HL=0
+	sbc hl,hl
 	
 	bit 5,(ix+3)
 	jr nz,draw_sprite_hflip
@@ -124,6 +122,7 @@ _
 	ld (draw_sprite_normal_hdir),a
 	ld (draw_sprite_priority_hdir),a
 	
+	inc hl
 	ld sp,hl
 	
 	ld a,(hram_base+LCDC)
@@ -325,11 +324,7 @@ scanline_do_render:
 	add ix,de
 	
 scanline_ptr = $+1
-	ld hl,(scanlineLUT+(15*3))
-current_buffer = $+1
-	ld de,gb_frame_buffer_1
-	add hl,de
-	ex de,hl
+	ld de,0
 	ld a,c
 	sub 7
 	jr nc,no_clip
@@ -452,7 +447,7 @@ _
 	 call scanline_do_render
 	 
 window_tile_ptr = $+1
-	 ld hl,vram_tiles_start
+	 ld hl,0 ;vram_tiles_start
 	 ld a,(hram_base+LCDC)
 	 bit 4,a
 	 jr nz,_
@@ -486,10 +481,40 @@ _
 scanline_no_window:
 	 call scanline_do_render
 	 
+	 ; Store current scanline pointer minus 1 in LUT
+	 ; Or store -1 if sprites are disabled
+	 ld a,(hram_base+LCDC)
+	 rra
+	 rra
+	 sbc hl,hl
+	 jr nc,_
 	 ld hl,(scanline_ptr)
+_
+	 dec hl
+	 ex de,hl
+scanlineLUT_ptr = $+1
+	 ld hl,0
+	 ld (hl),de
 	 ld c,3
 	 add hl,bc
+	 ld (scanlineLUT_ptr),hl
+	 ; Advance to next scanline
+	 ld hl,(scanline_ptr)
+	 ld c,160
+	 add hl,bc
+#ifndef DBGNOSCALE
+scanline_scale_counter = $+1
+	 ld a,0
+	 dec a
+	 jr nz,_
+	 ld a,3
+	 .db $20	;jr nz,
+_
+	 add hl,bc
 	 ld (scanline_ptr),hl
+	 ld (scanline_scale_counter),a
+#endif
+	 ; Restore important Z80 things
 	 ld a,z80codebase >> 16
 	 ld mb,a
 	 ld.sis sp,(render_save_sps)

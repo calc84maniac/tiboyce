@@ -697,8 +697,9 @@ _
 #ifndef DBGNOSCALE
 	  ; EXPAND DONG
 	  ld a,144/3
-	  ld b,0
-	  ld de,(current_buffer)
+current_buffer = $+1
+	  ld de,0
+	  ld b,e	;B=0
 _
 	  push de
 	  pop hl
@@ -755,18 +756,7 @@ _
 	 pop bc
 	 
 	 ; Swap buffers
-	 ld hl,(mpLcdBase)
-	 ld (current_buffer),hl
-	 ld a,h
-	 xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
-	 ld h,a
-	 ld (mpLcdBase),hl
-	 ld hl,scanlineLUT + (15*3)
-	 ld (scanline_ptr),hl
-	 ld hl,vram_tiles_start
-	 ld (window_tile_ptr),hl
-	 xor a
-	 ld (window_tile_offset),a
+	 call prepare_next_frame
 skip_this_frame:
 	
 	 ; Always update palettes because it's basically free!
@@ -787,6 +777,26 @@ _
 	ld l,LY & $FF
 	ld a,(hl)
 	ret.l
+	
+prepare_next_frame:
+	ld hl,(mpLcdBase)
+	ld (current_buffer),hl
+	ld (scanline_ptr),hl
+	ld a,h
+	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
+	ld h,a
+	ld (mpLcdBase),hl
+	ld hl,scanlineLUT + (15*3)
+	ld (scanlineLUT_ptr),hl
+	ld hl,vram_tiles_start
+	ld (window_tile_ptr),hl
+	xor a
+	ld (window_tile_offset),a
+#ifndef DBGNOSCALE
+	ld a,2
+	ld (scanline_scale_counter),a
+#endif
+	ret
 	
 oam_transfer:
 	push bc
