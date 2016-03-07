@@ -1177,6 +1177,11 @@ _
 	ld bc,writeIFhandler
 	jr opgenHMEMwriteroutine
 _
+	cp (LCDC & $FF)+1
+	jr nz,_
+	ld bc,writeLCDChandler
+	jr opgenHMEMwriteroutine
+_
 	cp (DMA & $FF)+1
 	jr nz,opgenHRAMwrite
 	ld bc,writeDMAhandler

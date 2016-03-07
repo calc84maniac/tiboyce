@@ -798,6 +798,12 @@ readSTAThandler:
 	ei
 	ret
 	
+writeLCDChandler:
+	ex af,af'
+	call writeLCDC
+	ei
+	ret
+	
 writeDMAhandler:
 	ex af,af'
 	call writeDMA
@@ -1031,6 +1037,8 @@ mem_write_ports_swap:
 	jr z,writeINT
 	cp (IF & $FF) + 1
 	jr z,writeINT
+	cp (LCDC & $FF) + 1
+	jr z,writeLCDC
 	cp (DMA & $FF) + 1
 	jr nz,mem_write_oam_swap
 writeDMA:
@@ -1038,27 +1046,9 @@ writeDMA:
 	call.il oam_transfer
 	ret
 	
-writeINT:
-	ex af,af'
-	ld (ix),a
-writeINTswap:
-	ex af,af'
-	ld a,(intstate)
-	or a
-	jr z,_
-checkIntPostEnable:
-	push hl
-	 ld hl,IF
-	 ld a,(hl)
-	 ld l,h
-	 and (hl)
-	pop hl
-	jr z,_
-	; Do a software interrupt!
-	ld a,$11
-	ld.lil (mpIntEnable),a
-_
-	ex af,af'
+writeLCDC:
+	di
+	call.il lcdc_write
 	ret
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
@@ -1096,6 +1086,29 @@ _
 	ld (mbc1_ram_smc),a
 mbc_6000_denied:
 mbc_0000:
+	ex af,af'
+	ret
+	
+writeINT:
+	ex af,af'
+	ld (ix),a
+writeINTswap:
+	ex af,af'
+	ld a,(intstate)
+	or a
+	jr z,_
+checkIntPostEnable:
+	push hl
+	 ld hl,IF
+	 ld a,(hl)
+	 ld l,h
+	 and (hl)
+	pop hl
+	jr z,_
+	; Do a software interrupt!
+	ld a,$11
+	ld.lil (mpIntEnable),a
+_
 	ex af,af'
 	ret
 	

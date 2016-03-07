@@ -817,6 +817,43 @@ oam_transfer:
 	pop bc
 	ret.l
 	
+lcdc_write:
+	exx
+	ld hl,hram_base+LCDC
+	ld a,(hl)
+	ex af,af'
+	ld (hl),a
+	ex af,af'
+	xor (hl)
+	ld l,a
+	bit 1,l
+	jr z,_
+	ld a,(LCDC_1_smc)
+	xor $1F ^ $2F	;LD (IX),DE vs LD (IX),HL
+	ld (LCDC_1_smc),a
+_
+	bit 3,l
+	jr z,_
+	ld a,(LCDC_3_smc)
+	xor $40	;RES vs SET
+	ld (LCDC_3_smc),a
+_
+	bit 4,l
+	jr z,_
+	ld a,(LCDC_4_smc)
+	xor $40	;SET vs RES
+	ld (LCDC_4_smc),a
+_
+	bit 5,l
+	jr z,_
+	ld a,(LCDC_5_smc)
+	xor $08	;JR NC vs JR C
+	ld (LCDC_5_smc),a
+_
+	ex af,af'
+	exx
+	ret.l
+	
 fps:
 	.db 0,0
 fps_display:

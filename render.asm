@@ -401,39 +401,35 @@ render_scanline:
 	 xor e
 	 rrca
 	 rrca
+	 ld b,a
+	 
+	 ld a,(ix-ioregs+SCX)
+	 ld c,a
+	 rrca
+	 rrca
+	 and $3E
+	 ld e,a
+	  
+	 ld a,c
+	 cpl
+	 and 7
+	 ld c,a
+	  
+LCDC_4_smc = $+1
+	 res 7,e
+LCDC_3_smc = $+1
+	 res 5,d
+	 ld hl,vram_tiles_start
+	 add hl,de
+	 ld.s sp,hl
+	 
 	 ld hl,vram_pixels_start
-	 ld l,a
-	 push hl
-	  ld a,(ix-ioregs+SCX)
-	  ld c,a
-	  rrca
-	  rrca
-	  and $3E
-	  ld e,a
-	  
-	  ld a,c
-	  cpl
-	  and 7
-	  ld c,a
-	  
-	  ld a,(ix-ioregs+LCDC)
-	  bit 4,a
-	  jr nz,_
-	  set 7,e
-_
-	  bit 3,a
-	  jr z,_
-	  set 5,d
-_
-	  ld hl,vram_tiles_start
-	  add hl,de
-	  ld.s sp,hl
-	 pop hl
+	 ld l,b
 	 
 	 ld b,167
 	 
-	 bit 5,a
-	 jr z,scanline_no_window
+LCDC_5_smc:
+	 jr nc,scanline_no_window
 	 
 	 ld a,(ix-ioregs+LY)
 	 cp (ix-ioregs+WY)
@@ -483,25 +479,18 @@ scanline_no_window:
 	 
 	 ; Store current scanline pointer minus 1 in LUT
 	 ; Or store -1 if sprites are disabled
-	 ld a,(hram_base+LCDC)
-	 rra
-	 rra
-	 sbc hl,hl
-	 jr nc,_
 	 ld hl,(scanline_ptr)
-_
-	 dec hl
-	 ex de,hl
-scanlineLUT_ptr = $+1
-	 ld hl,0
-	 ld (hl),de
-	 ld c,3
-	 add hl,bc
-	 ld (scanlineLUT_ptr),hl
+	 ld de,-1
+	 add hl,de
+scanlineLUT_ptr = $+2
+	 ld ix,0
+LCDC_1_smc = $+1
+	 ld (ix),de
+	 lea ix,ix+3
+	 ld (scanlineLUT_ptr),ix
 	 ; Advance to next scanline
-	 ld hl,(scanline_ptr)
 	 ld c,160
-	 add hl,bc
+	 adc hl,bc
 #ifndef DBGNOSCALE
 scanline_scale_counter = $+1
 	 ld a,0
