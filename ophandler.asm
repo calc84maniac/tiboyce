@@ -829,10 +829,14 @@ render_catchup:
 	cp 144
 	ret.l nc
 	exx
+	ld hl,mpTimerCtrl
+	ld (hl),0
 	push bc
 	 call render_scanlines
 	pop bc
 	exx
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	ret.l
 	
 lcdc_write:
