@@ -1172,17 +1172,37 @@ _
 	ld bc,writeIEhandler
 	jr opgenHMEMwriteroutine
 _
-	cp (IF & $FF)+1
+	sub (IF & $FF)+1
 	jr nz,_
 	ld bc,writeIFhandler
 	jr opgenHMEMwriteroutine
 _
-	cp (LCDC & $FF)+1
+	sub LCDC - IF
 	jr nz,_
 	ld bc,writeLCDChandler
 	jr opgenHMEMwriteroutine
 _
-	cp (DMA & $FF)+1
+	sub SCY - LCDC
+	jr nz,_
+	ld bc,writeSCYhandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
+	jr nz,_
+	ld bc,writeSCXhandler
+	jr opgenHMEMwriteroutine
+_
+	sub WY - SCX
+	jr nz,_
+	ld bc,writeWYhandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
+	jr nz,_
+	ld bc,writeWXhandler
+	jr opgenHMEMwriteroutine
+_
+	sub DMA - WX
 	jr nz,opgenHRAMwrite
 	ld bc,writeDMAhandler
 opgenHMEMwriteroutine:

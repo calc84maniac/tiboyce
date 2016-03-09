@@ -687,8 +687,12 @@ _
 	 jp nz,skip_this_frame
 	 ld (hl),FRAMESKIP+1
 	
-	 ; Display sprites
 	 push bc
+	  ; Finish rendering the frame
+	  ld a,144
+	  call render_scanlines
+	  
+	  ; Display sprites
 	  push ix
 	   push iy
 	    call draw_sprites
@@ -758,7 +762,7 @@ _
 	 ; Swap buffers
 	 call prepare_next_frame
 skip_this_frame:
-	
+	 
 	 ; Always update palettes because it's basically free!
 	 call update_palettes
 	pop de
@@ -781,7 +785,9 @@ _
 prepare_next_frame:
 	ld hl,(mpLcdBase)
 	ld (current_buffer),hl
+	dec hl
 	ld (scanline_ptr),hl
+	inc hl
 	ld a,h
 	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	ld h,a
@@ -792,6 +798,7 @@ prepare_next_frame:
 	ld (window_tile_ptr),hl
 	xor a
 	ld (window_tile_offset),a
+	ld (myLY),a
 #ifndef DBGNOSCALE
 	ld a,2
 	ld (scanline_scale_counter),a
@@ -817,7 +824,21 @@ oam_transfer:
 	pop bc
 	ret.l
 	
+render_catchup:
+	ld a,(hram_base+LY)
+	cp 144
+	ret.l nc
+	exx
+	push bc
+	 call render_scanlines
+	pop bc
+	exx
+	ret.l
+	
 lcdc_write:
+	ld a,(z80codebase+frame_skip)
+	dec a
+	call.il z,render_catchup
 	exx
 	ld hl,hram_base+LCDC
 	ld a,(hl)
@@ -829,7 +850,7 @@ lcdc_write:
 	bit 1,l
 	jr z,_
 	ld a,(LCDC_1_smc)
-	xor $1F ^ $2F	;LD (IX),DE vs LD (IX),HL
+	xor $2F ^ $3E	;LD (IX),HL vs LD (IX),IY
 	ld (LCDC_1_smc),a
 _
 	bit 3,l

@@ -159,9 +159,6 @@ timer_interrupt:
 	  add a,a
 	  ld hl,LY
 	  jr nc,screen_off
-	  ld a,(hl)
-	  cp 144
-	  call c,do_render
 	  
 	  ld a,(hl)
 	  inc a
@@ -275,7 +272,8 @@ do_render:
 	ret nz
 	push bc
 	 push de
-	  call.il render_scanline
+	  ld a,(hl)
+	  call.il render_scanlines
 	 pop de
 	pop bc
 	ld hl,LY
@@ -804,6 +802,30 @@ writeLCDChandler:
 	ei
 	ret
 	
+writeSCYhandler:
+	ld ix,SCY
+	call write_scroll_swap
+	ei
+	ret
+	
+writeSCXhandler:
+	ld ix,SCX
+	call write_scroll_swap
+	ei
+	ret
+	
+writeWYhandler:
+	ld ix,WY
+	call write_scroll_swap
+	ei
+	ret
+	
+writeWXhandler:
+	ld ix,WX
+	call write_scroll_swap
+	ei
+	ret
+	
 writeDMAhandler:
 	ex af,af'
 	call writeDMA
@@ -1035,16 +1057,32 @@ mem_write_ports_swap:
 	inc a
 	jp m,mem_write_oam_swap
 	jr z,writeINT
-	cp (IF & $FF) + 1
+	sub (IF & $FF) + 1
 	jr z,writeINT
-	cp (LCDC & $FF) + 1
+	sub LCDC - IF
 	jr z,writeLCDC
-	cp (DMA & $FF) + 1
+	sub SCY - LCDC
+	cp 2
+	jr c,write_scroll
+	sub WY - SCY
+	cp 2
+	jr c,write_scroll
+	sub DMA - WY
 	jr nz,mem_write_oam_swap
 writeDMA:
 	di
 	call.il oam_transfer
 	ret
+	
+write_scroll_swap:
+	ex af,af'
+write_scroll:
+	ld a,(frame_skip)
+	dec a
+	jr nz,mem_write_oam_swap
+	di
+	call.il render_catchup
+	jr mem_write_oam_swap
 	
 writeLCDC:
 	di
