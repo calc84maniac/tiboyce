@@ -782,6 +782,13 @@ readDIVhandler:
 	ei
 	ret
 	
+readLYhandler:
+	ex af,af'
+	call readLY
+	ld a,ixl
+	ei
+	ret
+	
 readSTAThandler:
 	ex af,af'
 	call readSTAT
@@ -894,6 +901,12 @@ _
 	ex af,af'
 	ret
 	
+readLY:
+	ld a,(LY)
+	ld ixl,a
+	ex af,af'
+	ret
+	
 	;IX=GB address, reads into IXL
 mem_read_ports:
 	ex af,af'
@@ -907,6 +920,8 @@ mem_read_ports_always:
 	add a,a
 	jr c,mem_read_oam
 	jr z,readP1
+	cp LY*2 & $FF
+	jr z,readLY
 	cp DIV*2 & $FF
 	jr z,readDIV
 	cp STAT*2 & $FF

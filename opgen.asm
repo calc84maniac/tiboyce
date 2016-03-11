@@ -1359,6 +1359,11 @@ _
 	ld bc,readDIVhandler
 	jr opgenHMEMreadroutine
 _
+	cp $44<<1
+	jr nz,_
+	ld bc,readLYhandler
+	jr opgenHMEMreadroutine
+_
 	cp $41<<1
 	jr nz,_
 	ld bc,readSTAThandler
