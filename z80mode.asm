@@ -1041,6 +1041,11 @@ mem_write_bail:
 	ex af,af'
 	jp (ix)
 	
+writeLCDC:
+	di
+	call.il lcdc_write
+	ret
+	
 mem_write_any_ports:
 	push hl
 	pop ix
@@ -1133,11 +1138,6 @@ writeLYCswap:
 	ld (LYC),a
 	ret
 	
-writeLCDC:
-	di
-	call.il lcdc_write
-	ret
-	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart:
 	ex af,af'
@@ -1193,6 +1193,7 @@ checkIntPostEnable:
 	pop hl
 	jr z,_
 	; Do a software interrupt!
+	di
 	ld a,$11
 	ld.lil (mpIntEnable),a
 _
