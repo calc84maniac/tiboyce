@@ -165,6 +165,7 @@ _
 	  ld.lil (mpIntAcknowledge),a
 	  jr nc,test_interrupts
 	  
+#comment
 	  ld.lil hl,(mpTimer1Match1+1)
 	  ld a,l
 	  sub SCANDELAY
@@ -184,7 +185,8 @@ _
 	  inc hl
 	  cp (hl)
 	  jr nz,test_interrupts
-	  ld l,STAT & $FF
+#endcomment
+	  ld hl,STAT
 	  bit 6,(hl)
 	  jr z,test_interrupts
 	  ld l,IF & $FF
@@ -367,6 +369,24 @@ do_branch:
 	exx
 	ex af,af'
 	ei
+	ret
+	
+updateLY:
+	xor a
+	ld.lil (mpTimerCtrl),a
+	ld.lil hl,(mpTimer1Count+1)
+	dec hl
+	ld de,-SCANDELAY*128
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	ld a,153
+	sub l
 	ret
 	
 flush_handler:
@@ -566,8 +586,6 @@ haltloop:
 	di
 	xor a
 	ld.lil (mpTimerCtrl),a
-	ld.lil ix,(mpTimer1Match1)
-	ld.lil (mpTimer1Count),ix
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
 	ex af,af'
@@ -814,6 +832,11 @@ writeSCXhandler:
 	ei
 	ret
 	
+writeLYChandler:
+	call writeLYCswap
+	ei
+	ret
+	
 writeWYhandler:
 	ld ix,WY
 	call write_scroll_swap
@@ -868,28 +891,17 @@ readDIV:
 	ret
 	
 readSTAT:
-	ld.lil a,(mpTimer1Match1+1)
-	ld ixh,a
+	exx
 	ld a,(STAT)
 	and $FC
 	ld ixl,a
-	inc ixl
 	ld a,(LCDC)
 	add a,a
-	jr nc,_
-	ld a,(LY)
+	jr nc,++_
+	call updateLY
 	cp 144
 	jr nc,++_
-	or a
-	ld.lil a,(mpTimer1Count+1)
-	jr nz,_
-	sub ixh
-	cp SCANDELAY
-	jr nc,++_
-	add a,ixh
-_
-	sub ixh
-	dec ixl
+	ld a,h
 	cp SCANDELAY * 204 / 456 - 1
 	jr c,_
 	inc ixl
@@ -898,12 +910,19 @@ _
 	jr nc,_
 	inc ixl
 _
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
 	ex af,af'
+	exx
 	ret
 	
 readLY:
-	ld a,(LY)
+	exx
+	call updateLY
+	exx
 	ld ixl,a
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ret
 	
@@ -1012,20 +1031,6 @@ _
 	ld.l (ix),a
 	ret
 	
-mem_write_any_cart:
-	push hl
-	pop ix
-	jr mem_write_cart_swap
-mem_write_any_ports:
-	push hl
-	pop ix
-	jr nz,mem_write_ports_swap
-	jr mem_write_oam_swap
-mem_write_any_vram:
-	push hl
-	pop ix
-	jr mem_write_vram_swap
-	
 mem_write_bail:
 	pop ix
 	ld a,(ix-8)
@@ -1035,6 +1040,20 @@ mem_write_bail:
 	pop af
 	ex af,af'
 	jp (ix)
+	
+mem_write_any_ports:
+	push hl
+	pop ix
+	jr nz,mem_write_ports_swap
+	jr mem_write_oam_swap
+mem_write_any_vram:
+	push hl
+	pop ix
+	jr mem_write_vram_swap
+mem_write_any_cart:
+	push hl
+	pop ix
+	jr mem_write_cart_swap
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_vram:
@@ -1080,7 +1099,9 @@ mem_write_ports_swap:
 	sub WY - SCY
 	cp 2
 	jr c,write_scroll
-	sub DMA - WY
+	sub LYC - WY
+	jr z,writeLYC
+	dec a
 	jr nz,mem_write_oam_swap
 writeDMA:
 	di
@@ -1097,6 +1118,21 @@ write_scroll:
 	call.il render_catchup
 	jr mem_write_oam_swap
 	
+writeLYC:
+	ex af,af'
+writeLYCswap:
+	ld l,a
+	ex af,af'
+	ld a,154
+	sub l
+	ld l,a
+	ld h,SCANDELAY
+	mlt hl
+	ld.lil (mpTimer1Match1+1),hl
+	ex af,af'
+	ld (LYC),a
+	ret
+	
 writeLCDC:
 	di
 	call.il lcdc_write
@@ -1107,7 +1143,7 @@ mem_write_cart:
 	ex af,af'
 	ld a,ixh
 	rla
-	jr c,mem_write_bail
+	jp c,mem_write_bail
 mem_write_cart_swap:
 	ex af,af'
 	;IX=GB address, A=data, preserves AF, destroys AF'

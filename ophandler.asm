@@ -827,19 +827,34 @@ oam_transfer:
 	pop bc
 	ret.l
 	
+updateLY_ADL:
+	xor a
+	ld (mpTimerCtrl),a
+	ld hl,(mpTimer1Count+1)
+	dec hl
+	ld de,-SCANDELAY*128
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	ld a,153
+	sub l
+	ret
+	
 render_catchup:
-	ld a,(hram_base+LY)
+	exx
+	call updateLY_ADL
 	cp 144
-	ret.l nc
-	exx
-	ld hl,mpTimerCtrl
-	ld (hl),0
 	push bc
-	 call render_scanlines
+	 call c,render_scanlines
 	pop bc
-	exx
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
+	exx
 	ret.l
 	
 lcdc_write:

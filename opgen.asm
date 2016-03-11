@@ -1202,7 +1202,12 @@ _
 	ld bc,writeWXhandler
 	jr opgenHMEMwriteroutine
 _
-	sub DMA - WX
+	sub LYC - WX
+	jr nz,_
+	ld bc,writeLYChandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
 	jr nz,opgenHRAMwrite
 	ld bc,writeDMAhandler
 opgenHMEMwriteroutine:
