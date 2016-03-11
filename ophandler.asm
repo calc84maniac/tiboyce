@@ -639,6 +639,9 @@ flush_mem:
 	jp.s (ix)
 	
 vblank_stuff:
+	; Reset match bit
+	ld (hl),2
+	
 	; Get keys
 	scf
 	sbc hl,hl
@@ -778,7 +781,7 @@ skip_this_frame:
 	jr z,_
 	set 1,(hl)
 _
-	ld l,LY & $FF
+	ld hl,mpTimerIntStatus
 	ld a,(hl)
 	ret.l
 	

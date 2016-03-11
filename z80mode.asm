@@ -150,31 +150,37 @@ soft_interrupt:
 	  
 timer_interrupt:
 	 push.l hl
-	  xor a
-	  ld.lil (mpTimerCtrl),a
-	  ld a,2
-	  ld.lil (mpIntAcknowledge),a
-	  
-	  ld a,(LCDC)
-	  add a,a
-	  ld hl,LY
-	  jr nc,screen_off
-	  
-	  ld a,(hl)
-	  inc a
-	  cp 154
-	  jr c,_
-	  ld hl,SCANDELAY*2*256
-	  ld.lil (mpTimer1Count),hl
-	  ld hl,LY
-screen_off:
-	  xor a
-_
-	  ld (hl),a
-	  cp 144
-	  jr nz,_
+	  ld.lil hl,mpTimerCtrl
+	  ld.l (hl),0
+	  ld l,mpTimerIntStatus & $FF
+	  ld.l a,(hl)
+	  bit 1,a
+	  jr z,_
 	  call.il vblank_stuff
 _
+	  rra
+	  ld a,3
+	  ld.l (hl),a
+	  dec a
+	  ld.lil (mpIntAcknowledge),a
+	  jr nc,test_interrupts
+	  
+	  ld.lil hl,(mpTimer1Match1+1)
+	  ld a,l
+	  sub SCANDELAY
+	  ld l,a
+	  jr nc,_
+	  dec h
+	  jp p,_
+	  ld a,h
+	  ld (LY),a
+	  ld hl,SCANDELAY*153
+_
+	  ld.lil (mpTimer1Match1+1),hl
+	  
+	  ld hl,LY
+	  inc (hl)
+	  ld a,(hl)
 	  inc hl
 	  cp (hl)
 	  jr nz,test_interrupts
@@ -265,19 +271,6 @@ check_waitloop:
 	 call.il identify_waitloop
 	pop hl
 	jr waitloop_done
-	
-do_render:
-	ld a,(frame_skip)
-	dec a
-	ret nz
-	push bc
-	 push de
-	  ld a,(hl)
-	  call.il render_scanlines
-	 pop de
-	pop bc
-	ld hl,LY
-	ret
 	
 do_interrupt:
 	xor a
@@ -573,7 +566,7 @@ haltloop:
 	di
 	xor a
 	ld.lil (mpTimerCtrl),a
-	ld ix,1
+	ld.lil ix,(mpTimer1Match1)
 	ld.lil (mpTimer1Count),ix
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
@@ -868,6 +861,8 @@ readDIV:
 	ret
 	
 readSTAT:
+	ld.lil a,(mpTimer1Match1+1)
+	ld ixh,a
 	ld a,(STAT)
 	and $FC
 	ld ixl,a
@@ -881,9 +876,12 @@ readSTAT:
 	or a
 	ld.lil a,(mpTimer1Count+1)
 	jr nz,_
+	sub ixh
 	cp SCANDELAY
 	jr nc,++_
+	add a,ixh
 _
+	sub ixh
 	dec ixl
 	cp SCANDELAY * 204 / 456 - 1
 	jr c,_

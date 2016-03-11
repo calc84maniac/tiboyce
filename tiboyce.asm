@@ -15,6 +15,8 @@
 #define FRAMESKIP 0
 #endif
 
+#define FRAME_LENGTH (SCANDELAY*256*154)
+
 ; Some standalone equates
 _sprintf = $0000BC
 _GetCSC = $02014C
@@ -44,7 +46,7 @@ mpIntAcknowledge = $F00008
 mpIntLatch = $F0000C
 mpIntMaskedStatus = $F00014
 
-TMR_ENABLE = 5
+TMR_ENABLE = 1
 mpTimer1Count = $F20000
 mpTimer1Reset = $F20004
 mpTimer1Match1 = $F20008
@@ -255,15 +257,16 @@ mbc_valid:
 	xor a
 	sbc hl,hl
 	ld (mpTimerCtrl),hl
-	ld (mpTimer1Match1),hl
-	ld (mpTimer1Match1+3),a
-	ld (mpTimer1Match2),hl
-	ld (mpTimer1Match2+3),a
-	ld hl,SCANDELAY*256
 	ld (mpTimer1Count),hl
 	ld (mpTimer1Count+3),a
+	ld (mpTimer1Match1),hl
+	ld (mpTimer1Match1+3),a
+	ld hl,FRAME_LENGTH
 	ld (mpTimer1Reset),hl
 	ld (mpTimer1Reset+3),a
+	ld hl,FRAME_LENGTH - (SCANDELAY*256*144)
+	ld (mpTimer1Match2),hl
+	ld (mpTimer1Match2+3),a
 	
 	ld (saveSP),sp
 	
