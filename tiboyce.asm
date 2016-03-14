@@ -6,10 +6,10 @@
 
 ; Some configuration options
 #ifndef ROMNAME
-#define ROMNAME "PokeRd00"
+#define ROMNAME "PkmnR"
 #endif
 #ifndef SCANDELAY
-#define SCANDELAY 10
+#define SCANDELAY 9
 #endif
 #ifndef FRAMESKIP
 #define FRAMESKIP 0
@@ -481,7 +481,7 @@ _
 LoadRAM:
 	ld hl,mpZeroPage
 	ld (cram_start),hl
-	ld hl,ROMName
+	ld hl,ROMName+1
 	ld bc,9
 	xor a
 	cpir
