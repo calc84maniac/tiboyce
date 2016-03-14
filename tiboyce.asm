@@ -378,26 +378,83 @@ saveSP = $+1
 	ret
 	
 LoadROM:
+	ld hl,ROMName
+	call LookUpAppvar
+	ret c
+	ld a,c
+	sub 9
+	ld c,a
+	jr nc,_
+	ld a,b
+	or a
+	ret z
+	dec b
+_
+	push bc
+	 ld de,MetaHeader
+	 ld bc,8
+	 call memcmp
+	pop bc
+	ret nz
+	ld d,(hl)
+	
+	ld hl,ROMName-1
+_
+	inc hl
+	ld a,(hl)
+	or a
+	jr nz,-_
+	ld (hl),'R'
+	inc hl
+	ld (hl),'0'
+	inc hl
+	ld (hl),'0'
+	inc hl
+	ld (hl),a
+	
+	ld e,a
 	ld ix,rombankLUT
 LoadROMLoop:
-	ld hl,ROMName
-	call LookUpAppvarForceARC
+	push de
+	 ld hl,ROMName
+	 call LookUpAppvarForceARC
+	pop de
 	ret c
-	ld de,$4000
-	sbc hl,de
-	dec bc
-	ld a,b
-	inc bc
-_
-	ld (ix),hl
-	lea ix,ix+3
-	add hl,de
-	sub d
-	jr nc,-_
-	ld a,b
-	sub $C0
-	or c
+	ld a,(hl)
+	cp e
+	scf
 	ret nz
+	inc hl
+	dec bc
+LoadROMPageLoop:
+	push de
+	 push bc
+	  ld c,(hl)
+	  inc hl
+	  ld b,(hl)
+	  inc hl
+	  ld de,-$4000
+	  add hl,de
+	  ld (ix),hl
+	  lea ix,ix+3
+	  add hl,bc
+	  sbc hl,de
+	  ex (sp),hl
+	  inc bc
+	  sbc hl,bc
+	  ex (sp),hl
+	 pop bc
+	pop de
+	ret c
+	jr z,_
+	dec d
+	ret z
+	inc e
+	jr LoadROMPageLoop
+_
+	dec d
+	ret z
+	inc e
 	ld hl,ROMName+1
 	xor a
 	ld bc,9
@@ -408,9 +465,17 @@ _
 	ld a,(hl)
 	cp '9'+1
 	jr c,LoadROMLoop
+	jr z,_
+	cp 'F'+1
+	jr nz,LoadROMLoop
 	ld (hl),'0'
 	dec hl
 	inc (hl)
+	ld a,(hl)
+	cp '9'+1
+	jr nz,LoadROMLoop
+_
+	ld (hl),'A'
 	jr LoadROMLoop
 	
 LoadRAM:
@@ -421,14 +486,12 @@ LoadRAM:
 	xor a
 	cpir
 	dec hl
-_
 	dec hl
-	ld a,(hl)
-	sub '0'
-	cp 10
-	jr c,-_
-	inc hl
-	ld (hl),0
+	ld (hl),'V'
+	dec hl
+	ld (hl),'A'
+	dec hl
+	ld (hl),'S'
 	
 	ld de,8*1024
 	ld a,(mbc)
@@ -468,6 +531,27 @@ _
 	ld (cram_start),hl
 	or a
 	ret
+	
+LookUpAppvar:
+	call _Mov9ToOP1
+	call _chkFindSym
+	ret c
+	call _ChkInRAM
+	ex de,hl
+	jr z,_
+	ld de,9
+	add hl,de
+	ld e,(hl)
+	add hl,de
+	inc hl
+_
+	ld c,(hl)
+	inc hl
+	ld b,(hl)
+	inc hl
+	or a
+	ret
+	
 	
 LookUpAppvarForceARC:
 	call _Mov9ToOP1
@@ -509,13 +593,23 @@ _
 	or a
 	ret
 	
+memcmp:
+	ld a,(de)
+	inc de
+	cpi
+	ret nz
+	ret po
+	jr memcmp
 
 	
 StartText:
 	.db "Starting!\n",0
 	
 ROMName:
-	.db appVarObj,ROMNAME,0
+	.db appVarObj,ROMNAME,0,0,0,0
+	
+MetaHeader:
+	.db "TIBOYCE",0
 	
 rom_start:
 	.dl 0
