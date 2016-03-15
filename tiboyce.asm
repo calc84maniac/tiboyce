@@ -5,9 +5,6 @@
 #endif
 
 ; Some configuration options
-#ifndef ROMNAME
-#define ROMNAME "PkmnR"
-#endif
 #ifndef SCANDELAY
 #define SCANDELAY 9
 #endif
@@ -22,11 +19,17 @@ _sprintf = $0000BC
 _GetCSC = $02014C
 _Mov9ToOP1 = $020320
 _chkFindSym = $02050C
+_ClrLCDFull = $020808
+_VPutSN = $020838
 _RunIndicOff = $020848
 _createAppVar = $021330
 _Delvar = $021438
 _Arc_Unarc = $021448
 _ChkInRAM = $021F98
+penCol = $D008D2
+penRow = $D008D5
+pTemp = $D0259A
+progPtr = $D0259D
 pixelShadow = $D031F6
 userMem = $D1A881
 vRam = $D40000
@@ -163,6 +166,112 @@ recompile_cache_end = gb_frame_buffer_1
 	
 	.db tExtTok, tAsm84CeCmp
 	.org userMem
+	
+	ld ix,rombankLUT
+	push ix
+	 call ROMSearch
+	 ld (lastROM),ix
+	pop hl
+	ld (menuFrame),hl
+	ld (menuSelection),hl
+	
+	call _RunIndicOff
+RedrawMenuClear:
+	ld hl,vRam
+	push hl
+	pop de
+	inc de
+	ld bc,320*240*2-1
+	ld (hl),c
+	ldir
+RedrawMenu:
+	ld ix,(menuFrame)
+	xor a
+	ld (penRow),a
+RedrawMenuLoop:
+	sbc hl,hl
+	ld (penCol),hl
+	ld hl,(lastROM)
+	lea de,ix
+	sbc hl,de
+	jr z,SelectionLoop
+	ld hl,(menuSelection)
+	sbc hl,de
+	res 3,(iy+5)
+	jr nz,_
+	set 3,(iy+5)
+_
+	ld hl,(ix)
+	call DrawMenuItem
+	lea ix,ix+3
+	ld a,(penRow)
+	add a,12
+	ld (penRow),a
+	xor 240
+	jr nz,RedrawMenuLoop
+	
+SelectionLoop:
+	halt
+	call _GetCSC
+	ld hl,(menuSelection)
+	cp 1
+	jr z,MenuDown
+	cp 4
+	jr z,MenuUp
+	cp 9
+	jr z,MenuEnter
+	cp 15
+	jr nz,SelectionLoop
+	ret
+	
+MenuDown:
+	inc hl
+	inc hl
+	inc hl
+	ld de,(lastROM)
+	sbc hl,de
+	jr z,SelectionLoop
+	add hl,de
+	ld (menuSelection),hl
+	ld a,(menuFrame)
+	sub l
+	add a,20*3
+	jp nz,RedrawMenu
+	ld (menuFrame),hl
+	jp RedrawMenuClear
+	
+MenuUp:
+	ld de,rombankLUT
+	sbc hl,de
+	jr z,SelectionLoop
+	add hl,de
+	ld a,(menuFrame)
+	cp l
+	dec hl
+	dec hl
+	dec hl
+	ld (menuSelection),hl
+	jp nz,RedrawMenu
+	ld de,-19*3
+	add hl,de
+	ld (menuFrame),hl
+	jp RedrawMenuClear
+	
+MenuEnter:
+	ld hl,(menuSelection)
+	ld hl,(hl)
+	ld de,-6
+	add hl,de
+	ld b,(hl)
+	ld de,ROMName+1
+_
+	dec hl
+	ld a,(hl)
+	ld (de),a
+	inc de
+	djnz -_
+	xor a
+	ld (de),a
 	
 	call LoadROM
 	ret c
@@ -536,6 +645,7 @@ LookUpAppvar:
 	call _Mov9ToOP1
 	call _chkFindSym
 	ret c
+GetDataSection:
 	call _ChkInRAM
 	ex de,hl
 	jr z,_
@@ -600,13 +710,79 @@ memcmp:
 	ret nz
 	ret po
 	jr memcmp
-
+	
+ROMSearch:
+	xor a
+	sbc hl,hl
+	ld (penCol),hl
+	ld (penRow),a
+	ld hl,(progPtr)
+	or a
+ROMSearchLoop:
+	ld (ix),hl
+	ex de,hl
+	ld hl,(pTemp)
+	sbc hl,de
+	ret z
+	ld a,(de)
+	ld hl,-7
+	add hl,de
+	ld de,(hl)
+	xor appVarObj
+	jr nz,NoMatch
+	push hl
+	 inc hl
+	 inc hl
+	 inc hl
+	 ld d,(hl)
+	 inc hl
+	 ld e,(hl)
+	 call GetDataSection
+	 ld de,MetaHeader
+	 ld bc,8
+	 call memcmp
+	 jr nz,_
+	 lea ix,ix+3
+_
+	pop hl
+	ld de,(hl)
+NoMatch:
+	ld e,1
+	mlt de
+	sbc hl,de
+	jr ROMSearchLoop
+	
+	
+DrawMenuItem:
+	ld de,-7
+	add hl,de
+	ld de,(hl)
+	inc hl
+	inc hl
+	inc hl
+	ld d,(hl)
+	inc hl
+	ld e,(hl)
+	call GetDataSection
+	ld de,9
+	add hl,de
+	ld b,(hl)
+	inc hl
+	jp _VPutSN
+	
+menuFrame:
+	.dl 0
+menuSelection:
+	.dl 0
+lastROM:
+	.dl 0
 	
 StartText:
 	.db "Starting!\n",0
 	
 ROMName:
-	.db appVarObj,ROMNAME,0,0,0,0
+	.db appVarObj
+	.block 9
 	
 MetaHeader:
 	.db "TIBOYCE",0
