@@ -904,3 +904,7 @@ fps:
 	.db 0,0
 fps_display:
 	.db 0,0
+#ifdef DBGNOSCALE
+current_buffer:
+	.dl 0
+#endif
