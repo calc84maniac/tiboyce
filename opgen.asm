@@ -161,11 +161,23 @@ _
 	cp $46		;LD r,(HL)
 	jr z,waitloop_found_read
 	ret.l
-waitloop_found_read_2:
-	inc hl
-	inc hl
-	inc de
 waitloop_found_read_1:
+	ld a,(de)
+	xor STAT & $FF
+	jr nz,waitloop_found_read_1_good
+	ret.l
+waitloop_found_read_2:
+	ld a,(de)
+	inc de
+	xor STAT & $FF
+	jr nz,waitloop_found_read_2_good
+	ld a,(de)
+	inc a
+	jr z,waitloop_failure_2
+waitloop_found_read_2_good:
+	inc hl
+	inc hl
+waitloop_found_read_1_good:
 	inc de
 waitloop_found_read:
 	push af
@@ -183,6 +195,7 @@ waitloop_continue:
 	 jr z,waitloop_found_data_op
 waitloop_failure:
 	pop af
+waitloop_failure_2:
 	ret.l
 waitloop_found_bitwise:
 	 ld a,(de)
@@ -236,8 +249,9 @@ waitloop_found_jr:
 	ld.s (hl),ix
 	lea ix,ix+waitloop_target-handle_waitloop
 	ld.sis (current_waitloop_2),ix
+	inc de
 	scf
-	jr waitloop_found_read_2
+	jr waitloop_found_read_2_good
 	
 waitloop_second_target:
 	ld.sis (current_waitloop_2),hl
