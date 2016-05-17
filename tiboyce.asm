@@ -78,7 +78,7 @@ mpKeypadGrp6 = $F5001C
 mpKeypadGrp7 = $F5001E
 
 #ifdef CEMU
-mpCEmuDbg = $FA0000
+mpCEmuDbg = $FB0000
 #endif
 
 mpZeroPage = $FF0000

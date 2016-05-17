@@ -245,8 +245,8 @@ _
 	    push.l ix
 	     ex de,hl
 	     call.il lookup_gb_code_address
-		 ld.lil (int_cached_return),ix
-		 ld.lil (int_cached_code),hl
+	     ld.lil (int_cached_return),ix
+	     ld.lil (int_cached_code),hl
 	     ld (intretaddr),de
 	     xor a
 	     ld (intstate),a
@@ -780,7 +780,7 @@ read_cram_bank_handler:
 	push hl
 	ld.lil hl,(cram_bank_base)
 	ex af,af'
-	add.l ix,de
+	add.l hl,de
 	ex af,af'
 	ld.l a,(hl)
 	exx
@@ -1072,7 +1072,7 @@ mem_write_vram_swap:
 	;IX=GB address, A=data
 mem_write_vram_always:
 	di
-	call.lil write_vram_and_expand
+	call.il write_vram_and_expand
 	ret
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
@@ -1149,6 +1149,10 @@ mem_write_cart_swap:
 	ex af,af'
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart_always:
+#ifdef DEBUG
+	di
+	call.il debug_cart_write
+#endif
 	ex af,af'
 	ld a,ixh
 	sub $20
