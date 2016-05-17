@@ -897,17 +897,18 @@ readSTAT:
 	ld ixl,a
 	ld a,(LCDC)
 	add a,a
-	jr nc,++_
+	jr nc,_
 	call updateLY
 	cp 144
-	jr nc,++_
+	jr nc,_
 	ld a,h
 	cp SCANDELAY * 204 / 456 - 1
-	jr c,_
+	jr c,++_
 	inc ixl
 	inc ixl
 	cp SCANDELAY * (204 + 172) / 456 - 1
-	jr nc,_
+	jr nc,++_
+_
 	inc ixl
 _
 	ld a,TMR_ENABLE

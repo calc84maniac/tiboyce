@@ -196,8 +196,11 @@ _
 	; Get memory region, 0-7
 	ld a,d
 	cp $FE
-	jr c,_
+	jr c,++_
 	inc e	; Exclude $FFFF from region 0
+	jr z,_
+	dec e
+_
 	rrca
 	and e
 	rrca
