@@ -918,9 +918,14 @@ _
 	ret
 	
 readLY:
+	ld a,(LCDC)
+	add a,a
+	sbc a,a
+	jr z,_
 	exx
 	call updateLY
 	exx
+_
 	ld ixl,a
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
@@ -1149,10 +1154,6 @@ mem_write_cart_swap:
 	ex af,af'
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart_always:
-#ifdef DEBUG
-	di
-	call.il debug_cart_write
-#endif
 	ex af,af'
 	ld a,ixh
 	sub $20

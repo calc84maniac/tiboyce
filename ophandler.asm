@@ -833,6 +833,10 @@ oam_transfer:
 updateLY_ADL:
 	xor a
 	ld (mpTimerCtrl),a
+	ld a,(hram_base+LCDC)
+	add a,a
+	sbc a,a
+	ret nc
 	ld hl,(mpTimer1Count+1)
 	dec hl
 	ld de,-SCANDELAY*128
@@ -895,6 +899,15 @@ _
 	ld a,(LCDC_5_smc)
 	xor $08	;JR NC vs JR C
 	ld (LCDC_5_smc),a
+_
+	bit 7,l
+	jr z,_
+	xor a
+	ld (mpTimerCtrl),a
+	sbc hl,hl
+	ld (mpTimer1Count),hl
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 _
 	ex af,af'
 	exx
