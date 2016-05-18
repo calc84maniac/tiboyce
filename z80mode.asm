@@ -250,11 +250,6 @@ _
 	     ld (intretaddr),de
 	     xor a
 	     ld (intstate),a
-	     ld a,(intmask)
-waitloop_request = $+1
-	     and 1
-	     jr nz,check_waitloop
-waitloop_done:
 	     ld a,(hl)
 	     ld (intsavecode),a
 	     ld (hl),RST_INTERRUPT
@@ -269,9 +264,11 @@ waitloop_done:
 	ret
 	
 check_waitloop:
-	push hl
-	 call.il identify_waitloop
-	pop hl
+	push af
+	 push bc
+	  call.il identify_waitloop
+	 pop bc
+	pop af
 	jr waitloop_done
 	
 do_interrupt:
@@ -279,9 +276,13 @@ do_interrupt:
 	ld.lil (mpTimerCtrl),a
 intsavecode = $+1
 	ld (hl),0
-	ld hl,IF
 intmask = $+1
 	ld a,0
+waitloop_request = $+2
+	tst a,0
+	jr nz,check_waitloop
+waitloop_done:
+	ld hl,IF
 	rrca
 	jr nc,_
 	ld a,1

@@ -69,23 +69,10 @@ _
 	ld hl,hram_base
 	ret
 	
-	; Input: DE = GB address, HL = recompiled address
+	
 identify_waitloop:
-#ifdef 0
-	push de
-	 push hl
-	  ld hl,WaitLoopCheckMessage
-	  push hl
-	   call printf
-	  pop hl
-	 pop hl
-	pop de
-#endif
-	push hl
-	 call get_base_address
-	 add hl,de
-	 ex de,hl
-	pop hl
+	ld hl,(int_cached_code)
+	ld de,(int_cached_return)
 	ld bc,opcodesizes
 	
 waitloop_find_jump:
@@ -265,6 +252,7 @@ waitloop_second_target:
 #endif
 	ret.l
 	
+#ifdef DEBUG
 WaitLoopCheckMessage:
 	.db "Checking for waitloop at %04X (%04X).\n",0
 WaitLoopFirstTargetMessage:
@@ -272,6 +260,7 @@ WaitLoopFirstTargetMessage:
 	
 WaitLoopSecondTargetMessage:
 	.db "A double waitloop, even!\n",0
+#endif
 	
 	; Get GB code address from recompiled code pointer (rounds up)
 	; Input: DE = code pointer
