@@ -132,97 +132,133 @@ _
 	; Check for a read
 	ld a,(de)
 	cp $CB		;Bitwise ops
-	jr z,waitloop_found_read
 	inc de
+	jr z,waitloop_found_read_bitwise
+	; Consume 3 bytes of recompiled code
 	inc hl
 	inc hl
 	inc hl
-	cp $F0
+	cp $F0		;LD A,($FF00+nn)
 	jr z,waitloop_found_read_1
-	cp $FA
+	cp $FA		;LD A,(nnnn)
 	jr z,waitloop_found_read_2
+	exx
+	push bc
 	cp $0A		;LD A,(BC)
-	jr z,waitloop_found_read
+	jr z,waitloop_found_read_rr
+	pop bc
+	push de
 	cp $1A		;LD A,(DE)
+	jr z,waitloop_found_read_rr
+	pop de
 	and $C7
 	cp $46		;LD r,(HL)
-	jr z,waitloop_found_read
+	jr z,waitloop_found_read_hl
+	exx
 	ret.l
+	
 waitloop_found_read_1:
+	; Use 8-bit immediate as read address
+	ld ix,$00FF00
 	ld a,(de)
-	xor STAT & $FF
-	jr nz,waitloop_found_read_1_good
-	ret.l
+	ld ixl,a
+	; Consume immediate value
+	inc de
+	jr waitloop_find_data_op
+	
 waitloop_found_read_2:
-	ld a,(de)
-	inc de
-	xor STAT & $FF
-	jr nz,waitloop_found_read_2_good
-	ld a,(de)
-	inc a
-	jr z,waitloop_failure_2
-waitloop_found_read_2_good:
+	; Use 16-bit immediate as read address
+	ex de,hl
+	ld ix,(hl)
+	lea.s ix,ix
+	ex de,hl
+waitloop_try_second_target:
+	; Consume 2 more bytes of recompiled code
 	inc hl
 	inc hl
-waitloop_found_read_1_good:
+	; Consume immediate value
 	inc de
-waitloop_found_read:
-	push af
-waitloop_continue:
-	 ld a,(de)
-	 inc de
-	 inc hl
-	 cp $CB		;Bitwise ops
-	 jr z,waitloop_found_bitwise
-	 and $C7
-	 cp $C6		;Immediate ALU ops
-	 jr z,waitloop_found_data_op_1
-	 and $C0
-	 cp $40		;Register ALU ops
-	 jr z,waitloop_found_data_op
-waitloop_failure:
-	pop af
-waitloop_failure_2:
+	inc de
+	jr waitloop_find_data_op
+	
+waitloop_found_read_bitwise:
+	ld a,(de)
+	and $C7
+	cp $46		;BIT b,(HL)
+	ret.l nz
+	; Parse this opcode as a data op
+	dec de
+	exx
+	
+waitloop_found_read_hl:
+	; Use HL as read address
+	push hl
+waitloop_found_read_rr:
+	; Use stack value as read address
+	exx
+	pop ix
+waitloop_find_data_op:
+	ld a,(de)
+	; Consume first byte of opcode and recompiled code
+	inc de
+	inc hl
+	cp $CB		;Bitwise ops
+	jr z,waitloop_found_data_op_bitwise
+	and $C7
+	cp $C6		;Immediate ALU ops
+	jr z,waitloop_found_data_op_1
+	and $C0
+	cp $80		;Register ALU ops
+	jr z,waitloop_found_data_op
 	ret.l
-waitloop_found_bitwise:
-	 ld a,(de)
-	 add a,$40
-	 jp po,waitloop_failure
+	
+waitloop_found_data_op_bitwise:
+	ld a,(de)
+	add a,$40	;BIT b,r
+	ret.l po
 waitloop_found_data_op_1:
-	 inc de
-	 inc hl
+	; Consume second byte of opcode and recompiled code
+	inc de
+	inc hl
 waitloop_found_data_op:
-	 ld a,(de)
-	 and $E7
-	 cp $20
-	 jr z,waitloop_found_jr
-	 cp $C2
-	 jr nz,waitloop_continue	;Allow multiple data operations
-	 inc de
+	ld a,(de)
+	and $E7
+	cp $20		;JR cc
+	jr z,waitloop_found_jr
+	cp $C2		;JP cc
+	jr nz,waitloop_find_data_op	;Allow multiple data operations
+	inc de	; Consume extra JP byte
 waitloop_found_jr:
-	 inc hl
-	 push hl
-	  ld.s hl,(hl)
-	  sbc hl,bc
-	 pop hl
-	 jr nz,waitloop_failure
-	pop af
-	jr c,waitloop_second_target
+	; Validate the recompiled target address
+	inc hl
+	push hl
+	 ld.s hl,(hl)
+	 sbc hl,bc
+	 jr nz,waitloop_failure_pop
+	
+	 ; Check if read address is STAT
+	 ld a,ixl
+	 add a,$FFFF - STAT
+	 and ixh
+	 ; If high bit of IX was set, this was the second target
+	 add ix,ix
+	 jr c,waitloop_second_target
+	 ; If STAT, then leave
+	 inc a
+	 jr z,waitloop_failure_pop
 	
 #ifdef DEBUG
-	push de
-	 push hl
+	 push de
 	  push bc
 	   ld hl,WaitLoopFirstTargetMessage
 	   push hl
 	    call printf
 	   pop hl
 	  pop bc
-	 pop hl
-	pop de
+	 pop de
 #endif
 	
-	push hl
+	 ; Restore previous waitloop to its original target
 	 ld.sis ix,(waitloop_target)
 	 ld.sis hl,(current_waitloop_1)
 	 ld.s (hl),ix
@@ -230,17 +266,25 @@ waitloop_found_jr:
 	 ld.s (hl),ix
 	pop hl
 	
+	; Set first target
 	ld.sis (current_waitloop_1),hl
 	ld.sis (waitloop_target),bc
-	ld ix,handle_waitloop
+	; Set high bit of IX to indicate second target
+	ld ix,handle_waitloop+$800000
 	ld.s (hl),ix
+	; Set dummy second target
 	lea ix,ix+waitloop_target-handle_waitloop
 	ld.sis (current_waitloop_2),ix
-	inc de
-	scf
-	jr waitloop_found_read_2_good
+#ifdef DEBUG
+	jp waitloop_try_second_target
+#else
+	jr waitloop_try_second_target
+#endif
 	
 waitloop_second_target:
+	pop hl
+	
+	; Set second target
 	ld.sis (current_waitloop_2),hl
 	ld de,handle_waitloop
 	ld.s (hl),de
@@ -250,6 +294,9 @@ waitloop_second_target:
 	 call printf
 	pop hl
 #endif
+	push hl
+waitloop_failure_pop:
+	pop hl
 	ret.l
 	
 #ifdef DEBUG
