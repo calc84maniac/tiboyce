@@ -1268,12 +1268,11 @@ mbc_2000_finish:
 	 jr nz,_
 	 inc a
 _
-	 ld c,a
-	 ld a,b
-	 cpl
 curr_rom_bank = $+1
-	 and 1
-	 or c
+	 ld c,1
+	 xor c
+	 and b
+	 xor c
 	 ld c,a
 	 ld (curr_rom_bank),a
 	 ld b,3
