@@ -101,11 +101,6 @@ opgen_next:
 opgenCB:
 	ldi
 	ld a,(hl)
-#ifdef CEMU
-	sub $30
-	cp $08
-	jr c,opgenswap
-#endif
 	and $07
 	cp $06
 	jr nz,opgen1byte
