@@ -186,7 +186,10 @@ _
 	  cp (hl)
 	  jr nz,test_interrupts
 #endcomment
-	  ld hl,STAT
+	  ld hl,LCDC
+	  bit 7,(hl)
+	  jr z,test_interrupts
+	  inc hl
 	  bit 6,(hl)
 	  jr z,test_interrupts
 	  ld l,IF & $FF
