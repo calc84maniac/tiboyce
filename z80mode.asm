@@ -909,28 +909,33 @@ readDIV:
 readSTAT:
 	exx
 	ld a,(STAT)
-	and $FC
-	ld ixl,a
+	and $F8
+	ld c,a
 	ld a,(LCDC)
 	add a,a
 	jr nc,_
+	ld ix,(LYC)
 	call updateLY
+	cp ixl
+	jr nz,_
+	set 2,c
+_
 	cp 144
 	jr nc,_
 	ld a,h
 	cp SCANDELAY * 204 / 456 - 1
 	jr c,++_
-	inc ixl
-	inc ixl
+	set 1,c
 	cp SCANDELAY * (204 + 172) / 456 - 1
 	jr nc,++_
 _
-	inc ixl
+	inc c
 _
+	ld ixl,c
+	exx
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
 	ex af,af'
-	exx
 	ret
 	
 readLY:

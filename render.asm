@@ -381,6 +381,14 @@ palettecode:
 	.dw 0,0,0,0,0,0,0,0
 	.dw 0,0,0,0,0,0,-1,0
 	
+render_scanline_off:
+	lea hl,iy+1
+	lea de,iy+2
+	ld bc,159
+	ld (hl),$EE	;White pixels
+	ldir
+	jp render_scanline_next
+	
 	; Input: A=LY (A<144 unless called from vblank)
 render_scanlines:
 myLY = $+1
@@ -401,6 +409,8 @@ scanline_ptr = $+2
 render_scanline_loop:
 	  push hl
 	   ld ix,hram_base+ioregs
+	   bit 7,(ix-ioregs+LCDC)
+	   jr z,render_scanline_off
 	   ld a,(ix-ioregs+SCY)
 	   add a,h
 	   rrca
@@ -436,6 +446,7 @@ LCDC_3_smc = $+1
 	   add hl,de
 	   ld.s sp,hl
 	 
+LCDC_0_smc = $+3
 	   ld hl,vram_pixels_start
 	   ld l,b
 	 
@@ -489,6 +500,7 @@ _
 scanline_no_window:
 	   call scanline_do_render
 	 
+render_scanline_next:
 	   ; Store current scanline pointer minus 1 in LUT
 	   ; Or store -1 if sprites are disabled
 	   scf

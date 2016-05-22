@@ -699,9 +699,11 @@ _
 	  call render_scanlines
 	  
 	  ; Display sprites
+	  ld a,(hram_base+LCDC)
+	  rla
 	  push ix
 	   push iy
-	    call draw_sprites
+	    call c,draw_sprites
 	   pop iy
 	  pop ix
 #ifndef DBGNOSCALE
@@ -876,6 +878,12 @@ lcdc_write:
 	ex af,af'
 	xor (hl)
 	ld l,a
+	bit 0,l
+	jr z,_
+	ld a,(LCDC_0_smc)
+	xor (vram_pixels_start >> 16) ^ $FF
+	ld (LCDC_0_smc),a
+_
 	bit 1,l
 	jr z,_
 	ld a,(LCDC_1_smc)
