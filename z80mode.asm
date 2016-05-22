@@ -1267,10 +1267,6 @@ _
 	 ld b,$7F
 mbc_2000_finish:
 	 ld a,c
-	 and b
-	 jr nz,_
-	 inc a
-_
 curr_rom_bank = $+1
 	 ld c,1
 	 xor c

@@ -150,6 +150,7 @@ wram_start = vram_start + $4000
 memroutineLUT = vram_start + $6000
 scanlineLUT = memroutineLUT + $0200
 rombankLUT = scanlineLUT + (174*3)
+rombankLUT_end = rombankLUT + (128*3)
 hram_start = z80codebase + $FE00
 
 vram_base = vram_start - $8000
@@ -167,15 +168,39 @@ recompile_cache_end = gb_frame_buffer_1
 	.db tExtTok, tAsm84CeCmp
 	.org userMem
 	
+	call _RunIndicOff
+	or a
+	sbc hl,hl
+	ld (menuFrame),hl
+	
+RepopulateMenu:
 	ld ix,rombankLUT
 	push ix
 	 call ROMSearch
 	 ld (lastROM),ix
-	pop hl
-	ld (menuFrame),hl
-	ld (menuSelection),hl
+	pop bc
+	lea hl,ix
+	or a
+	sbc hl,bc
+	ex de,hl
 	
-	call _RunIndicOff
+	ld hl,(menuFrame)
+	sbc hl,bc
+	jr c,RepopulateMenuTop
+	sbc hl,de
+	jr nc,RepopulateMenuTop
+	
+	ld hl,(menuSelection)
+	or a
+	sbc hl,bc
+	jr c,RepopulateMenuTop
+	sbc hl,de
+	jr c,RedrawMenuClear
+	
+RepopulateMenuTop:
+	ld (menuFrame),bc
+	ld (menuSelection),bc
+	
 RedrawMenuClear:
 	ld hl,vRam
 	push hl
@@ -273,6 +298,11 @@ _
 	xor a
 	ld (de),a
 	
+	call StartROM
+	ret c
+	jp RepopulateMenu
+	
+StartROM:
 	call LoadROM
 	ret c
 	
@@ -285,7 +315,7 @@ _
 	ld a,(hl)
 	ld b,0
 	or a
-	jr z,mbc_valid
+	jr z,mbc_valid_no_carry
 	inc b	;MBC1
 	dec a
 	cp $04-$01
@@ -297,10 +327,37 @@ _
 	inc b	;MBC3
 	sub $0F-$05
 	cp $14-$0F
-	ret nc
 mbc_valid:
+	ccf
+mbc_valid_no_carry:
+	ret c
 	ld a,b
 	ld (mbc),a
+	
+	; Mirror ROM across all banks
+	lea de,ix
+	ld hl,rombankLUT_end
+	sbc hl,de
+	jr z,_
+	ret c
+	push hl
+	pop bc
+	ld hl,rombankLUT
+	ldir
+_
+	
+	; Handle MBC-specific mirrors
+	ld hl,(rombankLUT+3)
+	ld (rombankLUT),hl
+	dec a	;MBC1
+	jr nz,_
+	ld hl,(rombankLUT+($21*3))
+	ld (rombankLUT+($20*3)),hl
+	ld hl,(rombankLUT+($41*3))
+	ld (rombankLUT+($40*3)),hl
+	ld hl,(rombankLUT+($61*3))
+	ld (rombankLUT+($60*3)),hl
+_
 	
 	call LoadRAM
 	ret c
@@ -428,7 +485,6 @@ mbc_valid:
 	push.s hl
 	
 	ld hl,(rombankLUT+3)
-	ld (rombankLUT),hl
 	ld (rom_bank_base),hl
 	
 	ld a,(mbc)
@@ -483,6 +539,7 @@ saveSP = $+1
 	pop hl
 	ld (mpIntEnable),hl
 	pop iy
+	or a
 	ei
 	ret
 	
