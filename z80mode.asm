@@ -393,6 +393,19 @@ updateLY:
 	sub l
 	ret
 	
+next_event:
+	ld.lil ix,mpTimer1Count
+	exx
+	call updateLY
+	ld h,SCANDELAY
+	mlt hl
+	ld.l (ix+1),hl
+	ld.l (ix),0
+	exx
+	ld a,TMR_ENABLE
+	ld.l (ix-mpTimer1Count+mpTimerCtrl),a
+	ret
+	
 flush_handler:
 	di
 	exx
@@ -581,16 +594,7 @@ waitloop_target = $+2
 	ld a,(waitloop_request)
 	dec a
 	jr z,_
-	exx
-	call updateLY
-	ld h,SCANDELAY
-	mlt hl
-	ld.lil (mpTimer1Count+1),hl
-	exx
-	xor a
-	ld.lil (mpTimer1Count),a
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
+	call next_event
 	ex af,af'
 	ei
 	ret
@@ -601,16 +605,7 @@ _
 	ret
 	
 haltloop:
-	exx
-	call updateLY
-	ld h,SCANDELAY
-	mlt hl
-	ld.lil (mpTimer1Count+1),hl
-	exx
-	xor a
-	ld.lil (mpTimer1Count),a
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
+	call next_event
 	ex af,af'
 ophandler76:
 	ex af,af'
