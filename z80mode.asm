@@ -587,6 +587,8 @@ waitloop_target = $+2
 	mlt hl
 	ld.lil (mpTimer1Count+1),hl
 	exx
+	xor a
+	ld.lil (mpTimer1Count),a
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
 	ex af,af'
@@ -599,17 +601,19 @@ _
 	ret
 	
 haltloop:
-	di
+	exx
+	call updateLY
+	ld h,SCANDELAY
+	mlt hl
+	ld.lil (mpTimer1Count+1),hl
+	exx
 	xor a
-	ld.lil (mpTimerCtrl),a
+	ld.lil (mpTimer1Count),a
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
 	ex af,af'
-	ei
-	halt
 ophandler76:
 	ex af,af'
-_
 	xor a
 	ld (waitloop_request),a
 	ld a,i
@@ -1070,8 +1074,7 @@ mem_write_bail:
 	
 writeLCDC:
 	di
-	call.il lcdc_write
-	ret
+	jp.lil lcdc_write
 	
 mem_write_any_ports:
 	push hl

@@ -919,7 +919,8 @@ _
 _
 	ex af,af'
 	exx
-	ret.l
+	pop.s ix
+	jp.s (ix)
 	
 fps:
 	.db 0,0
