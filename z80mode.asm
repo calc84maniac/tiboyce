@@ -580,7 +580,19 @@ waitloop_target = $+2
 	ex af,af'
 	ld a,(waitloop_request)
 	dec a
-	jr nz,_
+	jr z,_
+	exx
+	call updateLY
+	ld h,SCANDELAY
+	mlt hl
+	ld.lil (mpTimer1Count+1),hl
+	exx
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
+	ex af,af'
+	ei
+	ret
+_
 	ld (waitloop_request),a
 	ex af,af'
 	ei
