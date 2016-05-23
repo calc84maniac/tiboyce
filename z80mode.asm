@@ -553,16 +553,32 @@ ophandler39:
 	ei
 	ret
 	
+handle_waitloop_stat:
+	di
+	ex af,af'
+	exx
+	call updateLY
+	cp 144
+	jr nc,_
+	ld a,h
+	sub SCANDELAY * 204 / 456 - 1
+	jr c,_
+	ld h,a
+	sub (SCANDELAY * (204 + 172) / 456) - (SCANDELAY * 204 / 456)
+	jr c,_
+	ld h,a
+	jr _
+	
 handle_waitloop_variable:
 handle_waitloop_ly:
 	di
 	ex af,af'
 	exx
 	call updateLY
+_
 	call.il skip_cycles
 	exx
 	ex af,af'
-handle_waitloop_stat:
 	pop ix
 	ld ix,(ix)
 	ei
