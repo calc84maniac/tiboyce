@@ -577,10 +577,10 @@ handle_waitloop_ly:
 	call updateLY
 _
 	call.il skip_cycles
+	pop hl
+	ld ix,(hl)
 	exx
 	ex af,af'
-	pop ix
-	ld ix,(ix)
 	ei
 	jp (ix)
 	
