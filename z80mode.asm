@@ -612,8 +612,12 @@ ophandler76:
 	xor a
 	ld (waitloop_request),a
 	di
-	ld.lil a,(mpIntMaskedStatus)
-	and $10
+	exx
+	ld hl,IF
+	ld a,(hl)
+	ld l,h
+	and (hl)
+	exx
 	jr z,haltloop
 	ex af,af'
 	ei
