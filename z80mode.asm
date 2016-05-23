@@ -266,14 +266,6 @@ _
 	ei
 	ret
 	
-check_waitloop:
-	push af
-	 push bc
-	  call.il identify_waitloop
-	 pop bc
-	pop af
-	jr waitloop_done
-	
 do_interrupt:
 	xor a
 	ld.lil (mpTimerCtrl),a
@@ -281,15 +273,9 @@ intsavecode = $+1
 	ld (hl),0
 intmask = $+1
 	ld a,0
-waitloop_request = $+2
-	tst a,0
-	jr nz,check_waitloop
-waitloop_done:
 	ld hl,IF
 	rrca
 	jr nc,_
-	ld a,1
-	ld (waitloop_request),a
 	res 0,(hl)
 	ld de,$0040
 	jr dispatch_int
@@ -580,28 +566,16 @@ ophandler39:
 	ei
 	ret
 	
-current_waitloop_1:
-	.dw waitloop_target
-current_waitloop_2:
-	.dw waitloop_target
-	
-handle_waitloop:
-waitloop_target = $+2
-	ld ix,0
-	push ix
+handle_waitloop_variable:
+handle_waitloop_ly:
 	ex af,af'
-	ld a,(waitloop_request)
-	dec a
-	jr z,_
 	call next_event
 	ex af,af'
+handle_waitloop_stat:
+	pop ix
+	ld ix,(ix)
 	ei
-	ret
-_
-	ld (waitloop_request),a
-	ex af,af'
-	ei
-	ret
+	jp (ix)
 	
 haltloop:
 	call next_event
@@ -609,11 +583,9 @@ haltloop:
 	ex af,af'
 ophandler76:
 	ex af,af'
-	xor a
-	ld (waitloop_request),a
-	di
 	exx
 	ld hl,IF
+	di
 	ld a,(hl)
 	ld l,h
 	and (hl)
