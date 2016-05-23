@@ -425,12 +425,13 @@ _
 	ld (mpTimerCtrl),hl
 	ld (mpTimer1Count),hl
 	ld (mpTimer1Count+3),a
+	dec hl
 	ld (mpTimer1Match1),hl
 	ld (mpTimer1Match1+3),a
-	ld hl,FRAME_LENGTH
+	ld hl,FRAME_LENGTH - 1
 	ld (mpTimer1Reset),hl
 	ld (mpTimer1Reset+3),a
-	ld hl,FRAME_LENGTH - (SCANDELAY*256*144)
+	ld hl,FRAME_LENGTH - (SCANDELAY*256*144) - 1
 	ld (mpTimer1Match2),hl
 	ld (mpTimer1Match2+3),a
 	

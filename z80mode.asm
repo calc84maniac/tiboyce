@@ -379,7 +379,6 @@ updateLY:
 	xor a
 	ld.lil (mpTimerCtrl),a
 	ld.lil hl,(mpTimer1Count+1)
-	dec hl
 	ld de,-SCANDELAY*128
 	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
 	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
@@ -606,13 +605,16 @@ _
 	
 haltloop:
 	call next_event
+	ei
 	ex af,af'
 ophandler76:
 	ex af,af'
 	xor a
 	ld (waitloop_request),a
-	ld a,i
-	jp pe,haltloop
+	di
+	ld.lil a,(mpIntMaskedStatus)
+	and $10
+	jr z,haltloop
 	ex af,af'
 	ei
 	ret
@@ -1158,6 +1160,7 @@ writeLYCswap:
 	ld l,a
 	ld h,SCANDELAY
 	mlt hl
+	dec hl
 	ld.lil (mpTimer1Match1+1),hl
 	ex af,af'
 	ld (LYC),a

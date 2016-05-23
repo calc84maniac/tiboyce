@@ -840,7 +840,6 @@ updateLY_ADL:
 	sbc a,a
 	ret nc
 	ld hl,(mpTimer1Count+1)
-	dec hl
 	ld de,-SCANDELAY*128
 	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
 	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
