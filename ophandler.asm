@@ -1158,6 +1158,16 @@ _
 	pop.s ix
 	jp.s (ix)
 	
+skip_cycles:
+	ld ix,mpTimer1Count
+	ld l,(ix)
+	ex de,hl
+	ld hl,(ix)
+	sbc hl,de
+	ld (ix),hl
+	ld (ix-mpTimer1Count+mpTimerCtrl),TMR_ENABLE
+	ret.l
+	
 fps:
 	.db 0,0
 fps_display:

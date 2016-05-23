@@ -378,19 +378,6 @@ updateLY:
 	sub l
 	ret
 	
-next_event:
-	ld.lil ix,mpTimer1Count
-	exx
-	call updateLY
-	ld h,SCANDELAY
-	mlt hl
-	ld.l (ix+1),hl
-	ld.l (ix),0
-	exx
-	ld a,TMR_ENABLE
-	ld.l (ix-mpTimer1Count+mpTimerCtrl),a
-	ret
-	
 flush_handler:
 	di
 	exx
@@ -568,8 +555,12 @@ ophandler39:
 	
 handle_waitloop_variable:
 handle_waitloop_ly:
+	di
 	ex af,af'
-	call next_event
+	exx
+	call updateLY
+	call.il skip_cycles
+	exx
 	ex af,af'
 handle_waitloop_stat:
 	pop ix
@@ -577,20 +568,22 @@ handle_waitloop_stat:
 	ei
 	jp (ix)
 	
-haltloop:
-	call next_event
-	ei
-	ex af,af'
 ophandler76:
 	ex af,af'
 	exx
-	ld hl,IF
+haltloop:
 	di
+	ld hl,IF
 	ld a,(hl)
 	ld l,h
 	and (hl)
+	jr nz,haltdone
+	call updateLY
+	call.il skip_cycles
+	ei
+	jr haltloop
+haltdone:
 	exx
-	jr z,haltloop
 	ex af,af'
 	ei
 	ret
