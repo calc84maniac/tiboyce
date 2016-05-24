@@ -756,6 +756,7 @@ write_cram_bank_handler:
 	ex af,af'
 	ld.l (hl),a
 	exx
+	ei
 	ret
 	
 read_rom_bank_handler:
@@ -771,6 +772,7 @@ read_rom_bank_handler:
 	ex af,af'
 	ld.l a,(hl)
 	exx
+	ei
 	ret
 	
 read_cram_bank_handler:
@@ -786,6 +788,7 @@ read_cram_bank_handler:
 	ex af,af'
 	ld.l a,(hl)
 	exx
+	ei
 	ret
 	
 readP1handler:
