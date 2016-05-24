@@ -1162,10 +1162,155 @@ skip_cycles:
 	ld ix,mpTimer1Count
 	ld l,(ix)
 	ex de,hl
+	ld hl,(ix-mpTimer1Count+mpTimer2Count)
+	sbc hl,de
+	jr nc,_
+	add hl,de
+	ex de,hl
+	or a
+	sbc hl,hl
+_
+	ld (ix-mpTimer1Count+mpTimer2Count),hl
 	ld hl,(ix)
 	sbc hl,de
 	ld (ix),hl
 	ld (ix-mpTimer1Count+mpTimerCtrl),TMR_ENABLE
+	ret.l
+	
+updateTIMA:
+	xor a
+	ld (mpTimerCtrl),a
+	exx
+	ld hl,(mpTimer2Count)
+updateTIMA_smc = $+1
+	ld de,-80
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	ld a,l
+	exx
+	cpl
+	ld (hram_base+TIMA),a
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
+	ret.l
+	
+tac_write:
+	ld a,(hram_base+TAC)
+	bit 2,a
+	call.il nz,updateTIMA
+	exx
+	ex af,af'
+	ld (hram_base+TAC),a
+	ld l,a
+	ex af,af'
+	bit 2,l
+	jr nz,_
+	scf
+	sbc hl,hl
+	ld (mpTimer3Reset),hl
+	exx
+	ex af,af'
+	jr ++_
+_
+	xor a
+	sub l
+	and 3
+	add a,a
+	ld (tac_write_smc),a
+	ld (tma_write_smc),a
+	ld (tima_write_smc),a
+	ld hl,-80
+tac_write_smc = $+1
+	jr $
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	dec hl
+	ld (updateTIMA_smc),hl
+	exx
+	call.il tma_write_always
+	ex af,af'
+	call.il tima_write_always
+_
+	pop.s ix
+	jp.s (ix)
+	
+tma_write:
+	ex af,af'
+	ld (hram_base+TMA),a
+	ex af,af'
+	ld a,(hram_base+TAC)
+	bit 2,a
+	jr z,_
+tma_write_always:
+	xor a
+	ld (mpTimerCtrl),a
+	exx
+	ld a,(hram_base+TMA)
+	neg
+	ld l,a
+	ld h,SCANDELAY*256*16/456
+	jr z,_
+	mlt hl
+_
+tma_write_smc = $+1
+	jr $
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	dec hl
+	ld (mpTimer2Reset),hl
+	exx
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
+_
+	ex af,af'
+	ret.l
+	
+tima_write:
+	ex af,af'
+	ld (hram_base+TIMA),a
+	ex af,af'
+	ld a,(hram_base+TAC)
+	bit 2,a
+	jr z,_
+tima_write_always:
+	xor a
+	ld (mpTimerCtrl),a
+	exx
+	ld a,(hram_base+TIMA)
+	neg
+	ld l,a
+	ld h,SCANDELAY*256*16/456
+	jr z,_
+	mlt hl
+_
+tima_write_smc = $+1
+	jr $
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	ld (mpTimer2Count),hl
+	exx
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
+_
+	ex af,af'
 	ret.l
 	
 fps:

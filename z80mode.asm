@@ -64,8 +64,10 @@ rst38h:
 	 rra
 	 jr c,on_interrupt
 	 rra
+	 jp c,scanline_interrupt
+	 rra
 	 jp c,timer_interrupt
-	 bit 2,a
+	 bit 1,a
 	 jr nz,soft_interrupt
 	pop af
 	ei
@@ -144,11 +146,11 @@ soft_interrupt:
 	 push.l hl
 	  xor a
 	  ld.lil (mpTimerCtrl),a
-	  ld a,$03
+	  ld a,$07
 	  ld.lil (mpIntEnable),a
 	  jr test_interrupts
 	  
-timer_interrupt:
+scanline_interrupt:
 	 push.l hl
 	  ld.lil hl,mpTimerCtrl
 	  ld.l (hl),0
@@ -165,27 +167,6 @@ _
 	  ld.lil (mpIntAcknowledge),a
 	  jr nc,test_interrupts
 	  
-#comment
-	  ld.lil hl,(mpTimer1Match1+1)
-	  ld a,l
-	  sub SCANDELAY
-	  ld l,a
-	  jr nc,_
-	  dec h
-	  jp p,_
-	  ld a,h
-	  ld (LY),a
-	  ld hl,SCANDELAY*153
-_
-	  ld.lil (mpTimer1Match1+1),hl
-	  
-	  ld hl,LY
-	  inc (hl)
-	  ld a,(hl)
-	  inc hl
-	  cp (hl)
-	  jr nz,test_interrupts
-#endcomment
 	  ld hl,LCDC
 	  bit 7,(hl)
 	  jr z,test_interrupts
@@ -207,9 +188,23 @@ noints:
 	 pop.l hl
 	 ld a,TMR_ENABLE
 	 ld.lil (mpTimerCtrl),a
+interrupt_fast_exit:
 	pop af
 	ei
 	ret
+	
+timer_interrupt:
+	 ld a,4
+	 ld.lil (mpIntAcknowledge),a
+	 ld a,(TAC)
+	 bit 2,a
+	 jr z,interrupt_fast_exit
+	 xor a
+	 ld.lil (mpTimerCtrl),a
+	 push.l hl
+	  ld hl,IF
+	  set 2,(hl)
+	  jr test_interrupts
 	
 interrupt_get:
 	  ld (intmask),a
@@ -805,6 +800,13 @@ readDIVhandler:
 	ei
 	ret
 	
+readTIMAhandler:
+	ex af,af'
+	call readTIMA
+	ld a,ixl
+	ei
+	ret
+	
 readLYhandler:
 	ex af,af'
 	call readLY
@@ -816,6 +818,24 @@ readSTAThandler:
 	ex af,af'
 	call readSTAT
 	ld a,ixl
+	ei
+	ret
+	
+writeTIMAhandler:
+	ex af,af'
+	call writeTIMA
+	ei
+	ret
+	
+writeTMAhandler:
+	ex af,af'
+	call writeTMA
+	ei
+	ret
+	
+writeTAChandler:
+	ex af,af'
+	call writeTAC
 	ei
 	ret
 	
@@ -955,6 +975,8 @@ mem_read_ports_always:
 	add a,a
 	jr c,mem_read_oam
 	jr z,readP1
+	cp TIMA*2 & $FF
+	jr z,readTIMA
 	cp LY*2 & $FF
 	jr z,readLY
 	cp DIV*2 & $FF
@@ -962,8 +984,16 @@ mem_read_ports_always:
 	cp STAT*2 & $FF
 	jr z,readSTAT
 mem_read_oam:
-	ld a,(ix)
-	ld ixl,a
+	ld ix,(ix)
+	ex af,af'
+	ret
+	
+readTIMA:
+	ld a,(TAC)
+	bit 2,a
+	di
+	call.il nz,updateTIMA
+	ld ix,(TIMA)
 	ex af,af'
 	ret
 	
@@ -1003,6 +1033,12 @@ _
 	ex de,hl
 	ret
 	
+mem_read_bail:
+	pop ix
+mem_write_bail_a:
+	lea ix,ix-8
+	jp (ix)
+	
 mem_read_any_ports:
 	jr z,_
 	ld a,l
@@ -1017,13 +1053,6 @@ mem_read_any_ports:
 _
 	ld a,(hl)
 	ret
-	
-
-mem_read_bail:
-	pop ix
-mem_write_bail_a:
-	lea ix,ix-8
-	jp (ix)
 	
 	;HL=GB address, A=data, preserves AF, destroys AF'
 mem_write_any:
@@ -1060,6 +1089,20 @@ mem_write_bail:
 writeLCDC:
 	di
 	jp.lil lcdc_write
+	
+writeTAC:
+	di
+	jp.lil tac_write
+	
+writeTMA:
+	di
+	call.il tma_write
+	ret
+	
+writeTIMA:
+	di
+	call.il tima_write
+	ret
 	
 mem_write_any_ports:
 	push hl
@@ -1109,7 +1152,13 @@ mem_write_ports_swap:
 	inc a
 	jp m,mem_write_oam_swap
 	jr z,writeINT
-	sub (IF & $FF) + 1
+	sub (TIMA & $FF) + 1
+	jr z,writeTIMA
+	dec a
+	jr z,writeTMA
+	dec a
+	jr z,writeTAC
+	sub IF - TAC
 	jr z,writeINT
 	sub LCDC - IF
 	jr z,writeLCDC

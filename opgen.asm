@@ -980,7 +980,22 @@ _
 	ld bc,writeIEhandler
 	jr opgenHMEMwriteroutine
 _
-	sub (IF & $FF)+1
+	sub (TIMA & $FF)+1
+	jr nz,_
+	ld bc,writeTIMAhandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
+	jr nz,_
+	ld bc,writeTMAhandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
+	jr nz,_
+	ld bc,writeTAChandler
+	jr opgenHMEMwriteroutine
+_
+	sub IF - TAC
 	jr nz,_
 	ld bc,writeIFhandler
 	jr opgenHMEMwriteroutine
@@ -1160,29 +1175,27 @@ _
 	ld a,c
 	rlca
 	jr c,opgenHRAMread
-#comment
-	cp $44<<1
-	jr nz,_
-	ld bc,readLY
-	jr opgenHMEMreadroutine
-_
-#endcomment
-	cp $04<<1
+	cp DIV*2 & $FF
 	jr nz,_
 	ld bc,readDIVhandler
 	jr opgenHMEMreadroutine
 _
-	cp $44<<1
+	cp TIMA*2 & $FF
+	jr nz,_
+	ld bc,readTIMAhandler
+	jr opgenHMEMreadroutine
+_
+	cp LY*2 & $FF
 	jr nz,_
 	ld bc,readLYhandler
 	jr opgenHMEMreadroutine
 _
-	cp $41<<1
+	cp STAT*2 & $FF
 	jr nz,_
 	ld bc,readSTAThandler
 	jr opgenHMEMreadroutine
 _
-	cp $00<<1
+	cp P1*2 & $FF
 	jr nz,opgenHRAMread
 	ld bc,readP1handler
 opgenHMEMreadroutine:

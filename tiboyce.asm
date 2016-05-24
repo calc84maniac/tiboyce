@@ -49,7 +49,7 @@ mpIntAcknowledge = $F00008
 mpIntLatch = $F0000C
 mpIntMaskedStatus = $F00014
 
-TMR_ENABLE = 1
+TMR_ENABLE = %00101001
 mpTimer1Count = $F20000
 mpTimer1Reset = $F20004
 mpTimer1Match1 = $F20008
@@ -368,7 +368,7 @@ _
 	push hl
 	ld hl,(mpIntLatch)
 	push hl
-	ld hl,$000003
+	ld hl,$000007
 	ld (mpIntEnable),hl
 	set 4,l
 	ld (mpIntLatch),hl
@@ -425,9 +425,17 @@ _
 	ld (mpTimerCtrl),hl
 	ld (mpTimer1Count),hl
 	ld (mpTimer1Count+3),a
+	ld (mpTimer2Count),hl
+	ld (mpTimer2Count+3),a
+	ld (mpTimer2Match1),hl
+	ld (mpTimer2Match1+3),a
+	ld (mpTimer2Match2),hl
+	ld (mpTimer2Match2+3),a
 	dec hl
 	ld (mpTimer1Match1),hl
 	ld (mpTimer1Match1+3),a
+	ld (mpTimer2Reset),hl
+	ld (mpTimer2Reset+3),a
 	ld hl,FRAME_LENGTH - 1
 	ld (mpTimer1Reset),hl
 	ld (mpTimer1Reset+3),a
