@@ -119,10 +119,12 @@ waitloop_found_read_rr:
 	exx
 	pop bc
 waitloop_find_data_op:
-	ld a,(hl)
-	; Consume first byte of opcode and recompiled code
-	inc hl
+	; Consume first byte of recompiled code
 	inc de
+waitloop_find_data_op_again:
+	ld a,(hl)
+	; Consume first byte of opcode
+	inc hl
 	cp $CB		;Bitwise ops
 	jr z,waitloop_found_data_op_bitwise
 	and $C7
@@ -143,11 +145,11 @@ waitloop_found_data_op_1:
 	inc de
 waitloop_found_data_op:
 	; See if we reached the loop end
+	inc de
 	push hl
 	pop.s hl
 	push.s hl
-	scf
-	sbc.s hl,de
+	sbc.s hl,de	;Carry is reset
 	pop hl
 	jr z,waitloop_identified
 	
@@ -156,7 +158,7 @@ waitloop_found_data_op:
 	cp $20		;JR cc
 	jr z,waitloop_found_jr
 	cp $C2		;JP cc
-	jr nz,waitloop_find_data_op	;Allow multiple data operations
+	jr nz,waitloop_find_data_op_again	;Allow multiple data operations
 	
 	; Validate the JP target address
 	inc hl
@@ -175,7 +177,6 @@ waitloop_found_data_op:
 	cp d
 _
 	pop de
-	inc de
 	jr z,waitloop_try_next_target
 	ret
 	
@@ -197,7 +198,6 @@ waitloop_jr_smc = $+1
 	cp d
 _
 	pop de
-	inc de
 	jr z,waitloop_try_next_target
 	ret
 	
@@ -219,14 +219,13 @@ waitloop_identified:
 	
 	ld hl,(z80codebase+memroutine_next)
 	ld de,-5
-	add hl,de
+	add hl,de	;Sets C flag
 	
 	; Bail if not enough room for trampoline
 	ex de,hl
 	ld hl,(recompile_struct_end)
 	ld hl,(hl)
-	scf
-	sbc hl,de
+	sbc hl,de	;Carry is set
 	ret nc
 	ex de,hl
 	ld (z80codebase+memroutine_next),hl
@@ -1250,7 +1249,7 @@ tma_write:
 	ex af,af'
 	ld a,(hram_base+TAC)
 	bit 2,a
-	jr z,_
+	jr z,++_
 tma_write_always:
 	xor a
 	ld (mpTimerCtrl),a
@@ -1285,7 +1284,7 @@ tima_write:
 	ex af,af'
 	ld a,(hram_base+TAC)
 	bit 2,a
-	jr z,_
+	jr z,++_
 tima_write_always:
 	xor a
 	ld (mpTimerCtrl),a
