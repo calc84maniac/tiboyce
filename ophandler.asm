@@ -1050,23 +1050,26 @@ prepare_next_frame:
 	ret
 	
 oam_transfer:
-	push bc
-	 push de
-	  push hl
-	   ex af,af'
-	   ld d,a
-	   ex af,af'
-	   ld bc,$00A0
-	   ld e,b
-	   call get_base_address
-	   add hl,de
-	   ld de,hram_start
-	   ldir
-	   ex af,af'
-	  pop hl
-	 pop de
-	pop bc
-	ret.l
+	xor a
+	ld (mpTimerCtrl),a
+	exx
+	ex af,af'
+	ld d,a
+	ex af,af'
+	call get_base_address
+	ld a,b
+	ld bc,$00A0
+	ld e,b
+	add hl,de
+	ld de,hram_start
+	ldir
+	ld b,a
+	exx
+	pop.s ix
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
+	ex af,af'
+	jp.s (ix)
 	
 updateLY_ADL:
 	xor a
@@ -1096,9 +1099,9 @@ render_catchup:
 	push bc
 	 call c,render_scanlines
 	pop bc
+	exx
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
-	exx
 	ret.l
 	
 lcdc_write:

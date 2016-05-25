@@ -1173,8 +1173,7 @@ mem_write_ports_swap:
 	jr nz,mem_write_oam_swap
 writeDMA:
 	di
-	call.il oam_transfer
-	ret
+	jp.lil oam_transfer
 	
 write_scroll_swap:
 	ex af,af'
