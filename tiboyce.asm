@@ -13,6 +13,7 @@
 #endif
 
 #define FRAME_LENGTH (SCANDELAY*256*154)
+#define TIMA_LENGTH (SCANDELAY*256*16/456)
 
 ; Some standalone equates
 _sprintf = $0000BC
@@ -368,9 +369,9 @@ _
 	push hl
 	ld hl,(mpIntLatch)
 	push hl
-	ld hl,$000007
+	ld hl,$000003
 	ld (mpIntEnable),hl
-	set 4,l
+	ld l,$17
 	ld (mpIntLatch),hl
 	
 	ld hl,(mpLcdBase)
@@ -431,11 +432,11 @@ _
 	ld (mpTimer2Match1+3),a
 	ld (mpTimer2Match2),hl
 	ld (mpTimer2Match2+3),a
+	ld (mpTimer2Reset),hl
+	ld (mpTimer2Reset+3),a
 	dec hl
 	ld (mpTimer1Match1),hl
 	ld (mpTimer1Match1+3),a
-	ld (mpTimer2Reset),hl
-	ld (mpTimer2Reset+3),a
 	ld hl,FRAME_LENGTH - 1
 	ld (mpTimer1Reset),hl
 	ld (mpTimer1Reset+3),a

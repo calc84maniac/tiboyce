@@ -146,7 +146,9 @@ soft_interrupt:
 	 push.l hl
 	  xor a
 	  ld.lil (mpTimerCtrl),a
-	  ld a,$07
+	  ld a,(TAC)
+	  and $04
+	  or $03
 	  ld.lil (mpIntEnable),a
 	  jr test_interrupts
 	  
@@ -194,13 +196,10 @@ interrupt_fast_exit:
 	ret
 	
 timer_interrupt:
-	 ld a,4
-	 ld.lil (mpIntAcknowledge),a
-	 ld a,(TAC)
-	 bit 2,a
-	 jr z,interrupt_fast_exit
 	 xor a
 	 ld.lil (mpTimerCtrl),a
+	 ld a,4
+	 ld.lil (mpIntAcknowledge),a
 	 push.l hl
 	  ld hl,IF
 	  set 2,(hl)

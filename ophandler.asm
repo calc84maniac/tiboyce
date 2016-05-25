@@ -1161,6 +1161,9 @@ skip_cycles:
 	ld ix,mpTimer1Count
 	ld l,(ix)
 	ex de,hl
+	ld a,(hram_base+TAC)
+	and 4
+	jr z,++_
 	ld hl,(ix-mpTimer1Count+mpTimer2Count)
 	sbc hl,de
 	jr nc,_
@@ -1170,6 +1173,7 @@ skip_cycles:
 	sbc hl,hl
 _
 	ld (ix-mpTimer1Count+mpTimer2Count),hl
+_
 	ld hl,(ix)
 	sbc hl,de
 	ld (ix),hl
@@ -1181,18 +1185,19 @@ updateTIMA:
 	ld (mpTimerCtrl),a
 	exx
 	ld hl,(mpTimer2Count)
+	dec hl
 updateTIMA_smc = $+1
-	ld de,-80
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	ld a,l
+	ld de,0
+	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
+	add hl,de
 	exx
+	rla
 	cpl
 	ld (hram_base+TIMA),a
 	ld a,TMR_ENABLE
@@ -1210,11 +1215,9 @@ tac_write:
 	ex af,af'
 	bit 2,l
 	jr nz,_
-	scf
-	sbc hl,hl
-	ld (mpTimer3Reset),hl
+	ld hl,mpIntEnable
+	res 2,(hl)
 	exx
-	ex af,af'
 	jr ++_
 _
 	xor a
@@ -1224,7 +1227,7 @@ _
 	ld (tac_write_smc),a
 	ld (tma_write_smc),a
 	ld (tima_write_smc),a
-	ld hl,-80
+	ld hl,-TIMA_LENGTH * 128
 tac_write_smc = $+1
 	jr $
 	add hl,hl
@@ -1233,13 +1236,21 @@ tac_write_smc = $+1
 	add hl,hl
 	add hl,hl
 	add hl,hl
-	dec hl
 	ld (updateTIMA_smc),hl
 	exx
 	call.il tma_write_always
 	ex af,af'
 	call.il tima_write_always
+	ex af,af'
+	ld a,4
+	ld (mpIntAcknowledge),a
+	ld a,(mpIntEnable)
+	bit 1,a
+	jr z,_
+	or 4
+	ld (mpIntEnable),a
 _
+	ex af,af'
 	pop.s ix
 	jp.s (ix)
 	
@@ -1257,7 +1268,7 @@ tma_write_always:
 	ld a,(hram_base+TMA)
 	neg
 	ld l,a
-	ld h,SCANDELAY*256*16/456
+	ld h,TIMA_LENGTH
 	jr z,_
 	mlt hl
 _
@@ -1269,7 +1280,6 @@ tma_write_smc = $+1
 	add hl,hl
 	add hl,hl
 	add hl,hl
-	dec hl
 	ld (mpTimer2Reset),hl
 	exx
 	ld a,TMR_ENABLE
@@ -1292,7 +1302,7 @@ tima_write_always:
 	ld a,(hram_base+TIMA)
 	neg
 	ld l,a
-	ld h,SCANDELAY*256*16/456
+	ld h,TIMA_LENGTH
 	jr z,_
 	mlt hl
 _
