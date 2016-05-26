@@ -274,10 +274,11 @@ _
 	 ld (hl),c
 	pop bc
 	exx
+	pop.s ix
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
 	ex af,af'
-	ret.l
+	jp.s (ix)
 write_vram_pixels:
 	 res 0,l
 	 ld hl,(hl)
@@ -299,10 +300,11 @@ write_vram_pixels:
 	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c
 	pop bc
 	exx
+	pop.s ix
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
 	ex af,af'
-	ret.l
+	jp.s (ix)
 	 
 	; Input: C=Start X+7, B=End X+7, HL=pixel base pointer, IY=scanline pointer, SPS=tilemap pointer
 scanline_do_render:

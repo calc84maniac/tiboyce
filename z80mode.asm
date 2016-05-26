@@ -1103,6 +1103,19 @@ writeTIMA:
 	call.il tima_write
 	ret
 	
+	;IX=GB address, A=data, preserves AF, destroys AF'
+mem_write_vram:
+	ex af,af'
+	ld a,ixh
+	sub $20
+	jp po,mem_write_bail
+mem_write_vram_swap:
+	ex af,af'
+	;IX=GB address, A=data
+mem_write_vram_always:
+	di
+	jp.lil write_vram_and_expand
+	
 mem_write_any_ports:
 	push hl
 	pop ix
@@ -1116,20 +1129,6 @@ mem_write_any_cart:
 	push hl
 	pop ix
 	jr mem_write_cart_swap
-	
-	;IX=GB address, A=data, preserves AF, destroys AF'
-mem_write_vram:
-	ex af,af'
-	ld a,ixh
-	sub $20
-	jp po,mem_write_bail
-mem_write_vram_swap:
-	ex af,af'
-	;IX=GB address, A=data
-mem_write_vram_always:
-	di
-	call.il write_vram_and_expand
-	ret
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_ports:
@@ -1188,6 +1187,7 @@ write_scroll:
 writeLYC:
 	ex af,af'
 writeLYCswap:
+	exx
 	ld l,a
 	ex af,af'
 	ld a,154
@@ -1197,6 +1197,7 @@ writeLYCswap:
 	mlt hl
 	dec hl
 	ld.lil (mpTimer1Match1+1),hl
+	exx
 	ex af,af'
 	ld (LYC),a
 	ret
