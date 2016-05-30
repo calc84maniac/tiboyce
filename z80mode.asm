@@ -468,21 +468,23 @@ do_bits_readonly_smc = $+1
 ophandler08:
 	pop ix
 	pea ix+2
-	exx
 	push af
-	 lea hl,iy
-	 ld de,(sp_base_address)
-	 or a
-	 sbc hl,de
-	 ex de,hl
-	 ld hl,(ix)
-	 ld a,e
-	 call mem_write_any
-	 inc hl
-	 ld a,d
-	 call mem_write_any
+	 push de
+	  push hl
+	   lea hl,iy
+	   ld de,(sp_base_address)
+	   or a
+	   sbc hl,de
+	   ex de,hl
+	   ld hl,(ix)
+	   ld a,e
+	   call mem_write_any
+	   inc hl
+	   ld a,d
+	   call mem_write_any
+	  pop hl
+	 pop de
 	pop af
-	exx
 	ei
 	ret
 	
