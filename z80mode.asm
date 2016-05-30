@@ -221,14 +221,7 @@ interrupt_get:
 	  sub l
 	  ld a,(memroutine_next+1)
 	  sbc a,h
-	  jr nc,+++_
-_
-	  ; Handle interrupt triggering after EI
-	  dec hl
-	  ld a,(hl)
-	  cp $FB	;EI
-	  jr z,_
-	  inc hl
+	  jr nc,++_
 _
 	  ; Do a software interrupt!
 	  ld a,$11
@@ -384,6 +377,29 @@ flush_mem_handler:
 	exx
 	pop de
 	jp.lil flush_mem
+	
+checksum_handler:
+	di
+	ex af,af'
+	xor a
+	ld.lil (mpTimerCtrl),a
+	exx
+	pop ix
+	pea ix+4
+	ld de,(ix+2)
+	ld ix,(ix)
+	push bc
+	 jp.lil check_ram_checksum
+	
+checksum_return:
+	pop bc
+checksum_return_popped:
+	exx
+	ld a,TMR_ENABLE
+	ld.lil (mpTimerCtrl),a
+	ex af,af'
+	ei
+	ret
 	
 do_swap:
 	inc a

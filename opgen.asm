@@ -38,9 +38,6 @@ flush_code:
 	ld (int_cached_return),bc
 	ret
 	
-FlushMessage:
-	.db "Flushing recompiled code!\n",0
-	
 	; Input: DE = GB address
 	; Output: HL = base pointer
 get_base_address:
@@ -110,6 +107,14 @@ lookup_gb_found_region:
 	ld ix,(ix-6)
 	sbc.s hl,de
 	jr z,lookup_gb_found
+	push ix
+	 add ix,ix
+	pop ix
+	jr nc,lookup_gb_found_loop
+	ld a,1
+	ld (opcoderecsizes),a
+	ld a,7
+	jr lookup_gb_add
 lookup_gb_found_loop:
 	ld c,(ix)
 	ld a,(bc)
@@ -123,6 +128,7 @@ _
 	dec b
 	ld a,(bc)
 	inc b
+lookup_gb_add:
 	add a,l
 	ld l,a
 	jr nc,lookup_gb_found_loop
@@ -137,7 +143,8 @@ _
 lookup_gb_found:
 	add hl,de
 	push hl
-	 or a
+	 xor a
+	 ld (opcoderecsizes),a
 	 lea hl,ix
 	 ld de,(rom_start)
 	 sbc hl,de
@@ -180,69 +187,7 @@ lookup_gb_done:
 #endif
 	pop hl
 	ret.l
-	
-LookupGBMessage:
-	.db "Looking up GB address from %04X\n",0
-	
-LookupGBFoundMessage:
-	.db "Found GB %04X @ %04X\n",0
-	
-int_cache_hit:
-int_cached_code = $+2
-	ld ix,0
-	ret.l
-	
-pop_and_lookup_code_cached:
-	ld de,(iy)
-	inc de
-	dec.s de
-	lea iy,iy+2
-lookup_code_cached:
-	call get_base_address
-	ld (base_address),hl
-	add hl,de
-	ex de,hl
-	
-int_cached_return = $+1
-	ld hl,0
-	sbc hl,de
-	jr z,int_cache_hit
-	
-	ld bc,(recompile_cache)
-	ld ix,recompile_cache_end
-lookup_code_cached_loop:
-	lea hl,ix
-	or a
-	sbc hl,bc
-	jr z,lookup_code_cached_found
-	srl h
-	rr l
-	jr nc,_
-	dec hl
-	dec hl
-_
-	add hl,bc
-	push hl
-	 ld hl,(hl)
-	 sbc hl,de
-	 jr nc,lookup_code_cached_lower
-	 ex (sp),ix
-	 lea bc,ix+5
-lookup_code_cached_lower:
-	pop ix
-	jr lookup_code_cached_loop
-	
-lookup_code_cached_found:
-	ld a,b
-	sub recompile_cache_end>>8 & $FF
-	or c
-	jr z,lookup_code_cached_miss
-	ld hl,(ix)
-	sbc hl,de
-	jr nz,lookup_code_cached_miss
-	ld ix,(ix+3)
-	ret.l
-	
+
 lookup_code_cached_miss:
 	push de
 	 push bc
@@ -301,8 +246,61 @@ _
 	ld (hl),d
 	ret.l
 	
-CacheMissMessage:
-	.db "Cache miss at %02X:%04X\n",0
+int_cache_hit:
+int_cached_code = $+2
+	ld ix,0
+	ret.l
+	
+lookup_code_cached_found:
+	ld a,b
+	sub recompile_cache_end>>8 & $FF
+	or c
+	jr z,lookup_code_cached_miss
+	ld hl,(ix)
+	sbc hl,de
+	jr nz,lookup_code_cached_miss
+	ld ix,(ix+3)
+	ret.l
+	
+pop_and_lookup_code_cached:
+	ld de,(iy)
+	inc de
+	dec.s de
+	lea iy,iy+2
+lookup_code_cached:
+	call get_base_address
+	ld (base_address),hl
+	add hl,de
+	ex de,hl
+	
+int_cached_return = $+1
+	ld hl,0
+	sbc hl,de
+	jr z,int_cache_hit
+	
+	ld bc,(recompile_cache)
+	ld ix,recompile_cache_end
+lookup_code_cached_loop:
+	lea hl,ix
+	or a
+	sbc hl,bc
+	jr z,lookup_code_cached_found
+	srl h
+	rr l
+	jr nc,_
+	dec hl
+	dec hl
+_
+	add hl,bc
+	push hl
+	 ld hl,(hl)
+	 sbc hl,de
+	 jr nc,lookup_code_cached_lower
+	 ex (sp),ix
+	 lea bc,ix+5
+lookup_code_cached_lower:
+	pop ix
+	jr lookup_code_cached_loop
 	
 	; Input: DE = GB address to look up
 	; Output: IX = recompiled code pointer
@@ -332,8 +330,8 @@ lookup_code_by_pointer:
 	 ld hl,(z80codebase+memroutine_next)
 	 or a
 	 sbc hl,bc
+	 jr c,flush_and_recompile_pop
 	 ld bc,opcodesizes
-	 jr c,flush_and_recompile
 lookuploop_restore:
 	pop ix
 lookuploop:
@@ -348,6 +346,9 @@ lookuploop:
 	sbc hl,de
 	jr z,lookupfoundstart
 	jr nc,lookuploop
+	; Don't allow jumping to the middle of a RAM block
+	bit 7,(ix+4)
+	jr nz,lookuploop
 	push ix
 	 ld ix,(ix)
 foundloop:
@@ -380,20 +381,31 @@ lookupfoundstart:
 	ld ix,(ix)
 	ret
 	
-flush_and_recompile:
+flush_and_recompile_pop:
 	pop hl
-	push bc
-	 push de
-	  call flush_code
-	 pop de
-	pop bc
+flush_and_recompile:
+	push de
+	 call flush_code
+	pop de
 	
 	; Input: DE points to GB opcodes to recompile, DE-(base_address) is actual GB address
 	; Output: IX = recompiled code pointer
 recompile:
-	push de
-	 ld hl,(recompile_struct_end)
-	 ld hl,(hl)
+	ld ix,(recompile_struct_end)
+	lea hl,ix+8
+	ld (recompile_struct_end),hl
+	push hl
+	 ; Check for collision with cache
+	 ld hl,(recompile_cache)
+	 lea bc,ix+16
+	 or a
+	 sbc hl,bc
+	 call c,flush_cache
+	 ld hl,(ix)
+	 ld (ix+2),de
+	 bit 7,(ix+4)
+	 jr nz,recompile_ram
+	
 #ifdef DEBUG
 	 push hl
 	  inc hl
@@ -420,35 +432,27 @@ recompile:
 	  pop hl
 	 pop hl
 #endif
+	 
 	 ex de,hl
 	 ld ix,opgenroutines
 	 ld bc,opgentable
 	 call opgen_next_fast
 	
-	 inc de
-	 ld ix,(recompile_struct_end)
-	 ld (ix+5),hl
-	 ld hl,(ix)
-#ifdef 0
-	 call print_recompiled_code
-#endif
-	 ex (sp),hl
-	 ld (ix+2),hl
-	 lea hl,ix+8
-	 ld (hl),de
-	 ld (recompile_struct_end),hl
-	 ; Check for collision with cache
-	 ld hl,(recompile_cache)
-	 lea bc,ix+16
-	 or a
-	 sbc hl,bc
-	 call c,flush_cache
-	 ld hl,(z80codebase+memroutine_next)
-	 sbc hl,de
 	pop ix
+	inc de
+	ld (ix),de
+	ld (ix-3),hl
+#ifdef 0
+	call print_recompiled_code
+#endif
+	ld hl,(z80codebase+memroutine_next)
+	or a
+	sbc hl,de
+	ld ix,(ix-8)
 	ret nc
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
+flush_code_common:
 	ld de,(base_address)
 	or a
 	sbc hl,de
@@ -459,15 +463,227 @@ flush_cache:
 	ld (recompile_cache),hl
 	ret
 	
+recompile_ram:
+#ifdef DEBUG
+	 push ix
+	  push hl
+	   inc hl
+	   dec.s hl
+	   push hl
+	    push de
+	     ld hl,(base_address)
+	     ex de,hl
+	     or a
+	     sbc hl,de
+	     push hl
+	      ld hl,RecompileRamMessage
+	      push hl
+	       call printf
+	      pop hl
+	     pop hl
+	    pop de
+	   pop hl
+	  pop hl
+	 pop ix
+#endif
+	 
+	 ld (hl),$CD
+	 inc hl
+	 ld (hl),checksum_handler & $FF
+	 inc hl
+	 ld (hl),checksum_handler >> 8
+	 inc hl
+	 ld (hl),ix
+	 inc hl
+	 inc hl
+	 inc hl
+	 inc hl
+	 
+	 ex de,hl
+	 ld ix,opgenroutines
+	 ld bc,opgentable
+	 ld a,opgenNOP & $FF
+	 ld (bc),a
+	 call opgen_next_fast
+	 ld a,opgen0byte & $FF
+	 ld (opgentable),a
+	pop ix
+	inc de
+	ld (ix),de
+	ld (ix-3),hl
+#ifdef 0
+	call print_recompiled_code
+#endif
+	ld hl,(z80codebase+memroutine_next)
+	or a
+	sbc hl,de
+	ld hl,(ix-6)
+	jr c,flush_code_common
+	
+	; Calculate checksum
+	dec hl
+	ld a,(ix-3)
+	sub l
+	ld b,a
+	ld a,(ix-2)
+	jr z,_
+	inc a
+_
+	sbc a,h
+	ld c,a
+	
+	xor a
+	ld d,a
+calc_checksum_loop:
+	inc hl
+	add a,(hl)
+	jr nc,_
+	inc d
+_
+	djnz calc_checksum_loop
+	dec c
+	jr nz,calc_checksum_loop
+	ld e,a
+	
+	; Save checksum in code
+	ld ix,(ix-8)
+	ld.s (ix+5),de
+	ret
+	
+check_ram_checksum:
+	ld bc,recompile_struct
+	add ix,bc
+	ld hl,(ix+2)
+	dec hl
+	ld a,(ix+5)
+	sub l
+	ld b,a
+	ld a,(ix+6)
+	jr z,_
+	inc a
+_
+	sbc a,h
+	ld c,a
+	ld a,e
+check_checksum_loop:
+	inc hl
+	sub (hl)
+	jr nc,_
+	dec d
+_
+	djnz check_checksum_loop
+	dec c
+	jr nz,check_checksum_loop
+	or d
+	jp.sis z,checksum_return
+	
+	; Recompile RAM code in-place
+	; Input: IX=recompile struct entry
+rerecompile:
+#ifdef 0
+	push ix
+	 ld hl,(ix)
+	 inc hl
+	 dec.s hl
+	 push hl
+	  ld hl,ChecksumFailedMessage
+	  push hl
+	   call printf
+	  pop hl
+	 pop hl
+	pop ix
+	or a
+#endif
+	
+	ld hl,(ix+2)
+	ld de,vram_base
+	sbc hl,de
+	ld bc,$FE00
+	sbc hl,bc
+	jr c,rerecompile_found_base
+	ld hl,(ix+2)
+	ld de,hram_base
+	sbc hl,de
+	inc b
+	dec c
+	sbc hl,bc
+	jr c,rerecompile_found_base
+	ld de,(cram_bank_base)
+rerecompile_found_base:
+	ld (base_address),de
+	ld hl,(ix)
+	inc.s hl
+	ld de,z80codebase + 6
+	add hl,de
+	ex de,hl
+	ld hl,(ix+2)
+	
+	push ix
+	 ld ix,opgenroutines
+	 ld bc,opgentable
+	 ld a,opgenNOP & $FF
+	 ld (bc),a
+	 call opgen_next_fast
+	 ld a,opgen0byte & $FF
+	 ld (opgentable),a
+	pop ix
+	
+	ld (ix+5),hl
+	ld b,l
+	ld c,h
+	ld hl,(ix+8)
+	scf
+	sbc.s hl,de
+	ld hl,(ix+2)
+	jr c,checksum_flush
+	
+	; Recalculate checksum
+	dec hl
+	ld a,b
+	sub l
+	ld b,a
+	ld a,c
+	jr z,_
+	inc a
+_
+	sbc a,h
+	ld c,a
+	
+	xor a
+	ld d,a
+recalc_checksum_loop:
+	inc hl
+	add a,(hl)
+	jr nc,_
+	inc d
+_
+	djnz recalc_checksum_loop
+	dec c
+	jr nz,recalc_checksum_loop
+	ld e,a
+	
+	ld ix,(ix)
+	ld.s (ix+5),de
+	jp.sis checksum_return
+	
+checksum_flush:
+	ex de,hl
+	call flush_and_recompile
+	ld.sis sp,myz80stack-2
+	ld bc,(CALL_STACK_DEPTH+1)*256
+	push.s ix
+	jp.sis checksum_return_popped
+	
 #ifdef DEBUG
 #ifdef 0
 print_recompiled_code:
 	push ix
 	 push hl
+	  ld hl,(ix-8)
 _
 	  push de
 	   push hl
-	    ld a,(hl)
+	    ld.s a,(hl)
 	    or a
 	    sbc hl,hl
 	    ld l,a
@@ -481,7 +697,7 @@ _
 	  pop de
 	  inc hl
 	  or a
-	  sbc hl,de
+	  sbc.s hl,de
 	  add hl,de
 	  jr nz,-_
 	  call PutNewLine
@@ -489,7 +705,22 @@ _
 	pop ix
 	ret
 	;jp Wait
+	
+ByteFormat:
+	.db "%02X",0
 #endif
+	
+LookupGBMessage:
+	.db "Looking up GB address from %04X\n",0
+	
+LookupGBFoundMessage:
+	.db "Found GB %04X @ %04X\n",0
+	
+FlushMessage:
+	.db "Flushing recompiled code!\n",0
+	
+CacheMissMessage:
+	.db "Cache miss at %02X:%04X\n",0
 	
 LookupMessage:
 	.db "Looking up GB code at %02X:%04X\n",0
@@ -497,8 +728,11 @@ LookupMessage:
 RecompileMessage:
 	.db "Recompiling %02X:%04X (%06X) to %04X\n",0
 	
-ByteFormat:
-	.db "%02X",0
+RecompileRamMessage:
+	.db "Recompiling RAM:%04X (%06X) to %04X\n",0
+	
+ChecksumFailedMessage:
+	.db "Checksum failed, routine=%04X\n",0
 #endif
 	
 	.block (-$)&255

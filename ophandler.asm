@@ -227,6 +227,13 @@ waitloop_identified:
 	pop bc
 #endif
 	
+	; Don't do anything with STAT waits
+	ld a,c
+	add a,$FFFF - STAT
+	and b
+	inc a
+	ret z
+	
 	ld hl,(z80codebase+memroutine_next)
 	ld de,-5
 	add hl,de	;Sets C flag

@@ -82,8 +82,6 @@ opgenMEM:
 	ld (de),a
 	inc de
 	ldi
-	xor a
-	ld (de),a
 	inc de
 	jr opgen_next_fast
 	
@@ -130,6 +128,8 @@ opgenswap:
 	ld a,RST_BITS
 	ld (de),a
 	inc de
+opgenNOP:
+	inc c
 	jr opgen1byte
 	
 opgenRET:
