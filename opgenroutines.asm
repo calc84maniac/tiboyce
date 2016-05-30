@@ -196,17 +196,14 @@ opgenF9:
 	ld c,ophandlerF9 & $FF
 	jr opgenroutinecall
 	
-opgenFB:
-	ld a,ophandlerFB >> 8
-	ld c,ophandlerFB & $FF
-	jr opgenroutinecall
-	
 opgenJP:
 	jr _opgenJP
 opgenJR:
 	jr _opgenJR
 opgenRETI:
 	jr _opgenRETI
+opgenEI:
+	jr _opgenEI
 opgenINVALID:
 	jr _opgenINVALID
 	
@@ -235,6 +232,22 @@ opgenroutinecall1byte:
 	inc de
 	ex de,hl
 	jr opgen1byte
+	
+_opgenEI:
+	; Check the next opcode for special cases
+	inc hl
+	ld a,(hl)
+	dec hl
+	cp $76	;HALT
+	jr z,_
+	and $EF
+	cp $C9	;RET/RETI
+	ld a,ophandlerEI >> 8
+	ld c,ophandlerEI & $FF
+	jr nz,opgenroutinecall
+_
+	ld a,ophandlerEI_delayed >> 8
+	ld c,ophandlerEI_delayed & $FF
 	
 opgenroutinecall:
 	ex de,hl
@@ -278,3 +291,4 @@ _opgenINVALID:
 	ld (hl),ophandlerINVALID >> 8
 	ex de,hl
 	jp opgenEND
+	

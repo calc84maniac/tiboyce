@@ -55,6 +55,8 @@ identify_waitloop:
 	
 	; Check for a read
 	ld a,(hl)
+	cp $BE		;CP (HL)
+	jr z,waitloop_found_read_hl_swap
 	cp $CB		;Bitwise ops
 	inc hl
 	jr z,waitloop_found_read_bitwise
@@ -109,8 +111,9 @@ waitloop_found_read_bitwise:
 	ret nz
 	; Parse this opcode as a data op
 	dec hl
-	exx
 	
+waitloop_found_read_hl_swap:
+	exx	
 waitloop_found_read_hl:
 	; Use HL as read address
 	push hl
@@ -130,10 +133,17 @@ waitloop_find_data_op_again:
 	and $C7
 	cp $C6		;Immediate ALU ops
 	jr z,waitloop_found_data_op_1
+	cp $86		;(HL) ALU ops
+	jr z,waitloop_found_data_op_hl
 	and $C0
 	cp $80		;Register ALU ops
 	jr z,waitloop_found_data_op
 	ret
+	
+waitloop_found_data_op_hl:
+	inc de
+	inc de
+	jr waitloop_found_data_op
 	
 waitloop_found_data_op_bitwise:
 	ld a,(hl)
@@ -1158,6 +1168,33 @@ _
 	ex af,af'
 	exx
 	pop.s ix
+	jp.s (ix)
+	
+lyc_write:
+	exx
+	ld c,a
+	ex af,af'
+	call updateLY_ADL
+	cp c
+	jr nz,_
+	ld hl,hram_base+STAT
+	bit 6,(hl)
+	jr z,_
+	ld l,IF & $FF
+	set 1,(hl)
+_
+	ld a,154
+	sub c
+	ld l,a
+	ld h,SCANDELAY
+	mlt hl
+	dec hl
+	ld (mpTimer1Match1+1),hl
+	exx
+	pop.s ix
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
+	ex af,af'
 	jp.s (ix)
 	
 skip_cycles:

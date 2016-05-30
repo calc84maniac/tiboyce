@@ -691,13 +691,20 @@ ophandlerF9:
 	di
 	jp.lil set_gb_stack
 	
-ophandlerFB:
+ophandlerEI:
 	ex af,af'
 	ld a,1
 	ld (intstate),a
 	call checkIntPostEnable
 	ei
 	ret
+	
+ophandlerEI_delayed:
+	di
+	ex af,af'
+	ld a,1
+	ld (intstate),a
+	jp checkIntPostEnable
 	
 ophandlerRETI:
 	di
@@ -1187,20 +1194,9 @@ write_scroll:
 writeLYC:
 	ex af,af'
 writeLYCswap:
-	exx
-	ld l,a
-	ex af,af'
-	ld a,154
-	sub l
-	ld l,a
-	ld h,SCANDELAY
-	mlt hl
-	dec hl
-	ld.lil (mpTimer1Match1+1),hl
-	exx
-	ex af,af'
+	di
 	ld (LYC),a
-	ret
+	jp.lil lyc_write
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart:

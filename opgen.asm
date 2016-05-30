@@ -864,7 +864,7 @@ opgentable:
 	.db opgenF8 & $FF
 	.db opgenF9 & $FF
 	.db opgenFA & $FF
-	.db opgenFB & $FF
+	.db opgenEI & $FF
 	.db opgenINVALID & $FF
 	.db opgenINVALID & $FF
 	.db opgen2byte & $FF
