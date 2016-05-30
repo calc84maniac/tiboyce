@@ -1,6 +1,29 @@
 ; Allocate at 256-byte aligned cursor memory
 
 opgenroutines:
+opgenJP:
+	call opgen_emitbranch
+	inc hl
+	ret
+
+opgenJR:
+opgen_emitbranch:
+	ld a,RST_BRANCH
+	ld (de),a
+opgen_emitPC:
+	inc hl
+	ld a,(base_address)
+	cpl
+	add a,l
+	inc de
+	ld (de),a
+	ld a,(base_address+1)
+	cpl
+	adc a,h
+	inc de
+	ld (de),a
+	ret
+
 opgenE9:
 	ex de,hl
 	ld (hl),$C3
@@ -9,7 +32,7 @@ opgenE9:
 	inc hl
 	ld (hl),ophandlerE9 >> 8
 	ex de,hl
-	jp opgenEND
+	ret
 	
 opgenE0:
 	jp opgenFFwrite
@@ -25,12 +48,10 @@ opgenFA:
 	
 opgenJRcond:
 	call opgen_emitbranch
-	inc hl
 	jr opgen_next_skip
 	
 opgenJPcond:
 	call opgen_emitbranch
-	inc hl
 	inc hl
 	jr opgen_next_skip
 	
@@ -47,8 +68,8 @@ opgenCALL:
 	inc hl
 	inc hl
 _opgenRST:
-	inc hl
 	call opgen_emitPC
+	dec hl
 	inc de
 	jr opgen_next_fast
 	
@@ -114,7 +135,7 @@ opgenswap:
 opgenRET:
 	ld a,c
 	ld (de),a
-	jp opgenEND
+	ret
 	
 opgen08:
 	ld a,ophandler08 >> 8
@@ -196,10 +217,6 @@ opgenF9:
 	ld c,ophandlerF9 & $FF
 	jr opgenroutinecall
 	
-opgenJP:
-	jr _opgenJP
-opgenJR:
-	jr _opgenJR
 opgenRETI:
 	jr _opgenRETI
 opgenEI:
@@ -261,17 +278,6 @@ opgenroutinecall:
 	ex de,hl
 	jr opgen_next_fast
 	
-_opgenJP:
-	call opgen_emitbranch
-	inc hl
-	inc hl
-	jp opgenEND
-	
-_opgenJR:
-	call opgen_emitbranch
-	inc hl
-	jp opgenEND
-	
 _opgenRETI:
 	ex de,hl
 	ld (hl),$C3 ;JP ophandlerRETI
@@ -280,7 +286,7 @@ _opgenRETI:
 	inc hl
 	ld (hl),ophandlerRETI >> 8
 	ex de,hl
-	jp opgenEND
+	ret
 	
 _opgenINVALID:
 	ex de,hl
@@ -290,5 +296,5 @@ _opgenINVALID:
 	inc hl
 	ld (hl),ophandlerINVALID >> 8
 	ex de,hl
-	jp opgenEND
+	ret
 	

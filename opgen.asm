@@ -423,12 +423,8 @@ recompile:
 	 ex de,hl
 	 ld ix,opgenroutines
 	 ld bc,opgentable
-	 ld c,(hl)
-	 ld a,(bc)
-	 ld ixl,a
-	 jp (ix)
+	 call opgen_next_fast
 	
-opgenEND:
 	 inc de
 	 ld ix,(recompile_struct_end)
 	 ld (ix+5),hl
@@ -1213,20 +1209,3 @@ opgenHRAMread:
 	inc hl
 	ld (hl),b
 	jp opgen_next_swap_skip
-	
-opgen_emitbranch:
-	ld a,RST_BRANCH
-	ld (de),a
-opgen_emitPC:
-	scf
-	ld a,(base_address)
-	cpl
-	adc a,l
-	inc de
-	ld (de),a
-	ld a,(base_address+1)
-	cpl
-	adc a,h
-	inc de
-	ld (de),a
-	ret
