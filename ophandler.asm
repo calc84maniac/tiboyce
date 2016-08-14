@@ -364,6 +364,7 @@ decode_jp:
 	 inc hl
 	 ld d,(hl)
 	 call get_base_address
+	 ld a,(base_address+2)
 	 ld (base_address),hl
 	 jr decode_loop
 	
@@ -398,10 +399,11 @@ _
 	 sbc hl,hl
 	 rra
 	 ld l,a
+	 ld a,(base_address+2)
 decode_loop:
 	 add hl,de
 	 push hl
-	  call lookup_code_by_pointer_hl
+	  call lookup_code_link_internal
 	 pop hl
 	 
 	 call identify_waitloop
@@ -1070,14 +1072,15 @@ oam_transfer:
 	xor a
 	ld (mpTimerCtrl),a
 	exx
+	sbc hl,hl
+	ex de,hl
 	ex af,af'
 	ld d,a
 	ex af,af'
 	call get_base_address
+	add hl,de
 	ld a,b
 	ld bc,$00A0
-	ld e,b
-	add hl,de
 	ld de,hram_start
 	ldir
 	ld b,a

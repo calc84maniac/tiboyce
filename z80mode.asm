@@ -378,28 +378,47 @@ flush_mem_handler:
 	pop de
 	jp.lil flush_mem
 	
-checksum_handler:
+coherency_handler:
 	di
 	ex af,af'
 	xor a
 	ld.lil (mpTimerCtrl),a
 	exx
-	pop ix
-	pea ix+4
-	ld de,(ix+2)
-	ld ix,(ix)
+	pop hl
+	ld de,(hl)
+	inc hl
+	inc hl
+	push hl
 	push bc
-	 jp.lil check_ram_checksum
-	
-checksum_return:
+	 ld.lil ix,recompile_struct
+	 add.l ix,de
+	 ld.lil (current_ram_block),ix
+	 ld.l de,(ix+2)
+	 ld.l hl,(ix+5)
+	 sbc hl,de
+	 ld b,h
+	 ld c,l
+	 inc bc
+	 ld.l hl,(ix+8)
+	 sbc hl,bc
+check_coherency_loop:
+	 ld.l a,(de)
+	 inc.l de
+	 cpi
+	 jr nz,check_coherency_failed
+	 jp pe,check_coherency_loop
+coherency_return:
 	pop bc
-checksum_return_popped:
+coherency_return_popped:
 	exx
 	ld a,TMR_ENABLE
 	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ei
 	ret
+	
+check_coherency_failed:
+	 jp.lil rerecompile
 	
 do_swap:
 	inc a

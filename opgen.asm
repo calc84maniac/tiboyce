@@ -6,6 +6,8 @@
 #define RST_BRANCH $C7+r_branch
 #define RST_INTERRUPT $C7+r_interrupt
 
+#define RAM_PREFIX_SIZE 5
+
 recompile_struct_end:
 	.dl 0
 recompile_cache:
@@ -102,7 +104,7 @@ lookup_gb_found_region:
 	ld a,b
 	or c
 	ret.l z
-	ld bc,opcodesizes
+	ld bc,opcoderecsizes
 	ld hl,(ix-8)
 	ld ix,(ix-6)
 	sbc.s hl,de
@@ -112,12 +114,14 @@ lookup_gb_found_region:
 	pop ix
 	jr nc,lookup_gb_found_loop
 	ld a,1
-	ld (opcoderecsizes),a
-	ld a,7
+	ld (bc),a
+	ld a,RAM_PREFIX_SIZE
 	jr lookup_gb_add
 lookup_gb_found_loop:
 	ld c,(ix)
+	inc b
 	ld a,(bc)
+	dec b
 	or a
 	jr z,lookup_gb_found
 	add a,ixl
@@ -125,9 +129,7 @@ lookup_gb_found_loop:
 	jr nc,_
 	inc ixh
 _
-	dec b
 	ld a,(bc)
-	inc b
 lookup_gb_add:
 	add a,l
 	ld l,a
@@ -136,15 +138,16 @@ lookup_gb_add:
 	jr nz,lookup_gb_found_loop
 	ld a,c
 	and %11100111
-	cp $C4
+	sub $C4
 	jr nz,lookup_gb_found
+	cp l
+	jr z,lookup_gb_found
+	; In the middle of a conditional call, don't round up
 	lea ix,ix-3
-	sbc hl,hl
+	ld l,a
 lookup_gb_found:
 	add hl,de
 	push hl
-	 xor a
-	 ld (opcoderecsizes),a
 	 lea hl,ix
 	 ld de,(rom_start)
 	 sbc hl,de
@@ -175,17 +178,23 @@ lookup_gb_done:
 	 add hl,de
 	 ex de,hl
 #ifdef 0
-	 push ix
-	  push de
-	   ld hl,LookupGBFoundMessage
-	   push hl
-	    call printf
-	    ;call Wait
-	   pop hl
-	  pop de
-	 pop ix
+	 push bc
+	  push ix
+	   push de
+	    ld hl,LookupGBFoundMessage
+	    push hl
+	     call printf
+	     ;call Wait
+	    pop hl
+	   pop de
+	  pop ix
+	 pop bc
 #endif
 	pop hl
+	xor a
+	ld c,a
+	ld (bc),a
+	inc a
 	ret.l
 
 lookup_code_cached_miss:
@@ -302,28 +311,86 @@ lookup_code_cached_lower:
 	pop ix
 	jr lookup_code_cached_loop
 	
+	; Input: HL = GB address to look up, A = upper byte of source address
+	; Output: IX = recompiled code pointer
+lookup_code_link_internal:
+	ex de,hl
+	rlca
+	jr nc,lookup_code_by_pointer
+	; We're running from RAM, check if destination is in running block
+current_ram_block = $+2
+	ld ix,0
+	ld hl,(ix+5)
+	and 1
+	sbc hl,de
+	jr c,lookup_code_by_pointer
+	ld hl,(ix+2)
+	sbc hl,de
+	ld ix,(ix)
+	lea ix,ix+RAM_PREFIX_SIZE
+	ret z
+	jr nc,lookup_code_by_pointer
+	ld bc,opcoderecsizes
+	ld (bc),a
+foundloop_internal:
+	add hl,de
+	ld c,(hl)
+	inc b
+	ld a,(bc)
+	dec b
+	or a
+	jr z,foundloop_internal_nomatch
+	add a,l
+	ld l,a
+	jr nc,_
+	inc h
+_
+	ld a,(bc)
+	add a,ixl
+	ld ixl,a
+	jr nc,_
+	inc ixh
+	or a
+_
+	sbc hl,de
+	jr nz,foundloop_internal
+	xor a
+	ld c,a
+	ld (bc),a
+	ret
+	
+foundloop_internal_nomatch:
+	ld c,a
+	ld (bc),a
+	jr lookup_code_by_pointer
+	
 	; Input: DE = GB address to look up
 	; Output: IX = recompiled code pointer
 lookup_code:
-#ifdef 0
-	push de
-	 ld a,(z80codebase+curr_rom_bank)
-	 ld e,a
-	 ld d,0
-	 push de
-	  ld hl,LookupMessage
-	  push hl
-	   call printf
-	  pop hl
-	 pop de
-	pop de
-#endif
 	call get_base_address
 	ld (base_address),hl
 	add hl,de
-lookup_code_by_pointer_hl:
 	ex de,hl
 lookup_code_by_pointer:
+#ifdef 0
+	push de
+	 ld hl,(base_address)
+	 ex de,hl
+	 or a
+	 sbc hl,de
+	 push hl
+	  sbc hl,hl
+	  ld a,(z80codebase+curr_rom_bank)
+	  ld l,a
+	  push hl
+	   ld hl,LookupMessage
+	   push hl
+	    call printf
+	   pop hl
+	  pop hl
+	 pop hl
+	pop de
+#endif
 	ld hl,(recompile_struct_end)
 	push hl
 	 ld bc,(hl)
@@ -440,19 +507,17 @@ recompile:
 	
 	pop ix
 	inc de
-	ld (ix),de
 	ld (ix-3),hl
-#ifdef 0
-	call print_recompiled_code
-#endif
-	ld hl,(z80codebase+memroutine_next)
 	or a
+	
+recompile_end_common:
+	ld (ix),de
+	ld hl,(z80codebase+memroutine_next)
 	sbc hl,de
 	ld ix,(ix-8)
 	ret nc
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
-flush_code_common:
 	ld de,(base_address)
 	or a
 	sbc hl,de
@@ -489,13 +554,11 @@ recompile_ram:
 	 
 	 ld (hl),$CD
 	 inc hl
-	 ld (hl),checksum_handler & $FF
+	 ld (hl),coherency_handler & $FF
 	 inc hl
-	 ld (hl),checksum_handler >> 8
+	 ld (hl),coherency_handler >> 8
 	 inc hl
 	 ld (hl),ix
-	 inc hl
-	 inc hl
 	 inc hl
 	 inc hl
 	 
@@ -509,73 +572,24 @@ recompile_ram:
 	 ld (opgentable),a
 	pop ix
 	inc de
-	ld (ix),de
 	ld (ix-3),hl
-#ifdef 0
-	call print_recompiled_code
-#endif
-	ld hl,(z80codebase+memroutine_next)
+	
+	; Copy the GB opcodes for coherency
+	ld bc,(ix-6)
 	or a
-	sbc hl,de
-	ld hl,(ix-6)
-	jr c,flush_code_common
+	sbc hl,bc
+	push bc
+	 ex (sp),hl
+	pop bc
+	inc bc
+	ldir
 	
-	; Calculate checksum
-	dec hl
-	ld a,(ix-3)
-	sub l
-	ld b,a
-	ld a,(ix-2)
-	jr z,_
-	inc a
-_
-	sbc a,h
-	ld c,a
+#ifdef DEBUG
+	jp recompile_end_common
+#else
+	jr recompile_end_common
+#endif
 	
-	xor a
-	ld d,a
-calc_checksum_loop:
-	inc hl
-	add a,(hl)
-	jr nc,_
-	inc d
-_
-	djnz calc_checksum_loop
-	dec c
-	jr nz,calc_checksum_loop
-	ld e,a
-	
-	; Save checksum in code
-	ld ix,(ix-8)
-	ld.s (ix+5),de
-	ret
-	
-check_ram_checksum:
-	ld bc,recompile_struct
-	add ix,bc
-	ld hl,(ix+2)
-	dec hl
-	ld a,(ix+5)
-	sub l
-	ld b,a
-	ld a,(ix+6)
-	jr z,_
-	inc a
-_
-	sbc a,h
-	ld c,a
-	ld a,e
-check_checksum_loop:
-	inc hl
-	sub (hl)
-	jr nc,_
-	dec d
-_
-	djnz check_checksum_loop
-	dec c
-	jr nz,check_checksum_loop
-	or d
-	jp.sis z,checksum_return
 	
 	; Recompile RAM code in-place
 	; Input: IX=recompile struct entry
@@ -586,7 +600,7 @@ rerecompile:
 	 inc hl
 	 dec.s hl
 	 push hl
-	  ld hl,ChecksumFailedMessage
+	  ld hl,CoherencyFailedMessage
 	  push hl
 	   call printf
 	  pop hl
@@ -613,7 +627,7 @@ rerecompile_found_base:
 	ld (base_address),de
 	ld hl,(ix)
 	inc.s hl
-	ld de,z80codebase + 6
+	ld de,z80codebase + RAM_PREFIX_SIZE - 1
 	add hl,de
 	ex de,hl
 	ld hl,(ix+2)
@@ -627,52 +641,43 @@ rerecompile_found_base:
 	 ld a,opgen0byte & $FF
 	 ld (opgentable),a
 	pop ix
-	
 	ld (ix+5),hl
-	ld b,l
-	ld c,h
-	ld hl,(ix+8)
-	scf
-	sbc.s hl,de
-	ld hl,(ix+2)
-	jr c,checksum_flush
 	
-	; Recalculate checksum
-	dec hl
-	ld a,b
-	sub l
-	ld b,a
-	ld a,c
-	jr z,_
-	inc a
-_
-	sbc a,h
-	ld c,a
+	; Get the size of the GB opcodes
+	ld bc,(ix+2)
+	or a
+	sbc hl,bc
+	push hl
+	pop bc
+	inc bc
 	
-	xor a
-	ld d,a
-recalc_checksum_loop:
-	inc hl
-	add a,(hl)
-	jr nc,_
-	inc d
-_
-	djnz recalc_checksum_loop
-	dec c
-	jr nz,recalc_checksum_loop
-	ld e,a
-	
-	ld ix,(ix)
-	ld.s (ix+5),de
-	jp.sis checksum_return
-	
-checksum_flush:
+	; Add this size to the end of the generated code
 	ex de,hl
+	add hl,bc	; Resets carry
+	
+	; Get the address to copy the opcodes to
+	ld a,(ix+10)
+	ld (ix+10),z80codebase >> 16
+	ld de,(ix+8)
+	ld (ix+10),a
+	
+	; Make sure there is no overlap
+	sbc hl,de	; Carry is reset
+	jr nc,coherency_flush
+	
+	; Copy the new opcodes, from last to first
+	ld hl,(ix+5)
+	dec de
+	lddr
+	jp.sis coherency_return
+	
+coherency_flush:
+	ld de,(ix+2)
 	call flush_and_recompile
 	ld.sis sp,myz80stack-2
 	ld bc,(CALL_STACK_DEPTH+1)*256
 	push.s ix
-	jp.sis checksum_return_popped
+	jp.sis coherency_return_popped
 	
 #ifdef DEBUG
 #ifdef 0
@@ -731,8 +736,8 @@ RecompileMessage:
 RecompileRamMessage:
 	.db "Recompiling RAM:%04X (%06X) to %04X\n",0
 	
-ChecksumFailedMessage:
-	.db "Checksum failed, routine=%04X\n",0
+CoherencyFailedMessage:
+	.db "RAM coherency failed, routine=%04X\n",0
 #endif
 	
 	.block (-$)&255
