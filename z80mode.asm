@@ -1330,6 +1330,17 @@ cram_base_0 = $+3
 	 ld.lil ix,0
 	 add.l ix,bc
 	 ld.lil (cram_bank_base),ix
+	 ; See if SP is pointing into the swapped bank
+	 ld bc,(sp_base_address)
+	 ld a,iyl
+	 sub c
+	 ld c,a
+	 ld a,iyh
+	 sub b
+	 ld b,a
+	 sub $A0
+	 cp $20
+	 jr c,mbc_fix_sp
 _
 	pop bc
 	ex af,af'
@@ -1367,6 +1378,21 @@ curr_rom_bank = $+1
 	 add.l ix,bc
 	 ld.l ix,(ix)
 	 ld.lil (rom_bank_base),ix
+	 ; See if SP is pointing into the swapped bank
+	 ld bc,(sp_base_address)
+	 ld a,iyl
+	 sub c
+	 ld c,a
+	 ld a,iyh
+	 sbc a,b
+	 cp $C0
+	 jp po,mbc_2000_denied
+	 ; If so, update it
+	 ld b,a
+mbc_fix_sp:
+	 ld.lil (z80codebase+sp_base_address),ix
+	 add.l ix,bc
+	 lea.l iy,ix
 mbc_2000_denied:
 	pop bc
 	ex af,af'
