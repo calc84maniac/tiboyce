@@ -509,7 +509,7 @@ _
 	call prepare_next_frame
 	call update_palettes
 	
-	call flush_code
+	call flush_code_reset_padding
 	
 	ld de,$0100
 	call lookup_code

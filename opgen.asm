@@ -15,6 +15,9 @@ recompile_cache:
 base_address:
 	.dl 0
 
+flush_code_reset_padding:
+	ld hl,1
+	ld (ram_block_padding),hl
 flush_code:
 #ifdef DEBUG
 	ld hl,FlushMessage
@@ -67,7 +70,7 @@ _
 	
 	; Get GB code address from recompiled code pointer (rounds up)
 	; Input: DE = code pointer
-	; Output: Z set if not found, or HL = 16-bit code pointer (rounded up), DE = GB address, IX = Literal GB address
+	; Output: NC if not found, or HL = 16-bit code pointer (rounded up), DE = GB address, IX = Literal GB address
 lookup_gb_code_address:
 #ifdef 0
 	push de
@@ -104,7 +107,7 @@ lookup_gb_found_region:
 	ld a,b
 	or c
 	ret.l z
-	ld bc,opcoderecsizes
+	ld bc,opcodesizes
 	ld hl,(ix-8)
 	ld ix,(ix-6)
 	sbc.s hl,de
@@ -113,15 +116,11 @@ lookup_gb_found_region:
 	 add ix,ix
 	pop ix
 	jr nc,lookup_gb_found_loop
-	ld a,1
-	ld (bc),a
 	ld a,RAM_PREFIX_SIZE
 	jr lookup_gb_add
 lookup_gb_found_loop:
 	ld c,(ix)
-	inc b
 	ld a,(bc)
-	dec b
 	or a
 	jr z,lookup_gb_found
 	add a,ixl
@@ -129,7 +128,9 @@ lookup_gb_found_loop:
 	jr nc,_
 	inc ixh
 _
+	dec b
 	ld a,(bc)
+	inc b
 lookup_gb_add:
 	add a,l
 	ld l,a
@@ -191,10 +192,7 @@ lookup_gb_done:
 	 pop bc
 #endif
 	pop hl
-	xor a
-	ld c,a
-	ld (bc),a
-	inc a
+	scf
 	ret.l
 
 lookup_code_cached_miss:
@@ -315,13 +313,13 @@ lookup_code_cached_lower:
 	; Output: IX = recompiled code pointer
 lookup_code_link_internal:
 	ex de,hl
-	rlca
+	rla
 	jr nc,lookup_code_by_pointer
 	; We're running from RAM, check if destination is in running block
 current_ram_block = $+2
 	ld ix,0
 	ld hl,(ix+5)
-	and 1
+	or a
 	sbc hl,de
 	jr c,lookup_code_by_pointer
 	ld hl,(ix+2)
@@ -330,22 +328,21 @@ current_ram_block = $+2
 	lea ix,ix+RAM_PREFIX_SIZE
 	ret z
 	jr nc,lookup_code_by_pointer
-	ld bc,opcoderecsizes
-	ld (bc),a
+	ld bc,opcodesizes
 foundloop_internal:
 	add hl,de
 	ld c,(hl)
-	inc b
 	ld a,(bc)
-	dec b
 	or a
-	jr z,foundloop_internal_nomatch
+	jr z,lookup_code_by_pointer
 	add a,l
 	ld l,a
 	jr nc,_
 	inc h
 _
+	dec b
 	ld a,(bc)
+	inc b
 	add a,ixl
 	ld ixl,a
 	jr nc,_
@@ -354,15 +351,7 @@ _
 _
 	sbc hl,de
 	jr nz,foundloop_internal
-	xor a
-	ld c,a
-	ld (bc),a
 	ret
-	
-foundloop_internal_nomatch:
-	ld c,a
-	ld (bc),a
-	jr lookup_code_by_pointer
 	
 	; Input: DE = GB address to look up
 	; Output: IX = recompiled code pointer
@@ -565,23 +554,25 @@ recompile_ram:
 	 ex de,hl
 	 ld ix,opgenroutines
 	 ld bc,opgentable
-	 ld a,opgenNOP & $FF
-	 ld (bc),a
 	 call opgen_next_fast
-	 ld a,opgen0byte & $FF
-	 ld (opgentable),a
 	pop ix
-	inc de
 	ld (ix-3),hl
 	
 	; Copy the GB opcodes for coherency
 	ld bc,(ix-6)
 	or a
 	sbc hl,bc
-	push bc
-	 ex (sp),hl
+	push hl
 	pop bc
 	inc bc
+	
+	; Add in padding to avoid flushes (must be at least 1)
+ram_block_padding = $+1
+	ld hl,1
+	add hl,de
+	ex de,hl
+	
+	ld hl,(ix-3)
 	ldir
 	
 #ifdef DEBUG
@@ -635,11 +626,7 @@ rerecompile_found_base:
 	push ix
 	 ld ix,opgenroutines
 	 ld bc,opgentable
-	 ld a,opgenNOP & $FF
-	 ld (bc),a
 	 call opgen_next_fast
-	 ld a,opgen0byte & $FF
-	 ld (opgentable),a
 	pop ix
 	ld (ix+5),hl
 	
@@ -672,6 +659,23 @@ rerecompile_found_base:
 	jp.sis coherency_return
 	
 coherency_flush:
+	; Get the number of bytes in the overflow
+	inc hl
+	; Add that many bytes to the RAM block padding to avoid future issues
+	ld de,(ram_block_padding)
+	add hl,de
+	ld (ram_block_padding),hl
+#ifdef DEBUG
+	push ix
+	 push hl
+	  ld hl,PaddingUpdateMessage
+	  push hl
+	   call printf
+	  pop hl
+	 pop hl
+	pop ix
+#endif
+	; Start at the very beginning
 	ld de,(ix+2)
 	call flush_and_recompile
 	ld.sis sp,myz80stack-2
@@ -738,6 +742,9 @@ RecompileRamMessage:
 	
 CoherencyFailedMessage:
 	.db "RAM coherency failed, routine=%04X\n",0
+	
+PaddingUpdateMessage:
+	.db "RAM block padding increased to %06X\n",0
 #endif
 	
 	.block (-$)&255

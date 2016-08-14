@@ -128,8 +128,6 @@ opgenswap:
 	ld a,RST_BITS
 	ld (de),a
 	inc de
-opgenNOP:
-	inc c
 	jr opgen1byte
 	
 opgenRET:
