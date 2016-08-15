@@ -6,7 +6,7 @@
 
 ; Some configuration options
 #ifndef SCANDELAY
-#define SCANDELAY 9
+#define SCANDELAY 12
 #endif
 #ifndef FRAMESKIP
 #define FRAMESKIP 0

@@ -48,18 +48,17 @@ draw_sprites_save_sp = $+1
 	
 draw_sprites:
 	ld (draw_sprites_save_sp),sp
-	ld ix,hram_base+$FEA0
+	ld ix,hram_base+$FEA1
 draw_next_sprite:
-	ld a,ixl
-	or a
+	dec ixl
 	jr z,draw_sprites_done
-	lea ix,ix-4
-	ld a,(ix)
+	lea ix,ix-3
+	ld a,(ix-1)
 	dec a
 	cp 159
 	jr nc,draw_next_sprite
 	ld e,a
-	ld a,(ix+1)
+	ld a,(ix)
 	ld b,a
 	dec a
 	cp 167
@@ -70,7 +69,7 @@ draw_next_sprite:
 	mlt de
 	add iy,de
 	
-	ld e,(ix+2)
+	ld e,(ix+1)
 	ld d,64
 	mlt de
 	ld hl,vram_pixels_start
@@ -80,7 +79,7 @@ draw_next_sprite:
 	; Set HL=0
 	sbc hl,hl
 	
-	bit 5,(ix+3)
+	bit 5,(ix+2)
 	jr nz,draw_sprite_hflip
 	sub 7
 	jr c,_
@@ -134,7 +133,7 @@ _
 _
 	
 	ld a,3
-	bit 6,(ix+3)
+	bit 6,(ix+2)
 	jr z,_
 	ld a,-3
 	lea iy,iy+(7*3)
@@ -145,12 +144,12 @@ _
 	ld (draw_sprite_normal_vdir),a
 	ld (draw_sprite_priority_vdir),a
 	
-	bit 4,(ix+3)
+	bit 4,(ix+2)
 	ld a,$44
 	jr z,_
 	add a,a
 _
-	bit 7,(ix+3)
+	bit 7,(ix+2)
 	jr nz,draw_sprite_priority
 	
 draw_sprite_normal:
@@ -227,6 +226,8 @@ write_vram_and_expand:
 	 ex af,af'
 	 xor a
 	 ld (mpTimerCtrl),a
+	 ld a,$FE
+	 ld (mpTimer1Count),a
 	 ld hl,vram_base
 	 lea de,ix
 	 add hl,de
