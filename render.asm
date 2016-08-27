@@ -1,4 +1,16 @@
-palette_colors:
+palette_obj1_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+
+palette_obj0_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+
+palette_bg_colors:
 	.dw $0421 * 31 + $8000
 	.dw $0421 * 21 + $8000
 	.dw $0421 * 10
@@ -13,11 +25,14 @@ curr_palettes = $+1
 	ret z
 	add hl,de
 	ld (curr_palettes),hl
-	ld de,mpLcdPalette + (12*2)-1
+	ld de,mpLcdPalette + (9*2)-1
 	push bc
 	 push ix
-	  ld bc,12*2
-	  ld ix,palette_colors+1
+	  ld ix,palette_obj1_colors+1-8
+	  ld c,(9*2) + 3
+update_palettes_next_loop:
+	  lea ix,ix+8
+	  ld b,4
 update_palettes_loop:
 	  xor a
 	  add hl,hl
@@ -25,14 +40,21 @@ update_palettes_loop:
 	  add hl,hl
 	  adc a,a
 	  add a,a
-	  ld (_+2),a
-	  push hl
+	  djnz _
+	  dec c
+	  jr nz,update_palettes_next_loop
+	  inc de
+	  ld e,16*2-1
+	  scf
 _
+	  ld (update_palettes_smc),a
+	  push hl
+update_palettes_smc = $+2
 	   lea hl,ix
 	   ldd
 	   ldd
 	  pop hl
-	  jp pe,update_palettes_loop
+	  jr nc,update_palettes_loop
 	 pop ix
 	pop bc
 	ret
@@ -144,7 +166,7 @@ _
 _
 	
 	bit 4,c
-	ld a,$44
+	ld a,$33
 	jr z,_
 	add a,a
 _
@@ -165,12 +187,11 @@ draw_sprite_normal_vdir = $+2
 	jr c,draw_sprite_normal_vclip
 	push.s bc
 draw_sprite_normal_palette = $+1
-	 ld c,$44
+	 ld c,$33
 draw_sprite_normal_pixels:
 	 ld a,(de)
-	 or a
-	 jr z,_
 	 add a,c
+	 jr c,_
 	 ld (hl),a
 _
 	 inc de
@@ -200,15 +221,14 @@ draw_sprite_priority_vdir = $+2
 	jr c,draw_sprite_priority_vclip
 	push.s bc
 draw_sprite_priority_palette = $+1
-	 ld c,$44
+	 ld c,$33
 draw_sprite_priority_pixels:
 	 ld a,(hl)
-	 or a
+	 inc a
 	 jr nz,_
 	 ld a,(de)
-	 or a
-	 jr z,_
 	 add a,c
+	 jr c,_
 	 ld (hl),a
 _
 	 inc de
@@ -295,16 +315,17 @@ write_vram_pixels:
 	 add hl,hl
 	 ld bc,vram_pixels_start-($8000*4)
 	 add hl,bc
-	 ld b,0
-	 ld a,17
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c \ inc hl
-	 sla d \ rl b \ sla e \ rl b \ ld c,a \ mlt bc \ ld (hl),c
+	 ld bc,$0011
+	 ld a,d \ cpl \ add a,a \ ld d,a
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a
+
 	pop bc
 	exx
 	pop.s ix
@@ -388,13 +409,13 @@ palettecode:
 	.org palettemem
 
 	.dw 0,0,0,0,0,0,0,0
-	.dw 0,0,0,0,0,0,-1,0
+	.dw 0,0,0,0,0,-1,0,0
 	
 render_scanline_off:
 	lea hl,iy+1
 	lea de,iy+2
 	ld bc,159
-	ld (hl),$EE	;White pixels
+	ld (hl),$DD	;White pixels
 	ldir
 	jp render_scanline_next
 	

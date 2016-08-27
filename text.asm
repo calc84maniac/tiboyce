@@ -104,11 +104,11 @@ PutCharRowLoop:
 PutCharPixelLoop:
 	 sla c
 	 sbc a,a
-	 dec a
+	 sub 2
 	 rld
 	 sla c
 	 sbc a,a
-	 dec a
+	 sub 2
 	 rld
 	 inc hl
 	 djnz PutCharPixelLoop
@@ -153,7 +153,7 @@ ScrollUp:
 	   push de
 	   pop hl
 	   inc de
-	   ld (hl),$FF
+	   ld (hl),$EE
 	   ld bc,160*10-1
 	   ldir
 	   
@@ -164,7 +164,7 @@ ScrollUp:
 	   push de
 	   pop hl
 	   inc de
-	   ld (hl),$FF
+	   ld (hl),$EE
 	   ld bc,160*10-1
 	   ldir
 	  pop de
@@ -196,11 +196,11 @@ _
 _
 	sla c
 	sbc a,a
-	dec a
+	sub 2
 	rld
 	sla c
 	sbc a,a
-	dec a
+	sub 2
 	rld
 	inc hl
 	ld a,l

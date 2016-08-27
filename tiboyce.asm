@@ -396,13 +396,13 @@ _
 	ld (hl),0
 	ldir
 	ld bc,160*96
-	ld (hl),$FF
+	ld (hl),$EE
 	ldir
 	ld bc,160*144
 	ld (hl),0
 	ldir
 	ld bc,160*96-1
-	ld (hl),$FF
+	ld (hl),$EE
 	ldir
 #else
 	ld bc,320*240-1
@@ -478,11 +478,11 @@ _
 	ldir
 	
 	ld hl,vram_tiles_start
-	ld (hl),c
 	push hl
 	pop de
 	inc de
 	ld bc,$4000 + $6000 - 1
+	ld (hl),c
 	ldir
 	
 	call generate_digits
