@@ -79,7 +79,8 @@ draw_next_sprite:
 	; Set HL=0
 	sbc hl,hl
 	
-	bit 5,(ix+2)
+	ld c,(ix+2)
+	bit 5,c
 	jr nz,draw_sprite_hflip
 	sub 7
 	jr c,_
@@ -126,34 +127,35 @@ _
 	
 	ld a,(hram_base+LCDC)
 	bit 2,a
-	ld c,8
+	ld l,8
 	jr z,_
 	res 6,e
-	ld c,16
+	ld l,16
 _
 	
-	ld a,3
-	bit 6,(ix+2)
+	ld h,3
+	bit 6,c
 	jr z,_
-	ld a,-3
+	ld h,-3
 	lea iy,iy+(7*3)
-	bit 4,c
+	bit 4,l
 	jr z,_
 	lea iy,iy+(8*3)
 _
-	ld (draw_sprite_normal_vdir),a
-	ld (draw_sprite_priority_vdir),a
 	
-	bit 4,(ix+2)
+	bit 4,c
 	ld a,$44
 	jr z,_
 	add a,a
 _
-	bit 7,(ix+2)
+	bit 7,c
+	ld c,l
 	jr nz,draw_sprite_priority
 	
 draw_sprite_normal:
 	ld (draw_sprite_normal_palette),a
+	ld a,h
+	ld (draw_sprite_normal_vdir),a
 	ld a,e
 draw_sprite_normal_row:
 	ld hl,(iy)
@@ -162,12 +164,13 @@ draw_sprite_normal_vdir = $+2
 	lea iy,iy+3
 	jr c,draw_sprite_normal_vclip
 	push.s bc
+draw_sprite_normal_palette = $+1
+	 ld c,$44
 draw_sprite_normal_pixels:
 	 ld a,(de)
 	 or a
 	 jr z,_
-draw_sprite_normal_palette = $+1
-	 add a,$44
+	 add a,c
 	 ld (hl),a
 _
 	 inc de
@@ -186,6 +189,8 @@ draw_sprite_normal_vclip:
 	
 draw_sprite_priority:
 	ld (draw_sprite_priority_palette),a
+	ld a,h
+	ld (draw_sprite_priority_vdir),a
 	ld a,e
 draw_sprite_priority_row:
 	ld hl,(iy)
@@ -194,6 +199,8 @@ draw_sprite_priority_vdir = $+2
 	lea iy,iy+3
 	jr c,draw_sprite_priority_vclip
 	push.s bc
+draw_sprite_priority_palette = $+1
+	 ld c,$44
 draw_sprite_priority_pixels:
 	 ld a,(hl)
 	 or a
@@ -201,8 +208,7 @@ draw_sprite_priority_pixels:
 	 ld a,(de)
 	 or a
 	 jr z,_
-draw_sprite_priority_palette = $+1
-	 add a,$44
+	 add a,c
 	 ld (hl),a
 _
 	 inc de
