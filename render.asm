@@ -27,35 +27,33 @@ curr_palettes = $+1
 	ld (curr_palettes),hl
 	ld de,mpLcdPalette + (9*2)-1
 	push bc
-	 push ix
-	  ld ix,palette_obj1_colors+1-8
-	  ld c,(9*2) + 3
+	 ld ix,palette_obj1_colors+1-8
+	 ld c,(9*2) + 3
 update_palettes_next_loop:
-	  lea ix,ix+8
-	  ld b,4
+	 lea ix,ix+8
+	 ld b,4
 update_palettes_loop:
-	  xor a
-	  add hl,hl
-	  adc a,a
-	  add hl,hl
-	  adc a,a
-	  add a,a
-	  djnz _
-	  dec c
-	  jr nz,update_palettes_next_loop
-	  inc de
-	  ld e,16*2-1
-	  scf
+	 xor a
+	 add hl,hl
+	 adc a,a
+	 add hl,hl
+	 adc a,a
+	 add a,a
+	 djnz _
+	 dec c
+	 jr nz,update_palettes_next_loop
+	 inc de
+	 ld e,16*2-1
+	 scf
 _
-	  ld (update_palettes_smc),a
-	  push hl
+	 ld (update_palettes_smc),a
+	 push hl
 update_palettes_smc = $+2
-	   lea hl,ix
-	   ldd
-	   ldd
-	  pop hl
-	  jr nc,update_palettes_loop
-	 pop ix
+	  lea hl,ix
+	  ldd
+	  ldd
+	 pop hl
+	 jr nc,update_palettes_loop
 	pop bc
 	ret
 	
@@ -408,14 +406,16 @@ cursorcodesize = $-cursormem
 palettecode:
 	.org palettemem
 
-	.dw 0,0,0,0,0,0,0,0
-	.dw 0,0,0,0,0,-1,0,0
+	.dw 0,0,0,0,0,0,0,0,0
+	.dw 0
+	.dw $DA5A,$AE92,$FFFF,$0000,$088A
+	.dw 0
 	
 render_scanline_off:
 	lea hl,iy+1
 	lea de,iy+2
 	ld bc,159
-	ld (hl),$DD	;White pixels
+	ld (hl),WHITE_BYTE
 	ldir
 	jp render_scanline_next
 	

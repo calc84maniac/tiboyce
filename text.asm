@@ -1,54 +1,3 @@
-#ifdef DEBUG
-yourkidding:
-	push bc
-	push de
-	push ix
-	push hl
-	ld hl,yourkiddingtext
-	push hl
-	call printf
-	pop hl
-	pop hl
-	pop ix
-	pop de
-	pop bc
-	;call Wait
-	ret.l
-	
-yourkiddingtext:
-	.db "You're kidding! %04X\n",0
-
-printf:
-	ld ix,text_buffer
-	ex (sp),ix
-	call _sprintf
-	ex (sp),ix
-	ld hl,text_buffer
-	
-#ifdef CEMU
-	; HL points to string
-PutString:
-	ld a,(hl)
-	inc hl
-	ld (mpCEmuDbg),a
-	or a
-	jr nz,PutString
-	ret
-#else
-	; HL points to string
-PutString:
-	ld a,(cursorCol)
-	cp 40
-	call nc,PutNewLine
-	ld a,(hl)
-	inc hl
-	or a
-	ret z
-	push hl
-	 call PutChar
-	pop hl
-	jr PutString
-	
 Wait:
 _
 	ld a,(mpIntMaskedStatus)
@@ -65,6 +14,61 @@ _
 	rra
 	jr nc,-_
 	ret
+
+#ifdef DEBUG
+printf:
+	ld ix,text_buffer
+	ex (sp),ix
+	call _sprintf
+	ex (sp),ix
+	ld hl,text_buffer
+	
+#ifdef CEMU
+	; HL points to string
+	ld a,(hl)
+	inc hl
+	ld (mpCEmuDbg),a
+	or a
+	jr nz,PutString
+	ret
+#else
+	push hl
+	 ld a,(current_buffer+1)
+	 xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
+	 ld (current_buffer+1),a
+	 push af
+	  ld hl,(cursorCol)
+	  push hl
+	   ld a,WHITE
+	   call PutStringColor
+	  pop hl
+	  ld (cursorCol),hl
+	 pop af
+	 ld (current_buffer+1),a
+	pop hl
+	ld a,WHITE
+#endif
+#endif
+	
+	; HL points to string, A=color
+PutStringColor:
+	inc a
+	ld (PutChar_ColorSMC1),a
+	ld (PutChar_ColorSMC2),a
+	
+	; HL points to string
+PutString:
+	ld a,(cursorCol)
+	cp 40
+	call nc,PutNewLine
+	ld a,(hl)
+	inc hl
+	or a
+	ret z
+	push hl
+	 call PutChar
+	pop hl
+	jr PutString
 	
 	; A = character to display
 	; (cursorRow), (cursorCol) is location to display
@@ -87,14 +91,14 @@ _
 	ret nc
 	ld l,160
 	mlt hl
+	ld bc,(current_buffer)
+	add hl,bc
 	ld c,a
 	ld b,4
 	mlt bc
 	add hl,bc
-	ld bc,text_frame_1
-	add hl,bc
 	
-	ld bc,256+10
+	ld b,10
 PutCharRowLoop:
 	push bc
 	 ld a,(de)
@@ -104,28 +108,22 @@ PutCharRowLoop:
 PutCharPixelLoop:
 	 sla c
 	 sbc a,a
-	 sub 2
-	 rld
+PutChar_ColorSMC1 = $+1
+	 or WHITE+1
+	 dec a
+	 ld (hl),a
 	 sla c
 	 sbc a,a
-	 sub 2
+PutChar_ColorSMC2 = $+1
+	 or WHITE+1
+	 dec a
 	 rld
 	 inc hl
 	 djnz PutCharPixelLoop
 	 ld c,160-4
 	 add hl,bc
 	pop bc
-	dec c
-	jr nz,PutCharRowLoop
-	djnz _
-	ld bc,text_frame_2 - text_frame_1 - (160*10)
-	add hl,bc
-	ex de,hl
-	ld bc,10
-	sbc hl,bc
-	ex de,hl
-	jr PutCharRowLoop
-_
+	djnz PutCharRowLoop
 	ld hl,cursorCol
 	inc (hl)
 	ret
@@ -137,7 +135,7 @@ PutNewLine:
 	 inc hl
 	 ld a,(hl)
 	 add a,10
-	 cp 90
+	 cp 240
 	 jr nc,ScrollUp
 	 ld (hl),a
 	pop hl
@@ -153,7 +151,7 @@ ScrollUp:
 	   push de
 	   pop hl
 	   inc de
-	   ld (hl),$EE
+	   ld (hl),BLUE_BYTE
 	   ld bc,160*10-1
 	   ldir
 	   
@@ -164,7 +162,7 @@ ScrollUp:
 	   push de
 	   pop hl
 	   inc de
-	   ld (hl),$EE
+	   ld (hl),BLUE_BYTE
 	   ld bc,160*10-1
 	   ldir
 	  pop de
@@ -176,11 +174,9 @@ cursorCol:
 	.db 0
 cursorRow:
 	.db 0
-#endif
 
 text_buffer:
 	.block 42
-#endif
 
 font:
 	#import "font.bin"
@@ -196,11 +192,13 @@ _
 _
 	sla c
 	sbc a,a
-	sub 2
-	rld
+	or WHITE+(15-BLACK)
+	sub 15-BLACK
+	ld (hl),a
 	sla c
 	sbc a,a
-	sub 2
+	or WHITE+(15-BLACK)
+	sub 15-BLACK
 	rld
 	inc hl
 	ld a,l

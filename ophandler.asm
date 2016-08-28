@@ -899,137 +899,148 @@ flush_mem:
 vblank_stuff:
 	; Reset match bit
 	ld (hl),2
-	
-	; Get keys
-	scf
-	sbc hl,hl
-	ld a,(mpKeypadGrp7)
-	rra		;Down
-	jr nc,_
-	res 3,l	;Down
-_
-	rra		;Left
-	jr nc,_
-	res 1,l	;Left
-_
-	rra		;Right
-	jr nc,_
-	dec l	;Right
-_
-	rra		;Up
-	jr nc,_
-	res 2,l	;Up
-_
-	ld a,(mpKeypadGrp1)
-	rla \ rla	;MODE
-	jr nc,_
-	res 3,h	;START
-_
-	rla		;2ND
-	jr nc,_
-	dec h	;A
-_
-	ld a,(mpKeypadGrp2)
-	rla		;ALPHA
-	jr nc,_
-	res 1,h	;B
-_
-	ld a,(mpKeypadGrp3)
-	rla		;XT0n
-	jr nc,_
-	res 2,h	;SELECT
-_
-	ld.sis (keys),hl
-	
+
 	; Update frameskip
 	push de
-	 ld hl,z80codebase+frame_skip
-	 dec (hl)
-	 jp nz,skip_this_frame
-	 ld (hl),FRAMESKIP+1
+	 push ix
+	  ld hl,z80codebase+frame_skip
+	  dec (hl)
+	  jr nz,skip_this_frame
+	  ld (hl),FRAMESKIP+1
 	
-	 push bc
-	  ; Finish rendering the frame
-	  ld a,144
-	  call render_scanlines
+	  push bc
+	   ; Finish rendering the frame
+	   ld a,144
+	   call render_scanlines
 	  
-	  ; Display sprites
-	  ld a,(hram_base+LCDC)
-	  rla
-	  push ix
+	   ; Display sprites
+	   ld a,(hram_base+LCDC)
+	   rla
 	   push iy
 	    call c,draw_sprites
 	   pop iy
-	  pop ix
 #ifndef DBGNOSCALE
-	  ; EXPAND DONG
-	  ld a,144/3
+	   ; EXPAND DONG
+	   ld a,144/3
 current_buffer = $+1
-	  ld de,0
-	  ld b,e	;B=0
+	   ld de,0
+	   ld b,e	;B=0
 _
-	  push de
-	  pop hl
-	  ld c,160
-	  add hl,bc
-	  ex de,hl
-	  ldir
-	  ex de,hl
-	  ld c,160
-	  add hl,bc
-	  push hl
-	  pop de
-	  add hl,bc
-	  ex de,hl
-	  ldir
-	  dec a
-	  jr nz,-_
+	   push de
+	   pop hl
+	   ld c,160
+	   add hl,bc
+	   ex de,hl
+	   ldir
+	   ex de,hl
+	   ld c,160
+	   add hl,bc
+	   push hl
+	   pop de
+	   add hl,bc
+	   ex de,hl
+	   ldir
+	   dec a
+	   jr nz,-_
 #endif
 	  
-	  ld hl,fps
-	  ld a,(hl)
-	  inc a
-	  cp 10
-	  jr c,_
-	  xor a
-	  inc hl
-	  inc (hl)
-	  dec hl
+	   ld hl,fps
+	   ld a,(hl)
+	   inc a
+	   cp 10
+	   jr c,_
+	   xor a
+	   inc hl
+	   inc (hl)
+	   dec hl
 _
-	  ld (hl),a
+	   ld (hl),a
 	  
-	  ld a,(mpRtcSecondCount)
+	   ld a,(mpRtcSecondCount)
 last_second = $+1
-	  cp -1
-	  jr z,_
-	  ld (last_second),a
-	  xor a
-	  ld e,(hl)
-	  ld (hl),a
-	  inc hl
-	  ld d,(hl)
-	  ld (hl),a
-	  inc hl
-	  ld (hl),e
-	  inc hl
-	  ld (hl),d
+	   cp -1
+	   jr z,_
+	   ld (last_second),a
+	   xor a
+	   ld e,(hl)
+	   ld (hl),a
+	   inc hl
+	   ld d,(hl)
+	   ld (hl),a
+	   inc hl
+	   ld (hl),e
+	   inc hl
+	   ld (hl),d
 _
-	  ld de,0
-	  ld a,(fps_display+1)
-	  call display_digit
-	  ld de,4
-	  ld a,(fps_display)
-	  call display_digit
-	 pop bc
+	   ld de,0
+	   ld a,(fps_display+1)
+	   call display_digit
+	   ld de,4
+	   ld a,(fps_display)
+	   call display_digit
+	  pop bc
 	 
-	 ; Swap buffers
-	 call prepare_next_frame
+	  ; Swap buffers
+	  call prepare_next_frame
 skip_this_frame:
-	 
-	 ; Always update palettes because it's basically free!
-	 call update_palettes
+
+	  ; Always update palettes because it's basically free!
+	  call update_palettes
+
+	  ; Get keys
+	  scf
+	  sbc hl,hl
+	  ld ix,mpKeypadGrp0
+
+key_smc_right:
+	  bit 2,(ix+7*2)	;Right
+	  jr z,_
+	  dec l
+_
+key_smc_left:
+	  bit 1,(ix+7*2)	;Left
+	  jr z,_
+	  res 1,l
+_
+key_smc_up:
+	  bit 3,(ix+7*2)	;Up
+	  jr z,_
+	  res 2,l
+_
+key_smc_down:
+	  bit 0,(ix+7*2)	;Down
+	  jr z,_
+	  res 3,l
+_
+key_smc_a:
+	  bit 5,(ix+1*2)	;2ND
+	  jr z,_
+	  dec h
+_
+key_smc_b:
+	  bit 7,(ix+2*2)	;ALPHA
+	  jr z,_
+	  res 1,h
+_
+key_smc_select:
+	  bit 7,(ix+3*2)	;X,T,0,n
+	  jr z,_
+	  res 2,h
+_
+key_smc_start:
+	  bit 6,(ix+1*2)	;MODE
+	  jr z,_
+	  res 3,h
+_
+	  ld.sis (keys),hl
+
+key_smc_menu:
+	  bit 6,(ix+6*2)	;CLEAR
+	  call nz,emulator_menu
+
+	 pop ix
 	pop de
-	
+
 	; Trigger VBLANK
 	ld hl,hram_base+LCDC
 	bit 7,(hl)

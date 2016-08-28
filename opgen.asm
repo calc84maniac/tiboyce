@@ -77,7 +77,6 @@ lookup_gb_code_address:
 	 ld hl,LookupGBMessage
 	 push hl
 	  call printf
-	  ;call Wait
 	 pop hl
 	pop de
 #endif
@@ -185,7 +184,6 @@ lookup_gb_done:
 	    ld hl,LookupGBFoundMessage
 	    push hl
 	     call printf
-	     ;call Wait
 	    pop hl
 	   pop de
 	  pop ix
@@ -713,7 +711,6 @@ _
 	 pop hl
 	pop ix
 	ret
-	;jp Wait
 	
 ByteFormat:
 	.db "%02X",0

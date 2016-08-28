@@ -15,6 +15,16 @@
 #define FRAME_LENGTH (SCANDELAY*256*154)
 #define TIMA_LENGTH (SCANDELAY*256*16/456)
 
+MAGENTA = 10
+OLIVE = 11
+WHITE = 12
+BLACK = 13
+BLUE = 14
+
+WHITE_BYTE = WHITE*$11
+BLACK_BYTE = BLACK*$11
+BLUE_BYTE = BLUE*$11
+
 ; Some standalone equates
 _sprintf = $0000BC
 _GetCSC = $02014C
@@ -393,19 +403,20 @@ _
 	inc de
 #ifdef DBGNOSCALE
 	ld bc,160*144
-	ld (hl),0
+	ld (hl),WHITE_BYTE
 	ldir
 	ld bc,160*96
-	ld (hl),$EE
+	ld (hl),BLUE_BYTE
 	ldir
 	ld bc,160*144
-	ld (hl),0
+	ld (hl),WHITE_BYTE
 	ldir
 	ld bc,160*96-1
-	ld (hl),$EE
+	ld (hl),BLUE_BYTE
 	ldir
 #else
 	ld bc,320*240-1
+	ld (hl),WHITE_BYTE
 	ldir
 #endif
 	
@@ -880,3 +891,4 @@ hmem_init:
 	#include "z80mode.asm"
 	#include "render.asm"
 	#include "text.asm"
+	#include "menu.asm"

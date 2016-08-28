@@ -211,7 +211,6 @@ interrupt_get:
 	pop hl
 	push hl
 	 push af
-	  ;call.il yourkidding
 	  ld a,l
 	  sub z80codesize & $FF
 	  ld a,h
