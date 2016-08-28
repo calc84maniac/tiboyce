@@ -22,7 +22,7 @@ flush_code:
 #ifdef DEBUG
 	ld hl,FlushMessage
 	push hl
-	 call printf
+	 call debug_printf
 	pop hl
 #endif
 	ld hl,recompile_struct
@@ -76,7 +76,7 @@ lookup_gb_code_address:
 	push de
 	 ld hl,LookupGBMessage
 	 push hl
-	  call printf
+	  call debug_printf
 	 pop hl
 	pop de
 #endif
@@ -183,7 +183,7 @@ lookup_gb_done:
 	   push de
 	    ld hl,LookupGBFoundMessage
 	    push hl
-	     call printf
+	     call debug_printf
 	    pop hl
 	   pop de
 	  pop ix
@@ -209,7 +209,7 @@ lookup_code_cached_miss:
 	    push hl
 	     ld hl,CacheMissMessage
 	     push hl
-	      call printf
+	      call debug_printf
 	     pop hl
 	    pop hl
 	   pop hl
@@ -372,7 +372,7 @@ lookup_code_by_pointer:
 	  push hl
 	   ld hl,LookupMessage
 	   push hl
-	    call printf
+	    call debug_printf
 	   pop hl
 	  pop hl
 	 pop hl
@@ -478,7 +478,7 @@ recompile:
 	     push hl
 	      ld hl,RecompileMessage
 	      push hl
-	       call printf
+	       call debug_printf
 	      pop hl
 	     pop hl
 	    pop hl
@@ -530,7 +530,7 @@ recompile_ram:
 	     push hl
 	      ld hl,RecompileRamMessage
 	      push hl
-	       call printf
+	       call debug_printf
 	      pop hl
 	     pop hl
 	    pop de
@@ -591,7 +591,7 @@ rerecompile:
 	 push hl
 	  ld hl,CoherencyFailedMessage
 	  push hl
-	   call printf
+	   call debug_printf
 	  pop hl
 	 pop hl
 	pop ix
@@ -668,7 +668,7 @@ coherency_flush:
 	 push hl
 	  ld hl,PaddingUpdateMessage
 	  push hl
-	   call printf
+	   call debug_printf
 	  pop hl
 	 pop hl
 	pop ix
@@ -697,7 +697,7 @@ _
 	    push hl
 	     ld hl,ByteFormat
 	     push hl
-	      call printf
+	      call debug_printf
 	     pop hl
 	    pop hl
 	   pop hl

@@ -16,12 +16,12 @@ _
 	ret
 
 #ifdef DEBUG
-printf:
+debug_printf:
 	ld ix,text_buffer
 	ex (sp),ix
 	call _sprintf
-	ex (sp),ix
-	ld hl,text_buffer
+	pop hl
+	push ix
 	
 #ifdef CEMU
 	; HL points to string
@@ -46,21 +46,35 @@ printf:
 	 pop af
 	 ld (current_buffer+1),a
 	pop hl
-	ld a,WHITE
+	jr PutString
 #endif
 #endif
 	
-	; HL points to string, A=color
-PutStringColor:
+SetStringColor:
 	inc a
 	ld (PutChar_ColorSMC1),a
 	ld (PutChar_ColorSMC2),a
+	ret
+	
+	; Call like printf, A=color
+PutStringFormatColor:
+	call SetStringColor
+	
+	; Call like printf
+PutStringFormat:
+	ld ix,text_buffer
+	ex (sp),ix
+	call _sprintf
+	pop hl
+	push ix
+	jr PutString
+	
+	; HL points to string, A=color
+PutStringColor:
+	call SetStringColor
 	
 	; HL points to string
 PutString:
-	ld a,(cursorCol)
-	cp 40
-	call nc,PutNewLine
 	ld a,(hl)
 	inc hl
 	or a
@@ -69,6 +83,23 @@ PutString:
 	 call PutChar
 	pop hl
 	jr PutString
+	
+PutNStringColor:
+	call SetStringColor
+	
+PutNString:
+	ld b,(hl)
+	inc hl
+PutNString_B:
+	push bc
+	 ld a,(hl)
+	 inc hl
+	 push hl
+	  call PutChar
+	 pop hl
+	pop bc
+	djnz PutNString_B
+	ret
 	
 	; A = character to display
 	; (cursorRow), (cursorCol) is location to display

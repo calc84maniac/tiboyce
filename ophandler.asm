@@ -44,7 +44,7 @@ identify_waitloop:
 	 push af
 	  ld hl,WaitLoopSearchMessage
 	  push hl
-	   call printf
+	   call debug_printf
 	  pop hl
 	 pop ix
 	pop hl
@@ -221,7 +221,7 @@ waitloop_identified:
 	 push af
 	  ld hl,WaitLoopIdentifiedMessage
 	  push hl
-	   call printf
+	   call debug_printf
 	  pop hl
 	 pop ix
 	pop bc

@@ -423,7 +423,7 @@ _
 #ifdef DEBUG
 	ld hl,StartText
 	push hl
-	 call printf
+	 call debug_printf
 	pop hl
 #endif
 	
@@ -584,6 +584,8 @@ _
 	pop bc
 	ret nz
 	ld d,(hl)
+	inc hl
+	ld (current_description),hl
 	
 	ld hl,ROMName-1
 _

@@ -1,3 +1,7 @@
+#define ITEM_LINK 0
+#define ITEM_CMD 1
+#define ITEM_STATE 2
+
 emulator_menu:
 	push bc
 	 ld hl,(current_buffer)
@@ -10,9 +14,36 @@ emulator_menu:
 	
 	 call draw_mini_screen
 	 
-	 ld hl,MainMenu
-	 ld (current_menu),hl
+	 ld a,20
+	 ld (cursorRow),a
 	 ld a,1
+	 ld (cursorCol),a
+current_description = $+1
+	 ld hl,0
+	 ld a,MAGENTA
+	 call PutNStringColor
+	 
+	 ld a,30
+	 ld (cursorRow),a
+	 ld a,1
+	 ld (cursorCol),a
+	 ld ix,(rom_start)
+	 ld bc,$0134
+	 add ix,bc
+	 ld b,(ix+$014E-$0134)
+	 ld c,(ix+$014F-$0134)
+	 push bc
+	  push ix
+	   ld hl,TitleChecksumFormat
+	   push hl
+	    call PutStringFormat
+	   pop hl
+	  pop hl
+	 pop hl
+	 
+	 xor a
+	 ld (current_menu),a
+	 inc a
 	 ld (current_menu_selection),a
 	 
 	 call draw_current_menu
@@ -24,12 +55,13 @@ emulator_menu:
 	  
 menu_loop:
 	  call WaitForKey
-	  ld hl,(current_menu)
-	  cp 1
+	  call get_current_menu_selection
+	  dec a
 	  jr z,menu_down
-	  cp 4
+	  cp 3
+	  jr c,menu_left_right
 	  jr z,menu_up
-	  cp 15
+	  cp 15-1
 	  jr nz,menu_loop
 	  
 menu_exit:
@@ -42,7 +74,7 @@ menu_exit:
 	ret
 	
 menu_up:
-	ld a,(current_menu_selection)
+	ld a,c
 	dec a
 	jr nz,_
 	ld a,(hl)
@@ -52,7 +84,7 @@ _
 	jr menu_loop
 	
 menu_down:
-	ld a,(current_menu_selection)
+	ld a,c
 	cp (hl)
 	jr nz,_
 	xor a
@@ -62,6 +94,27 @@ _
 	call draw_current_menu
 	jr menu_loop
 	
+menu_left_right:
+	dec a
+	add a,a
+	dec a
+current_item_ptr = $+1
+	ld hl,0
+	ld de,ItemChangeCallbacks
+	call DoItemCallback
+	jr menu_loop
+	
+get_current_menu_selection:
+	ld hl,MenuList
+current_menu = $+1
+	ld c,0
+	ld b,3
+	mlt bc
+	add hl,bc
+	ld hl,(hl)
+current_menu_selection = $+1
+	ld c,0
+	ret
 	
 draw_current_menu:
 	ld hl,(current_buffer)
@@ -74,16 +127,17 @@ draw_current_menu:
 	ld (hl),BLUE_BYTE
 	ldir
 	
-current_menu = $+1
-	ld hl,0
-current_menu_selection = $+1
-	ld c,0
+	call get_current_menu_selection
+	
 	; HL = menu structure, C = highlighted item index
 draw_menu:
 	ld b,(hl)
 	inc hl
 	inc b
 	push bc
+	 ld a,WHITE
+	 call SetStringColor
+	 ex de,hl
 	 jr draw_menu_title
 draw_menu_loop:
 	dec c
@@ -91,7 +145,7 @@ draw_menu_loop:
 	 jr z,_
 	 xor a
 	 cpir
-	 ld c,OLIVE
+	 ld a,OLIVE
 	 jr ++_
 _
 	 ld a,205
@@ -100,17 +154,30 @@ _
 	 ld (cursorCol),a
 	 ld a,MAGENTA
 	 call PutStringColor
-draw_menu_title:
-	 ld c,WHITE
+	 ld (current_item_ptr),hl
+	 ld a,WHITE
 _
-	 ld a,(hl)
-	 inc hl
+	 call SetStringColor
+	 
+	 ld de,ItemDisplayCallbacks
+	 call DoItemCallback
+	 inc de
+	 
+draw_menu_title:
+	 ld a,(de)
+	 inc de
 	 ld (cursorRow),a
-	 ld a,(hl)
-	 inc hl
+	 ld a,(de)
+	 inc de
 	 ld (cursorCol),a
-	 ld a,c
-	 call PutStringColor
+	 push hl
+	  push de
+	   call PutStringFormat
+	  pop hl
+	 pop de
+	 xor a
+	 ld c,a
+	 cpir
 	pop bc
 	djnz draw_menu_loop
 	ret
@@ -187,24 +254,76 @@ _
 	ld a,c
 	ret
 	
+DoItemCallback:
+	ld c,(hl)
+	inc hl
+	ex de,hl
+	ld b,3
+	mlt bc
+	add hl,bc
+	ld b,a
+	ld a,(de)
+	ld hl,(hl)
+	jp (hl)
+	
+ItemDisplayState:
+	xor a
+	sbc hl,hl
+current_state = $+1
+	ld l,0
+ItemDisplayLink:
+ItemDisplayCmd:
+ItemChangeLink:
+ItemChangeCmd:
+	ret
+	
+ItemChangeState:
+	ld hl,current_state
+	ld a,(hl)
+	add a,b
+	cp 10
+	jr c,_
+	ld a,9
+	jr nz,_
+	xor a
+_
+	ld (hl),a
+	jp draw_current_menu
+	
+TitleChecksumFormat:
+	.db "%.16s  %04X",0
+	
+MenuList:
+	.dl MainMenu
+	
+ItemDisplayCallbacks:
+	.dl ItemDisplayLink
+	.dl ItemDisplayCmd
+	.dl ItemDisplayState
+	
+ItemChangeCallbacks:
+	.dl ItemChangeLink
+	.dl ItemChangeCmd
+	.dl ItemChangeState
+	
 MainMenu:
 	.db 9
 	.db 5,10,"TI-Boy CE Alpha 0.01",0
 	.db "Select to set appearance and\n frameskip behavior.",0
-	.db 50,1,"Graphics Options",0
+	.db ITEM_LINK,1, 50,1,"Graphics Options",0
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db 70,1,"Load State: Slot ",0
+	.db ITEM_STATE,0, 70,1,"Load State Slot %u",0
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db 80,1,"Save State: Slot ",0
+	.db ITEM_STATE,1, 80,1,"Save State Slot %u",0
 	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
-	.db 100,1,"Control Options",0
+	.db ITEM_LINK,2, 100,1,"Control Options",0
 	.db "Select to manage miscellaneous options.",0
-	.db 120,1,"Emulation Options",0
+	.db ITEM_LINK,3, 120,1,"Emulation Options",0
 	.db "Select to load a new game\n (will exit a currently playing game).",0
-	.db 140,1,"Load new game",0
+	.db ITEM_CMD,0, 140,1,"Load new game",0
 	.db "Select to reset the Game Boy\n with the current game loaded.",0
-	.db 150,1,"Restart game",0
+	.db ITEM_CMD,1, 150,1,"Restart game",0
 	.db "Select to exit this menu and\n resume gameplay.",0
-	.db 160,1,"Return to game",0
+	.db ITEM_CMD,2, 160,1,"Return to game",0
 	.db "Select to exit the emulator and\n return to TI-OS.",0
-	.db 180,1,"Exit TI-Boy CE",0
+	.db ITEM_CMD,3, 180,1,"Exit TI-Boy CE",0
