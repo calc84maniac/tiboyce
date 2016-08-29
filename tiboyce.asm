@@ -374,6 +374,7 @@ _
 	ret c
 	
 	di
+RestartFromHere:
 	push iy
 	ld hl,(mpIntEnable)
 	push hl
@@ -544,9 +545,10 @@ _
 	ld iy,$FFFE
 	jp set_gb_stack
 	
-exit:
+CmdExit:
 saveSP = $+1
 	ld sp,0
+	ld b,a
 	ld a,$D0
 	ld mb,a
 	pop hl
@@ -560,7 +562,8 @@ saveSP = $+1
 	pop hl
 	ld (mpIntEnable),hl
 	pop iy
-	or a
+	srl b
+	jp nz,RestartFromHere
 	ei
 	ret
 	
