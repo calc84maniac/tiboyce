@@ -4,6 +4,59 @@
 #define ITEM_OPTION 3
 #define ITEM_KEY 4
 
+ApplyConfiguration:
+	ld hl,FrameskipValue
+	ld a,(hl)
+	inc a
+	ld (frameskip_smc),a
+	inc hl
+	
+	; Frameskip type
+	ld a,(hl)
+	cp 2
+	jr nz,_
+	dec a
+	ld (frameskip_smc),a
+_
+	inc hl
+	
+	; FPS display
+	ld a,(hl)
+	dec a
+	and $08
+	or $20
+	ld (fps_display_smc),a
+	inc hl
+	
+	; Key configuration
+	ld ix,key_smc_right
+	ld de,KeySMCList
+	ld b,9
+key_config_loop:
+	ld a,(de)
+	inc de
+	ld (key_config_smc),a
+	ld a,(hl)
+	dec a
+	cpl
+	and %00111000
+	rrca
+	rrca
+	ld (ix+2),a
+	ld a,(hl)
+	inc hl
+	dec a
+	and %00000111
+	add a,a
+	add a,a
+	add a,a
+	add a,$46
+	ld (ix+3),a
+key_config_smc = $+2
+	lea ix,ix
+	djnz key_config_loop
+	ret
+	
 emulator_menu:
 	push bc
 	 xor a
@@ -41,10 +94,13 @@ menu_exit:
 CmdReturnToGame:
 	  ld a,(current_menu_selection)
 	  ld (main_menu_selection),a
-	  
+
+	  call ApplyConfiguration
+
+_
 	  call GetKeyCode
 	  or a
-	  jr nz,menu_exit
+	  jr nz,-_
 	 pop hl
 	 ld (mpLcdBase),hl
 	pop bc
@@ -287,16 +343,17 @@ _
 	ret
 	
 GetOption:
-	ld hl,OptionList
+	ld hl,OptionConfig
+	ld bc,0
 	ld c,a
-	ld b,3
-	mlt bc
 	add hl,bc
-	ld hl,(hl)
-	ld bc,(hl)
-	inc hl
-	inc hl
-	inc hl
+	push hl
+	 ld hl,OptionList
+	 ld b,3
+	 mlt bc
+	 add hl,bc
+	 ld hl,(hl)
+	pop bc
 	ret
 	
 GetKeyConfig:
@@ -314,8 +371,8 @@ current_state = $+1
 	ld l,0
 	cp 2
 	jr nz,_
-current_frameskip = $+1
-	ld l,0
+	ld a,(FrameskipValue)
+	ld l,a
 _
 ItemDisplayLink:
 ItemDisplayCmd:
@@ -350,7 +407,7 @@ ItemChangeDigit:
 	ld hl,current_state
 	cp 2
 	jr nz,_
-	ld hl,current_frameskip
+	ld hl,FrameskipValue
 _
 	ld a,(hl)
 	add a,b
@@ -433,6 +490,7 @@ MenuList:
 	
 OptionList:
 	.dl OptionFrameskipType
+	.dl OptionFPSDisplay
 	
 CmdList:
 	.dl CmdExit
@@ -484,12 +542,14 @@ MainMenu:
 	.db ITEM_CMD,1, 180,1,"Exit TI-Boy CE",0
 	
 GraphicsMenu:
-	.db 3
+	.db 4
 	.db 5,12,"Graphics Options",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
 	.db ITEM_OPTION,0, 70,1,"Frameskip type: %-9s",0
 	.db "",0
 	.db ITEM_DIGIT,2, 80,1,"Frameskip value: %u",0
+	.db "",0
+	.db ITEM_OPTION,1, 100,1,"FPS display: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -524,11 +584,15 @@ EmulationMenu:
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
 OptionFrameskipType:
-	.dl FrameskipType
 	.db 3
 	.db "off",0
 	.db "automatic",0
 	.db "manual",0
+	
+OptionFPSDisplay:
+	.db 2
+	.db "off",0
+	.db "on",0
 	
 KeyNames:
 	.db "(press)",0
@@ -586,8 +650,25 @@ KeyNames:
 	.db "mode",0
 	.db "del",0
 	
+FrameskipValue:
+	.db 0
+	
+OptionConfig:
 FrameskipType:
+	.db 1
+FPSDisplay:
 	.db 0
 	
 KeyConfig:
 	.db 3,2,4,1,54,48,40,55,15
+	
+KeySMCList:
+	.db key_smc_left - key_smc_right
+	.db key_smc_up - key_smc_left
+	.db key_smc_down - key_smc_up
+	.db key_smc_a - key_smc_down
+	.db key_smc_b - key_smc_a
+	.db key_smc_select - key_smc_b
+	.db key_smc_start - key_smc_select
+	.db key_smc_menu - key_smc_start
+	.db 0

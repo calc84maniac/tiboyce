@@ -8,9 +8,6 @@
 #ifndef SCANDELAY
 #define SCANDELAY 12
 #endif
-#ifndef FRAMESKIP
-#define FRAMESKIP 0
-#endif
 
 #define FRAME_LENGTH (SCANDELAY*256*154)
 #define TIMA_LENGTH (SCANDELAY*256*16/456)
@@ -522,6 +519,8 @@ RestartFromHere:
 	call update_palettes
 	
 	call flush_code_reset_padding
+	
+	call ApplyConfiguration
 	
 	ld de,$0100
 	call lookup_code

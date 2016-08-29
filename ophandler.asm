@@ -906,7 +906,8 @@ vblank_stuff:
 	  ld hl,z80codebase+frame_skip
 	  dec (hl)
 	  jr nz,skip_this_frame
-	  ld (hl),FRAMESKIP+1
+frameskip_smc = $+1
+	  ld (hl),1
 	
 	  push bc
 	   ; Finish rendering the frame
@@ -942,8 +943,13 @@ _
 	   ldir
 	   dec a
 	   jr nz,-_
+#else
+	   xor a
 #endif
-	  
+	   
+fps_display_smc:
+	   jr z,NoFPSDisplay
+	   
 	   ld hl,fps
 	   ld a,(hl)
 	   inc a
@@ -978,6 +984,8 @@ _
 	   ld de,4
 	   ld a,(fps_display)
 	   call display_digit
+	   
+NoFPSDisplay:
 	  pop bc
 	 
 	  ; Swap buffers
