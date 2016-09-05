@@ -1008,6 +1008,9 @@ _
 key_smc_left:
 	  bit 1,(ix+7*2)	;Left
 	  jr z,_
+	  bit 0,l
+	  set 0,l
+	  jr z,_
 	  res 1,l
 _
 key_smc_up:
@@ -1017,6 +1020,9 @@ key_smc_up:
 _
 key_smc_down:
 	  bit 0,(ix+7*2)	;Down
+	  jr z,_
+	  bit 2,l
+	  set 2,l
 	  jr z,_
 	  res 3,l
 _
