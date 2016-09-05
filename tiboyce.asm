@@ -36,11 +36,13 @@ _CreatePVar3 = $020528
 _DelVar = $020588
 _DelMem = $020590
 _ClrLCDFull = $020808
+_HomeUp = $020828
 _VPutSN = $020838
 _RunIndicOff = $020848
 _createAppVar = $021330
 _DelVarArc = $021434
 _Arc_Unarc = $021448
+_DrawStatusBar = $021A3C
 _ChkInRAM = $021F98
 penCol = $D008D2
 penRow = $D008D5
@@ -263,7 +265,7 @@ SelectionLoop:
 	jr z,MenuEnter
 	cp 15
 	jr nz,SelectionLoop
-	ret
+	jr RestoreHomeScreen
 	
 MenuDown:
 	inc hl
@@ -315,8 +317,18 @@ _
 	ld (de),a
 	
 	call StartROM
-	ret c
-	jp RepopulateMenu
+	jp nc,RepopulateMenu
+	
+RestoreHomeScreen:
+	ld hl,pixelShadow
+	ld de,pixelShadow+1
+	ld bc,(8400*3) - 1
+	ld (hl),0
+	ldir
+	set 0,(iy+3)
+	call _DrawStatusBar
+	call _HomeUp
+	jp _ClrLCDFull
 	
 StartROM:
 	call LoadROM
