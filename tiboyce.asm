@@ -26,12 +26,20 @@ BLUE_BYTE = BLUE*$11
 _sprintf = $0000BC
 _GetCSC = $02014C
 _Mov9ToOP1 = $020320
+_CmpPrgNamLen = $020504
 _chkFindSym = $02050C
+_InsertMem = $020514
+_EnoughMem = $02051C
+_CmpMemNeed = $020520
+_CreatePVar4 = $020524
+_CreatePVar3 = $020528
+_DelVar = $020588
+_DelMem = $020590
 _ClrLCDFull = $020808
 _VPutSN = $020838
 _RunIndicOff = $020848
 _createAppVar = $021330
-_Delvar = $021438
+_DelVarArc = $021434
 _Arc_Unarc = $021448
 _ChkInRAM = $021F98
 penCol = $D008D2
@@ -564,6 +572,9 @@ saveSP = $+1
 	srl b
 	jp nz,RestartFromHere
 	ei
+	push af
+	call SaveRAM
+	pop af
 	ret
 	
 LoadROM:
@@ -670,8 +681,6 @@ _
 	jr LoadROMLoop
 	
 LoadRAM:
-	ld hl,mpZeroPage
-	ld (cram_start),hl
 	ld hl,ROMName+1
 	ld bc,9
 	xor a
@@ -687,41 +696,136 @@ LoadRAM:
 	ld de,8*1024
 	ld a,(mbc)
 	cp 2
-	jr z,_
+	jr z,++_
 	ld hl,(rom_start)
 	ld bc,$0149
 	add hl,bc
 	ld a,(hl)
 	or a
-	ret z
+	jr nz,_
+	ld d,e
+_
 	cp 3
 	jr c,_
-	ld de,32*1024
+	ld d,(32*1024) >> 8
 _
 	
-	ld (ram_size),de
-	
+	push de
+	 ld a,d
+	 or e
+	 jr z,LoadRAMNoVar
 _
-	push de	
 	 ld hl,ROMName
-	 call LookUpAppvarForceRAM
-	pop de
-	ex de,hl
-	jr nc,_
-	push hl
+	 call LookUpAppvar
+	 jr nc,_
+	 or a
+	 sbc hl,hl
 	 call _createAppVar
-	pop de
-	jr -_
+	 jr -_
 _
-	or a
-	sbc hl,bc
-	scf
-	ret nz
-	
-	ex de,hl
-	ld (cram_start),hl
-	or a
+	 push bc
+	  push hl
+	   ld a,b
+	   or c
+	   jr z,_
+	   ld de,vram_tiles_start
+	   ldir
+_
+	  pop de
+	 pop hl
+	 call _ChkInRAM
+	 jr nz,LoadRAMNoVar
+	 ex de,hl
+	 dec hl
+	 ld (hl),b
+	 dec hl
+	 ld (hl),c
+	 inc hl
+	 inc hl
+	 call _DelMem
+LoadRAMNoVar:
+	pop hl
+	push hl
+	 inc hl
+	 inc hl
+	 call _EnoughMem
+	 ret c
+	 ex de,hl
+	 ld de,program_end
+	 call _InsertMem
+	pop bc
+	ld a,c
+	ld (de),a
+	inc de
+	ld a,b
+	ld (de),a
+	inc de
+	ld (cram_start),de
+	or c
+	jr z,_
+	ld hl,vram_tiles_start
+	ldir
 	ret
+_
+	ld hl,mpZeroPage
+	ld (cram_start),hl
+	ret
+	
+	
+
+SaveRAM:
+	ld hl,(ram_size)
+	ld a,h
+	or l
+	jr z,SaveRAMDeleteMem
+	
+	ld hl,ROMName
+	call LookUpAppvar
+	jr c,SaveRAMRecreate
+	
+	push de
+	 dec hl
+	 dec hl
+	 inc bc
+	 inc bc
+	 ld de,program_end
+	 call memcmp
+	pop hl
+	jr z,SaveRAMDeleteMem
+	
+	; Delete the existing variable
+	push hl
+	pop ix
+	ld de,(ix-7)
+	ld d,(ix-4)
+	ld e,(ix-3)
+	call _DelVarArc
+	
+SaveRAMRecreate:
+	ld hl,ROMName
+	call _Mov9ToOP1
+	call _CmpPrgNamLen
+	ld bc,0
+	call _CreatePVar4
+	push hl
+	pop ix
+	ld hl,(program_end << 16) | (program_end & $00FF00) | (program_end >> 16)
+	ld (ix-5),hl
+	
+	ld a,(AutoArchive)
+	or a
+	ret z
+	ld hl,ROMName
+	call _Mov9ToOP1
+	jp _Arc_Unarc
+	
+SaveRAMDeleteMem:
+	ld hl,program_end
+	ld de,(hl)
+	inc de
+	inc.s de
+	jp _DelMem
+	
 	
 LookUpAppvar:
 	call _Mov9ToOP1
@@ -730,11 +834,11 @@ LookUpAppvar:
 GetDataSection:
 	call _ChkInRAM
 	ex de,hl
+	ld bc,9
 	jr z,_
-	ld de,9
-	add hl,de
-	ld e,(hl)
-	add hl,de
+	add hl,bc
+	ld c,(hl)
+	add hl,bc
 	inc hl
 _
 	ld c,(hl)
@@ -879,8 +983,6 @@ cram_bank_base:
 	.dl 0
 mbc:
 	.db 0
-ram_size:
-	.dl 0
 	
 hmem_init:
 	.db 0,0,0,0,0,$00,$00,$00,0,0,0,0,0,0,0,0
@@ -896,3 +998,6 @@ hmem_init:
 	#include "render.asm"
 	#include "text.asm"
 	#include "menu.asm"
+	
+program_end = $+2
+ram_size = program_end

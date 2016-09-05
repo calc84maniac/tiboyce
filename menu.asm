@@ -28,6 +28,9 @@ _
 	ld (fps_display_smc),a
 	inc hl
 	
+	; Auto-Archive
+	inc hl
+	
 	; Key configuration
 	ld ix,key_smc_right
 	ld de,KeySMCList
@@ -491,6 +494,7 @@ MenuList:
 OptionList:
 	.dl OptionFrameskipType
 	.dl OptionFPSDisplay
+	.dl OptionAutoArchive
 	
 CmdList:
 	.dl CmdExit
@@ -578,8 +582,10 @@ ControlsMenu:
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
 EmulationMenu:
-	.db 1
+	.db 2
 	.db 5,11,"Emulation Options",0
+	.db "Enable to automatically archive saves.",0
+	.db ITEM_OPTION,2, 50,1,"Auto-Archive: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -590,6 +596,7 @@ OptionFrameskipType:
 	.db "manual",0
 	
 OptionFPSDisplay:
+OptionAutoArchive:
 	.db 2
 	.db "off",0
 	.db "on",0
@@ -658,6 +665,8 @@ FrameskipType:
 	.db 1
 FPSDisplay:
 	.db 0
+AutoArchive:
+	.db 1
 	
 KeyConfig:
 	.db 3,2,4,1,54,48,40,55,15
