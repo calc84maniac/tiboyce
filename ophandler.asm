@@ -996,10 +996,9 @@ skip_this_frame:
 	  ; Handle frame synchronization
 	  ld hl,z80codebase+frame_excess_count
 	  dec (hl)
-	  jr nc,no_frame_sync
-	  ccf	; Ensure carry reset
-	  ; If frame was rendered, wait if applicable
 	  jp p,no_frame_sync
+	  ; If we didn't render, save for later
+	  jr nc,frame_sync_later
 frame_sync_loop:
 	  push hl
 	   ld de,$000800
@@ -1009,14 +1008,17 @@ frame_sync_loop:
 	  pop hl
 	  inc (hl)
 	  jr nz,frame_sync_loop
+frame_sync_later:
+	  ; Set Z
+	  xor a
 no_frame_sync:
 	  
 	  ; Handle frameskip logic
-	  ; At this point A=0, C is reset
+	  ; At this point A=0, Z holds auto state
 	  ex de,hl
 	  ld hl,skippable_frames
 frameskip_type_smc:
-	  jr z,no_frameskip	;JR Z when auto, JR NC when off, JR C when manual
+	  jr z,no_frameskip	;JR no_frameskip when off, JR $+2 when manual
 	  dec (hl)
 	  jr nz,frameskip_end
 no_frameskip:
