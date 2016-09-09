@@ -60,7 +60,17 @@ r_interrupt:
 	.block $38-$
 rst38h:
 	push af
-	 ld.lil a,(mpIntMaskedStatus)
+	 ld a,pLcdMis >> 8
+	 in a,(pLcdMis & $FF)
+	 or a
+	 jr z,_
+	 ld.lil (mpLcdIcr),a
+frame_excess_count = $+1
+	 add a,0
+	 ld (frame_excess_count),a
+_
+	 ld a,pIntMaskedStatus >> 8
+	 in a,(pIntMaskedStatus & $FF)
 	 rra
 	 jr c,on_interrupt
 	 rra
@@ -1220,7 +1230,8 @@ writeDMA:
 write_scroll_swap:
 	ex af,af'
 write_scroll:
-	ld a,(frame_skip)
+render_this_frame = $+1
+	ld a,1
 	dec a
 	jr nz,mem_write_oam_swap
 	di
@@ -1399,8 +1410,6 @@ mbc_2000_denied:
 	
 intstate:
 	.db 0
-frame_skip:
-	.db 1
 	
 keys:
 	.dw $FFFF

@@ -903,11 +903,9 @@ vblank_stuff:
 	; Update frameskip
 	push de
 	 push ix
-	  ld hl,z80codebase+frame_skip
-	  dec (hl)
+	  ld a,(z80codebase+render_this_frame)
+	  dec a
 	  jr nz,skip_this_frame
-frameskip_smc = $+1
-	  ld (hl),1
 	
 	  push bc
 	   ; Finish rendering the frame
@@ -1150,7 +1148,7 @@ render_catchup:
 	ret.l
 	
 lcdc_write:
-	ld a,(z80codebase+frame_skip)
+	ld a,(z80codebase+render_this_frame)
 	dec a
 	call.il z,render_catchup
 	exx

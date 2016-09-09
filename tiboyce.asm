@@ -58,6 +58,11 @@ tAsm84CeCmp = $7B
 ; 84+CE IO definitions
 mpLcdBase = $E30010
 mpLcdCtrl = $E30018
+mpLcdImsc = $E3001C
+mpLcdRis = $E30020
+pLcdMis = $4024
+mpLcdMis = $E30024
+mpLcdIcr = $E30028
 mpLcdPalette = $E30200
 mpLcdCursorImg = $E30800
 
@@ -65,6 +70,7 @@ mpIntRawStatus = $F00000
 mpIntEnable = $F00004
 mpIntAcknowledge = $F00008
 mpIntLatch = $F0000C
+pIntMaskedStatus = $5014
 mpIntMaskedStatus = $F00014
 
 TMR_ENABLE = %00101001
