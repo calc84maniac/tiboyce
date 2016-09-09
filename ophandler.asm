@@ -988,33 +988,47 @@ NoFPSDisplay:
 	 
 	  ; Swap buffers
 	  call prepare_next_frame
-skip_this_frame:
-
-	  ; Always update palettes because it's basically free!
-	  call update_palettes
 	  
-	  ; Handle frameskip
-	  xor a
+	  ; Signify frame was rendered
+	  scf
+skip_this_frame:
+	  
+	  ; Handle frame synchronization
 	  ld hl,z80codebase+frame_excess_count
 	  dec (hl)
-frameskip_enable_smc:
-	  jp m,frame_sync	;or JP when disabled
+	  jr nc,no_frame_sync
+	  ccf	; Ensure carry reset
+	  ; If frame was rendered, wait if applicable
+	  jp p,no_frame_sync
+frame_sync_loop:
+	  push hl
+	   ld de,$000800
+	   call wait_for_interrupt
+	   ld hl,mpLcdIcr
+	   ld (hl),1
+	  pop hl
+	  inc (hl)
+	  jr nz,frame_sync_loop
+no_frame_sync:
+	  
+	  ; Handle frameskip logic
+	  ; At this point A=0, C is reset
 	  ex de,hl
 	  ld hl,skippable_frames
-frameskip_auto_smc:
-	  jr z,no_frameskip	;or JR C when manual
+frameskip_type_smc:
+	  jr z,no_frameskip	;JR Z when auto, JR NC when off, JR C when manual
 	  dec (hl)
 	  jr nz,frameskip_end
 no_frameskip:
 frameskip_value_smc = $+1
 	  ld (hl),1
-	  ex de,hl
-frame_sync:
-	  ld (hl),a
-	  call m,wait_for_vblank
+	  ld (de),a
 	  inc a
 frameskip_end:
 	  ld (z80codebase+render_this_frame),a
+	  
+	  ; Always update palettes because it's basically free!
+	  call update_palettes
 	  
 	  ; Get keys
 	  scf
@@ -1091,13 +1105,6 @@ _
 	ld a,(hl)
 	ret.l
 	
-wait_for_vblank:
-	ld de,$000800
-	call wait_for_interrupt
-	ld hl,mpLcdIcr
-	ld (hl),1
-	ret
-	
 	; DE = interrupt source mask to wait on
 	; Destroys: IX, DE, HL
 	; Interrupt is acknowledged before waiting,
@@ -1135,13 +1142,13 @@ prepare_next_frame:
 	ld (scanlineLUT_ptr),hl
 	ld hl,vram_tiles_start
 	ld (window_tile_ptr),hl
-	xor a
-	ld (window_tile_offset),a
-	ld (myLY),a
 #ifndef DBGNOSCALE
 	ld a,2
 	ld (scanline_scale_counter),a
 #endif
+	xor a
+	ld (window_tile_offset),a
+	ld (myLY),a
 	ret
 	
 oam_transfer:

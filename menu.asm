@@ -17,22 +17,13 @@ ApplyConfiguration:
 	ld (skippable_frames),a
 	inc hl
 	
-	; Frameskip enable
-	ld a,(hl)
-	or a
-	ld a,$FA	;JP M
-	jr nz,_
-	ld a,$C3	;JP
-_
-	ld (frameskip_enable_smc),a
-	
 	; Frameskip type
 	ld a,(hl)
-	dec a
-	ld a,$28	;JR Z
-	jr z,_
-	ld a,$38	;JR C
-_
+	add a,a
+	add a,a
+	add a,a
+	add a,$28	;JR Z, JR NC, or JR C
+	ld (frameskip_type_smc),a
 	inc hl
 	
 	; FPS display
@@ -611,8 +602,8 @@ EmulationMenu:
 	
 OptionFrameskipType:
 	.db 3
-	.db "off",0
 	.db "automatic",0
+	.db "off",0
 	.db "manual",0
 	
 OptionFPSDisplay:
@@ -682,7 +673,7 @@ FrameskipValue:
 	
 OptionConfig:
 FrameskipType:
-	.db 1
+	.db 0
 FPSDisplay:
 	.db 0
 AutoArchive:
