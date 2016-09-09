@@ -66,7 +66,8 @@ rst38h:
 	 jr z,_
 	 ld.lil (mpLcdIcr),a
 frame_excess_count = $+1
-	 add a,0
+	 ld a,0
+	 inc a
 	 ld (frame_excess_count),a
 _
 	 ld a,pIntMaskedStatus >> 8

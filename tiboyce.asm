@@ -403,9 +403,9 @@ RestartFromHere:
 	push hl
 	ld hl,(mpIntLatch)
 	push hl
-	ld hl,$000003
+	ld hl,$000803
 	ld (mpIntEnable),hl
-	ld l,$17
+	ld hl,$000017
 	ld (mpIntLatch),hl
 	
 	ld hl,(mpLcdBase)
@@ -453,6 +453,8 @@ RestartFromHere:
 	
 	ld a,3
 	ld (mpKeypadScanMode),a
+	inc a
+	ld (mpLcdImsc),a
 	
 	ld hl,(mpTimerCtrl)
 	push hl
@@ -576,6 +578,8 @@ saveSP = $+1
 	ld b,a
 	ld a,$D0
 	ld mb,a
+	xor a
+	ld (mpLcdImsc),a
 	pop hl
 	ld (mpTimerCtrl),hl
 	pop hl

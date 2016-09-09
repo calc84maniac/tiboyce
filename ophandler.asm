@@ -1004,7 +1004,7 @@ frame_sync_loop:
 	   ld de,$000800
 	   call wait_for_interrupt
 	   ld hl,mpLcdIcr
-	   ld (hl),1
+	   ld (hl),4
 	  pop hl
 	  inc (hl)
 	  jr nz,frame_sync_loop
