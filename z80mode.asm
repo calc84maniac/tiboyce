@@ -374,6 +374,11 @@ updateLY:
 	sub l
 	ret
 	
+wait_for_interrupt_stub:
+	ei
+	halt
+	ret.l
+	
 flush_handler:
 	di
 	exx

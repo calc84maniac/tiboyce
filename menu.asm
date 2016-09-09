@@ -5,18 +5,33 @@
 #define ITEM_KEY 4
 
 ApplyConfiguration:
+	; Display next frame always
+	ld a,1
+	ld (z80codebase+render_this_frame),a
+	
+	; Frameskip value
 	ld hl,FrameskipValue
 	ld a,(hl)
 	inc a
-	ld (frameskip_smc),a
+	ld (frameskip_value_smc),a
+	ld (skippable_frames),a
 	inc hl
+	
+	; Frameskip enable
+	ld a,(hl)
+	or a
+	ld a,$FA	;JP M
+	jr nz,_
+	ld a,$C3	;JP
+_
+	ld (frameskip_enable_smc),a
 	
 	; Frameskip type
 	ld a,(hl)
-	cp 2
-	jr nz,_
 	dec a
-	ld (frameskip_smc),a
+	ld a,$28	;JR Z
+	jr z,_
+	ld a,$38	;JR C
 _
 	inc hl
 	
@@ -313,10 +328,15 @@ _
 	ret
 	
 WaitForKey:
+_
+	ld de,$000010
+	call ack_and_wait_for_interrupt
 	call GetKeyCode
 	or a
-	jr nz,WaitForKey
+	jr nz,-_
 _
+	ld de,$000010
+	call ack_and_wait_for_interrupt
 	call GetKeyCode
 	or a
 	jr z,-_

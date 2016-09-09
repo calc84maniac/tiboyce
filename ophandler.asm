@@ -992,7 +992,30 @@ skip_this_frame:
 
 	  ; Always update palettes because it's basically free!
 	  call update_palettes
-
+	  
+	  ; Handle frameskip
+	  xor a
+	  ld hl,z80codebase+frame_excess_count
+	  dec (hl)
+frameskip_enable_smc:
+	  jp m,frame_sync	;or JP when disabled
+	  ex de,hl
+	  ld hl,skippable_frames
+frameskip_auto_smc:
+	  jr z,no_frameskip	;or JR C when manual
+	  dec (hl)
+	  jr nz,frameskip_end
+no_frameskip:
+frameskip_value_smc = $+1
+	  ld (hl),1
+	  ex de,hl
+frame_sync:
+	  ld (hl),a
+	  call m,wait_for_vblank
+	  inc a
+frameskip_end:
+	  ld (z80codebase+render_this_frame),a
+	  
 	  ; Get keys
 	  scf
 	  sbc hl,hl
@@ -1067,6 +1090,36 @@ _
 	ld hl,mpTimerIntStatus
 	ld a,(hl)
 	ret.l
+	
+wait_for_vblank:
+	ld de,$000800
+	call wait_for_interrupt
+	ld hl,mpLcdIcr
+	ld (hl),1
+	ret
+	
+	; DE = interrupt source mask to wait on
+	; Destroys: IX, DE, HL
+	; Interrupt is acknowledged before waiting,
+	; but not handled or acknowledged afterward
+ack_and_wait_for_interrupt:
+	ld (mpIntAcknowledge),de
+	
+	; DE = interrupt source mask to wait on
+	; Destroys: IX, DE, HL
+	; Interrupt is not actually handled or acknowledged
+wait_for_interrupt:
+	ld hl,mpIntEnable
+	ld ix,(hl)
+	ld (hl),de
+	ex de,hl
+	ld hl,z80codebase+rst38h
+	ld (hl),$C9	;RET
+	call.is wait_for_interrupt_stub
+	ld (hl),$F5	;PUSH AF
+	ex de,hl
+	ld (hl),ix
+	ret
 	
 prepare_next_frame:
 	ld hl,(mpLcdBase)
@@ -1395,6 +1448,8 @@ _
 	ex af,af'
 	ret.l
 	
+skippable_frames:
+	.db 1
 fps:
 	.db 0,0
 fps_display:
