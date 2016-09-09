@@ -904,8 +904,8 @@ vblank_stuff:
 	push de
 	 push ix
 	  ld a,(z80codebase+render_this_frame)
-	  dec a
-	  jr nz,skip_this_frame
+	  or a
+	  jr z,skip_this_frame
 	
 	  push bc
 	   ; Finish rendering the frame
@@ -1202,8 +1202,8 @@ render_catchup:
 	
 lcdc_write:
 	ld a,(z80codebase+render_this_frame)
-	dec a
-	call.il z,render_catchup
+	or a
+	call.il nz,render_catchup
 	exx
 	ld hl,hram_base+LCDC
 	ld a,(hl)

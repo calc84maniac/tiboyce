@@ -1237,8 +1237,8 @@ write_scroll_swap:
 write_scroll:
 render_this_frame = $+1
 	ld a,1
-	dec a
-	jr nz,mem_write_oam_swap
+	or a
+	jr z,mem_write_oam_swap
 	di
 	call.il render_catchup
 	jr mem_write_oam_swap
