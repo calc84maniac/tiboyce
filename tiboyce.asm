@@ -56,6 +56,8 @@ tExtTok = $EF
 tAsm84CeCmp = $7B
 
 ; 84+CE IO definitions
+mpFlashWaitStates = $E00005
+
 mpLcdTiming0 = $E30000
 mpLcdTiming1 = $E30004
 mpLcdTiming2 = $E30008
@@ -402,6 +404,11 @@ _
 	di
 RestartFromHere:
 	push iy
+	ld hl,mpFlashWaitStates
+	push hl
+	ld a,(hl)
+	push af
+	ld (hl),2
 	ld hl,(mpIntEnable)
 	push hl
 	ld hl,(mpIntLatch)
@@ -594,9 +601,9 @@ saveSP = $+1
 	xor a
 	ld (mpLcdImsc),a
 	pop hl
-	call SetLCDTiming
-	pop hl
 	ld (mpTimerCtrl),hl
+	pop hl
+	call SetLCDTiming
 	pop hl
 	ld (mpLcdCtrl),hl
 	pop hl
@@ -605,6 +612,9 @@ saveSP = $+1
 	ld (mpIntLatch),hl
 	pop hl
 	ld (mpIntEnable),hl
+	pop af
+	pop hl
+	ld (hl),a
 	pop iy
 	srl b
 	jp nz,RestartFromHere
