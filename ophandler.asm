@@ -479,8 +479,6 @@ _
 	jr nz,memroutine_gen_ret
 	
 	; Routine doesn't exist, let's generate it!
-	ld (mpTimerCtrl),a ;A=0
-	
 	push bc \ push hl
 	 ex de,hl
 	 ld.s d,(ix+1)
