@@ -581,6 +581,13 @@ _
 CmdExit:
 saveSP = $+1
 	ld sp,0
+	ld hl,vRam
+	push hl
+	pop de
+	inc de
+	ld bc,320*240*2-1
+	ld (hl),$FF
+	ldir
 	ld b,a
 	ld a,$D0
 	ld mb,a
