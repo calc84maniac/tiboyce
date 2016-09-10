@@ -56,6 +56,9 @@ tExtTok = $EF
 tAsm84CeCmp = $7B
 
 ; 84+CE IO definitions
+mpLcdTiming0 = $E30000
+mpLcdTiming1 = $E30004
+mpLcdTiming2 = $E30008
 mpLcdBase = $E30010
 mpLcdCtrl = $E30018
 mpLcdImsc = $E3001C
@@ -412,6 +415,9 @@ RestartFromHere:
 	push hl
 	ld hl,(mpLcdCtrl)
 	push hl
+	ld hl,$463B01
+	call GetAndSetLCDTiming
+	push de
 	
 	ld hl,palettecode
 	ld de,palettemem
@@ -580,6 +586,8 @@ saveSP = $+1
 	ld mb,a
 	xor a
 	ld (mpLcdImsc),a
+	pop hl
+	call SetLCDTiming
 	pop hl
 	ld (mpTimerCtrl),hl
 	pop hl
@@ -977,6 +985,24 @@ DrawMenuItem:
 	ld b,(hl)
 	inc hl
 	jp _VPutSN
+	
+	; In: HLU = HFP, H = VFP, L = LcdTiming2
+	; Out: DEU = old HFP, D = old VFP, E = old LcdTiming2 
+GetAndSetLCDTiming:
+	ld ix,mpLcdTiming0
+	ld de,(ix)
+	ld d,(ix+6)
+	ld e,(ix+8)
+	
+	; In: HLU = HFP, H = VFP, L = LcdTiming2
+SetLCDTiming:
+	ld ix,mpLcdTiming0
+	ld (ix+8),l
+	ld (ix+6),h
+	ld l,(ix)
+	ld h,(ix+1)
+	ld (ix),hl
+	ret
 	
 menuFrame:
 	.dl 0
