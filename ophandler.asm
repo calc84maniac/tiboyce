@@ -899,8 +899,15 @@ flush_mem:
 vblank_stuff:
 	; Reset match bit
 	ld (hl),2
-
-	; Update frameskip
+	
+	; Update FPS counter
+vfps = $+1
+	ld a,0
+	add a,1
+	daa
+	ld (vfps),a
+	
+	; Finish rendering, if applicable
 	push de
 	 push ix
 	  ld a,(z80codebase+render_this_frame)
@@ -948,39 +955,32 @@ _
 fps_display_smc:
 	   jr z,NoFPSDisplay
 	   
-	   ld hl,fps
-	   ld a,(hl)
-	   inc a
-	   cp 10
-	   jr c,_
-	   xor a
-	   inc hl
-	   inc (hl)
-	   dec hl
-_
-	   ld (hl),a
-	  
+fps = $+1
+	   ld a,0
+	   add a,1
+	   daa
+	   ld (fps),a
+	   
 	   ld a,(mpRtcSecondCount)
 last_second = $+1
 	   cp -1
-	   jr z,_
-	   ld (last_second),a
-	   xor a
-	   ld e,(hl)
-	   ld (hl),a
-	   inc hl
-	   ld d,(hl)
-	   ld (hl),a
-	   inc hl
-	   ld (hl),e
-	   inc hl
-	   ld (hl),d
-_
+	   call nz,update_fps
+	   
 	   ld de,0
-	   ld a,(fps_display+1)
+vfps_display_tens = $+1
+	   ld a,0
 	   call display_digit
 	   ld de,4
-	   ld a,(fps_display)
+vfps_display_ones = $+1
+	   ld a,0
+	   call display_digit
+	   ld de,12
+fps_display_tens = $+1
+	   ld a,0
+	   call display_digit
+	   ld de,16
+fps_display_ones = $+1
+	   ld a,0
 	   call display_digit
 	   
 NoFPSDisplay:
@@ -1024,7 +1024,11 @@ frameskip_type_smc:
 no_frameskip:
 frameskip_value_smc = $+1
 	  ld (hl),1
-	  ld (de),a
+	  ex de,hl
+	  bit 7,(hl)
+	  jr nz,_
+	  ld (hl),a
+_
 	  inc a
 frameskip_end:
 	  ld (z80codebase+render_this_frame),a
@@ -1151,6 +1155,36 @@ prepare_next_frame:
 	xor a
 	ld (window_tile_offset),a
 	ld (myLY),a
+	ret
+	
+update_fps:
+	ld (last_second),a
+	
+	ld a,(vfps)
+	ld e,a
+	and $0F
+	ld (vfps_display_ones),a
+	xor e
+	rrca
+	rrca
+	rrca
+	rrca
+	ld (vfps_display_tens),a
+	
+	ld a,(fps)
+	ld e,a
+	and $0F
+	ld (fps_display_ones),a
+	xor e
+	rrca
+	rrca
+	rrca
+	rrca
+	ld (fps_display_tens),a
+	
+	xor a
+	ld (vfps),a
+	ld (fps),a
 	ret
 	
 oam_transfer:
@@ -1459,10 +1493,6 @@ _
 	
 skippable_frames:
 	.db 1
-fps:
-	.db 0,0
-fps_display:
-	.db 0,0
 #ifdef DBGNOSCALE
 current_buffer:
 	.dl 0

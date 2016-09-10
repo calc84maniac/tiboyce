@@ -676,7 +676,7 @@ KeyNames:
 	.db "del",0
 	
 FrameskipValue:
-	.db 0
+	.db 2
 	
 OptionConfig:
 FrameskipType:
