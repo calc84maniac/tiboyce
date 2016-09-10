@@ -139,40 +139,34 @@ draw_sprite_hflip_done:
 draw_sprite_no_hflip_done:
 	ld a,$23	;INC HL
 _
-	ld (draw_sprite_normal_hdir),a
-	ld (draw_sprite_priority_hdir),a
 	
 	inc hl
 	ld sp,hl
 	
-	ld a,(hram_base+LCDC)
-	bit 2,a
-	ld l,8
+	bit 4,c
+	ld l,$33
 	jr z,_
-	res 6,e
-	ld l,16
+	add hl,hl
 _
 	
-	ld h,3
 	bit 6,c
+	ld h,3
 	jr z,_
 	ld h,-3
+LCDC_2_smc_1 = $+2
 	lea iy,iy+(7*3)
-	bit 4,l
-	jr z,_
-	lea iy,iy+(8*3)
 _
 	
-	bit 4,c
-	ld a,$33
-	jr z,_
-	add a,a
-_
 	bit 7,c
-	ld c,l
+LCDC_2_smc_2 = $+1
+	ld c,8
+LCDC_2_smc_3 = $+1
+	res 6,c		;res 6,e when 8x16 sprites
 	jr nz,draw_sprite_priority
 	
 draw_sprite_normal:
+	ld (draw_sprite_normal_hdir),a
+	ld a,l
 	ld (draw_sprite_normal_palette),a
 	ld a,h
 	ld (draw_sprite_normal_vdir),a
@@ -207,6 +201,8 @@ draw_sprite_normal_vclip:
 	jp draw_next_sprite
 	
 draw_sprite_priority:
+	ld (draw_sprite_priority_hdir),a
+	ld a,l
 	ld (draw_sprite_priority_palette),a
 	ld a,h
 	ld (draw_sprite_priority_vdir),a
@@ -437,10 +433,11 @@ scanline_ptr = $+2
 	  add ix,sp
 	  ld (render_save_spl),ix
 render_scanline_loop:
+	  ; Zero flag is reset
 	  push hl
-	   ld ix,hram_base+ioregs
-	   bit 7,(ix-ioregs+LCDC)
+LCDC_7_smc:
 	   jr z,render_scanline_off
+	   ld ix,hram_base+ioregs
 	   ld a,(ix-ioregs+SCY)
 	   add a,h
 	   rrca
@@ -466,7 +463,7 @@ render_scanline_loop:
 	   and 7
 	   ld c,a
 	  
-LCDC_4_smc = $+1
+LCDC_4_smc_1 = $+1
 	   res 7,e
 LCDC_3_smc = $+1
 	   res 5,d
@@ -483,6 +480,7 @@ LCDC_0_smc = $+3
 	   ld b,167
 	 
 LCDC_5_smc:
+	   ; Carry flag is reset
 	   jr nc,scanline_no_window
 	 
 	   cp (ix-ioregs+WY)
@@ -497,17 +495,10 @@ LCDC_5_smc:
 	 
 window_tile_ptr = $+1
 	   ld hl,0 ;vram_tiles_start
-	   ld a,(hram_base+LCDC)
-	   bit 4,a
-	   jr nz,_
-	   ld l,$80
-_
-	   bit 6,a
-	   jr z,_
-	   ld a,h
-	   add a,$20
-	   ld h,a
-_
+LCDC_4_smc_2 = $+1
+LCDC_6_smc = $+2
+	   ld de,$0000	;or $2080
+	   add hl,de
 	   ld.sis sp,hl
 	 
 window_tile_offset = $+1

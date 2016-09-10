@@ -1265,6 +1265,19 @@ _
 	xor $2F ^ $3E	;LD (IX),HL vs LD (IX),IY
 	ld (LCDC_1_smc),a
 _
+	bit 2,l
+	jr z,_
+	ld a,(LCDC_2_smc_1)
+	xor (7*3)^(15*3)
+	ld (LCDC_2_smc_1),a
+	ld a,(LCDC_2_smc_2)
+	xor 8^16
+	ld (LCDC_2_smc_2),a
+	ld a,(LCDC_2_smc_3)
+	xor $B1 ^ $B3	;RES 6,C vs RES 6,E
+	ld (LCDC_2_smc_3),a
+	
+_
 	bit 3,l
 	jr z,_
 	ld a,(LCDC_3_smc)
@@ -1273,9 +1286,12 @@ _
 _
 	bit 4,l
 	jr z,_
-	ld a,(LCDC_4_smc)
+	ld a,(LCDC_4_smc_1)
 	xor $40	;SET vs RES
-	ld (LCDC_4_smc),a
+	ld (LCDC_4_smc_1),a
+	ld a,(LCDC_4_smc_2)
+	xor $80	;$80 vs $00
+	ld (LCDC_4_smc_2),a
 _
 	bit 5,l
 	jr z,_
@@ -1283,8 +1299,17 @@ _
 	xor $08	;JR NC vs JR C
 	ld (LCDC_5_smc),a
 _
+	bit 6,l
+	jr z,_
+	ld a,(LCDC_6_smc)
+	xor $20	;$20 vs $00
+	ld (LCDC_6_smc),a
+_
 	bit 7,l
 	jr z,_
+	ld a,(LCDC_7_smc)
+	xor $08	;JR NZ vs JR Z
+	ld (LCDC_7_smc),a
 	xor a
 	ld (mpTimerCtrl),a
 	sbc hl,hl
