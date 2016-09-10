@@ -925,11 +925,14 @@ vfps = $+1
 	   push iy
 	    call c,draw_sprites
 	   pop iy
+	
+	   ; Swap buffers
+	   call prepare_next_frame
+	   
 #ifndef DBGNOSCALE
 	   ; EXPAND DONG
 	   ld a,144/3
-current_buffer = $+1
-	   ld de,0
+	   ex de,hl
 	   ld b,e	;B=0
 _
 	   push de
@@ -985,9 +988,6 @@ fps_display_ones = $+1
 	   
 NoFPSDisplay:
 	  pop bc
-	 
-	  ; Swap buffers
-	  call prepare_next_frame
 	  
 	  ; Signify frame was rendered
 	  scf
@@ -1135,6 +1135,10 @@ wait_for_interrupt:
 	ret
 	
 prepare_next_frame:
+	ld hl,scanlineLUT + (15*3)
+	ld (scanlineLUT_ptr),hl
+	ld hl,vram_tiles_start
+	ld (window_tile_ptr),hl
 	ld hl,(mpLcdBase)
 	ld (current_buffer),hl
 	dec hl
@@ -1143,11 +1147,6 @@ prepare_next_frame:
 	ld a,h
 	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	ld h,a
-	ld (mpLcdBase),hl
-	ld hl,scanlineLUT + (15*3)
-	ld (scanlineLUT_ptr),hl
-	ld hl,vram_tiles_start
-	ld (window_tile_ptr),hl
 #ifndef DBGNOSCALE
 	ld a,2
 	ld (scanline_scale_counter),a
@@ -1155,6 +1154,7 @@ prepare_next_frame:
 	xor a
 	ld (window_tile_offset),a
 	ld (myLY),a
+	ld (mpLcdBase),hl
 	ret
 	
 update_fps:
@@ -1493,7 +1493,5 @@ _
 	
 skippable_frames:
 	.db 1
-#ifdef DBGNOSCALE
 current_buffer:
 	.dl 0
-#endif

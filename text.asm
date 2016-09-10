@@ -34,9 +34,9 @@ debug_printf:
 #else
 	push hl
 	 ld a,(current_buffer+1)
-	 xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
-	 ld (current_buffer+1),a
 	 push af
+	  xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
+	  ld (current_buffer+1),a
 	  ld hl,(cursorCol)
 	  push hl
 	   ld a,WHITE
@@ -240,11 +240,14 @@ _
 	
 	; Digit in A, output at offset DE
 display_digit:
+	ld c,a
 	ld hl,(current_buffer)
+	ld a,h
+	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
+	ld h,a
 	add hl,de
 	ex de,hl
 	ld hl,digits
-	ld c,a
 	ld b,40
 	mlt bc
 	add hl,bc
