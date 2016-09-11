@@ -542,8 +542,9 @@ render_scanline_next:
 	   add a,$55
 	   ld ixh,a
 	   jr c,_
-	   ld hl,160
-	   add hl,de
+	   ex de,hl
+	   ld c,160
+	   add hl,bc
 	   ex de,hl
 	   scf
 _
