@@ -327,7 +327,7 @@ write_vram_pixels:
 	ld (mpTimerCtrl),a
 	ex af,af'
 	jp.s (ix)
-	 
+	
 	; Input: C=Start X+7, B=End X+7, HL=pixel base pointer, IY=scanline pointer, SPS=tilemap pointer
 scanline_do_render:
 	ld a,c
@@ -463,12 +463,9 @@ LCDC_7_smc:
 	   and 7
 	   ld c,a
 	  
-LCDC_4_smc_1 = $+1
-	   res 7,e
-LCDC_3_smc = $+1
-	   res 5,d
-	  
 	   ld a,h
+LCDC_4_smc_1 = $+1
+LCDC_3_smc = $+2
 	   ld hl,vram_tiles_start & $FFFF
 	   add hl,de
 	   ld.s sp,hl
@@ -524,28 +521,27 @@ scanline_no_window:
 render_scanline_next:
 	   ; Store current scanline pointer minus 1 in LUT
 	   ; Or store -1 if sprites are disabled
-	   scf
-	   sbc hl,hl
-scanlineLUT_ptr = $+2
-	   ld ix,0
+	   dec bc
+scanlineLUT_ptr = $+1
+	   ld hl,0
 LCDC_1_smc = $+1
-	   ld (ix),hl
-	   lea ix,ix+3
-	   ld (scanlineLUT_ptr),ix
+	   ld (hl),bc
+	   inc hl
+	   inc hl
+	   inc hl
+	   ld (scanlineLUT_ptr),hl
 	   ; Advance to next scanline
+	   inc bc
 	   ld c,160
 	   add iy,bc
 #ifndef DBGNOSCALE
-scanline_scale_counter = $+1
+scanline_scale_accumulator = $+1
 	   ld a,0
-	   dec a
-	   jr nz,_
-	   ld a,3
-	   jr ++_
-_
+	   add a,$55
+	   ld (scanline_scale_accumulator),a
+	   jr c,_
 	   add iy,bc
 _
-	   ld (scanline_scale_counter),a
 #endif
 	  pop hl
 	  inc h

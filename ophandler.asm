@@ -1146,8 +1146,8 @@ prepare_next_frame:
 	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	ld h,a
 #ifndef DBGNOSCALE
-	ld a,2
-	ld (scanline_scale_counter),a
+	ld a,48 + $55
+	ld (scanline_scale_accumulator),a
 #endif
 	xor a
 	ld (window_tile_offset),a
@@ -1262,7 +1262,7 @@ _
 	bit 1,l
 	jr z,_
 	ld a,(LCDC_1_smc)
-	xor $2F ^ $3E	;LD (IX),HL vs LD (IX),IY
+	xor $0F ^ $3E	;LD (HL),BC vs LD (HL),IY
 	ld (LCDC_1_smc),a
 _
 	bit 2,l
@@ -1281,16 +1281,14 @@ _
 	bit 3,l
 	jr z,_
 	ld a,(LCDC_3_smc)
-	xor $40	;RES vs SET
+	xor (vram_tiles_start ^ (vram_tiles_start + $2000)) >> 8
 	ld (LCDC_3_smc),a
 _
 	bit 4,l
 	jr z,_
 	ld a,(LCDC_4_smc_1)
-	xor $40	;SET vs RES
+	xor $80
 	ld (LCDC_4_smc_1),a
-	ld a,(LCDC_4_smc_2)
-	xor $80	;$80 vs $00
 	ld (LCDC_4_smc_2),a
 _
 	bit 5,l
