@@ -418,10 +418,10 @@ render_scanline_off:
 	; Input: A=LY (A<144 unless called from vblank)
 render_scanlines:
 myLY = $+1
-	ld h,0
-	sub h
+	ld c,0
+	sub c
 	ret z
-	ld l,a
+	ld b,a
 	push ix
 	 push iy
 scanline_ptr = $+2
@@ -429,15 +429,15 @@ scanline_ptr = $+2
 	  ld.sis (render_save_sps),sp
 	  ld a,vram_tiles_start >> 16
 	  ld mb,a
-	  ld ix,-6
-	  add ix,sp
-	  ld (render_save_spl),ix
+	  ld hl,-6
+	  add hl,sp
+	  ld (render_save_spl),hl
 render_scanline_loop:
 	  ; Zero flag is reset
-	  push hl
+	  push bc
 LCDC_7_smc:
 	   jr z,render_scanline_off
-	   ld a,h
+	   ld a,c
 SCY_smc = $+1
 	   add a,0
 	   rrca
@@ -449,12 +449,10 @@ SCY_smc = $+1
 	   xor e
 	   rrca
 	   rrca
-	   ld b,a
 	   
 SCX_smc_1 = $+1
 	   ld e,0
 	
-	   ld a,h
 LCDC_4_smc = $+1
 LCDC_3_smc = $+2
 	   ld hl,vram_tiles_start & $FFFF
@@ -463,8 +461,9 @@ LCDC_3_smc = $+2
 	 
 LCDC_0_smc = $+3
 	   ld hl,vram_pixels_start
-	   ld l,b
-	 
+	   ld l,a
+	   
+	   ld a,c
 	   ld b,167
 SCX_smc_2 = $+1
 	   ld c,7
@@ -530,12 +529,11 @@ scanline_scale_accumulator = $+1
 	   add iy,bc
 _
 #endif
-	  pop hl
-	  inc h
-	  dec l
-	  jr nz,render_scanline_loop
+	  pop bc
+	  inc c
+	  djnz render_scanline_loop
 	  ld (scanline_ptr),iy
-	  ld a,h
+	  ld a,c
 	  ld (myLY),a
 	  ; Restore important Z80 things
 	  ld a,z80codebase >> 16
