@@ -984,6 +984,7 @@ fps_display_ones = $+1
 	   ld a,0
 	   call display_digit
 	   
+	   xor a
 NoFPSDisplay:
 	  pop bc
 	  
@@ -1135,8 +1136,6 @@ wait_for_interrupt:
 prepare_next_frame:
 	ld hl,scanlineLUT + (15*3)
 	ld (scanlineLUT_ptr),hl
-	ld hl,vram_tiles_start
-	ld (window_tile_ptr),hl
 	ld hl,(mpLcdBase)
 	ld (current_buffer),hl
 	dec hl
@@ -1149,6 +1148,11 @@ prepare_next_frame:
 	ld a,48 + $55
 	ld (scanline_scale_accumulator),a
 #endif
+	ld a,(hram_base+LCDC)
+	rrca
+	and $20
+	add a,(vram_tiles_start >> 8) & $FF
+	ld (window_tile_ptr+1),a
 	xor a
 	ld (window_tile_offset),a
 	ld (myLY),a
@@ -1342,10 +1346,10 @@ _
 _
 	bit 4,l
 	jr z,_
-	ld a,(LCDC_4_smc_1)
+	ld a,(LCDC_4_smc)
 	xor $80
-	ld (LCDC_4_smc_1),a
-	ld (LCDC_4_smc_2),a
+	ld (LCDC_4_smc),a
+	ld (window_tile_ptr),a
 _
 	bit 5,l
 	jr z,_
@@ -1355,9 +1359,11 @@ _
 _
 	bit 6,l
 	jr z,_
-	ld a,(LCDC_6_smc)
-	xor $20	;$20 vs $00
-	ld (LCDC_6_smc),a
+	ld a,(window_tile_ptr+1)
+	sub (vram_tiles_start >> 8) & $FF
+	xor $20
+	add a,(vram_tiles_start >> 8) & $FF
+	ld (window_tile_ptr+1),a
 _
 	bit 7,l
 	jr z,_

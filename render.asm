@@ -455,7 +455,7 @@ SCX_smc_1 = $+1
 	   ld e,0
 	
 	   ld a,h
-LCDC_4_smc_1 = $+1
+LCDC_4_smc = $+1
 LCDC_3_smc = $+2
 	   ld hl,vram_tiles_start & $FFFF
 	   add hl,de
@@ -482,13 +482,8 @@ WX_smc_2 = $+1
 	   ld b,0
 	   call scanline_do_render
 	 
-window_tile_ptr = $+1
-	   ld hl,0 ;vram_tiles_start
-LCDC_4_smc_2 = $+1
-LCDC_6_smc = $+2
-	   ld de,$0000	;or $2080
-	   add hl,de
-	   ld.sis sp,hl
+window_tile_ptr = $+2
+	   ld.sis sp,vram_tiles_start & $FFFF	;(+$2000) (+$80)
 	 
 window_tile_offset = $+1
 	   ld hl,vram_pixels_start
