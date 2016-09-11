@@ -1138,9 +1138,7 @@ prepare_next_frame:
 	ld (scanlineLUT_ptr),hl
 	ld hl,(mpLcdBase)
 	ld (current_buffer),hl
-	dec hl
 	ld (scanline_ptr),hl
-	inc hl
 	ld a,h
 	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	ld h,a
@@ -1271,8 +1269,9 @@ scroll_write_WX:
 	ex af,af'
 	ld a,c
 	ld (WX_smc_2),a
-	ld (WX_smc_3),a
 	cp 167
+	inc a
+	ld (WX_smc_3),a
 	sbc a,a
 	and $20
 	or $18	;JR vs JR C
@@ -1292,6 +1291,7 @@ scroll_write_SCX:
 	ld a,c
 	cpl
 	and 7
+	inc a
 	ld (SCX_smc_2),a
 scroll_write_done_swap:
 	exx
@@ -1322,7 +1322,7 @@ _
 	bit 1,l
 	jr z,_
 	ld a,(LCDC_1_smc)
-	xor $0F ^ $3E	;LD (HL),BC vs LD (HL),IY
+	xor $19	;NOP vs ADD HL,DE
 	ld (LCDC_1_smc),a
 _
 	bit 2,l

@@ -328,48 +328,58 @@ write_vram_pixels:
 	ex af,af'
 	jp.s (ix)
 	
-	; Input: C=Start X+7, B=End X+7, HL=pixel base pointer, IY=scanline pointer, SPS=tilemap pointer
-scanline_do_render:
-	ld a,c
+scanline_do_subtile:
+	ld a,8
 	sub b
-	ret nc
-	
-	ld sp,hl
-	add a,167
-	and $F8
-	ld e,a
-	ld d,6*32
-	mlt de
-	ld b,e
-	ld e,d
-	ld d,b
-	ld ix,scanline_unrolled
-	add ix,de
-	
-	ld a,c
-	sub 7
-	jr nc,no_clip
-	
-	lea de,iy+1
-	cpl
-	pop.s hl
-	adc a,l
-	ld l,a
-	add hl,sp
+	jr nc,_
+	xor a
+_
+	pop.s bc
+	add hl,bc
+	ld c,a
+	ld a,ixl
+	sub c
+	ret c
+	ld b,0
+	add hl,bc
+	ld c,a
 	inc c
 	ldir
-	ld a,8
-	jp (ix)
-	 
-no_clip:
-	ld c,a
-	lea hl,iy+1
-	add hl,bc
-	ex de,hl
-	ld a,8
-	jp (ix)
+	ret
 	
-scanline_unrolled:
+	
+	; Input: B=Start X+8, A=Length-1, HL=pixel base pointer, DE=pixel output pointer, IY=scanline pointer, SPS=tilemap pointer
+scanline_do_render:
+	ld c,a
+	and 7
+	ld ixl,a
+	xor c
+	jr z,scanline_do_subtile
+	ld c,a
+	rrca
+	rrca
+	sub c
+	add a,20*6
+	ld (scanline_unrolled_smc),a
+	ld sp,hl
+	
+	ld a,8
+	sub b
+	jr nc,_
+	xor a
+	ld b,8
+_
+	ld c,a
+	ld a,b
+	pop.s hl
+	add hl,sp
+	ld b,0
+	add hl,bc
+	ld c,a
+	ldir
+	ld a,8
+scanline_unrolled_smc = $+1
+	jr $+2
 	pop.s hl \ add hl,sp \ ld c,a \ ldir
 	pop.s hl \ add hl,sp \ ld c,a \ ldir
 	pop.s hl \ add hl,sp \ ld c,a \ ldir
@@ -389,7 +399,11 @@ scanline_unrolled:
 	pop.s hl \ add hl,sp \ ld c,a \ ldir
 	pop.s hl \ add hl,sp \ ld c,a \ ldir
 	pop.s hl \ add hl,sp \ ld c,a \ ldir
-	pop.s hl \ add hl,sp \ ld c,a \ ldir
+	pop.s hl
+	add hl,sp
+	ld c,ixl
+	inc c
+	ldir
 	
 render_save_spl = $+1
 	ld sp,0
@@ -408,8 +422,9 @@ palettecode:
 	.dw 0
 	
 render_scanline_off:
-	lea hl,iy+1
-	lea de,iy+2
+	push de
+	pop hl
+	inc de
 	ld bc,159
 	ld (hl),WHITE_BYTE
 	ldir
@@ -424,8 +439,14 @@ myLY = $+1
 	ld b,a
 	push ix
 	 push iy
-scanline_ptr = $+2
+scanline_ptr = $+1
+	  ld de,0
+scanlineLUT_ptr = $+2
 	  ld iy,0
+#ifndef DBGNOSCALE
+scanline_scale_accumulator = $+2
+	  ld ixh,0
+#endif
 	  ld.sis (render_save_sps),sp
 	  ld a,vram_tiles_start >> 16
 	  ld mb,a
@@ -433,8 +454,17 @@ scanline_ptr = $+2
 	  add hl,sp
 	  ld (render_save_spl),hl
 render_scanline_loop:
-	  ; Zero flag is reset
 	  push bc
+	   ; Store current scanline pointer minus 1 in LUT
+	   ; Or store -1 if sprites are disabled
+	   ; Carry flag is set
+	   sbc hl,hl
+LCDC_1_smc:
+	   nop	; add hl,de when sprites enabled
+	   ld (iy),hl
+	   lea iy,iy+3
+	   
+	   ; Zero flag is reset
 LCDC_7_smc:
 	   jr z,render_scanline_off
 	   ld a,c
@@ -443,43 +473,43 @@ SCY_smc = $+1
 	   rrca
 	   rrca
 	   rrca
-	   ld e,a
+	   ld l,a
 	   and $1F
-	   ld d,a
-	   xor e
+	   ld h,a
+	   xor l
 	   rrca
 	   rrca
 	   
 SCX_smc_1 = $+1
-	   ld e,0
+	   ld l,0
 	
-LCDC_4_smc = $+1
-LCDC_3_smc = $+2
-	   ld hl,vram_tiles_start & $FFFF
-	   add hl,de
+LCDC_4_smc = $+2
+LCDC_3_smc = $+3
+	   ld.sis sp,vram_tiles_start & $FFFF
+	   add.s hl,sp
 	   ld.s sp,hl
 	 
 LCDC_0_smc = $+3
 	   ld hl,vram_pixels_start
 	   ld l,a
 	   
-	   ld a,c
-	   ld b,167
 SCX_smc_2 = $+1
-	   ld c,7
+	   ld b,8
 	 
 LCDC_5_smc:
 	   ; Carry flag is reset
 	   jr nc,scanline_no_window
 	 
+	   ld a,c
 WY_smc = $+1
 	   cp 0
 WX_smc_1:
 	   jr c,scanline_no_window
 	   
 WX_smc_2 = $+1
-	   ld b,0
-	   call scanline_do_render
+	   ld a,0
+	   sub b
+	   call nc,scanline_do_render
 	 
 window_tile_ptr = $+2
 	   ld.sis sp,vram_tiles_start & $FFFF	;(+$2000) (+$80)
@@ -497,42 +527,36 @@ window_tile_offset = $+1
 _
 	   ld (window_tile_offset),a
 	 
-	   ld b,167
 WX_smc_3 = $+1
-	   ld c,0
+	   ld b,0
 	 
 scanline_no_window:
-	   call scanline_do_render
+	   ld a,167
+	   sub b
+	   call nc,scanline_do_render
 	 
 render_scanline_next:
-	   ; Store current scanline pointer minus 1 in LUT
-	   ; Or store -1 if sprites are disabled
-	   dec bc
-scanlineLUT_ptr = $+1
-	   ld hl,0
-LCDC_1_smc = $+1
-	   ld (hl),bc
-	   inc hl
-	   inc hl
-	   inc hl
-	   ld (scanlineLUT_ptr),hl
 	   ; Advance to next scanline
-	   inc bc
-	   ld c,160
-	   add iy,bc
 #ifndef DBGNOSCALE
-scanline_scale_accumulator = $+1
-	   ld a,0
+	   ld a,ixh
 	   add a,$55
-	   ld (scanline_scale_accumulator),a
+	   ld ixh,a
 	   jr c,_
-	   add iy,bc
+	   ld hl,160
+	   add hl,de
+	   ex de,hl
+	   scf
 _
 #endif
 	  pop bc
 	  inc c
 	  djnz render_scanline_loop
-	  ld (scanline_ptr),iy
+	  ld (scanline_ptr),de
+	  ld (scanlineLUT_ptr),iy
+#ifndef DBGNOSCALE
+	  ld a,ixh
+	  ld (scanline_scale_accumulator),a
+#endif
 	  ld a,c
 	  ld (myLY),a
 	  ; Restore important Z80 things
