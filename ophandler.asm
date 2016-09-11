@@ -908,7 +908,7 @@ vfps = $+1
 	; Finish rendering, if applicable
 	push de
 	 push ix
-	  ld a,(z80codebase+render_this_frame)
+	  ld a,(render_this_frame)
 	  or a
 	  jr z,skip_this_frame
 	
@@ -1029,7 +1029,7 @@ frameskip_value_smc = $+1
 _
 	  inc a
 frameskip_end:
-	  ld (z80codebase+render_this_frame),a
+	  ld (render_this_frame),a
 	  
 	  ; Always update palettes because it's basically free!
 	  call update_palettes
@@ -1239,12 +1239,68 @@ render_catchup:
 	exx
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
-	ret.l
+	ret
+	
+scroll_write:
+render_this_frame = $+1
+	ld a,1
+	or a
+	call nz,render_catchup
+	ld a,ixl
+	sub SCY - ioregs
+	jr nz,_
+	ex af,af'
+	ld (SCY_smc),a
+	jr scroll_write_done
+_
+	sub WY - SCY
+	jr c,scroll_write_SCX
+	jr nz,scroll_write_WX
+	ex af,af'
+	ld (WY_smc),a
+	jr scroll_write_done
+	
+scroll_write_WX:
+	exx
+	ex af,af'
+	ld c,a
+	ex af,af'
+	ld a,c
+	ld (WX_smc_2),a
+	ld (WX_smc_3),a
+	cp 167
+	sbc a,a
+	and $20
+	or $18	;JR vs JR C
+	ld (WX_smc_1),a
+	jr scroll_write_done_swap
+	
+scroll_write_SCX:
+	exx
+	ex af,af'
+	ld c,a
+	ex af,af'
+	ld a,c
+	rrca
+	rrca
+	and $3E
+	ld (SCX_smc_1),a
+	ld a,c
+	cpl
+	and 7
+	ld (SCX_smc_2),a
+scroll_write_done_swap:
+	exx
+	ex af,af'
+scroll_write_done:
+	ld.s (ix),a
+	pop.s ix
+	jp.s (ix)
 	
 lcdc_write:
-	ld a,(z80codebase+render_this_frame)
+	ld a,(render_this_frame)
 	or a
-	call.il nz,render_catchup
+	call nz,render_catchup
 	exx
 	ld hl,hram_base+LCDC
 	ld a,(hl)

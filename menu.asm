@@ -7,7 +7,7 @@
 ApplyConfiguration:
 	; Display next frame always
 	ld a,1
-	ld (z80codebase+render_this_frame),a
+	ld (render_this_frame),a
 	
 	; Frameskip value
 	ld hl,FrameskipValue

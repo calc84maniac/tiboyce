@@ -437,9 +437,9 @@ render_scanline_loop:
 	  push hl
 LCDC_7_smc:
 	   jr z,render_scanline_off
-	   ld ix,hram_base+ioregs
-	   ld a,(ix-ioregs+SCY)
-	   add a,h
+	   ld a,h
+SCY_smc = $+1
+	   add a,0
 	   rrca
 	   rrca
 	   rrca
@@ -450,19 +450,10 @@ LCDC_7_smc:
 	   rrca
 	   rrca
 	   ld b,a
-	 
-	   ld a,(ix-ioregs+SCX)
-	   ld c,a
-	   rrca
-	   rrca
-	   and $3E
-	   ld e,a
-	  
-	   ld a,c
-	   cpl
-	   and 7
-	   ld c,a
-	  
+	   
+SCX_smc_1 = $+1
+	   ld e,0
+	
 	   ld a,h
 LCDC_4_smc_1 = $+1
 LCDC_3_smc = $+2
@@ -475,19 +466,20 @@ LCDC_0_smc = $+3
 	   ld l,b
 	 
 	   ld b,167
+SCX_smc_2 = $+1
+	   ld c,7
 	 
 LCDC_5_smc:
 	   ; Carry flag is reset
 	   jr nc,scanline_no_window
 	 
-	   cp (ix-ioregs+WY)
+WY_smc = $+1
+	   cp 0
+WX_smc_1:
 	   jr c,scanline_no_window
-	 
-	   ld a,(ix-ioregs+WX)
-	   cp b
-	   jr nc,scanline_no_window
-	 
-	   ld b,a
+	   
+WX_smc_2 = $+1
+	   ld b,0
 	   call scanline_do_render
 	 
 window_tile_ptr = $+1
@@ -512,8 +504,8 @@ _
 	   ld (window_tile_offset),a
 	 
 	   ld b,167
-	   ld a,(hram_base+WX)
-	   ld c,a
+WX_smc_3 = $+1
+	   ld c,0
 	 
 scanline_no_window:
 	   call scanline_do_render
@@ -546,7 +538,7 @@ _
 	  pop hl
 	  inc h
 	  dec l
-	  jp nz,render_scanline_loop
+	  jr nz,render_scanline_loop
 	  ld (scanline_ptr),iy
 	  ld a,h
 	  ld (myLY),a

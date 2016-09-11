@@ -1236,13 +1236,8 @@ writeDMA:
 write_scroll_swap:
 	ex af,af'
 write_scroll:
-render_this_frame = $+1
-	ld a,1
-	or a
-	jr z,mem_write_oam_swap
 	di
-	call.il render_catchup
-	jr mem_write_oam_swap
+	jp.lil scroll_write
 	
 writeLYC:
 	ex af,af'
