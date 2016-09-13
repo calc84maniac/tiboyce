@@ -549,7 +549,7 @@ WX_smc_3 = $+1
 scanline_no_window:
 	   ld a,167
 	   sub b
-	   call nc,scanline_do_render
+	   call scanline_do_render
 	 
 render_scanline_next:
 	   ; Advance to next scanline
