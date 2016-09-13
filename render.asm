@@ -85,53 +85,50 @@ draw_next_sprite_2:
 	jr nc,draw_next_sprite
 	
 	pea.s ix-3
-	
-	 ld iy,scanlineLUT
-	 ld d,3
-	 ld e,c
-	 mlt de
-	 add iy,de
-	
-	 ld.s de,(ix-2)
-	 ld c,d
-	 ld d,64
+	 
+	 ld hl,scanlineLUT
+	 ld b,3
+	 mlt bc
+	 add hl,bc
+	 ld sp,hl
+	 
+	 ld.s bc,(ix-2)
+	 ld d,b
+	 ld b,64
 LCDC_2_smc_3 = $+1
-	 res 0,d		;res 0,e when 8x16 sprites
-	 mlt de
+	 res 0,b		;res 0,c when 8x16 sprites
+	 mlt bc
 	 ld hl,vram_pixels_start
-	 add hl,de
-	 ex de,hl
-	
-	 ; Set HL=0
-	 sbc hl,hl
-	
+	 add hl,bc
+	 
+	 ld b,a
 	 sub 7
 	 jr nc,_
+	 inc b
 	 cpl
-	 adc a,e
+	 adc a,l
 	 jr draw_sprite_clip_done
 _	 
 	 ld b,8
-	 ld l,a
+	 ld iyl,a
 	 add a,256-152
 	 jr nc,_
 	 cpl
 	 adc a,b
 	 ld b,a
 _
-	 ld a,e
+	 ld a,l
 draw_sprite_clip_done:
-	
-	 inc hl
-	 ld sp,hl
-	
-	 bit 4,c
-	 ld ixl,$33
+
+	 ld iyh,b
+	 
+	 bit 4,d
+	 ld c,$33
 	 jr z,_
-	 add ix,ix
+	 sla c
 _
 	
-	 bit 6,c
+	 bit 6,d
 	 ld ixh,8
 	 jr z,_
 	 ld ixh,-8
@@ -139,36 +136,40 @@ LCDC_2_smc_1 = $+1
 	 xor $38
 _
 	 
-	 sla c
-	 bit 6,c
-LCDC_2_smc_2 = $+1
-	 ld c,8
+	 sla d
+	 bit 6,d
+LCDC_2_smc_2 = $+2
+	 ld ixl,8
 	 jr c,draw_sprite_priority
 	 jr nz,draw_sprite_flip
 	
 draw_sprite_normal_row:
-	 ld hl,(iy)
-	 add hl,sp
-	 lea iy,iy+3
-	 jr c,draw_sprite_normal_vclip
-	 ld e,a
-	 push.s bc
-	  ld c,ixl
-draw_sprite_normal_pixels:
-	  ld a,(de)
-	  add a,c
-	  jr c,_
-	  ld (hl),a
+	 pop de
+	 bit 0,e
+	 jr nz,draw_sprite_normal_vclip
+	 ld l,a
+	 ld a,iyl
+	 add a,e
+	 jr nc,_
+	 ld e,$FF
+	 inc de
 _
-	  inc hl
-	  inc e
-	  djnz draw_sprite_normal_pixels
-	 pop.s bc
-	 ld a,e
+	 ld e,a
+draw_sprite_normal_pixels:
+	 ld a,(hl)
+	 add a,c
+	 jr c,_
+	 ld (de),a
+_
+	 inc de
+	 inc l
+	 djnz draw_sprite_normal_pixels
+	 ld b,iyh
+	 ld a,l
 	 sub b
 draw_sprite_normal_vclip:
 	 add a,ixh
-	 dec c
+	 dec ixl
 	 jr nz,draw_sprite_normal_row
 	pop.s ix
 	jp draw_next_sprite_2
@@ -176,28 +177,32 @@ draw_sprite_normal_vclip:
 draw_sprite_flip:
 	 xor 7
 draw_sprite_flip_row:
-	 ld hl,(iy)
-	 add hl,sp
-	 lea iy,iy+3
-	 jr c,draw_sprite_flip_vclip
-	 ld e,a
-	 push.s bc
-	  ld c,ixl
-draw_sprite_flip_pixels:
-	  ld a,(de)
-	  add a,c
-	  jr c,_
-	  ld (hl),a
+	 pop de
+	 bit 0,e
+	 jr nz,draw_sprite_flip_vclip
+	 ld l,a
+	 ld a,iyl
+	 add a,e
+	 jr nc,_
+	 ld e,$FF
+	 inc de
 _
-	  inc hl
-	  dec e
-	  djnz draw_sprite_flip_pixels
-	 pop.s bc
-	 ld a,e
+	 ld e,a
+draw_sprite_flip_pixels:
+	 ld a,(hl)
+	 add a,c
+	 jr c,_
+	 ld (de),a
+_
+	 inc de
+	 dec l
+	 djnz draw_sprite_flip_pixels
+	 ld b,iyh
+	 ld a,l
 	 add a,b
 draw_sprite_flip_vclip:
 	 add a,ixh
-	 dec c
+	 dec ixl
 	 jr nz,draw_sprite_flip_row
 	pop.s ix
 	jp draw_next_sprite_2
@@ -206,43 +211,47 @@ draw_sprite_priority:
 	 jr z,_
 	 xor 7
 _
-	 ld e,a
+	 ld l,a
 	 sbc a,a
-	 add a,$1D
+	 add a,$2D
 	 ld (draw_sprite_priority_hdir),a
 	 sbc a,a
 	 and $10
 	 add a,$80
 	 ld (draw_sprite_priority_hdir_2),a
-	 ld a,e
+	 ld a,l
 draw_sprite_priority_row:
-	 ld hl,(iy)
-	 add hl,sp
-	 lea iy,iy+3
-	 jr c,draw_sprite_priority_vclip
-	 ld e,a
-	 push.s bc
-	  ld c,ixl
-draw_sprite_priority_pixels:
-	  ld a,(hl)
-	  inc a
-	  jr nz,_
-	  ld a,(de)
-	  add a,c
-	  jr c,_
-	  ld (hl),a
+	 pop de
+	 bit 0,e
+	 jr nz,draw_sprite_priority_vclip
+	 ld l,a
+	 ld a,iyl
+	 add a,e
+	 jr nc,_
+	 ld e,$FF
+	 inc de
 _
-	  inc hl
+	 ld e,a
+draw_sprite_priority_pixels:
+	 ld a,(de)
+	 inc a
+	 jr nz,_
+	 ld a,(hl)
+	 add a,c
+	 jr c,_
+	 ld (de),a
+_
+	 inc de
 draw_sprite_priority_hdir:
-	  inc e
-	  djnz draw_sprite_priority_pixels
-	 pop.s bc
-	 ld a,e
+	 inc l
+	 djnz draw_sprite_priority_pixels
+	 ld b,iyh
+	 ld a,l
 draw_sprite_priority_hdir_2:
 	 sub b
 draw_sprite_priority_vclip:
 	 add a,ixh
-	 dec c
+	 dec ixl
 	 jr nz,draw_sprite_priority_row
 	pop.s ix
 	jp draw_next_sprite_2
@@ -463,13 +472,12 @@ scanline_scale_accumulator = $+2
 	  ld (render_save_spl),hl
 render_scanline_loop:
 	  push bc
-	   ; Store current scanline pointer minus 1 in LUT
-	   ; Or store -1 if sprites are disabled
+	   ; Store current scanline pointer in LUT
+	   ; Or store 1 to low bit if sprites are disabled
 	   ; Carry flag is set
-	   sbc hl,hl
-LCDC_1_smc:
-	   nop	; add hl,de when sprites enabled
-	   ld (iy),hl
+	   sbc a,a
+LCDC_1_smc = $+1
+	   ld (iy),a	;or ld (iy),de if enabled
 	   lea iy,iy+3
 	   
 	   ; Zero flag is reset

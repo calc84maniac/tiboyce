@@ -1322,7 +1322,7 @@ _
 	bit 1,l
 	jr z,_
 	ld a,(LCDC_1_smc)
-	xor $19	;NOP vs ADD HL,DE
+	xor $77 ^ $1F	;LD (IY),A vs LD (IY),DE
 	ld (LCDC_1_smc),a
 _
 	bit 2,l
@@ -1334,7 +1334,7 @@ _
 	xor 8^16
 	ld (LCDC_2_smc_2),a
 	ld a,(LCDC_2_smc_3)
-	xor $82 ^ $83	;RES 0,D vs RES 0,E
+	xor $80 ^ $81	;RES 0,B vs RES 0,C
 	ld (LCDC_2_smc_3),a
 	
 _
