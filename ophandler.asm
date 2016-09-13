@@ -1316,7 +1316,7 @@ lcdc_write:
 	bit 0,l
 	jr z,_
 	ld a,(LCDC_0_smc)
-	xor (vram_pixels_start >> 16) ^ $FF
+	xor $39 ^ $31	;ADD.SIS SP,HL \ LD.SIS SP,HL vs LD.SIS SP,$F940
 	ld (LCDC_0_smc),a
 _
 	bit 1,l

@@ -483,30 +483,25 @@ LCDC_1_smc = $+1
 	   ; Zero flag is reset
 LCDC_7_smc:
 	   jr z,render_scanline_off
-	   ld a,c
 SCY_smc = $+1
-	   add a,0
-	   rrca
-	   rrca
-	   rrca
-	   ld l,a
-	   and $1F
-	   ld h,a
-	   xor l
-	   rrca
-	   rrca
-	   
+	   ld l,0
+	   add hl,bc
+	   ld h,32
+	   mlt hl
+	   ld a,l
 SCX_smc_1 = $+1
 	   ld l,0
 	
 LCDC_4_smc = $+2
 LCDC_3_smc = $+3
 	   ld.sis sp,vram_tiles_start & $FFFF
-	   add.s hl,sp
-	   ld.s sp,hl
+LCDC_0_smc = $+1
+	   add.sis hl,sp
+	   ld.sis sp,hl
 	 
-LCDC_0_smc = $+3
 	   ld hl,vram_pixels_start
+	   rrca
+	   rrca
 	   ld l,a
 	   
 SCX_smc_2 = $+1
@@ -564,6 +559,8 @@ render_scanline_next:
 	   ex de,hl
 	   scf
 _
+#else
+	   scf
 #endif
 	  pop bc
 	  inc c

@@ -175,6 +175,8 @@ vram_tiles_start = (pixelShadow | 31) + 1
 vram_pixels_start = vram_tiles_start + $4000
 vram_start = vram_pixels_start + $6000
 digits = vram_start + $2000
+fake_tile = $D0F900
+fake_tilemap = $D0F940
 wram_start = vram_start + $4000
 memroutineLUT = vram_start + $6000
 scanlineLUT = memroutineLUT + $0200
@@ -533,6 +535,20 @@ RestartFromHere:
 	inc de
 	ld bc,$4000 + $6000 - 1
 	ld (hl),c
+	ldir
+	
+	ld hl,fake_tile
+	push hl
+	pop de
+	inc de
+	ld (hl),$FF
+	ld c,64
+	ldir
+	ld (hl),b
+	ld a,(fake_tile - vram_pixels_start) >> 8
+	ld (de),a
+	inc de
+	ld c,40
 	ldir
 	
 	call generate_digits
