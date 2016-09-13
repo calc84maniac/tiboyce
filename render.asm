@@ -68,176 +68,184 @@ draw_sprites_save_sp = $+1
 	
 draw_sprites:
 	ld (draw_sprites_save_sp),sp
-	ld ix,hram_base+$FEA1
+	ld ix,$FEA4
 draw_next_sprite:
+	lea ix,ix-3
+draw_next_sprite_2:
 	dec ixl
 	jr z,draw_sprites_done
-	lea ix,ix-3
-	ld a,(ix-1)
-	dec a
+	ld.s bc,(ix-4)
+	dec c
+	ld a,c
 	cp 159
 	jr nc,draw_next_sprite
-	ld e,a
-	ld a,(ix)
-	ld b,a
+	ld a,b
 	dec a
 	cp 167
 	jr nc,draw_next_sprite
 	
-	ld iy,scanlineLUT
-	ld d,3
-	mlt de
-	add iy,de
+	pea.s ix-3
 	
-	ld e,(ix+1)
-	ld d,64
-	mlt de
-	ld hl,vram_pixels_start
-	add hl,de
-	ex de,hl
+	 ld iy,scanlineLUT
+	 ld d,3
+	 ld e,c
+	 mlt de
+	 add iy,de
 	
-	; Set HL=0
-	sbc hl,hl
-	
-	ld c,(ix+2)
-	bit 5,c
-	jr nz,draw_sprite_hflip
-	sub 7
-	jr c,_
-	ld b,8
-	ld l,a
-	add a,256-152
-	jr nc,draw_sprite_no_hflip_done
-	cpl
-	adc a,b
-	ld b,a
-	jr draw_sprite_no_hflip_done
-_
-	ld a,e
-	add a,8
-	sub b
-	ld e,a
-	jr draw_sprite_no_hflip_done
-	
-draw_sprite_hflip:
-	ld l,a
-	cp 7
-	jr c,draw_sprite_hflip_done
-	ld b,8
-	sub 159
-	jr c,draw_sprite_hflip_done
-	ld l,159
-	ld b,a
-	add a,e
-	ld e,a
-	ld a,8
-	sub b
-	ld b,a
-draw_sprite_hflip_done:
-	ld a,$2B	;DEC HL
-	jr _
-draw_sprite_no_hflip_done:
-	ld a,$23	;INC HL
-_
-	
-	inc hl
-	ld sp,hl
-	
-	bit 4,c
-	ld l,$33
-	jr z,_
-	add hl,hl
-_
-	
-	bit 6,c
-	ld h,3
-	jr z,_
-	ld h,-3
-LCDC_2_smc_1 = $+2
-	lea iy,iy+(7*3)
-_
-	
-	bit 7,c
-LCDC_2_smc_2 = $+1
-	ld c,8
+	 ld.s de,(ix-2)
+	 ld c,d
+	 ld d,64
 LCDC_2_smc_3 = $+1
-	res 6,c		;res 6,e when 8x16 sprites
-	jr nz,draw_sprite_priority
+	 res 0,d		;res 0,e when 8x16 sprites
+	 mlt de
+	 ld hl,vram_pixels_start
+	 add hl,de
+	 ex de,hl
 	
-draw_sprite_normal:
-	ld (draw_sprite_normal_hdir),a
-	ld a,l
-	ld (draw_sprite_normal_palette),a
-	ld a,h
-	ld (draw_sprite_normal_vdir),a
-	ld a,e
-draw_sprite_normal_row:
-	ld hl,(iy)
-	add hl,sp
-draw_sprite_normal_vdir = $+2
-	lea iy,iy+3
-	jr c,draw_sprite_normal_vclip
-	push.s bc
-draw_sprite_normal_palette = $+1
-	 ld c,$33
-draw_sprite_normal_pixels:
-	 ld a,(de)
-	 add a,c
-	 jr c,_
-	 ld (hl),a
+	 ; Set HL=0
+	 sbc hl,hl
+	
+	 sub 7
+	 jr nc,_
+	 cpl
+	 adc a,e
+	 jr draw_sprite_clip_done
+_	 
+	 ld b,8
+	 ld l,a
+	 add a,256-152
+	 jr nc,_
+	 cpl
+	 adc a,b
+	 ld b,a
 _
-	 inc de
-draw_sprite_normal_hdir:
+	 ld a,e
+draw_sprite_clip_done:
+	
 	 inc hl
-	 djnz draw_sprite_normal_pixels
-	pop.s bc
-	ld a,e
-	sub b
+	 ld sp,hl
+	
+	 bit 4,c
+	 ld ixl,$33
+	 jr z,_
+	 add ix,ix
+_
+	
+	 bit 6,c
+	 ld ixh,8
+	 jr z,_
+	 ld ixh,-8
+LCDC_2_smc_1 = $+1
+	 xor $38
+_
+	 
+	 sla c
+	 bit 6,c
+LCDC_2_smc_2 = $+1
+	 ld c,8
+	 jr c,draw_sprite_priority
+	 jr nz,draw_sprite_flip
+	
+draw_sprite_normal_row:
+	 ld hl,(iy)
+	 add hl,sp
+	 lea iy,iy+3
+	 jr c,draw_sprite_normal_vclip
+	 ld e,a
+	 push.s bc
+	  ld c,ixl
+draw_sprite_normal_pixels:
+	  ld a,(de)
+	  add a,c
+	  jr c,_
+	  ld (hl),a
+_
+	  inc hl
+	  inc e
+	  djnz draw_sprite_normal_pixels
+	 pop.s bc
+	 ld a,e
+	 sub b
 draw_sprite_normal_vclip:
-	add a,8
-	ld e,a
-	dec c
-	jr nz,draw_sprite_normal_row
-	jp draw_next_sprite
+	 add a,ixh
+	 dec c
+	 jr nz,draw_sprite_normal_row
+	pop.s ix
+	jp draw_next_sprite_2
+	
+draw_sprite_flip:
+	 xor 7
+draw_sprite_flip_row:
+	 ld hl,(iy)
+	 add hl,sp
+	 lea iy,iy+3
+	 jr c,draw_sprite_flip_vclip
+	 ld e,a
+	 push.s bc
+	  ld c,ixl
+draw_sprite_flip_pixels:
+	  ld a,(de)
+	  add a,c
+	  jr c,_
+	  ld (hl),a
+_
+	  inc hl
+	  dec e
+	  djnz draw_sprite_flip_pixels
+	 pop.s bc
+	 ld a,e
+	 add a,b
+draw_sprite_flip_vclip:
+	 add a,ixh
+	 dec c
+	 jr nz,draw_sprite_flip_row
+	pop.s ix
+	jp draw_next_sprite_2
 	
 draw_sprite_priority:
-	ld (draw_sprite_priority_hdir),a
-	ld a,l
-	ld (draw_sprite_priority_palette),a
-	ld a,h
-	ld (draw_sprite_priority_vdir),a
-	ld a,e
-draw_sprite_priority_row:
-	ld hl,(iy)
-	add hl,sp
-draw_sprite_priority_vdir = $+2
-	lea iy,iy+3
-	jr c,draw_sprite_priority_vclip
-	push.s bc
-draw_sprite_priority_palette = $+1
-	 ld c,$33
-draw_sprite_priority_pixels:
-	 ld a,(hl)
-	 inc a
-	 jr nz,_
-	 ld a,(de)
-	 add a,c
-	 jr c,_
-	 ld (hl),a
+	 jr z,_
+	 xor 7
 _
-	 inc de
+	 ld e,a
+	 sbc a,a
+	 add a,$1D
+	 ld (draw_sprite_priority_hdir),a
+	 sbc a,a
+	 and $10
+	 add a,$80
+	 ld (draw_sprite_priority_hdir_2),a
+	 ld a,e
+draw_sprite_priority_row:
+	 ld hl,(iy)
+	 add hl,sp
+	 lea iy,iy+3
+	 jr c,draw_sprite_priority_vclip
+	 ld e,a
+	 push.s bc
+	  ld c,ixl
+draw_sprite_priority_pixels:
+	  ld a,(hl)
+	  inc a
+	  jr nz,_
+	  ld a,(de)
+	  add a,c
+	  jr c,_
+	  ld (hl),a
+_
+	  inc hl
 draw_sprite_priority_hdir:
-	 inc hl
-	 djnz draw_sprite_priority_pixels
-	pop.s bc
-	ld a,e
-	sub b
+	  inc e
+	  djnz draw_sprite_priority_pixels
+	 pop.s bc
+	 ld a,e
+draw_sprite_priority_hdir_2:
+	 sub b
 draw_sprite_priority_vclip:
-	add a,8
-	ld e,a
-	dec c
-	jr nz,draw_sprite_priority_row
-	jp draw_next_sprite
+	 add a,ixh
+	 dec c
+	 jr nz,draw_sprite_priority_row
+	pop.s ix
+	jp draw_next_sprite_2
 	
 write_vram_and_expand:
 	exx
@@ -555,7 +563,6 @@ _
 	  ld (scanline_ptr),de
 	  ld (scanlineLUT_ptr),iy
 #ifndef DBGNOSCALE
-	  ld a,ixh
 	  ld (scanline_scale_accumulator),a
 #endif
 	  ld a,c

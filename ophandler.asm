@@ -1328,13 +1328,13 @@ _
 	bit 2,l
 	jr z,_
 	ld a,(LCDC_2_smc_1)
-	xor (7*3)^(15*3)
+	xor $38^$78
 	ld (LCDC_2_smc_1),a
 	ld a,(LCDC_2_smc_2)
 	xor 8^16
 	ld (LCDC_2_smc_2),a
 	ld a,(LCDC_2_smc_3)
-	xor $B1 ^ $B3	;RES 6,C vs RES 6,E
+	xor $82 ^ $83	;RES 0,D vs RES 0,E
 	ld (LCDC_2_smc_3),a
 	
 _
