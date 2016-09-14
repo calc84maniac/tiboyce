@@ -427,8 +427,12 @@ program_end:
 ram_size:
 program_size = program_end - userMem
 	
+	.echo "User RAM code size: ", program_size
+	
 	#include "setup.asm"
 	#include "text.asm"
 	#include "menu.asm"
 	#include "z80mode.asm"
 	#include "render.asm"
+
+	.echo "Total size: ", program_size + $
