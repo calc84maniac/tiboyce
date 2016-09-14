@@ -104,6 +104,7 @@ LCDC_2_smc_3 = $+1
 	 ld b,a
 	 sub 7
 	 jr nc,_
+	 ld iyl,0
 	 inc b
 	 cpl
 	 adc a,l
