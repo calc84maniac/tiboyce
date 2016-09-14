@@ -20,10 +20,7 @@ flush_code_reset_padding:
 	ld (ram_block_padding),hl
 flush_code:
 #ifdef DEBUG
-	ld hl,FlushMessage
-	push hl
-	 call debug_printf
-	pop hl
+	APRINTF(FlushMessage)
 #endif
 	ld hl,recompile_struct
 	ld (recompile_struct_end),hl
@@ -74,10 +71,7 @@ _
 lookup_gb_code_address:
 #ifdef 0
 	push de
-	 ld hl,LookupGBMessage
-	 push hl
-	  call debug_printf
-	 pop hl
+	 APRINTF(LookupGBMessage)
 	pop de
 #endif
 	ld bc,recompile_struct
@@ -181,10 +175,7 @@ lookup_gb_done:
 	 push bc
 	  push ix
 	   push de
-	    ld hl,LookupGBFoundMessage
-	    push hl
-	     call debug_printf
-	    pop hl
+	    APRINTF(LookupGBFoundMessage)
 	   pop de
 	  pop ix
 	 pop bc
@@ -207,10 +198,7 @@ lookup_code_cached_miss:
 	    ld a,(z80codebase+curr_rom_bank)
 	    ld l,a
 	    push hl
-	     ld hl,CacheMissMessage
-	     push hl
-	      call debug_printf
-	     pop hl
+	     APRINTF(CacheMissMessage)
 	    pop hl
 	   pop hl
 	  pop de
@@ -370,10 +358,7 @@ lookup_code_by_pointer:
 	  ld a,(z80codebase+curr_rom_bank)
 	  ld l,a
 	  push hl
-	   ld hl,LookupMessage
-	   push hl
-	    call debug_printf
-	   pop hl
+	   APRINTF(LookupMessage)
 	  pop hl
 	 pop hl
 	pop de
@@ -476,10 +461,7 @@ recompile:
 	     ld a,(z80codebase+curr_rom_bank)
 	     ld l,a
 	     push hl
-	      ld hl,RecompileMessage
-	      push hl
-	       call debug_printf
-	      pop hl
+	      APRINTF(RecompileMessage)
 	     pop hl
 	    pop hl
 	   pop de
@@ -528,10 +510,7 @@ recompile_ram:
 	     or a
 	     sbc hl,de
 	     push hl
-	      ld hl,RecompileRamMessage
-	      push hl
-	       call debug_printf
-	      pop hl
+	      APRINTF(RecompileRamMessage)
 	     pop hl
 	    pop de
 	   pop hl
@@ -589,10 +568,7 @@ rerecompile:
 	 inc hl
 	 dec.s hl
 	 push hl
-	  ld hl,CoherencyFailedMessage
-	  push hl
-	   call debug_printf
-	  pop hl
+	  APRINTF(CoherencyFailedMessage)
 	 pop hl
 	pop ix
 	or a
@@ -666,10 +642,7 @@ coherency_flush:
 #ifdef DEBUG
 	push ix
 	 push hl
-	  ld hl,PaddingUpdateMessage
-	  push hl
-	   call debug_printf
-	  pop hl
+	  APRINTF(PaddingUpdateMessage)
 	 pop hl
 	pop ix
 #endif
@@ -681,7 +654,6 @@ coherency_flush:
 	push.s ix
 	jp.sis coherency_return_popped
 	
-#ifdef DEBUG
 #ifdef 0
 print_recompiled_code:
 	push ix
@@ -695,10 +667,7 @@ _
 	    sbc hl,hl
 	    ld l,a
 	    push hl
-	     ld hl,ByteFormat
-	     push hl
-	      call debug_printf
-	     pop hl
+	     APRINTF(ByteFormat)
 	    pop hl
 	   pop hl
 	  pop de
@@ -707,41 +676,10 @@ _
 	  sbc.s hl,de
 	  add hl,de
 	  jr nz,-_
-	  call PutNewLine
+	  ACALL(PutNewLine)
 	 pop hl
 	pop ix
 	ret
-	
-ByteFormat:
-	.db "%02X",0
-#endif
-	
-LookupGBMessage:
-	.db "Looking up GB address from %04X\n",0
-	
-LookupGBFoundMessage:
-	.db "Found GB %04X @ %04X\n",0
-	
-FlushMessage:
-	.db "Flushing recompiled code!\n",0
-	
-CacheMissMessage:
-	.db "Cache miss at %02X:%04X\n",0
-	
-LookupMessage:
-	.db "Looking up GB code at %02X:%04X\n",0
-	
-RecompileMessage:
-	.db "Recompiling %02X:%04X (%06X) to %04X\n",0
-	
-RecompileRamMessage:
-	.db "Recompiling RAM:%04X (%06X) to %04X\n",0
-	
-CoherencyFailedMessage:
-	.db "RAM coherency failed, routine=%04X\n",0
-	
-PaddingUpdateMessage:
-	.db "RAM block padding increased to %06X\n",0
 #endif
 	
 	.block (-$)&255

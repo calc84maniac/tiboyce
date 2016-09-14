@@ -42,10 +42,7 @@ identify_waitloop:
 	 push ix
 	 pop af
 	 push af
-	  ld hl,WaitLoopSearchMessage
-	  push hl
-	   call debug_printf
-	  pop hl
+	  APRINTF(WaitLoopSearchMessage)
 	 pop ix
 	pop hl
 #endif
@@ -219,10 +216,7 @@ waitloop_identified:
 	 push ix
 	 pop af
 	 push af
-	  ld hl,WaitLoopIdentifiedMessage
-	  push hl
-	   call debug_printf
-	  pop hl
+	  APRINTF(WaitLoopIdentifiedMessage)
 	 pop ix
 	pop bc
 #endif
@@ -277,13 +271,6 @@ waitloop_finish:
 	 ld.s (hl),ix
 	pop ix
 	ret
-	
-#ifdef DEBUG
-WaitLoopSearchMessage:
-	.db "Searching for waitloop at %04X.\n",0
-WaitLoopIdentifiedMessage:
-	.db "Setting waitloop at %04X, var %04X.\n",0
-#endif
 	
 decode_branch_slow:
 	ex af,af'
@@ -1090,7 +1077,9 @@ _
 
 key_smc_menu:
 	  bit 6,(ix+6*2)	;CLEAR
-	  call nz,emulator_menu
+	  jr z,_
+	  ACALL(emulator_menu)
+_
 
 	 pop ix
 	pop de
@@ -1185,6 +1174,33 @@ update_fps:
 	xor a
 	ld (vfps),a
 	ld (fps),a
+	ret
+	
+	; Digit in A, output at offset DE
+display_digit:
+	ld c,a
+	ld hl,(current_buffer)
+	ld a,h
+	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
+	ld h,a
+	add hl,de
+	ex de,hl
+	ld hl,digits
+	ld b,40
+	mlt bc
+	add hl,bc
+	ld a,10
+_
+	ld bc,160
+	ldi
+	ldi
+	ldi
+	ldi
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	dec a
+	jr nz,-_
 	ret
 	
 oam_transfer:
@@ -1574,7 +1590,61 @@ _
 	ex af,af'
 	ret.l
 	
-skippable_frames:
-	.db 1
-current_buffer:
-	.dl 0
+palette_obj1_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+
+palette_obj0_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+
+palette_bg_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+
+update_palettes:
+	ld hl,(hram_base+BGP)
+curr_palettes = $+1
+	ld de,$FFFFFF
+	or a
+	sbc hl,de
+	ret z
+	add hl,de
+	ld (curr_palettes),hl
+	ld de,mpLcdPalette + (9*2)-1
+	push bc
+	 ld ix,palette_obj1_colors+1-8
+	 ld c,(9*2) + 3
+update_palettes_next_loop:
+	 lea ix,ix+8
+	 ld b,4
+update_palettes_loop:
+	 xor a
+	 add hl,hl
+	 adc a,a
+	 add hl,hl
+	 adc a,a
+	 add a,a
+	 djnz _
+	 dec c
+	 jr nz,update_palettes_next_loop
+	 inc de
+	 ld e,16*2-1
+	 scf
+_
+	 ld (update_palettes_smc),a
+	 push hl
+update_palettes_smc = $+2
+	  lea hl,ix
+	  ldd
+	  ldd
+	 pop hl
+	 jr nc,update_palettes_loop
+	pop bc
+	ret
