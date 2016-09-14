@@ -199,7 +199,8 @@ cursormem = mpLcdCursorImg
 
 z80codebase = vRam
 myz80stack = $FE00
-vram_tiles_start = (pixelShadow | 31) + 1
+scanlineLUT = pixelShadow
+vram_tiles_start = scanlineLUT + (174*3)
 vram_pixels_start = vram_tiles_start + $4000
 vram_start = vram_pixels_start + $6000
 digits = vram_start + $2000
@@ -207,8 +208,7 @@ fake_tile = $D0F900
 fake_tilemap = $D0F940
 wram_start = vram_start + $4000
 memroutineLUT = vram_start + $6000
-scanlineLUT = memroutineLUT + $0200
-rombankLUT = scanlineLUT + (174*3)
+rombankLUT = memroutineLUT + $0200
 rombankLUT_end = rombankLUT + (128*3)
 hram_start = z80codebase + $FE00
 
