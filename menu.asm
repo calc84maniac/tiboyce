@@ -46,12 +46,12 @@ _
 	
 	; Key configuration
 	ld ix,key_smc_right
-	ld de,KeySMCList
+	push hl
+	 APTR(KeySMCList)
+	 ex de,hl
+	pop hl
 	ld b,9
 key_config_loop:
-	ld a,(de)
-	inc de
-	ld (key_config_smc),a
 	ld a,(hl)
 	dec a
 	cpl
@@ -68,10 +68,64 @@ key_config_loop:
 	add a,a
 	add a,$46
 	ld (ix+3),a
-key_config_smc = $+2
-	lea ix,ix
+	ld a,(de)
+	inc de
+	add a,ixl
+	jr nc,_
+	ld ixl,$FF
+	inc ix
+_
+	ld ixl,a
 	djnz key_config_loop
 	ret
+	
+ItemSelectCmd:
+	ld hl,CmdList
+	ld c,a
+	ld b,2
+	mlt bc
+	add hl,bc
+	ld bc,(ArcBase)
+	add hl,bc
+	ld hl,(hl)
+	dec.s hl
+	add hl,bc
+	jp (hl)
+	
+ItemSelectKey:
+	ACALL(GetKeyConfig)
+	ld (hl),0
+	push hl
+	 ACALL(draw_current_menu)
+	 ACALL(WaitForKey)
+	pop hl
+	ld (hl),a
+	ACALL(draw_current_menu)
+	AJUMP(menu_loop)
+	
+BackToMainMenu:
+	xor a
+ItemSelectLink:
+	ld (current_menu),a
+	or a
+	ld hl,current_menu_selection
+	ld a,(main_menu_selection)
+	jr z,_
+	ld a,(hl)
+	ld (main_menu_selection),a
+	ld a,1
+_
+	ld (current_menu_selection),a
+	ACALL(redraw_current_menu)
+ItemSelectOption:
+CmdLoadNewGame:
+CmdRestartGame:
+	jr menu_loop
+	
+ItemSelectDigit:
+	cp 2
+	jr z,menu_loop
+	jr menu_loop
 	
 emulator_menu:
 	push bc
@@ -80,7 +134,7 @@ emulator_menu:
 	 ld a,(main_menu_selection)
 	 ld (current_menu_selection),a
 	 
-	 call redraw_current_menu
+	 ACALL(redraw_current_menu)
 	
 	 ld hl,(mpLcdBase)
 	 push hl
@@ -88,7 +142,7 @@ emulator_menu:
 	  ld (mpLcdBase),hl
 	  
 menu_loop:
-	  call WaitForKey
+	  ACALL(WaitForKey)
 	  call get_current_menu_selection
 	  dec a
 	  jr z,menu_down
@@ -105,16 +159,16 @@ menu_loop:
 menu_exit:
 	  ld a,(current_menu)
 	  or a
-	  jp nz,BackToMainMenu
+	  jr nz,BackToMainMenu
 	  
 CmdReturnToGame:
 	  ld a,(current_menu_selection)
 	  ld (main_menu_selection),a
 
-	  call ApplyConfiguration
+	  ACALL(ApplyConfiguration)
 
 _
-	  call GetKeyCode
+	  ACALL(GetKeyCode)
 	  or a
 	  jr nz,-_
 	 pop hl
@@ -129,7 +183,7 @@ menu_up:
 	ld a,(hl)
 _
 	ld (current_menu_selection),a
-	call draw_current_menu
+	ACALL(draw_current_menu)
 	jr menu_loop
 	
 menu_down:
@@ -140,45 +194,68 @@ menu_down:
 _
 	inc a
 	ld (current_menu_selection),a
-	call draw_current_menu
+	ACALL(draw_current_menu)
 	jr menu_loop
 	
 menu_left_right:
 	dec a
 	add a,a
 	dec a
-current_item_ptr = $+1
-	ld hl,0
 	ld de,ItemChangeCallbacks
-	call DoItemCallback
+	ACALL(DoCurrentItemCallback)
 	jr menu_loop
 	
 menu_select:
 	ld de,ItemSelectCallbacks
+DoCurrentItemCallback:
 	ld hl,(current_item_ptr)
 DoItemCallback:
 	ld c,(hl)
 	inc hl
 	ex de,hl
-	ld b,3
+	ld b,2
 	mlt bc
+	add hl,bc
+	ld bc,(ArcBase)
+	add hl,bc
+	ld hl,(hl)
+	dec.s hl
 	add hl,bc
 	ld b,a
 	ld a,(de)
-	ld hl,(hl)
 	jp (hl)
 	
-get_current_menu_selection:
-	ld hl,MenuList
-current_menu = $+1
-	ld c,0
-	ld b,3
-	mlt bc
-	add hl,bc
-	ld hl,(hl)
-current_menu_selection = $+1
-	ld c,0
-	ret
+
+ItemChangeDigit:
+	ld hl,current_state
+	cp 2
+	jr nz,_
+	ld hl,FrameskipValue
+_
+	ld a,(hl)
+	add a,b
+	cp 10
+	jr c,_
+	add a,10
+	jr c,_
+	xor a
+_
+	ld (hl),a
+	jr draw_current_menu
+	
+ItemChangeOption:
+	ld d,b
+	ACALL(GetOption)
+	ld a,(bc)
+	add a,d
+	cp (hl)
+	jr c,_
+	add a,(hl)
+	jr c,_
+	xor a
+_
+	ld (bc),a
+	jr draw_current_menu
 	
 redraw_current_menu:
 	ld hl,(current_buffer)
@@ -191,16 +268,17 @@ redraw_current_menu:
 	
 	ld a,(current_menu)
 	or a
-	call z,draw_mini_screen
+	jr nz,_
+	ACALL(draw_mini_screen)
+_
 	
 	ld a,20
 	ld (cursorRow),a
 	ld a,1
 	ld (cursorCol),a
-current_description = $+1
-	ld hl,0
+	ld hl,(current_description)
 	ld a,MAGENTA
-	call PutNStringColor
+	ACALL(PutNStringColor)
 	 
 	ld a,30
 	ld (cursorRow),a
@@ -213,9 +291,9 @@ current_description = $+1
 	ld c,(ix+$014F-$0134)
 	push bc
 	 push ix
-	  ld hl,TitleChecksumFormat
+	  APTR(TitleChecksumFormat)
 	  push hl
-	   call PutStringFormat
+	   ACALL(PutStringFormat)
 	  pop hl
 	 pop hl
 	pop hl
@@ -257,14 +335,14 @@ _
 	 ld a,1
 	 ld (cursorCol),a
 	 ld a,MAGENTA
-	 call PutStringColor
+	 ACALL(PutStringColor)
 	 ld (current_item_ptr),hl
 	 ld a,WHITE
 _
 	 call SetStringColor
 	 
 	 ld de,ItemDisplayCallbacks
-	 call DoItemCallback
+	 ACALL(DoItemCallback)
 	 inc de
 	 
 draw_menu_title:
@@ -276,7 +354,7 @@ draw_menu_title:
 	 ld (cursorCol),a
 	 push hl
 	  push de
-	   call PutStringFormat
+	   ACALL(PutStringFormat)
 	  pop hl
 	 pop de
 	 xor a
@@ -329,13 +407,13 @@ WaitForKey:
 _
 	ld de,$000010
 	call ack_and_wait_for_interrupt
-	call GetKeyCode
+	ACALL(GetKeyCode)
 	or a
 	jr nz,-_
 _
 	ld de,$000010
 	call ack_and_wait_for_interrupt
-	call GetKeyCode
+	ACALL(GetKeyCode)
 	or a
 	jr z,-_
 	ret
@@ -370,10 +448,14 @@ GetOption:
 	add hl,bc
 	push hl
 	 ld hl,OptionList
-	 ld b,3
+	 ld b,2
 	 mlt bc
 	 add hl,bc
+	 ld bc,(ArcBase)
+	 add hl,bc
 	 ld hl,(hl)
+	 dec.s hl
+	 add hl,bc
 	pop bc
 	ret
 	
@@ -388,13 +470,12 @@ GetKeyConfig:
 ItemDisplayDigit:
 	or a
 	sbc hl,hl
-current_state = $+1
-	ld l,0
 	cp 2
+	ld a,(current_state)
 	jr nz,_
 	ld a,(FrameskipValue)
-	ld l,a
 _
+	ld l,a
 ItemDisplayLink:
 ItemDisplayCmd:
 ItemChangeLink:
@@ -403,13 +484,13 @@ ItemChangeKey:
 	ret
 	
 ItemDisplayKey:
-	call GetKeyConfig
+	ACALL(GetKeyConfig)
 	ld a,(hl)
 	ld hl,KeyNames
 	jr ItemDisplayKeyEntry
 	
 ItemDisplayOption:
-	call GetOption
+	ACALL(GetOption)
 	inc hl
 	ld a,(bc)
 ItemDisplayKeyEntry:
@@ -424,122 +505,46 @@ _
 	djnz -_
 	ret
 	
-ItemChangeDigit:
-	ld hl,current_state
-	cp 2
-	jr nz,_
-	ld hl,FrameskipValue
-_
-	ld a,(hl)
-	add a,b
-	cp 10
-	jr c,_
-	add a,10
-	jr c,_
-	xor a
-_
-	ld (hl),a
-	jp draw_current_menu
-	
-ItemChangeOption:
-	ld d,b
-	call GetOption
-	ld a,(bc)
-	add a,d
-	cp (hl)
-	jr c,_
-	add a,(hl)
-	jr c,_
-	xor a
-_
-	ld (bc),a
-	jp draw_current_menu
-	
-BackToMainMenu:
-	xor a
-ItemSelectLink:
-	ld (current_menu),a
-	or a
-	ld hl,current_menu_selection
-main_menu_selection = $+1
-	ld a,1
-	jr z,_
-	ld a,(hl)
-	ld (main_menu_selection),a
-	ld a,1
-_
-	ld (current_menu_selection),a
-	call redraw_current_menu
-ItemSelectOption:
-CmdLoadNewGame:
-CmdRestartGame:
-	jp menu_loop
-	
-ItemSelectDigit:
-	cp 2
-	jr z,ItemSelectOption
-	jr ItemSelectOption
-	
-ItemSelectKey:
-	call GetKeyConfig
-	ld (hl),0
-	push hl
-	 call draw_current_menu
-	 call WaitForKey
-	pop hl
-	ld (hl),a
-	call draw_current_menu
-	jr ItemSelectOption
-	
-ItemSelectCmd:
-	ld hl,CmdList
-	ld c,a
-	ld b,3
-	mlt bc
-	add hl,bc
-	ld hl,(hl)
-	jp (hl)
-	
 TitleChecksumFormat:
 	.db "%.16s  %04X",0
 	
 MenuList:
-	.dl MainMenu
-	.dl GraphicsMenu
-	.dl ControlsMenu
-	.dl EmulationMenu
+	.dw MainMenu+1
+	.dw GraphicsMenu+1
+	.dw ControlsMenu+1
+	.dw EmulationMenu+1
 	
 OptionList:
-	.dl OptionFrameskipType
-	.dl OptionFPSDisplay
-	.dl OptionAutoArchive
+	.dw OptionFrameskipType+1
+	.dw OptionFPSDisplay+1
+	.dw OptionAutoArchive+1
 	
 CmdList:
-	.dl CmdExit
-	.dl CmdExit
-	.dl CmdExit
-	.dl CmdReturnToGame
+	.dw CmdExit+1
+	.dw CmdExit+1
+	.dw CmdExit+1
+	.dw CmdReturnToGame+1
 	
 ItemDisplayCallbacks:
-	.dl ItemDisplayLink
-	.dl ItemDisplayCmd
-	.dl ItemDisplayDigit
-	.dl ItemDisplayOption
-	.dl ItemDisplayKey
+	.dw ItemDisplayLink+1
+	.dw ItemDisplayCmd+1
+	.dw ItemDisplayDigit+1
+	.dw ItemDisplayOption+1
+	.dw ItemDisplayKey+1
 	
 ItemChangeCallbacks:
-	.dl ItemChangeLink
-	.dl ItemChangeCmd
-	.dl ItemChangeDigit
-	.dl ItemChangeOption
-	.dl ItemChangeKey
+	.dw ItemChangeLink+1
+	.dw ItemChangeCmd+1
+	.dw ItemChangeDigit+1
+	.dw ItemChangeOption+1
+	.dw ItemChangeKey+1
 	
 ItemSelectCallbacks:
-	.dl ItemSelectLink
-	.dl ItemSelectCmd
-	.dl ItemSelectDigit
-	.dl ItemSelectOption
-	.dl ItemSelectKey
+	.dw ItemSelectLink+1
+	.dw ItemSelectCmd+1
+	.dw ItemSelectDigit+1
+	.dw ItemSelectOption+1
+	.dw ItemSelectKey+1
 	
 MainMenu:
 	.db 9
@@ -674,20 +679,6 @@ KeyNames:
 	.db "2nd",0
 	.db "mode",0
 	.db "del",0
-	
-FrameskipValue:
-	.db 2
-	
-OptionConfig:
-FrameskipType:
-	.db 1
-FPSDisplay:
-	.db 0
-AutoArchive:
-	.db 1
-	
-KeyConfig:
-	.db 3,2,4,1,54,48,40,55,15
 	
 KeySMCList:
 	.db key_smc_left - key_smc_right

@@ -40,7 +40,7 @@ debug_printf:
 	  ld hl,(cursorCol)
 	  push hl
 	   ld a,WHITE
-	   call PutStringColor
+	   ACALL(PutStringColor)
 	  pop hl
 	  ld (cursorCol),hl
 	 pop af
@@ -49,12 +49,6 @@ debug_printf:
 	jr PutString
 #endif
 #endif
-	
-SetStringColor:
-	inc a
-	ld (PutChar_ColorSMC1),a
-	ld (PutChar_ColorSMC2),a
-	ret
 	
 	; Call like printf, A=color
 PutStringFormatColor:
@@ -101,64 +95,6 @@ PutNString_B:
 	djnz PutNString_B
 	ret
 	
-	; A = character to display
-	; (cursorRow), (cursorCol) is location to display
-PutChar:
-	or a
-	jr z,_
-	sub ' '
-	jr c,PutNewLine
-_
-	ld c,a
-	ld b,10
-	mlt bc
-	ld hl,font
-	add hl,bc
-	ex de,hl
-	
-	ld hl,(cursorCol)
-	ld a,l
-	cp 40
-	ret nc
-	ld l,160
-	mlt hl
-	ld bc,(current_buffer)
-	add hl,bc
-	ld c,a
-	ld b,4
-	mlt bc
-	add hl,bc
-	
-	ld b,10
-PutCharRowLoop:
-	push bc
-	 ld a,(de)
-	 inc de
-	 ld b,4
-	 ld c,a
-PutCharPixelLoop:
-	 sla c
-	 sbc a,a
-PutChar_ColorSMC1 = $+1
-	 or WHITE+1
-	 dec a
-	 ld (hl),a
-	 sla c
-	 sbc a,a
-PutChar_ColorSMC2 = $+1
-	 or WHITE+1
-	 dec a
-	 rld
-	 inc hl
-	 djnz PutCharPixelLoop
-	 ld c,160-4
-	 add hl,bc
-	pop bc
-	djnz PutCharRowLoop
-	ld hl,cursorCol
-	inc (hl)
-	ret
-	
 PutNewLine:
 	push hl
 	 ld hl,cursorCol
@@ -200,21 +136,14 @@ ScrollUp:
 	 pop bc
 	pop hl
 	ret
-	
-cursorCol:
-	.db 0
-cursorRow:
-	.db 0
-
-text_buffer:
-	.block 42
 
 font:
 	#import "font.bin"
 	
 generate_digits:
+	APTR(font + (('0'-' ')*10))
+	ex de,hl
 	ld hl,digits
-	ld de,font + (('0'-' ')*10)
 	ld b,10*10
 _
 	ld a,(de)
@@ -238,29 +167,43 @@ _
 	djnz --_
 	ret
 	
-	; Digit in A, output at offset DE
-display_digit:
-	ld c,a
-	ld hl,(current_buffer)
-	ld a,h
-	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
-	ld h,a
-	add hl,de
-	ex de,hl
-	ld hl,digits
-	ld b,40
-	mlt bc
-	add hl,bc
-	ld a,10
-_
-	ld bc,160
-	ldi
-	ldi
-	ldi
-	ldi
-	ex de,hl
-	add hl,bc
-	ex de,hl
-	dec a
-	jr nz,-_
-	ret
+#ifdef DEBUG
+StartText:
+	.db "Starting!\n",0
+	
+WaitLoopSearchMessage:
+	.db "Searching for waitloop at %04X.\n",0
+	
+WaitLoopIdentifiedMessage:
+	.db "Setting waitloop at %04X, var %04X.\n",0
+	
+ByteFormat:
+	.db "%02X",0
+
+LookupGBMessage:
+	.db "Looking up GB address from %04X\n",0
+	
+LookupGBFoundMessage:
+	.db "Found GB %04X @ %04X\n",0
+	
+FlushMessage:
+	.db "Flushing recompiled code!\n",0
+	
+CacheMissMessage:
+	.db "Cache miss at %02X:%04X\n",0
+	
+LookupMessage:
+	.db "Looking up GB code at %02X:%04X\n",0
+	
+RecompileMessage:
+	.db "Recompiling %02X:%04X (%06X) to %04X\n",0
+	
+RecompileRamMessage:
+	.db "Recompiling RAM:%04X (%06X) to %04X\n",0
+	
+CoherencyFailedMessage:
+	.db "RAM coherency failed, routine=%04X\n",0
+	
+PaddingUpdateMessage:
+	.db "RAM block padding increased to %06X\n",0
+#endif

@@ -1,5 +1,5 @@
 ; Some standalone equates
-rMOV9TOOP1 = 20h
+_Mov9ToOP1 = $020320
 _chkFindSym = $02050C
 _InsertMem = $020514
 _PutS = $0207C0
@@ -18,7 +18,7 @@ tAsm84CeCmp = $7B
 	
 LookUpAppvar:
 	ld hl,ExeName
-	rst rMOV9TOOP1
+	call _Mov9ToOP1
 	call _chkFindSym
 	ld hl,ErrorMissingText
 	jr c,Error
@@ -49,6 +49,7 @@ _
 	ld de,MagicHeader
 _
 	ld a,(de)
+	inc de
 	cpi
 	jr nz,ErrorInvalid
 	jp pe,-_
@@ -72,11 +73,10 @@ _
 	  pop bc
 	  ld (asm_prgm_size),bc
 	 pop de
-	 ld hl,$C9B0ED	;LDIR \ RET
+	 ld hl,$E9B0ED	;LDIR \ JP (HL)
 	 ld (OP1),hl
 	pop hl
-	push de
-	 jp OP1
+	jp OP1
 	
 ErrorInvalid:
 	ld hl,ErrorInvalidText

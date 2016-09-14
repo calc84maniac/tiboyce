@@ -87,7 +87,8 @@ _
 on_interrupt:
 	ld a,1
 	ld.lil (mpIntAcknowledge),a
-	jp.lil CmdExit
+CmdExitSMC = $+2
+	jp.lil 0
 	
 do_call_reset_callstack:
 	ld b,CALL_STACK_DEPTH
