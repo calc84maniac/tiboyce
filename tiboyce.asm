@@ -224,7 +224,7 @@ text_frame_2 = gb_frame_buffer_2 + (160*150)
 recompile_struct = z80codebase + $010000
 recompile_cache_end = gb_frame_buffer_1
 	
-	.db "TIBoyEXE"
+	.db "TIBoyEXE",$01
 	.dw program_size
 	
 	.org userMem

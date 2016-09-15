@@ -2,12 +2,13 @@
 _Mov9ToOP1 = $020320
 _chkFindSym = $02050C
 _InsertMem = $020514
-_PutS = $0207C0
-_NewLine = $0207F0
+_ErrNotEnoughMem = $02072C
+_ErrCustom1 = $02120C
 _Arc_Unarc = $021448
 _ChkInRAM = $021F98
 OP1 = $D005F8
 asm_prgm_size = $D0118C
+appErr1 = $D025A9 ; use with _ErrCustom1
 userMem = $D1A881
 appVarObj = $15
 tExtTok = $EF
@@ -18,17 +19,28 @@ tAsm84CeCmp = $7B
 	
 LookUpAppvar:
 	ld hl,ExeName
-	call _Mov9ToOP1
-	call _chkFindSym
-	ld hl,ErrorMissingText
-	jr c,Error
+	push hl
+	 call _Mov9ToOP1
+	 call _chkFindSym
+	pop hl
+	ld bc,9
+	jr c,ErrorMissing
 	call _ChkInRAM
 	jr nz,AppvarFound
 	call _Arc_Unarc
 	jr LookUpAppvar
+	
+	.db $01,"EXEyoBIT"
+ExeName:
+	.db appVarObj
+ErrorStartText:
+	.db "TIBoyDat"
+	.db " "
+	.db "Invalid",0
+	.db "Missing",0
+	
 AppvarFound:
 	ex de,hl
-	ld bc,9
 	add hl,bc
 	ld c,(hl)
 	add hl,bc
@@ -40,69 +52,57 @@ AppvarFound:
 	xor a
 	cp b
 	ld b,a
-	ld a,c
-	ld c,MagicHeaderEnd - MagicHeader
-	jr nz,_
+	sbc a,a
+	or c
+	ld c,9
 	cp c
 	jr c,ErrorInvalid
-_
-	ld de,MagicHeader
-_
+	
+MagicCheckLoop:
+	dec de
 	ld a,(de)
-	inc de
 	cpi
 	jr nz,ErrorInvalid
-	jp pe,-_
+	jp pe,MagicCheckLoop
 	
 	ld c,(hl)
 	inc hl
 	ld b,(hl)
 	inc hl
 	
+	ld e,userMem & $FF
 	push hl
-	 ld hl,userMem
-	 push hl
+	 push de
 	  push bc
-	   ld de,(asm_prgm_size)
+	   ld hl,(asm_prgm_size)
 	   add hl,de
-	   push bc
-	    ex (sp),hl
-	    sbc hl,de
+	   ex de,hl
+	   add hl,bc
+	   sbc hl,de
+	   push de
+	    call _ErrNotEnoughMem
+	    ex de,hl
 	   pop de
 	   call _InsertMem
+	   ld hl,OP1
+	   ld de,$E9B0ED	;LDIR \ JP (HL)
+	   ld (hl),de
 	  pop bc
 	  ld (asm_prgm_size),bc
 	 pop de
-	 ld hl,$E9B0ED	;LDIR \ JP (HL)
-	 ld (OP1),hl
-	pop hl
-	jp OP1
+	 ex (sp),hl
+	 ret
 	
 ErrorInvalid:
-	ld hl,ErrorInvalidText
-Error:
-	push hl
-	 ld hl,ErrorGenericText
-	 call _PutS
-	pop hl
-	call _PutS
-	jp _NewLine
-	
-ExeName:
-	.db appVarObj, "TIBoyCE",0
-	
-ErrorGenericText:
-	.db "Error: TI-Boy CE Appvar   "
-	.db "executable is ",0
-	
-ErrorMissingText:
-	.db "missing!",0
-	
-ErrorInvalidText:
-	.db "invalid!",0
-	
-MagicHeader:
-	.db "TIBoyEXE"
-MagicHeaderEnd:
+	ld c,9+8
+	ex de,hl
+ErrorMissing:
+	ld l,ErrorStartText & $FF
+	ld de,appErr1
+	ldir
+	ld c,8
+	add hl,bc
+	ldir
+	jp _ErrCustom1
 
 	.echo "Loader size is ",$-userMem," bytes"
