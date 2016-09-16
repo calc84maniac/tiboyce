@@ -389,9 +389,6 @@ RestartFromHere:
 	ld de,$0100
 	call lookup_code
 	
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	
 	ld bc,(CALL_STACK_DEPTH+1)*256
 	exx
 	
@@ -399,6 +396,9 @@ _
 	ld a,(mpIntRawStatus)
 	bit 4,a
 	jr z,-_
+
+	ld a,TMR_ENABLE
+	ld (mpTimerCtrl),a
 	
 	ld a,1
 	ld (z80codebase+curr_rom_bank),a
