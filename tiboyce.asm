@@ -65,6 +65,7 @@ _DelVar = $020588
 _DelMem = $020590
 _ClrLCDFull = $020808
 _HomeUp = $020828
+_VPutS = $020834
 _VPutSN = $020838
 _RunIndicOff = $020848
 _createAppVar = $021330
@@ -73,10 +74,12 @@ _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
 _ChkInRAM = $021F98
 
+ramStart = $D00000
 penCol = $D008D2
 penRow = $D008D5
 pTemp = $D0259A
 progPtr = $D0259D
+drawFGColor = $D026AC
 pixelShadow = $D031F6
 userMem = $D1A881
 vRam = $D40000
@@ -370,6 +373,8 @@ PutChar_ColorSMC2 = $+1
 menuFrame:
 	.dl 0
 menuSelection:
+	.dl 0
+menuLastSelection:
 	.dl 0
 lastROM:
 	.dl 0

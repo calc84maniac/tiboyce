@@ -1,3 +1,5 @@
+MENU_ITEM_COUNT = 16
+	
 	.org 0
 Startup:
 	ld (ArcBase),hl
@@ -35,38 +37,63 @@ RepopulateMenuTop:
 	ld (menuSelection),bc
 	
 RedrawMenuClear:
-	ld hl,vRam
-	push hl
-	pop de
-	inc de
-	ld bc,320*240*2-1
-	ld (hl),c
-	ldir
-RedrawMenu:
-	ld ix,(menuFrame)
-	xor a
+	call _ClrLCDFull
+	ld a,32
 	ld (penRow),a
-RedrawMenuLoop:
-	sbc hl,hl
+	ld hl,91
 	ld (penCol),hl
-	ld hl,(lastROM)
-	lea de,ix
-	sbc hl,de
-	jr z,SelectionLoop
-	ld hl,(menuSelection)
-	sbc hl,de
-	jr nz,_
-	set textInverse,(iy+textFlags)
-_
-	ld hl,(ix)
-	ACALL(DrawMenuItem)
-	res textInverse,(iy+textFlags)
-	lea ix,ix+3
-	ld a,(penRow)
+	ld hl,$0031
+	ld.sis (drawFGColor-ramStart),hl
+	APTR(EmulatorTitle)
+	call _VPutS
+	or a
+	sbc hl,hl
+	ld.sis (drawFGColor-ramStart),hl
+	ld c,l
+RedrawMenu:
+	ld de,(menuFrame)
+	ld a,36
+	ld b,MENU_ITEM_COUNT
+RedrawMenuLoop:
 	add a,12
 	ld (penRow),a
-	xor 240
-	jr nz,RedrawMenuLoop
+	ld hl,(lastROM)
+	sbc hl,de
+	jr z,RedrawMenuLoopEnd
+	ld hl,(menuSelection)
+	sbc hl,de
+	jr z,RedrawMenuSelectedItem
+	xor a
+	ld hl,(menuLastSelection)
+	sbc hl,de
+	jr z,RedrawMenuItem
+	or c
+	jr z,RedrawMenuItem
+	jr RedrawMenuSkipItem
+RedrawMenuSelectedItem:
+	set textInverse,(iy+textFlags)
+RedrawMenuItem:
+	; Carry is clear
+	sbc hl,hl
+	ld (penCol),hl
+	push bc
+	 push de
+	  ex de,hl
+	  ld hl,(hl)
+	  ACALL(DrawMenuItem)
+	 pop de
+	pop bc
+	res textInverse,(iy+textFlags)
+RedrawMenuSkipItem:
+	inc de
+	inc de
+	inc de
+	ld a,(penRow)
+	djnz RedrawMenuLoop
+	
+RedrawMenuLoopEnd:
+	ld hl,(menuSelection)
+	ld (menuLastSelection),hl
 	
 SelectionLoop:
 	halt
@@ -93,9 +120,10 @@ MenuDown:
 	ld (menuSelection),hl
 	ld a,(menuFrame)
 	sub l
-	add a,20*3
+	add a,MENU_ITEM_COUNT*3
 	jr z,RedrawMenuClearTrampoline
 RedrawMenuTrampoline:
+	ld c,1
 	AJUMP(RedrawMenu)
 	
 MenuUp:
@@ -109,7 +137,7 @@ MenuUp:
 	dec hl
 	dec hl
 	ld (menuSelection),hl
-	ld de,-19*3
+	ld de,-(MENU_ITEM_COUNT-1)*3
 	add hl,de
 	jr nz,RedrawMenuTrampoline
 RedrawMenuClearTrampoline:
