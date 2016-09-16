@@ -72,6 +72,7 @@ _DelVarArc = $021434
 _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
 _ChkInRAM = $021F98
+
 penCol = $D008D2
 penRow = $D008D5
 pTemp = $D0259A
@@ -79,9 +80,16 @@ progPtr = $D0259D
 pixelShadow = $D031F6
 userMem = $D1A881
 vRam = $D40000
+
 appVarObj = $15
 tExtTok = $EF
 tAsm84CeCmp = $7B
+
+graphFlags = $03
+graphDraw = 0		;0=graph is valid, 1=redraw graph(dirty)
+
+textFlags = $05		;Text output flags
+textInverse = 3		;1=display inverse bit-map
 
 ; 84+CE IO definitions
 mpFlashWaitStates = $E00005

@@ -55,12 +55,12 @@ RedrawMenuLoop:
 	jr z,SelectionLoop
 	ld hl,(menuSelection)
 	sbc hl,de
-	res 3,(iy+5)
 	jr nz,_
-	set 3,(iy+5)
+	set textInverse,(iy+textFlags)
 _
 	ld hl,(ix)
 	ACALL(DrawMenuItem)
+	res textInverse,(iy+textFlags)
 	lea ix,ix+3
 	ld a,(penRow)
 	add a,12
@@ -142,7 +142,7 @@ RestoreHomeScreen:
 	ld bc,(8400*3) - 1
 	ld (hl),0
 	ldir
-	set 0,(iy+3)
+	set graphDraw,(iy+graphFlags)
 	call _DrawStatusBar
 	call _HomeUp
 	jp _ClrLCDFull
