@@ -145,6 +145,7 @@ RestoreHomeScreen:
 	set graphDraw,(iy+graphFlags)
 	call _DrawStatusBar
 	call _HomeUp
+	ei
 	jp _ClrLCDFull
 	
 StartROM:
@@ -419,6 +420,8 @@ CmdExit:
 	ld b,a
 	ld a,$D0
 	ld mb,a
+	ld a,2
+	ld (mpKeypadScanMode),a
 	xor a
 	ld (mpLcdImsc),a
 	pop hl
@@ -441,8 +444,8 @@ CmdExit:
 	jr z,_
 	AJUMP(RestartFromHere)
 _
-	ei
 	push af
+	 ACALL(RestoreHomeScreen)
 	 ACALL(SaveRAM)
 	pop af
 	ret
