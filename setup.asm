@@ -299,7 +299,7 @@ RestartFromHere:
 	push de
 	
 	APTR(palettecode)
-	ld de,palettemem
+	ld de,mpLcdPalette
 	ld bc,palettecodesize
 	ldir
 	
@@ -365,7 +365,7 @@ RestartFromHere:
 	
 	ld (saveSP),sp
 	
-	ld sp,palettemem + $0200
+	ld sp,mpLcdPalette + $0200
 	
 	ld hl,z80codebase
 	push hl
@@ -381,7 +381,7 @@ RestartFromHere:
 	ldir
 	
 	APTR(cursorcode)
-	ld de,cursormem
+	ld de,mpLcdCursorImg
 	ld bc,cursorcodesize
 	ldir
 	

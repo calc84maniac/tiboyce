@@ -221,12 +221,10 @@ WX = $ff4b
 IE = $ffff
 
 ; Memory areas used by the emulator
-palettemem = mpLcdPalette
-cursormem = mpLcdCursorImg
 
 ; The 16-bit Z80 address space starts here.
 z80codebase = vRam
-; The bottom of the Z80 stack.
+; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
 myz80stack = $FE00
 
 ; A list of scanline start addresses for sprites. 174 pointers in size.
@@ -304,6 +302,7 @@ text_frame_2 = gb_frame_buffer_2 + (160*150)
 ; The address of the first unused entry is stored in (recompile_struct_end).
 ; The blocks are sorted in ascending order by Z80 block start address.
 ; Note: The first unused entry always points to the next available block start.
+; Buffer must be 64KB-aligned, typically located directly after Z80 code space.
 recompile_struct = z80codebase + $010000
 
 ; End of array caching mappings of GB addresses to recompiled code. 11KB max.
@@ -315,6 +314,7 @@ recompile_struct = z80codebase + $010000
 ; The array is sorted in ascending order by Game Boy opcode address.
 ; Lookup is O(log n) on number of entries, and insertion is O(n) plus mapping.
 ; Only addresses reached via RET (when callstack fails) or JP HL use the cache.
+; Buffer end must be 256-byte aligned.
 recompile_cache_end = gb_frame_buffer_1
 	
 	.db "TIBoyEXE",$01

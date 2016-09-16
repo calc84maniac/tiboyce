@@ -1,5 +1,5 @@
 cursorcode:
-	.org cursormem
+	.org mpLcdCursorImg
 #include "opgenroutines.asm"
 	
 draw_sprites_done:
@@ -367,13 +367,13 @@ scanline_unrolled_smc = $+1
 render_save_spl = $+1
 	ld sp,0
 	ret
-cursorcodesize = $-cursormem
+cursorcodesize = $-mpLcdCursorImg
 	.org cursorcode+cursorcodesize
 	
 	.echo "Cursor memory code size: ", cursorcodesize
 	
 palettecode:
-	.org palettemem
+	.org mpLcdPalette
 
 	.dw 0,0,0,0,0,0,0,0,0
 	.dw 0
@@ -522,7 +522,7 @@ _
 	pop ix
 	ret
 	
-palettecodesize = $-palettemem
+palettecodesize = $-mpLcdPalette
 	.org palettecode+palettecodesize
 	
 	.echo "Palette memory code size: ", palettecodesize
