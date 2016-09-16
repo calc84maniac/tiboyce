@@ -12,9 +12,9 @@ RepopulateMenu:
 	ld ix,rombankLUT
 	push ix
 	 ACALL(ROMSearch)
-	 ld (lastROM),ix
 	pop bc
 	lea hl,ix
+	ld (lastROM),hl
 	or a
 	sbc hl,bc
 	ex de,hl
@@ -99,32 +99,55 @@ SelectionLoop:
 	halt
 	call _GetCSC
 	ld hl,(menuSelection)
-	cp 1
+	ld de,(lastROM)
+	ld bc,MENU_ITEM_COUNT*3
+	sub 1
 	jr z,MenuDown
-	cp 4
+	dec a
+	jr z,MenuLeft
+	dec a
+	jr z,MenuRight
+	dec a
 	jr z,MenuUp
-	cp 9
-	jr z,MenuEnter
-	cp 15
+	cp 9-4
+	jr z,MenuEnterTrampoline
+	cp 54-4
+	jr z,MenuEnterTrampoline
+	cp 15-4
 	jr nz,SelectionLoop
 	jr RestoreHomeScreen
+	
+MenuEnterTrampoline:
+	AJUMP(MenuEnter)
 	
 MenuDown:
 	inc hl
 	inc hl
 	inc hl
-	ld de,(lastROM)
 	sbc hl,de
 	jr z,SelectionLoop
 	add hl,de
 	ld (menuSelection),hl
 	ld a,(menuFrame)
 	sub l
-	add a,MENU_ITEM_COUNT*3
+	add a,c
 	jr z,RedrawMenuClearTrampoline
 RedrawMenuTrampoline:
-	ld c,1
 	AJUMP(RedrawMenu)
+	
+MenuLeft:
+	ld de,rombankLUT
+	sbc hl,de
+	sbc hl,bc
+	jr nc,_
+	sbc hl,hl
+_
+	adc hl,de
+	ld (menuSelection),hl
+	jr c,RedrawMenuTrampoline
+	ld hl,(menuFrame)
+	sbc hl,bc
+	jr RedrawMenuClearTrampoline
 	
 MenuUp:
 	ld de,rombankLUT
@@ -144,8 +167,34 @@ RedrawMenuClearTrampoline:
 	ld (menuFrame),hl
 	AJUMP(RedrawMenuClear)
 	
+MenuRight:
+	add hl,bc
+	sbc hl,de
+	jr c,_
+	ld hl,-3
+_
+	add hl,de
+	ld (menuSelection),hl
+	ld hl,(menuFrame)
+	add hl,bc
+	sbc hl,de
+	jr nc,RedrawMenuTrampoline
+	add hl,de
+	jr RedrawMenuClearTrampoline
+	
+RestoreHomeScreen:
+	ld hl,pixelShadow
+	ld de,pixelShadow+1
+	ld bc,(8400*3) - 1
+	ld (hl),0
+	ldir
+	set graphDraw,(iy+graphFlags)
+	call _DrawStatusBar
+	call _HomeUp
+	ei
+	jp _ClrLCDFull
+	
 MenuEnter:
-	ld hl,(menuSelection)
 	ld hl,(hl)
 	ld de,-6
 	add hl,de
@@ -163,18 +212,6 @@ _
 	ACALL(StartROM)
 	jr c,RestoreHomeScreen
 	AJUMP(RepopulateMenu)
-	
-RestoreHomeScreen:
-	ld hl,pixelShadow
-	ld de,pixelShadow+1
-	ld bc,(8400*3) - 1
-	ld (hl),0
-	ldir
-	set graphDraw,(iy+graphFlags)
-	call _DrawStatusBar
-	call _HomeUp
-	ei
-	jp _ClrLCDFull
 	
 StartROM:
 	ACALL(LoadROM)
