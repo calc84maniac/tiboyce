@@ -4,35 +4,46 @@
 #endif
 #endif
 
-; Some configuration options
+; The length of a GB scanline, proportional to host CPU clock speed
 #ifndef SCANDELAY
 #define SCANDELAY 12
 #endif
 
+; The length of an entire GB frame in host CPU cycles
 #define FRAME_LENGTH (SCANDELAY*256*154)
+; The length of the shortest GB timer tick (16 cycles) in host CPU cycles
 #define TIMA_LENGTH (SCANDELAY*256*16/456)
 
+; A call to a routine located in the archived appvar.
+; Destroys flags before entry to routine.
 #macro ACALL(address)
 	call ArcCall
 	.dw address+1
 #endmacro
 
+; A jump to a label located in the archived appvar.
+; Destroys flags.
 #macro AJUMP(address)
 	call ArcJump
 	.dw address+1
 #endmacro
 
+; Puts the pointer to a label in the archived appvar into HL.
+; Destroys DE and flags.
 #macro APTR(address)
 	call ArcPtr
 	.dw address+1
 #endmacro
 
+; Inline version of APTR, with the same effects.
 #macro APTR_INLINE(address)
 	ld hl,(ArcBase)
 	ld de,address
 	add hl,de
 #endmacro
 
+; Debug-prints using a format string in the archived appvar.
+; The variable argument list must first be pushed to the stack.
 #macro APRINTF(text)
 	APTR(text)
 	push hl
@@ -40,17 +51,19 @@
 	pop hl
 #endmacro
 
+; Constant color palette entries
 MAGENTA = 10
 OLIVE = 11
 WHITE = 12
 BLACK = 13
 BLUE = 14
 
+; Paletted colors doubled into two pixels
 WHITE_BYTE = WHITE*$11
 BLACK_BYTE = BLACK*$11
 BLUE_BYTE = BLUE*$11
 
-; Some standalone equates
+; System calls used
 _sprintf = $0000BC
 _GetCSC = $02014C
 _Mov9ToOP1 = $020320
@@ -74,6 +87,7 @@ _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
 _ChkInRAM = $021F98
 
+; RAM addresses used
 ramStart = $D00000
 penCol = $D008D2
 penRow = $D008D5
@@ -84,10 +98,12 @@ pixelShadow = $D031F6
 userMem = $D1A881
 vRam = $D40000
 
+; Tokens used
 appVarObj = $15
 tExtTok = $EF
 tAsm84CeCmp = $7B
 
+; OS flags used
 graphFlags = $03
 graphDraw = 0		;0=graph is valid, 1=redraw graph(dirty)
 
@@ -208,31 +224,97 @@ IE = $ffff
 palettemem = mpLcdPalette
 cursormem = mpLcdCursorImg
 
+; The 16-bit Z80 address space starts here.
 z80codebase = vRam
+; The bottom of the Z80 stack.
 myz80stack = $FE00
+
+; A list of scanline start addresses for sprites. 174 pointers in size.
+; Bit 0 set if disabled. The top/bottom 15 entries are permanently disabled.
 scanlineLUT = pixelShadow
+
+; Preprocessed Game Boy tilemap entries. 16KB in size.
+; Each tile entry is a 2-byte offset of the pixel data from vram_pixels_start.
+; Every row of 32 tiles is duplicated into 64, to facilitate wraparound.
+; In addition, each duplicated row is stored twice with different tilesets.
+; So, each GB tilemap row takes a total of 256 bytes here.
+; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
 vram_tiles_start = scanlineLUT + (174*3)
+
+; Preprocessed Game Boy tile pixel entries. 24KB in size.
+; Each tile is converted into one byte per pixel, for 64 bytes per tile.
+; Buffer must be 256-byte aligned.
 vram_pixels_start = vram_tiles_start + $4000
+
+; Start of Game Boy VRAM. 8KB in size.
 vram_start = vram_pixels_start + $6000
+
+; Preconverted digit pixels for displaying FPS quickly. 400 bytes in size.
 digits = vram_start + $2000
+
+; A fake tile filled with Game Boy color 0. 64 bytes in size.
+; Used when BG tilemap is disabled.
 fake_tile = $D0F900
+; A fake tilemap row pointing to fake_tile. 42 bytes in size.
+; Used when BG tilemap is disabled.
 fake_tilemap = $D0F940
+
+; Start of Game Boy WRAM. 8KB in size.
 wram_start = vram_start + $4000
+
+; Start of Z80 memory routine lookup table. 512 bytes in size.
+; The first 256 bytes are the routine LSBs and the next 256 are the MSBs.
+; A null address means that the routine has not yet been generated.
+; The lookup table is indexed uniquely by (mem_region*32)+access_type.
+; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
 memroutineLUT = vram_start + $6000
+
+; Start of the ROM bank lookup table. 128 pointers in size.
+; Stores the base address of each ROM bank (or mirror), minus $4000.
+; The pre-subtracted $4000 means that the memory can be indexed by GB address.
+; This buffer is also used to cache the pointers to appvars in the ROM list.
 rombankLUT = memroutineLUT + $0200
 rombankLUT_end = rombankLUT + (128*3)
+
+; Start of Game Boy HRAM region. 512 bytes in size, includes OAM and MMIO.
 hram_start = z80codebase + $FE00
 
+; Base address of VRAM, can be indexed directly by Game Boy address.
 vram_base = vram_start - $8000
+; Base address of WRAM, can be indexed directly by Game Boy address.
 wram_base = wram_start - $C000
+; Base address of HRAM, can be indexed directly by Game Boy address.
 hram_base = z80codebase
 
+; Start of first 4bpp frame buffer. 160*240 bytes in size.
 gb_frame_buffer_1 = vRam + (320*240)
+; Start of first debug text buffer. 160*90 bytes in size.
 text_frame_1 = gb_frame_buffer_1 + (160*150)
+; Start of second 4bpp frame buffer. 160*240 bytes in size.
 gb_frame_buffer_2 = gb_frame_buffer_1 + (160*240)
+; Start of second debug text buffer. 160*90 bytes in size.
 text_frame_2 = gb_frame_buffer_2 + (160*150)
 
+; Start of structure array keeping track of recompiled code blocks. 11KB max.
+; Grows forward into the recompiled code mapping cache (see below).
+; Each entry is 8 bytes in size, and contains the following members:
+;   +0: A 16-bit pointer to the start of the recompiled Z80 code block.
+;   +2: A 24-bit pointer to the first GB source opcode.
+;   +5: A 24-bit pointer to the start of the last GB source opcode.
+; The address of the first unused entry is stored in (recompile_struct_end).
+; The blocks are sorted in ascending order by Z80 block start address.
+; Note: The first unused entry always points to the next available block start.
 recompile_struct = z80codebase + $010000
+
+; End of array caching mappings of GB addresses to recompiled code. 11KB max.
+; Grows backward into the recompiled code block information (see above).
+; Each entry is 5 bytes in size, and contains the following members:
+;   +0: 24-bit pointer to a Game Boy opcode.
+;   +3: 16-bit pointer to a recompiled code pointer. May be inside a block.
+; The start of the array is stored in (recompile_cache).
+; The array is sorted in ascending order by Game Boy opcode address.
+; Lookup is O(log n) on number of entries, and insertion is O(n) plus mapping.
+; Only addresses reached via RET (when callstack fails) or JP HL use the cache.
 recompile_cache_end = gb_frame_buffer_1
 	
 	.db "TIBoyEXE",$01
