@@ -404,12 +404,14 @@ SetStringColor:
 	
 ; Renders the character in A on the current buffer at (cursorRow), (cursorCol).
 PutChar:
+	; Convert to font index. 0 is treated as a space, and 1-31 as newline.
 	or a
 	jr z,_
 	sub ' '
 	jr nc,_
 	AJUMP(PutNewLine)
 _
+	; Put pointer to character data in appvar in DE.
 	ld c,a
 	ld b,10
 	mlt bc
@@ -417,7 +419,9 @@ _
 	add hl,bc
 	ex de,hl
 	
+	; Get pointer to buffer output location in HL.
 	ld hl,(cursorCol)
+	; Refuse to draw past the right side of the screen.
 	ld a,l
 	cp 40
 	ret nc
@@ -430,14 +434,17 @@ _
 	mlt bc
 	add hl,bc
 	
+	; Draw 10 rows of pixels.
 	ld b,10
 PutCharRowLoop:
 	push bc
+	 ; Get the bitmap for the current row in C.
 	 ld a,(de)
 	 inc de
-	 ld b,4
 	 ld c,a
+	 ld b,4
 PutCharPixelLoop:
+	 ; Render 2 pixels to the framebuffer per iteration.
 	 sla c
 	 sbc a,a
 PutChar_ColorSMC1 = $+1
@@ -452,10 +459,12 @@ PutChar_ColorSMC2 = $+1
 	 rld
 	 inc hl
 	 djnz PutCharPixelLoop
+	 ; Advance output pointer to the next row.
 	 ld c,160-4
 	 add hl,bc
 	pop bc
 	djnz PutCharRowLoop
+	; Increment the cursor column.
 	ld hl,cursorCol
 	inc (hl)
 	ret
