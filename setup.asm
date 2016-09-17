@@ -14,7 +14,7 @@ RepopulateMenu:
 	 ACALL(ROMSearch)
 	pop bc
 	lea hl,ix
-	ld (lastROM),hl
+	ld (ROMListEnd),hl
 	or a
 	sbc hl,bc
 	ex de,hl
@@ -57,7 +57,7 @@ RedrawMenu:
 RedrawMenuLoop:
 	add a,12
 	ld (penRow),a
-	ld hl,(lastROM)
+	ld hl,(ROMListEnd)
 	sbc hl,de
 	jr z,RedrawMenuLoopEnd
 	ld hl,(menuSelection)
@@ -99,7 +99,7 @@ SelectionLoop:
 	halt
 	call _GetCSC
 	ld hl,(menuSelection)
-	ld de,(lastROM)
+	ld de,(ROMListEnd)
 	ld bc,MENU_ITEM_COUNT*3
 	sub 1
 	jr z,MenuDown

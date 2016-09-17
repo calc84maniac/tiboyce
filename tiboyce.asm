@@ -322,6 +322,8 @@ recompile_cache_end = gb_frame_buffer_1
 	
 	.org userMem
 	
+; Calls a routine located in the archived appvar.
+; The 16-bit offset (plus 1) is stored at the return address.
 ArcCall:
 	ex (sp),hl
 	ld (ArcCallSMC),hl
@@ -340,6 +342,8 @@ ArcBase = $+1
 	 ex (sp),hl
 	 ret
 	 
+; Jumps to an address located in the archived appvar.
+; The 16-bit offset (plus 1) is stored at the return address.
 ArcJump:
 	ex (sp),hl
 	push de
@@ -351,6 +355,8 @@ ArcJump:
 	ex (sp),hl
 	ret
 	
+; Puts a pointer located in the archived appvar in HL.
+; The 16-bit offset (plus 1) is stored at the return address.
 ArcPtr:
 	pop hl
 	ld e,(hl)
@@ -363,6 +369,7 @@ ArcPtr:
 	 add hl,de
 	ret
 	
+; Compares the buffers at HL and DE, with size BC. Returns Z if equal.
 memcmp:
 	ld a,(de)
 	inc de
@@ -371,6 +378,7 @@ memcmp:
 	ret po
 	jr memcmp
 	
+; Gets a pointer to the current menu in HL, and the current selection in C.
 get_current_menu_selection:
 	ld hl,MenuList
 current_menu = $+1
@@ -387,14 +395,14 @@ current_menu_selection = $+1
 	ld c,0
 	ret
 	
+; Sets the current string color.
 SetStringColor:
 	inc a
 	ld (PutChar_ColorSMC1),a
 	ld (PutChar_ColorSMC2),a
 	ret
 	
-	; A = character to display
-	; (cursorRow), (cursorCol) is location to display
+; Renders the character in A on the current buffer at (cursorRow), (cursorCol).
 PutChar:
 	or a
 	jr z,_
@@ -452,78 +460,112 @@ PutChar_ColorSMC2 = $+1
 	inc (hl)
 	ret
 	
+; The first ROM in the current list frame.
 menuFrame:
 	.dl 0
+; The currently selected ROM.
 menuSelection:
 	.dl 0
+; The last selected ROM.
 menuLastSelection:
 	.dl 0
-lastROM:
+; The end of the list of discovered ROMs.
+ROMListEnd:
 	.dl 0
 	
+; The name of the currently loaded ROM.
 ROMName:
 	.db appVarObj
 	.block 9
-	
+; The ROM appvar magic header.
 MetaHeader:
 	.db "TIBOYCE",0
 	
+; The backup of SP before beginning emulation.
 saveSP:
 	.dl 0
+; The start address of Game Boy ROM page 0.
 rom_start:
 	.dl 0
+; The address of the currently banked ROM page, minus $4000.
+; Can be indexed directly by the Game Boy address.
 rom_bank_base:
 	.dl 0
+; The start address of Game Boy cartridge RAM.
 cram_start:
 	.dl 0
+; The address of the currently banked RAM page, minus $A000.
+; Can be indexed directly by the Game Boy address.
 cram_bank_base:
 	.dl 0
+; The cartridge's Memory Bank Controller type.
 mbc:
 	.db 0
 	
+; The number of frames left to skip, plus 1.
 skippable_frames:
 	.db 1
+; The current buffer to render to.
 current_buffer:
 	.dl 0
 	
+; The current text output column, in characters (0-39).
 cursorCol:
 	.db 0
+; The current text output row, in pixels (0-230).
 cursorRow:
 	.db 0
+; The output buffer for printf, large enough for a single row of text.
 text_buffer:
 	.block 42
 	
+; The pointer to the currently selected menu item.
 current_item_ptr:
 	.dl 0
+; The pointer to the active ROM description.
 current_description:
 	.dl 0
+; A backup of the selected main menu option.
 main_menu_selection:
 	.db 1
+; The currently chosen save state index.
 current_state:
 	.db 0
-
+	
+; Active configuration info:
+	
+; The currently chosen frameskip value.
 FrameskipValue:
 	.db 2
 	
 OptionConfig:
+; Frameskip type (0=Manual, 1=Auto, 2=Off)
 FrameskipType:
 	.db 1
+; FPS display (0=Off, 1=On)
 FPSDisplay:
 	.db 0
+; Auto archive (0=Off, 1=On)
 AutoArchive:
 	.db 1
 	
+; Key configuration. Each is a GetCSC scan code.
 KeyConfig:
 	.db 3,2,4,1,54,48,40,55,15
 	
+; These files are loaded into RAM.
 	#include "opgen.asm"
 	#include "ophandler.asm"
+	
+; The RAM program ends here.
 program_end:
-ram_size:
 program_size = program_end - userMem
-	
 	.echo "User RAM code size: ", program_size
+
+; The size of the inserted cartridge RAM is located at the end of the program.
+ram_size:
 	
+; These files remain in the archived appvar.
 	#include "setup.asm"
 	#include "text.asm"
 	#include "menu.asm"
