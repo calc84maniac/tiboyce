@@ -564,6 +564,7 @@ KeyConfig:
 	
 ; These files are loaded into RAM.
 	#include "jit.asm"
+	#include "decode.asm"
 	#include "ophandler.asm"
 	#include "waitloop.asm"
 	
