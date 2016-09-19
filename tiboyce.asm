@@ -563,7 +563,7 @@ KeyConfig:
 	.db 3,2,4,1,54,48,40,55,15
 	
 ; These files are loaded into RAM.
-	#include "opgen.asm"
+	#include "jit.asm"
 	#include "ophandler.asm"
 	#include "waitloop.asm"
 	

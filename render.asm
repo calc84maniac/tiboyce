@@ -1,6 +1,6 @@
 cursorcode:
 	.org mpLcdCursorImg
-#include "opgenroutines.asm"
+#include "opcodegen.asm"
 	
 draw_sprites_done:
 draw_sprites_save_sp = $+1
