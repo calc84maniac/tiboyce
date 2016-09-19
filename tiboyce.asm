@@ -301,7 +301,8 @@ text_frame_2 = gb_frame_buffer_2 + (160*150)
 ;   +5: A 24-bit pointer to the start of the last GB source opcode.
 ; The address of the first unused entry is stored in (recompile_struct_end).
 ; The blocks are sorted in ascending order by Z80 block start address.
-; Note: The first unused entry always points to the next available block start.
+; Note: The first unused entry always contains a *24-bit* pointer to the next
+;       available block start address. The upper 8 bits will be overwritten.
 ; Buffer must be 64KB-aligned, typically located directly after Z80 code space.
 recompile_struct = z80codebase + $010000
 

@@ -15,21 +15,33 @@ recompile_cache:
 base_address:
 	.dl 0
 
+; Do as in flush_code, but also reset RAM block padding amount.
+; This is called only at startup, because block padding should 
+; persist between flushes to reduce flush rates overall.
 flush_code_reset_padding:
+	; Set RAM padding to minimum (none)
 	ld hl,1
 	ld (ram_block_padding),hl
+	
+; Flushes the recompiled code, generated routines, and all caches.
+; Inputs: None.
 flush_code:
 #ifdef DEBUG
 	APRINTF(FlushMessage)
 #endif
+	; Empty recompiled code information struct
 	ld hl,recompile_struct
 	ld (recompile_struct_end),hl
+	; Store first available block address to the first unused entry
 	ld de,z80codebase+z80codesize
 	ld (hl),de
+	; Set the next memory access routine output below the Z80 stack
 	ld hl,z80codebase+myz80stack-256
 	ld (z80codebase+memroutine_next),hl
+	; Empty the recompiled code mapping cache
 	ld hl,recompile_cache_end
 	ld (recompile_cache),hl
+	; Invalidate the memory routines
 	ld hl,memroutineLUT
 	push hl
 	pop de
@@ -37,11 +49,16 @@ flush_code:
 	ld (hl),l
 	ld bc,$01FF
 	ldir
+	; Set the cached interrupt return address to NULL
 	ld (int_cached_return),bc
 	ret
 	
-	; Input: DE = GB address
-	; Output: HL = base pointer
+; Gets the 24-bit base pointer for a given Game Boy address.
+; The base plus the address can be used to directly access GB memory.
+;
+; Inputs:  DE = GB address
+; Outputs: HL = base pointer
+; Destroys AF
 get_base_address:
 	ld a,d
 	add a,a
@@ -65,9 +82,22 @@ _
 	ld hl,hram_base
 	ret
 	
-	; Get GB code address from recompiled code pointer (rounds up)
-	; Input: DE = code pointer
-	; Output: NC if not found, or HL = 16-bit code pointer (rounded up), DE = GB address, IX = Literal GB address
+	
+; Gets the Game Boy opcode address from a recompiled code pointer, rounding up.
+;
+; Rounding up occurs if the code address happens to be inside a recompiled
+; instruction - if you are guaranteed to be at the start of a recompiled
+; instruction then you are guaranteed that no rounding occurs.
+;
+; Locating the code block is O(log N) in number of blocks.
+; Locating the address within the block is O(N) in number of instructions.
+;
+; Inputs:  DE = 16-bit Z80 code pointer
+; Outputs: NC if not found, or:
+;          HL = 16-bit Z80 code pointer (rounded up)
+;          DE = GB address
+;          IX = Literal 24-bit pointer to GB address
+; Destroys AF,BC
 lookup_gb_code_address:
 #ifdef 0
 	push de
@@ -183,7 +213,9 @@ lookup_gb_done:
 	pop hl
 	scf
 	ret.l
-
+	
+	
+	; If a cached code lookup misses, resolve it and insert into the cache
 lookup_code_cached_miss:
 	push de
 	 push bc
@@ -239,38 +271,68 @@ _
 	ld (hl),d
 	ret.l
 	
+	
+	; Fast return to the last interrupted code address
 int_cache_hit:
 int_cached_code = $+2
 	ld ix,0
 	ret.l
 	
+	
+	; When the binary search finishes, see if we found it
 lookup_code_cached_found:
+	; Past the end of the array means not found
 	ld a,b
 	sub recompile_cache_end>>8 & $FF
 	or c
 	jr z,lookup_code_cached_miss
+	; Does the address match?
 	ld hl,(ix)
 	sbc hl,de
 	jr nz,lookup_code_cached_miss
+	; We found it!
 	ld ix,(ix+3)
 	ret.l
 	
+	
+; Pops an address from the Game Boy stack and does a cached lookup.
+;
+; Inputs:  IY = direct Game Boy stack pointer
+; Outputs: IX = recompiled code address
+;          IY = updated stack pointer
+; Destroys AF,BC,DE,HL
 pop_and_lookup_code_cached:
 	ld de,(iy)
 	inc de
 	dec.s de
 	lea iy,iy+2
+	
+; Looks up a Game Boy address from the cached code mappings, and
+; adds it to the cache upon miss.
+;
+; Note: Before touching the main cache, the last interrupt return address
+;       is checked for a fast return. It is never added to the cache.
+;
+; Lookups are O(log N) in number of cache entries.
+; Insertions are O(N) (with LDIR constant factor), plus code lookup overhead.
+;
+; Inputs:  DE = Game Boy address
+; Outputs: IX = recompiled code address
+; Destroys AF,BC,DE,HL
 lookup_code_cached:
+	; Get the direct address in DE
 	call get_base_address
 	ld (base_address),hl
 	add hl,de
 	ex de,hl
 	
+	; Quickly check against the last interrupt return address
 int_cached_return = $+1
 	ld hl,0
 	sbc hl,de
 	jr z,int_cache_hit
 	
+	; Binary search the cache for the pointer
 	ld bc,(recompile_cache)
 	ld ix,recompile_cache_end
 lookup_code_cached_loop:
@@ -295,8 +357,17 @@ lookup_code_cached_lower:
 	pop ix
 	jr lookup_code_cached_loop
 	
-	; Input: HL = GB address to look up, A = upper byte of source address
-	; Output: IX = recompiled code pointer
+	
+; Looks up a recompiled code pointer from a direct GB address,
+; allowing a direct link within the currently executing RAM block.
+; Normally, only the start of a RAM block is allowed for direct links.
+; If executing from ROM or target is not the same block, proceed as normal.
+;
+; Inputs:  HL = direct 24-bit GB address to look up
+;          A = upper byte of currently executing direct GB address
+;          (base_address) = base address of pointer in HL
+; Outputs: IX = recompiled code pointer
+; Destroys AF,BC,DE,HL
 lookup_code_link_internal:
 	ex de,hl
 	rla
@@ -339,13 +410,24 @@ _
 	jr nz,foundloop_internal
 	ret
 	
-	; Input: DE = GB address to look up
-	; Output: IX = recompiled code pointer
+	
+; Looks up a recompiled code pointer from a GB address.
+;
+; Inputs:  DE = 16-bit GB address to look up
+; Outputs: IX = recompiled code pointer
+; Destroys AF,BC,DE,HL
 lookup_code:
 	call get_base_address
 	ld (base_address),hl
 	add hl,de
 	ex de,hl
+	
+; Looks up a recompiled code pointer from a direct GB address.
+;
+; Inputs:  DE = direct 24-bit GB address to look up
+;          (base_address) = base address of pointer in DE
+; Outputs: IX = recompiled code pointer
+; Destroys AF,BC,DE,HL
 lookup_code_by_pointer:
 #ifdef 0
 	push de
