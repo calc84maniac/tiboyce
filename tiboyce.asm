@@ -565,6 +565,7 @@ KeyConfig:
 ; These files are loaded into RAM.
 	#include "opgen.asm"
 	#include "ophandler.asm"
+	#include "waitloop.asm"
 	
 ; The RAM program ends here.
 program_end:
