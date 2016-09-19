@@ -1,11 +1,19 @@
+; When a decoded branch is determined to be a false conditional,
+; it is patched into a conditional call to do_branch_slow.
+; The first time the condition is true, that call is executed and
+; we end up in this routine that helps restore the original handler.
+;
+; Inputs:  DE = address directly following the conditional call
+;          BCDEHL' have been swapped, BC can be destroyed
+; Outputs: HL = address of the recompiled branch instruction plus 1
+;          DE = Game Boy address of branch instruction
 decode_branch_slow:
 	ex af,af'
 	xor a
 	ld (mpTimerCtrl),a
-	dec hl
-	dec hl
-	dec hl
-	ex de,hl
+	dec de
+	dec de
+	dec de
 	call.il lookup_gb_code_address
 	inc hl
 	ld a,TMR_ENABLE
@@ -13,6 +21,27 @@ decode_branch_slow:
 	ex af,af'
 	ret.l
 	
+; An emitted branch instruction consists of RST_BRANCH followed
+; inline by the Game Boy address of the branch instruction.
+; Once the RST_BRANCH is taken, this routine resolves the branch
+; and helps patch a hard link into the recompiled code.
+;
+; The Game Boy address is fetched to determine the type of branch.
+; If a conditional branch is false, it patches the code with a
+; conditional call to do_branch_slow (see decode_branch_slow above).
+; Otherwise, the branch target is decoded and a pointer to the
+; recompiled code is retrieved (or JIT recompiled if necessary).
+; Also, for JP or JR, the result is filtered by identify_waitloop.
+;
+; Generally, a branch target in RAM is only allowed to be the start
+; of a block, which includes self-modifying code checks. However,
+; as an exception a JR or JP may always link within the same block.
+;
+; Inputs:  DE = 16-bit GB branch instruction address
+;          (SPS) = branch recompiled code address (plus 1)
+; Outputs: IX = recompiled target address
+;          A = patched JIT opcode (taking address in IX as immediate)
+; Destroys BC,DE,HL
 decode_branch:
 	ex af,af'
 	xor a
@@ -56,19 +85,14 @@ decode_rst:
 	
 decode_jp_cond:
 	ld a,(hl)
-	ld (_),a
+	ld (decode_jp_cond_smc),a
 	ex af,af'
-_
-	jp _
+decode_jp_cond_smc = $+0
+	jp decode_jp_cond_true
 	ex af,af'
 	add a,$C4-$C2
-	ld ix,do_branch_slow
-	ld e,a
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	ld a,e
-	ret.l
-_
+	jr decode_jp_cond_false
+decode_jp_cond_true:
 	ex af,af'
 decode_jp:
 	push af
@@ -82,25 +106,27 @@ decode_jp:
 	 jr decode_loop
 	
 decode_jr_cond:
-	ld (_),a
+	ld (decode_jr_cond_smc),a
 	ex af,af'
-_
-	jr _
+decode_jr_cond_smc = $+0
+	jr decode_jr_cond_true
 	ex af,af'
 	add a,$C4-$20
+decode_jp_cond_false:
 	ld ix,do_branch_slow
 	ld e,a
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
 	ld a,e
 	ret.l
+	
 decode_jr:
 	ld a,(hl)
 	cp $18
 	jr nz,decode_jr_cond
-	ld a,$21
+	ld a,$C3 - ($C2-$20)
 	ex af,af'
-_
+decode_jr_cond_true:
 	ex af,af'
 	add a,$C2-$20
 	push af
@@ -125,7 +151,29 @@ decode_loop:
 	 ld (mpTimerCtrl),a
 	pop af
 	ret.l
+
 	
+; Most emitted single-byte memory access instructions consist of RST_MEM
+; followed inline by the opcode byte in question (and one padding byte).
+;
+; Each unique combination of an opcode byte and a memory region can receive
+; its own memory access routine that incorporates both. This routine
+; determines the routine associated with the instruction in question
+; and returns it to be patched into a direct call.
+;
+; The memory access routines grow backwards in the JIT code region, and if
+; the JIT code and the memory access routines overlap a flush must occur.
+; If this case is detected, a pointer to a flush handler is returned instead.
+;
+; When a memory access routine is called with an address outside its assigned
+; memory region, decode_mem is called with the new region and the direct call
+; is patched again with the new memory access routine.
+;
+; Inputs:  IX = address following the RST_MEM instruction
+;          BCDEHL = Game Boy BCDEHL
+; Outputs: IX = address of the RST_MEM instruction
+;          DE = address of the memory access routine
+; Destroys AF,HL
 decode_mem:
 	xor a
 	ld (mpTimerCtrl),a

@@ -13,8 +13,8 @@
 ; in the loop - MMIO such as the LY register uses a different handler.
 ;
 ; Inputs:  IX = branch target recompiled code
-;          HL = branch target GB opcode
-;          (SPS) = branch source recompiled code (plus 1)
+;          HL = branch target GB literal 24-bit address
+;          (SPS) = branch recompiled code address (plus 1)
 ;          BC',DE',HL' = Game Boy BC,DE,HL registers
 ; Outputs: IX = filtered branch target
 identify_waitloop:

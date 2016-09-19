@@ -123,7 +123,6 @@ do_push:
 	ld.l (iy-1),d
 do_push_no_write:
 	lea.l iy,iy-2
-do_call_finish:
 	exx
 	ei
 	jp (ix)
@@ -307,7 +306,7 @@ do_interrupt_write_smc = $+1
 do_branch_slow:
 	di
 	exx
-	pop hl
+	pop de
 	push bc
 	 call.il decode_branch_slow
 	pop bc
