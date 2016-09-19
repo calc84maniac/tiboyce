@@ -429,7 +429,7 @@ updateTIMA_smc = $+1
 	cpl
 	ld (hram_base+TIMA),a
 	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
+	ld (mpTimerCtrl),a
 	ret.l
 	
 ; Writes to the GB timer control (TAC).
