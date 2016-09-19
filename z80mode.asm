@@ -882,13 +882,15 @@ readSTAThandler:
 	
 writeTIMAhandler:
 	ex af,af'
-	call writeTIMA
+	xor a
+	call write_timer
 	ei
 	ret
 	
 writeTMAhandler:
 	ex af,af'
-	call writeTMA
+	ld a,1
+	call write_timer
 	ei
 	ret
 	
@@ -1147,21 +1149,15 @@ mem_write_bail:
 	
 writeLCDC:
 	di
-	jp.lil lcdc_write
+	jp.lil lcdc_write_helper
 	
 writeTAC:
 	di
-	jp.lil tac_write
+	jp.lil tac_write_helper
 	
-writeTMA:
+write_timer:
 	di
-	call.il tma_write
-	ret
-	
-writeTIMA:
-	di
-	call.il tima_write
-	ret
+	jp.lil timer_write_helper
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_vram:
@@ -1210,13 +1206,11 @@ mem_write_ports_swap:
 	inc a
 	jp m,mem_write_oam_swap
 	jr z,writeINT
-	sub (TIMA & $FF) + 1
-	jr z,writeTIMA
-	dec a
-	jr z,writeTMA
-	dec a
+	sub (TAC & $FF) + 1
 	jr z,writeTAC
-	sub IF - TAC
+	add a,TAC - TIMA
+	jr c,write_timer
+	sub IF - TIMA
 	jr z,writeINT
 	sub LCDC - IF
 	jr z,writeLCDC
@@ -1232,20 +1226,20 @@ mem_write_ports_swap:
 	jr nz,mem_write_oam_swap
 writeDMA:
 	di
-	jp.lil oam_transfer
+	jp.lil oam_transfer_helper
 	
 write_scroll_swap:
 	ex af,af'
 write_scroll:
 	di
-	jp.lil scroll_write
+	jp.lil scroll_write_helper
 	
 writeLYC:
 	ex af,af'
 writeLYCswap:
 	di
 	ld (LYC),a
-	jp.lil lyc_write
+	jp.lil lyc_write_helper
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart:

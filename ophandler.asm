@@ -103,7 +103,7 @@ flush_mem:
 ;          (SPS) = Z80 return address
 ; Outputs: OAM written with 160 bytes from source address
 ;          AF' has been unswapped
-oam_transfer:
+oam_transfer_helper:
 	xor a
 	ld (mpTimerCtrl),a
 	exx
@@ -181,7 +181,7 @@ render_catchup:
 ;          (SPS) = Z80 return address
 ; Outputs: Scanlines rendered if applicable, SMC applied, value written
 ;          AF' has been unswapped
-scroll_write:
+scroll_write_helper:
 render_this_frame = $+1
 	ld a,1
 	or a
@@ -249,7 +249,7 @@ scroll_write_done:
 ;          (SPS) = Z80 return address
 ; Outputs: Scanlines rendered if applicable, SMC applied, value written
 ;          AF' has been unswapped
-lcdc_write:
+lcdc_write_helper:
 	ld a,(render_this_frame)
 	or a
 	call nz,render_catchup
@@ -339,7 +339,7 @@ _
 ; Inputs:  A = value being written
 ;          (SPS) = Z80 return address
 ; Outputs: Host timer match register updated
-lyc_write:
+lyc_write_helper:
 	exx
 	ld c,a
 	ex af,af'
@@ -442,7 +442,7 @@ updateTIMA_smc = $+1
 ;          AF' has been swapped
 ; Outputs: Current value written to (TAC)
 ;          GB timer updated
-tac_write:
+tac_write_helper:
 	; If the timer was enabled, update TIMA
 	ld a,(hram_base+TAC)
 	bit 2,a
@@ -466,27 +466,19 @@ _
 	sub l
 	and 3
 	add a,a
-	ld (tac_write_smc),a
-	ld (tma_write_smc),a
-	ld (tima_write_smc),a
+	ld (timer_update_smc),a
 	; Apply SMC to TIMA update divisor
 	ld hl,-TIMA_LENGTH * 128
-tac_write_smc = $+1
-	jr $
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	ld (updateTIMA_smc),hl
-	exx
+	ld de,updateTIMA_smc
+	call timer_smc_calculate
 	; Update TMA with current value
-	call.il tma_write_always
-	ex af,af'
+	ld hl,TMA
+	or a
+	call timer_update
 	; Update TIMA with current value
-	call.il tima_write_always
-	ex af,af'
+	ex de,hl
+	ld hl,TIMA
+	call timer_update_count
 	; Acknowledge any pending GB timer interrupt
 	ld a,4
 	ld (mpIntAcknowledge),a
@@ -502,86 +494,64 @@ _
 	jp.s (ix)
 	
 	
-; Writes to the GB timer modulo (TMA).
+; Writes to the GB timer count or modulo (TIMA/TMA).
+; Does not use a traditional call/return, must be jumped to directly.
 ;
-; Updates the GB timer reload based on the new value, if enabled.
+; Updates the GB timer based on the new value, if enabled.
 ;
-; Inputs:  A' = value being written
+; Inputs:  A=0 for TIMA, A=1 for TMA
+;          A' = value being written
+;          (SPS) = Z80 return address
 ;          AF' has been swapped
-; Outputs: Current value written to (TMA)
+; Outputs: Current value written to the register
 ;          GB timer updated
 ;          AF' has been unswapped
-tma_write:
-	ex af,af'
-	ld (hram_base+TMA),a
-	ex af,af'
-	ld a,(hram_base+TAC)
-	bit 2,a
-	jr z,++_
-	
-	; This entry point updates based on current TMA value always
-tma_write_always:
-	xor a
-	ld (mpTimerCtrl),a
+timer_write_helper:
 	exx
-	; Multiply timer step length by (256-TMA)
-	ld hl,TMA
-	sub.s (hl)
-	ld l,a
-	ld h,TIMA_LENGTH
-	jr z,_
-	mlt hl
-_
-	; Do extra shifting based on the TAC mode
-tma_write_smc = $+1
-	jr $
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	; Set new reload value
-	ld (mpTimer2Reset),hl
-	exx
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-_
-	ex af,af'
-	ret.l
-	
-; Writes to the GB timer counter (TIMA).
-;
-; Updates the GB timer count based on the new value, if enabled.
-;
-; Inputs:  A' = value being written
-;          AF' has been swapped
-; Outputs: Current value written to (TIMA)
-;          GB timer updated
-;          AF' has been unswapped
-tima_write:
-	ex af,af'
-	ld (hram_base+TIMA),a
-	ex af,af'
-	ld a,(hram_base+TAC)
-	bit 2,a
-	jr z,++_
-	
-	; This entry point updates based on current TIMA value always
-tima_write_always:
-	xor a
-	ld (mpTimerCtrl),a
-	exx
-	; Multiply timer step length by (256-TIMA)
 	ld hl,TIMA
+	add a,l
+	ld l,a
+	ex af,af'
+	ld.s (hl),a
+	ex af,af'
+	rra	; Set carry flag if TIMA
+	ld a,(hram_base+TAC)
+	bit 2,a
+	call nz,timer_update
+	exx
+	ex af,af'
+	pop.s ix
+	jp.s (ix)
+	
+; Updates a host timer register based on a GB timer register (TIMA/TMA).
+;
+; Disables timers first to ensure atomicity.
+;
+; Inputs:  HL = zero-extended pointer to GB timer register
+;          CA = reset for TMA, set for TIMA
+; Outputs: HL = output host timer register
+;          Timer value is written to the output register
+;          Timers are enabled
+timer_update:
+	ld de,mpTimer2Reset
+	jr nc,_
+timer_update_count:
+	ld e,mpTimer2Count & $FF
+_
+	
+	xor a
+	ld (mpTimerCtrl),a
+	; Multiply timer step length by (256-TMA)
 	sub.s (hl)
 	ld l,a
 	ld h,TIMA_LENGTH
 	jr z,_
 	mlt hl
 _
-	; Do extra shifting based on the TAC mode
-tima_write_smc = $+1
+	; This entry point is for calculating and setting TIMA read SMC
+timer_smc_calculate:
+	; Do shifting based on the TAC mode
+timer_update_smc = $+1
 	jr $
 	add hl,hl
 	add hl,hl
@@ -589,12 +559,10 @@ tima_write_smc = $+1
 	add hl,hl
 	add hl,hl
 	add hl,hl
-	; Set new count value
-	ld (mpTimer2Count),hl
-	exx
+	; Set new value
+	ex de,hl
+	ld (hl),de
 	ld a,TMR_ENABLE
 	ld (mpTimerCtrl),a
-_
-	ex af,af'
-	ret.l
+	ret
 	
