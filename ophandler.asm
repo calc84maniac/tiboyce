@@ -1,3 +1,14 @@
+; Get a literal 24-bit pointer to the Game Boy stack.
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; This routine is jumped to whenever SP is set to a new value, excluding
+; increment/decrement operations. In addition, if SP points to ROM,
+; push operations are modified to disable the memory writes.
+;
+; Inputs:  IY = 16-bit Game Boy SP
+;          IX = Z80-mode return address
+; Outputs: IY = 24-bit literal SP
+;          SMC applied to push operations
 set_gb_stack:
 	ex af,af'
 	push hl
@@ -37,10 +48,21 @@ set_gb_stack_done:
 	jp.s (ix)
 
 	
+; Flushes the JIT code and recompiles anew.
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; When the recompiler overflows, it returns a pointer to flush_handler,
+; which provides this routine with the GB address.
+;
+; Inputs:  DE = GB address to recompile
+;          BCDEHL' have been swapped
+; Outputs: JIT is flushed and execution begins at the new recompiled block
+;          BCDEHL' have been unswapped
 flush_normal:
 	ex af,af'
 	xor a
 	ld (mpTimerCtrl),a
+flush_mem_finish:
 	call lookup_code
 	ld.sis sp,myz80stack-2
 	ld bc,(CALL_STACK_DEPTH+1)*256
@@ -51,6 +73,18 @@ flush_normal:
 	ei
 	jp.s (ix)
 	
+; Flushes the JIT code and recompiles anew.
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; When the memory routine generator overflows, it returns a pointer to
+; flush_mem_handler, which provides this routine with the JIT address.
+; The JIT address is reversed into the GB address before flushing normally.
+; Recompilation starts at the offending memory instruction.
+;
+; Inputs:  DE = address directly following recompiled memory instruction
+;          BCDEHL' have been swapped
+; Outputs: JIT is flushed and execution begins at the new recompiled block
+;          BCDEHL' have been unswapped
 flush_mem:
 	ex af,af'
 	xor a
@@ -59,17 +93,16 @@ flush_mem:
 	dec de
 	dec de
 	call.il lookup_gb_code_address
-	call lookup_code
-	ld.sis sp,myz80stack-2
-	ld bc,(CALL_STACK_DEPTH+1)*256
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	exx
-	ex af,af'
-	ei
-	jp.s (ix)
+	jr flush_mem_finish
 	
-	
+; Handles an OAM transfer operation.
+; Does not use a traditional call/return, must be jumped to directly.
+; 
+; Inputs:  A' = value being written to DMA register
+;          AF' has been swapped
+;          (SPS) = Z80 return address
+; Outputs: OAM written with 160 bytes from source address
+;          AF' has been unswapped
 oam_transfer:
 	xor a
 	ld (mpTimerCtrl),a
@@ -93,6 +126,12 @@ oam_transfer:
 	ex af,af'
 	jp.s (ix)
 	
+; Gets the current value of LY, after disabling timers.
+; Returns 0 if the LCD is disabled.
+;
+; Inputs:  AFBCDEHL' have been swapped
+; Outputs: A = current LY (0-153)
+;          Timers are disabled
 updateLY_ADL:
 	xor a
 	ld (mpTimerCtrl),a
@@ -114,6 +153,11 @@ updateLY_ADL:
 	sub l
 	ret
 	
+; Catches up the renderer before changing an LCD register.
+; Must be called only if the current frame is being rendered.
+;
+; Inputs:  AF' has been swapped
+; Outputs: Scanlines rendered if applicable
 render_catchup:
 	exx
 	call updateLY_ADL
@@ -126,6 +170,17 @@ render_catchup:
 	ld (mpTimerCtrl),a
 	ret
 	
+; Writes to an LCD scroll register (SCX,SCY,WX,WY).
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; Catches up the renderer before writing, and then applies SMC to renderer.
+;
+; Inputs:  IX = 16-bit register address
+;          A' = value being written
+;          AF' has been swapped
+;          (SPS) = Z80 return address
+; Outputs: Scanlines rendered if applicable, SMC applied, value written
+;          AF' has been unswapped
 scroll_write:
 render_this_frame = $+1
 	ld a,1
@@ -184,6 +239,16 @@ scroll_write_done:
 	pop.s ix
 	jp.s (ix)
 	
+; Writes to the LCD control register (LCDC).
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; Catches up the renderer before writing, and then applies SMC to renderer.
+;
+; Inputs:  A' = value being written
+;          AF' has been swapped
+;          (SPS) = Z80 return address
+; Outputs: Scanlines rendered if applicable, SMC applied, value written
+;          AF' has been unswapped
 lcdc_write:
 	ld a,(render_this_frame)
 	or a
@@ -265,6 +330,15 @@ _
 	pop.s ix
 	jp.s (ix)
 	
+; Post-write operation for the LY compare register (LYC).
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; Sets the host timer match value according to the new value of LYC.
+; Triggers a GB interrupt if LY already matches the new LYC value.
+;
+; Inputs:  A = value being written
+;          (SPS) = Z80 return address
+; Outputs: Host timer match register updated
 lyc_write:
 	exx
 	ld c,a
@@ -292,6 +366,21 @@ _
 	ex af,af'
 	jp.s (ix)
 	
+; Skips a certain number of emulated cycles. Used for HALT or waitloops.
+; Attempting to skip past the end of a scanline is undefined behavior.
+;
+; In every case it attempts to skip to a multiple of 256 on the scanline timer,
+; so only the minimum number of cycles times 256 is passed to the routine.
+; Generally, the residue output from updateLY is used to skip to the end of the
+; current scanline, but skipping to a different scanline mode is also possible.
+; If the number of consumed cycles causes a GB timer overflow, the number of
+; skipped cycles is limited to the remaining cycles on that timer.
+;
+; Inputs:  H = number of cycles to skip, times 256
+;          HLU = 0
+;          Timers are disabled
+; Outputs: Cycles skipped from all applicable timers
+;          Timers are enabled
 skip_cycles:
 	ld ix,mpTimer1Count
 	ld l,(ix)
@@ -315,6 +404,10 @@ _
 	ld (ix-mpTimer1Count+mpTimerCtrl),TMR_ENABLE
 	ret.l
 	
+; Updates the current value of the GB timer counter (TIMA).
+;
+; Inputs:  AF' has been swapped
+; Outputs: Current value written to (TIMA)
 updateTIMA:
 	xor a
 	ld (mpTimerCtrl),a
@@ -339,10 +432,22 @@ updateTIMA_smc = $+1
 	ld.lil (mpTimerCtrl),a
 	ret.l
 	
+; Writes to the GB timer control (TAC).
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; Updates the GB timer based on the new mode; applies SMC to getters/setters
+;
+; Inputs:  A' = value being written
+;          (SPS) = Z80 return address
+;          AF' has been swapped
+; Outputs: Current value written to (TAC)
+;          GB timer updated
 tac_write:
+	; If the timer was enabled, update TIMA
 	ld a,(hram_base+TAC)
 	bit 2,a
 	call.il nz,updateTIMA
+	; Set new TAC value
 	exx
 	ex af,af'
 	ld (hram_base+TAC),a
@@ -350,11 +455,13 @@ tac_write:
 	ex af,af'
 	bit 2,l
 	jr nz,_
+	; If disabling timer, disable interrupt as well
 	ld hl,mpIntEnable
 	res 2,(hl)
 	exx
 	jr ++_
 _
+	; Apply SMC to write shifts
 	xor a
 	sub l
 	and 3
@@ -362,6 +469,7 @@ _
 	ld (tac_write_smc),a
 	ld (tma_write_smc),a
 	ld (tima_write_smc),a
+	; Apply SMC to TIMA update divisor
 	ld hl,-TIMA_LENGTH * 128
 tac_write_smc = $+1
 	jr $
@@ -373,12 +481,16 @@ tac_write_smc = $+1
 	add hl,hl
 	ld (updateTIMA_smc),hl
 	exx
+	; Update TMA with current value
 	call.il tma_write_always
 	ex af,af'
+	; Update TIMA with current value
 	call.il tima_write_always
 	ex af,af'
+	; Acknowledge any pending GB timer interrupt
 	ld a,4
 	ld (mpIntAcknowledge),a
+	; If scanline timer interrupt is enabled, enable GB timer too
 	ld a,(mpIntEnable)
 	bit 1,a
 	jr z,_
@@ -389,6 +501,16 @@ _
 	pop.s ix
 	jp.s (ix)
 	
+	
+; Writes to the GB timer modulo (TMA).
+;
+; Updates the GB timer reload based on the new value, if enabled.
+;
+; Inputs:  A' = value being written
+;          AF' has been swapped
+; Outputs: Current value written to (TMA)
+;          GB timer updated
+;          AF' has been unswapped
 tma_write:
 	ex af,af'
 	ld (hram_base+TMA),a
@@ -396,17 +518,21 @@ tma_write:
 	ld a,(hram_base+TAC)
 	bit 2,a
 	jr z,++_
+	
+	; This entry point updates based on current TMA value always
 tma_write_always:
 	xor a
 	ld (mpTimerCtrl),a
 	exx
-	ld a,(hram_base+TMA)
-	neg
+	; Multiply timer step length by (256-TMA)
+	ld hl,TMA
+	sub.s (hl)
 	ld l,a
 	ld h,TIMA_LENGTH
 	jr z,_
 	mlt hl
 _
+	; Do extra shifting based on the TAC mode
 tma_write_smc = $+1
 	jr $
 	add hl,hl
@@ -415,6 +541,7 @@ tma_write_smc = $+1
 	add hl,hl
 	add hl,hl
 	add hl,hl
+	; Set new reload value
 	ld (mpTimer2Reset),hl
 	exx
 	ld a,TMR_ENABLE
@@ -423,6 +550,15 @@ _
 	ex af,af'
 	ret.l
 	
+; Writes to the GB timer counter (TIMA).
+;
+; Updates the GB timer count based on the new value, if enabled.
+;
+; Inputs:  A' = value being written
+;          AF' has been swapped
+; Outputs: Current value written to (TIMA)
+;          GB timer updated
+;          AF' has been unswapped
 tima_write:
 	ex af,af'
 	ld (hram_base+TIMA),a
@@ -430,17 +566,21 @@ tima_write:
 	ld a,(hram_base+TAC)
 	bit 2,a
 	jr z,++_
+	
+	; This entry point updates based on current TIMA value always
 tima_write_always:
 	xor a
 	ld (mpTimerCtrl),a
 	exx
-	ld a,(hram_base+TIMA)
-	neg
+	; Multiply timer step length by (256-TIMA)
+	ld hl,TIMA
+	sub.s (hl)
 	ld l,a
 	ld h,TIMA_LENGTH
 	jr z,_
 	mlt hl
 _
+	; Do extra shifting based on the TAC mode
 tima_write_smc = $+1
 	jr $
 	add hl,hl
@@ -449,6 +589,7 @@ tima_write_smc = $+1
 	add hl,hl
 	add hl,hl
 	add hl,hl
+	; Set new count value
 	ld (mpTimer2Count),hl
 	exx
 	ld a,TMR_ENABLE
