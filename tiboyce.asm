@@ -566,6 +566,7 @@ KeyConfig:
 	#include "jit.asm"
 	#include "decode.asm"
 	#include "ophandler.asm"
+	#include "vblank.asm"
 	#include "waitloop.asm"
 	
 ; The RAM program ends here.
