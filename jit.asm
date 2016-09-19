@@ -509,8 +509,13 @@ flush_and_recompile:
 	 call flush_code
 	pop de
 	
-	; Input: DE points to GB opcodes to recompile, DE-(base_address) is actual GB address
-	; Output: IX = recompiled code pointer
+	
+; Recompiles a new code block starting from a direct GB address.
+;
+; Inputs:  DE = direct 24-bit GB address to recompile
+;          (base_address) = base address of pointer in DE
+; Outputs: IX = recompiled code pointer
+; Destroys AF,BC,DE,HL
 recompile:
 	ld ix,(recompile_struct_end)
 	lea hl,ix+8
@@ -640,9 +645,14 @@ ram_block_padding = $+1
 	jr recompile_end_common
 #endif
 	
-	
-	; Recompile RAM code in-place
-	; Input: IX=recompile struct entry
+; Recompiles an existing RAM code block in-place.
+;
+; If the new recompiled code overflows the allotted space, all code is flushed
+; and the ram_block_padding variable is increased by the amount of overflow.
+;
+; Inputs:  IX = recompile struct entry for the block
+; Outputs: None
+; Destroys AF,BC,DE,HL
 rerecompile:
 #ifdef 0
 	push ix
@@ -764,6 +774,7 @@ _
 	ret
 #endif
 	
+; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
 	.block (-$)&255
 opcoderecsizes:
 	.db 0,3,3,1,1,1,2,1
@@ -802,6 +813,7 @@ opcoderecsizes:
 	.db 3,2,3,3,0,2,2,5
 	.db 4,3,5,3,0,0,2,5
 	
+; A table of Game Boy opcode sizes. 0 means it ends the block.
 opcodesizes:
 	.db 1,3,1,1,1,1,2,1
 	.db 3,1,1,1,1,1,2,1
@@ -839,6 +851,8 @@ opcodesizes:
 	.db 2,1,1,1,0,1,2,1
 	.db 2,1,3,1,0,0,2,1
 	
+; A table indexing opcode generation routines.
+; All entry points live in a 256-byte space.
 opgentable:
 ;00
 	.db opgen0byte & $FF
