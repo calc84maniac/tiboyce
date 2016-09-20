@@ -161,6 +161,26 @@ decode_loop:
 ; determines the routine associated with the instruction in question
 ; and returns it to be patched into a direct call.
 ;
+; Opcode identifiers:
+;   0-1 = ld (bc),a \ ld a,(bc)
+;   2-3 = ld (de),a \ ld a,(de)
+;   4-5 = ldi (hl),a \ ldi a,(hl)
+;   6-7 = ldd (hl),a \ ldd a,(hl)
+;   8-13,15 = ld r,(hl)
+;   16-23 = op a,(hl)
+;   24-29,31 = ld (hl),r
+;   14,30 = unused
+;
+; Memory region identifiers:
+;   0 = HRAM ($FF80 - $FFFE)
+;   1 = Static ROM ($0000-$3FFF)
+;   2 = OAM/MMIO/HRAM ($FE00-$FFFF), region 0 takes precedence
+;   3 = Banked ROM ($4000-$7FFF)
+;   4 = VRAM ($8000-$9FFF)
+;   5 = Cart RAM ($A000-$BFFF)
+;   6 = WRAM ($C000-$DFFF)
+;   7 = WRAM Mirror ($E000-$FDFF)
+;
 ; The memory access routines grow backwards in the JIT code region, and if
 ; the JIT code and the memory access routines overlap a flush must occur.
 ; If this case is detected, a pointer to a flush handler is returned instead.
@@ -545,7 +565,14 @@ memroutine_gen_not_vram:
 memroutine_gen_not_cram:
 	 ;We're in RAM, cool!
 	 call memroutine_gen_index
+	 ;Mirrored RAM
+	 ld de,wram_base-$2000
+	 ld a,$1E
+	 djnz _
+	 ;Unmirrored RAM
 	 ld de,wram_base
+	 ld a,$20
+_
 	 ld (hl),de
 	 dec hl
 	 ld (hl),$21
@@ -558,13 +585,15 @@ memroutine_gen_not_cram:
 	 dec hl
 	 ld (hl),$30	;JR NC,$-8
 	 dec hl
-	 ld (hl),$3E
+	 ld (hl),a
 	 dec hl
-	 ld (hl),$FE	;CP $3E
+	 ld (hl),$FE	;CP $1E / $20
 	 dec hl
-	 ld (hl),$C0
+	 cpl
+	 and $E0
+	 ld (hl),a
 	 dec hl
-	 ld (hl),$D6	;SUB $C0
+	 ld (hl),$D6	;SUB $E0 / $C0
 	 dec hl
 	 ld a,c
 	 add a,$7C	;LD A,B/D/H
