@@ -1,8 +1,17 @@
+; VBlank handler.
+;
+; This is called once per frame, even when the LCD is disabled.
+; It finishes rendering the current frame and updates palettes and key inputs.
+; In addition, it handles frame synchronization and frameskip logic.
+;
+; Inputs:  HL = mpTimerIntStatus
+; Outputs: A = (mpTimerIntStatus)
+; Destroys AF
 vblank_stuff:
 	; Reset match bit
 	ld (hl),2
 	
-	; Update FPS counter
+	; Update VFPS counter
 vfps = $+1
 	ld a,0
 	add a,1
@@ -73,22 +82,20 @@ last_second = $+1
 	   
 	   ld de,0
 vfps_display_tens = $+1
-	   ld a,0
+	   ld c,0
 	   call display_digit
 	   ld de,4
 vfps_display_ones = $+1
-	   ld a,0
+	   ld c,0
 	   call display_digit
 	   ld de,12
 fps_display_tens = $+1
-	   ld a,0
+	   ld c,0
 	   call display_digit
 	   ld de,16
 fps_display_ones = $+1
-	   ld a,0
+	   ld c,0
 	   call display_digit
-	   
-	   xor a
 NoFPSDisplay:
 	  pop bc
 	  
@@ -216,16 +223,24 @@ _
 	ld a,(hl)
 	ret.l
 	
-	; DE = interrupt source mask to wait on
-	; Destroys: IX, DE, HL
-	; Interrupt is acknowledged before waiting,
-	; but not handled or acknowledged afterward
+	
+; Acknowledges one or more interrupt sources and then waits on them.
+; Interrupt is neither acknowledged nor handled once it triggers.
+;
+; Inputs:  DE = interrupt source mask to wait on
+;          Interrupts are disabled
+; Outputs: Original interrupt mask is restored
+; Destroys IX,DE,HL
 ack_and_wait_for_interrupt:
 	ld (mpIntAcknowledge),de
 	
-	; DE = interrupt source mask to wait on
-	; Destroys: IX, DE, HL
-	; Interrupt is not actually handled or acknowledged
+; Waits on one or more interrupt sources. May return immediately.
+; Interrupt is neither acknowledged nor handled once it triggers.
+;
+; Inputs:  DE = interrupt source mask to wait on
+;          Interrupts are disabled
+; Outputs: Original interrupt mask is restored
+; Destroys IX,DE,HL
 wait_for_interrupt:
 	ld hl,mpIntEnable
 	ld ix,(hl)
@@ -239,6 +254,13 @@ wait_for_interrupt:
 	ld (hl),ix
 	ret
 	
+	
+; Prepares to render the next frame.
+; This swaps the current buffer and resets internal render variables.
+;
+; Inputs:  None
+; Outputs: HL = old framebuffer
+;          A = 0
 prepare_next_frame:
 	ld hl,scanlineLUT + (15*3)
 	ld (scanlineLUT_ptr),hl
@@ -263,6 +285,10 @@ prepare_next_frame:
 	ld (mpLcdBase),hl
 	ret
 	
+; Updates the FPS digits for the last second and prepares the next second.
+;
+; Inputs:  A = current RTC second
+; Outputs: None
 update_fps:
 	ld (last_second),a
 	
@@ -293,9 +319,14 @@ update_fps:
 	ld (fps),a
 	ret
 	
-	; Digit in A, output at offset DE
+; Displays a digit onscreen at the given framebuffer offset in bytes.
+; Draws to the old buffer.
+;
+; Inputs:  C = digit (0-9)
+;          DE = offset
+; Outputs: A = 0
+; Destroys AF,BC,DE,HL
 display_digit:
-	ld c,a
 	ld hl,(current_buffer)
 	ld a,h
 	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
@@ -319,26 +350,13 @@ _
 	dec a
 	jr nz,-_
 	ret
-	
 
-palette_obj1_colors:
-	.dw $0421 * 31 + $8000
-	.dw $0421 * 21 + $8000
-	.dw $0421 * 10
-	.dw $0421 * 0
-
-palette_obj0_colors:
-	.dw $0421 * 31 + $8000
-	.dw $0421 * 21 + $8000
-	.dw $0421 * 10
-	.dw $0421 * 0
-
-palette_bg_colors:
-	.dw $0421 * 31 + $8000
-	.dw $0421 * 21 + $8000
-	.dw $0421 * 10
-	.dw $0421 * 0
-
+; Update the host LCD palettes based on the currently set GB palettes.
+; No operation if the GB palettes have not changed since this was last called.
+;
+; Uses the palette_XXX_colors arrays as the source colors for each type.
+;
+; Destroys AF,DE,HL,IX
 update_palettes:
 	ld hl,(hram_base+BGP)
 curr_palettes = $+1
@@ -350,10 +368,10 @@ curr_palettes = $+1
 	ld (curr_palettes),hl
 	ld de,mpLcdPalette + (9*2)-1
 	push bc
-	 ld ix,palette_obj1_colors+1-8
+	 ld ix,palette_obj1_colors+1+8
 	 ld c,(9*2) + 3
 update_palettes_next_loop:
-	 lea ix,ix+8
+	 lea ix,ix-8
 	 ld b,4
 update_palettes_loop:
 	 xor a

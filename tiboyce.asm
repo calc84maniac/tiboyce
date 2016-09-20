@@ -542,6 +542,26 @@ main_menu_selection:
 current_state:
 	.db 0
 	
+	
+; Current palette color sources (must be in this order).
+; Correspond to colors 0-3 in sequence.
+palette_bg_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+palette_obj0_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+palette_obj1_colors:
+	.dw $0421 * 31 + $8000
+	.dw $0421 * 21 + $8000
+	.dw $0421 * 10
+	.dw $0421 * 0
+	
+	
 ; Active configuration info:
 	
 ; The currently chosen frameskip value.
