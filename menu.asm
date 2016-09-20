@@ -44,9 +44,22 @@ _
 	; Auto-Archive
 	inc hl
 	
+	; Palette selection
+	ld a,(hl)
+	inc hl
 	push hl
-	 ld a,(default_palette)
+	 ld hl,default_palette
+	 or a
+	 jr z,_
+	 APTR(ManualPaletteIndexTable-1)
+	 ld bc,0
+	 ld c,a
+	 add hl,bc
+_
+	 ld a,(hl)
 	 ACALL(LoadPalettes)
+	 ld hl,(curr_palettes)
+	 call update_palettes_always
 	pop hl
 	
 	; Key configuration
@@ -310,6 +323,8 @@ _
 	jr draw_current_menu
 	
 redraw_current_menu:
+	ACALL(ApplyConfiguration)
+	
 	ld hl,(current_buffer)
 	push hl
 	pop de
@@ -570,6 +585,7 @@ OptionList:
 	.dw OptionFrameskipType+1
 	.dw OptionFPSDisplay+1
 	.dw OptionAutoArchive+1
+	.dw OptionPaletteSelection+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -623,7 +639,7 @@ EmulatorTitle:
 	.db ITEM_CMD,1, 180,1,"Exit TI-Boy CE",0
 	
 GraphicsMenu:
-	.db 4
+	.db 5
 	.db 5,12,"Graphics Options",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
 	.db ITEM_OPTION,0, 70,1,"Frameskip type: %-9s",0
@@ -631,6 +647,8 @@ GraphicsMenu:
 	.db ITEM_DIGIT,2, 80,1,"Frameskip value: %u",0
 	.db "",0
 	.db ITEM_OPTION,1, 100,1,"FPS display: %-3s",0
+	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
+	.db ITEM_OPTION,3, 120,1,"Palette selection: %-10s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -677,6 +695,22 @@ OptionAutoArchive:
 	.db 2
 	.db "off",0
 	.db "on",0
+	
+OptionPaletteSelection:
+	.db 13
+	.db "default",0
+	.db "grayscale",0
+	.db "brown",0
+	.db "pastel mix",0
+	.db "blue",0
+	.db "green",0
+	.db "red",0
+	.db "orange",0
+	.db "dark blue",0
+	.db "dark green",0
+	.db "dark brown",0
+	.db "yellow",0
+	.db "inverted",0
 	
 KeyNames:
 	.db "(press)",0
@@ -744,6 +778,9 @@ KeySMCList:
 	.db key_smc_start - key_smc_select
 	.db key_smc_menu - key_smc_start
 	.db 0
+	
+ManualPaletteIndexTable:
+	.db $16,$12,$17,$B8,$05,$B0,$07,$AD,$7C,$79,$BA,$13
 	
 PaletteIndex:
 	.db $80,$B0,$40, $88,$20,$68, $DE,$00,$70, $DE,$20,$78

@@ -366,6 +366,8 @@ curr_palettes = $+1
 	ret z
 	add hl,de
 	ld (curr_palettes),hl
+	; Input: Palettes in HL
+update_palettes_always:
 	ld de,mpLcdPalette + (9*2)-1
 	push bc
 	 ld ix,palette_obj1_colors+1+8

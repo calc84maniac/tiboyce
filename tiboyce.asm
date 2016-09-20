@@ -581,6 +581,9 @@ FPSDisplay:
 ; Auto archive (0=Off, 1=On)
 AutoArchive:
 	.db 1
+; Palette selection (0=Default, 1...=Manual)
+PaletteSelection:
+	.db 0
 	
 ; Key configuration. Each is a GetCSC scan code.
 KeyConfig:

@@ -936,15 +936,15 @@ title_checksum_loop:
 	cp $41
 	jr c,default_palette_found
 	dec hl
-	ld de,$4F-$41
+	ld c,$4F-$41
 title_second_checksum_loop:
-	ld c,a
-	add hl,de
+	ld e,a
+	add hl,bc
 	ld a,(ix-$30+$37)	; 4th character of game title
 	cp (hl)
-	jr z,default_palette_found_2
-	ld a,c
-	add a,e
+	ld a,e
+	jr z,default_palette_found
+	add a,c
 	cp $5E
 	jr c,title_second_checksum_loop
 	
@@ -952,7 +952,6 @@ no_special_palette:
 	xor a
 default_palette_found:
 	ld c,a
-default_palette_found_2:
 	APTR(DefaultPaletteIndexTable)
 	add hl,bc
 	ld a,(hl)
@@ -979,7 +978,8 @@ SecondPaletteChecksumTable:
 	.db $52
 	
 DefaultPaletteIndexTable:
-	.db $7C,$08,$12,$A3,$A2,$07,$87,$4B,$20,$12,$65,$A8,$16
+	; Dummy entry was formerly $7C, but grayscale is better
+	.db $16,$08,$12,$A3,$A2,$07,$87,$4B,$20,$12,$65,$A8,$16
 	.db $A9,$86,$B1,$68,$A0,$87,$66,$12,$A1,$30,$3C,$12,$85
 	.db $12,$64,$1B,$07,$06,$6F,$6E,$6E,$AE,$AF,$6F,$B2,$AF
 	.db $B2,$A8,$AB,$6F,$AF,$86,$AE,$A2,$A2,$12,$AF,$13,$12
