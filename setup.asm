@@ -303,7 +303,7 @@ RestartFromHere:
 	ld bc,palettecodesize
 	ldir
 	
-	ld hl,$0D25
+	ld hl,$0C25
 	ld (mpLcdCtrl),hl
 	ld hl,gb_frame_buffer_1
 	ld (mpLcdBase),hl

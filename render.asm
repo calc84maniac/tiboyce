@@ -377,7 +377,7 @@ palettecode:
 
 	.dw 0,0,0,0,0,0,0,0,0
 	.dw 0
-	.dw $DA5A,$AE92,$FFFF,$0000,$088A
+	.dw $EA56,$CA8B,$FFFF,$0000,$2882
 	.dw 0
 	
 render_scanline_off:

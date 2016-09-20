@@ -44,6 +44,11 @@ _
 	; Auto-Archive
 	inc hl
 	
+	push hl
+	 ld a,$16
+	 ACALL(LoadPalettes)
+	pop hl
+	
 	; Key configuration
 	ld ix,key_smc_right
 	push hl
@@ -77,6 +82,53 @@ key_config_loop:
 _
 	ld ixl,a
 	djnz key_config_loop
+	ret
+	
+	; Input: A = palette index
+	; Destroys: AF,BC,DE,HL,IX
+LoadPalettes:
+	ld ix,(ArcBase)
+	ld bc,PaletteIndex
+	add ix,bc
+	ld e,a
+	and $1F
+	ld c,a
+	ld b,3
+	mlt bc
+	add ix,bc
+	
+	; Load BG
+	ld a,e
+	ld de,palette_bg_colors
+	ld c,(ix+2)
+	ACALL(LoadSinglePalette)
+	
+	; Load OBJ0
+	ld c,(ix)
+	bit 5,a
+	jr nz,_
+	ld c,(ix+2)
+_
+	ACALL(LoadSinglePalette)
+	
+	; Load OBJ1
+	ld c,(ix+1)
+	rlca
+	jr c,_
+	ld c,(ix)
+	rlca
+	jr c,_
+	ld c,(ix+2)
+_
+	; Input:  BC = palette offset, DE = output ptr
+	; Output: DE = next output ptr, BC = 0
+LoadSinglePalette:
+	ld hl,(ArcBase)
+	add hl,bc
+	ld bc,PaletteDictionary
+	add hl,bc
+	ld bc,8
+	ldir
 	ret
 	
 ItemSelectCmd:
@@ -692,3 +744,45 @@ KeySMCList:
 	.db key_smc_start - key_smc_select
 	.db key_smc_menu - key_smc_start
 	.db 0
+	
+PaletteIndex:
+	.db $80,$B0,$40, $88,$20,$68, $DE,$00,$70, $DE,$20,$78
+	.db $20,$20,$38, $20,$B0,$90, $20,$B0,$A0, $E0,$B0,$C0
+	.db $98,$B6,$48, $80,$E0,$50, $1E,$1E,$58, $20,$B8,$E0
+	.db $88,$B0,$10, $20,$00,$10, $20,$E0,$18, $E0,$18,$00
+	.db $18,$E0,$20, $A8,$E0,$20, $18,$E0,$00, $20,$18,$D8
+	.db $C8,$18,$E0, $00,$E0,$40, $28,$28,$28, $18,$E0,$60
+	.db $20,$18,$E0, $00,$00,$08, $E0,$18,$30, $D0,$D0,$D0
+	.db $20,$E0,$E8
+	
+PaletteDictionary:
+	.dw $7FFF,$32BF,$00D0,$0000
+	.dw $639F,$4279,$15B0,$04CB
+	.dw $7FFF,$6E31,$454A,$0000
+	.dw $7FFF,$1BEF,$0200,$0000
+	.dw $7FFF,$421F,$1CF2,$0000
+	.dw $7FFF,$5294,$294A,$0000
+	.dw $7FFF,$03FF,$012F,$0000
+	.dw $7FFF,$03EF,$01D6,$0000
+	.dw $7FFF,$42B5,$3DC8,$0000
+	.dw $7E74,$03FF,$0180,$0000
+	.dw $67FF,$77AC,$1A13,$2D6B
+	.dw $7ED6,$4BFF,$2175,$0000
+	.dw $53FF,$4A5F,$7E52,$0000
+	.dw $4FFF,$7ED2,$3A4C,$1CE0
+	.dw $03ED,$7FFF,$255F,$0000
+	.dw $036A,$021F,$03FF,$7FFF
+	.dw $7FFF,$01DF,$0112,$0000
+	.dw $231F,$035F,$00F2,$0009
+	.dw $7FFF,$03EA,$011F,$0000
+	.dw $299F,$001A,$000C,$0000
+	.dw $7FFF,$027F,$001F,$0000
+	.dw $7FFF,$03E0,$0206,$0120
+	.dw $7FFF,$7EEB,$001F,$7C00
+	.dw $7FFF,$3FFF,$7E00,$001F
+	.dw $7FFF,$03FF,$001F,$0000
+	.dw $03FF,$001F,$000C,$0000
+	.dw $7FFF,$033F,$0193,$0000
+	.dw $0000,$4200,$037F,$7FFF
+	.dw $7FFF,$7E8C,$7C00,$0000
+	.dw $7FFF,$1BEF,$6180,$0000
