@@ -553,7 +553,9 @@ ItemChangeKey:
 ItemDisplayKey:
 	ACALL(GetKeyConfig)
 	ld a,(hl)
-	ld hl,KeyNames
+	push de
+	 APTR(KeyNames)
+	pop de
 	jr ItemDisplayKeyEntry
 	
 ItemDisplayOption:
