@@ -518,6 +518,9 @@ skippable_frames:
 ; The current buffer to render to.
 current_buffer:
 	.dl 0
+; The default palette.
+default_palette:
+	.db 0
 	
 ; The current text output column, in characters (0-39).
 cursorCol:

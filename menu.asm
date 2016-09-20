@@ -45,7 +45,7 @@ _
 	inc hl
 	
 	push hl
-	 ld a,$16
+	 ld a,(default_palette)
 	 ACALL(LoadPalettes)
 	pop hl
 	

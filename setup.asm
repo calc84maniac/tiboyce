@@ -449,6 +449,7 @@ RestartFromHere:
 	
 	call flush_code_reset_padding
 	
+	ACALL(IdentifyDefaultPalette)
 	ACALL(ApplyConfiguration)
 	
 	ld de,$0100
@@ -904,6 +905,60 @@ SetLCDTiming:
 	ld (ix),hl
 	ret
 	
+IdentifyDefaultPalette:
+	ld ix,(rom_start)
+	ld bc,$0130
+	add ix,bc
+	dec b	;B=0
+	ld a,(ix-$30+$4B)	; Old Licensee Code
+	cp $33
+	jr nz,old_licensee
+	ld a,(ix-$30+$44)	; New Licensee Code byte 1
+	cp c
+	jr nz,no_special_palette
+	ld a,(ix-$30+$45)	; New Licensee Code byte 2
+	sub c
+old_licensee:
+	dec a
+	jr nz,no_special_palette
+	lea hl,ix-$30+$34	; Game title
+	ld b,$10
+title_checksum_loop:
+	add a,(hl)
+	inc hl
+	djnz title_checksum_loop
+	APTR(DefaultPaletteChecksumTable)
+	ld c,$4F
+	cpir
+	jr nz,no_special_palette
+	ld a,$4F-1
+	sub c
+	cp $41
+	jr c,default_palette_found
+	dec hl
+	ld de,$4F-$41
+title_second_checksum_loop:
+	ld c,a
+	add hl,de
+	ld a,(ix-$30+$37)	; 4th character of game title
+	cp (hl)
+	jr z,default_palette_found_2
+	ld a,c
+	add a,e
+	cp $5E
+	jr c,title_second_checksum_loop
+	
+no_special_palette:
+	xor a
+default_palette_found:
+	ld c,a
+default_palette_found_2:
+	APTR(DefaultPaletteIndexTable)
+	add hl,bc
+	ld a,(hl)
+	ld (default_palette),a
+	ret
+	
 hmem_init:
 	.db 0,0,0,0,0,$00,$00,$00,0,0,0,0,0,0,0,0
 	.db $80,$BF,$F3,0,$BF,0,$3F,$00,0,$BF,$7F,$FF,$9F,0,$BF,0
@@ -912,3 +967,23 @@ hmem_init:
 	.db $91,0,$00,$00,0,$00,0,$FC,$FF,$FF,$00,$00,0,0,0,0
 	.block $b0
 	
+DefaultPaletteChecksumTable:
+	.db $00,$88,$16,$36,$D1,$DB,$F2,$3C,$8C,$92,$3D,$5C,$58,$C9,$3E,$70
+	.db $1D,$59,$69,$19,$35,$A8,$14,$AA,$75,$95,$99,$34,$6F,$15,$FF,$97
+	.db $4B,$90,$17,$10,$39,$F7,$F6,$A2,$49,$4E,$43,$68,$E0,$8B,$F0,$CE
+	.db $0C,$29,$E8,$B7,$86,$9A,$52,$01,$9D,$71,$9C,$BD,$5D,$6D,$67,$3F
+	.db $6B,$B3,$46,$28,$A5,$C6,$D3,$27,$61,$18,$66,$6A,$BF,$0D,$F4
+SecondPaletteChecksumTable:
+	.db $42,$45,$46,$41,$41,$52,$42,$45,$4B,$45,$4B,$20,$52,$2D
+	.db $55,$52,$41,$52,$20,$49,$4E,$41,$49,$4C,$49,$43,$45,$20
+	.db $52
+	
+DefaultPaletteIndexTable:
+	.db $7C,$08,$12,$A3,$A2,$07,$87,$4B,$20,$12,$65,$A8,$16
+	.db $A9,$86,$B1,$68,$A0,$87,$66,$12,$A1,$30,$3C,$12,$85
+	.db $12,$64,$1B,$07,$06,$6F,$6E,$6E,$AE,$AF,$6F,$B2,$AF
+	.db $B2,$A8,$AB,$6F,$AF,$86,$AE,$A2,$A2,$12,$AF,$13,$12
+	.db $A1,$6E,$AF,$AF,$AD,$06,$4C,$6E,$AF,$AF,$12,$7C,$AC
+	.db $A8,$6A,$6E,$13,$A0,$2D,$A8,$2B,$AC,$64,$AC,$6D,$87
+	.db $BC,$60,$B4,$13,$72,$7C,$B5,$AE,$AE,$7C,$7C,$65,$A2
+	.db $6C,$64,$85
