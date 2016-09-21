@@ -1,29 +1,6 @@
 ; Allocate at 256-byte aligned cursor memory
 
 opgenroutines:
-opgenJP:
-	call opgen_emitbranch
-	inc hl
-	ret
-
-opgenJR:
-opgen_emitbranch:
-	ld a,RST_BRANCH
-	ld (de),a
-opgen_emitPC:
-	inc hl
-	ld a,(base_address)
-	cpl
-	add a,l
-	inc de
-	ld (de),a
-	ld a,(base_address+1)
-	cpl
-	adc a,h
-	inc de
-	ld (de),a
-	ret
-
 opgenE9:
 	ex de,hl
 	ld (hl),$C3
@@ -45,15 +22,6 @@ opgenF0:
 	
 opgenFA:
 	jp opgenCONSTread
-	
-opgenJRcond:
-	call opgen_emitbranch
-	jr opgen_next_skip
-	
-opgenJPcond:
-	call opgen_emitbranch
-	inc hl
-	jr opgen_next_skip
 	
 opgenCALLcond:
 	ld a,c
@@ -83,6 +51,7 @@ opgenMEM:
 	inc de
 	ldi
 	inc de
+	inc iy
 	jr opgen_next_fast
 	
 opgenPUSH:
@@ -90,12 +59,15 @@ opgenPUSH:
 	ld a,RST_PUSH
 	ld (de),a
 	inc de
+	lea iy,iy+3
 	jr opgen_next_fast
 	
 opgenPOP:
 	ld a,RST_POP
 	ld (de),a
 	inc de
+opgen1byte_3cc:
+	lea iy,iy+2
 	jr opgen1byte
 	
 opgen33:
@@ -128,6 +100,11 @@ opgenswap:
 	ld a,RST_BITS
 	ld (de),a
 	inc de
+	ld a,(hl)
+	add a,$40
+	jp po,opgen1byte_3cc
+opgen1byte_2cc:
+	inc iy
 	jr opgen1byte
 	
 opgenRET:
@@ -221,6 +198,14 @@ opgenEI:
 	jr _opgenEI
 opgenINVALID:
 	jr _opgenINVALID
+opgenJR:
+	jr _opgenJR
+opgenJP:
+	jr _opgenJP
+opgenJRcond:
+	jr _opgenJRcond
+opgenJPcond:
+	jr _opgenJPcond
 	
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
@@ -296,3 +281,57 @@ _opgenINVALID:
 	ex de,hl
 	ret
 	
+_opgenJRcond:
+	ld a,c
+	xor $20 ^ $28
+	ld (de),a
+	inc de
+	ld a,7
+	ld (de),a
+	inc de
+_opgenJR:
+	
+	
+	
+_opgenJPcond:
+	ld a,c
+	xor $C2 ^ $28
+	ld (de),a
+	inc de
+	ld a,7
+	ld (de),a
+	inc de
+_opgenJP:
+	inc hl
+	ld bc,(hl)
+	inc hl
+	inc hl
+opgen_emit_jump:
+	ex de,hl
+	ld (hl),$CD
+	inc hl
+	ld (hl),decode_jump & $FF
+	inc hl
+	ld (hl),decode_jump >> 8
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),b
+	inc hl
+	ex de,hl
+	inc hl
+	call opgen_get_cycles
+	inc a
+	ld (de),a
+	inc de
+	jp opgen_next
+	
+	
+	
+	
+opgen_get_cycles:
+	ld a,l
+opgen_cycle_smc = $+1
+	sub 0
+	add a,iyl
+	ret

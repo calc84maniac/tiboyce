@@ -267,8 +267,6 @@ _
 	 ; Emit RET and possible post-increment/decrement
 	 ld hl,(z80codebase+memroutine_next)
 	 ld (hl),$C9	;RET
-	 dec hl
-	 ld (hl),$FB	;EI
 	 ld a,e
 	 and $1C
 	 cp 4

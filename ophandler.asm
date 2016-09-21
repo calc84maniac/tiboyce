@@ -16,7 +16,7 @@ set_gb_stack:
 	 add a,a
 	 jr c,_
 	 add a,a
-	 ld a,do_push_no_write
+	 ld a,$53	;LD D,E
 	 ld hl,(rom_start)
 	 jr nc,set_gb_stack_done
 	 ld hl,(rom_bank_base)
@@ -32,15 +32,16 @@ _
 _
 	 ld hl,hram_base
 set_gb_stack_done_ram:
-	 ld a,do_push
+	 ld a,$72	;LD (HL),D
 set_gb_stack_done:
 	 ex de,hl
 	 add iy,de
 	 ex de,hl
 	 ld (z80codebase+sp_base_address),hl
 	pop hl
-	ld (z80codebase+do_call_write_smc),a
-	ld (z80codebase+do_interrupt_write_smc),a
+	ld (z80codebase+do_push_smc_1),a
+	or 1	;LD D,E or LD (HL),E
+	ld (z80codebase+do_push_smc_2),a
 	sub r_push_jr_end
 	ld (z80codebase+r_push_jr_end-1),a
 	ex af,af'

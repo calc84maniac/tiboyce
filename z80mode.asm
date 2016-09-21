@@ -28,9 +28,8 @@ r_branch:
 	
 	.block $18-$
 r_call:
+	pop ix
 	exx
-	pop hl
-	ld ix,(hl)
 	djnz do_call
 	jr do_call_reset_callstack
 	
@@ -39,12 +38,13 @@ r_push:
 	pop ix
 	exx
 	pop de
-	jr do_push_no_write
+	jr do_push
 r_push_jr_end:
 	
 	.block $28-$
 r_pop:
-	ld.l ix,(iy)
+	exx
+	ld.l ix,(hl)
 	ex (sp),ix
 	jr do_pop
 	
@@ -94,42 +94,43 @@ do_call_reset_callstack:
 	ld b,CALL_STACK_DEPTH
 	ld sp,myz80stack-2
 do_call:
-	inc hl
-	inc hl
-	ld de,(hl)
-	inc hl
-	inc hl
-	push hl
+	pea ix+4
+	ld de,(ix+2)
 	push de
+	ld ix,(ix)
 do_call_write_smc = $+1
-	call do_push_no_write
+	call do_push
 	; Call stack return here!
 	ex af,af'
 	exx
 	inc b
-	pop hl
-	ld.l de,(iy)
-	or a
-	sbc hl,de
+	pop de
+	push.l hl
+	 ld.l hl,(hl)
+	 or a
+	 sbc hl,de
+	pop.l hl
 	jr nz,ophandlerRETnomatch
+	inc.l hl
+	inc.l hl
 	exx
 	ex af,af'
-	lea.l iy,iy+2
-	ei
 	ret
 	
 do_push:
-	ld.l (iy-2),e
-	ld.l (iy-1),d
-do_push_no_write:
-	lea.l iy,iy-2
+	dec.l hl
+do_push_smc_1 = $+1
+	ld.l (hl),d
+	dec.l hl
+do_push_smc_2 = $+1
+	ld.l (hl),e
 	exx
-	ei
 	jp (ix)
 	
 do_pop:
-	lea.l iy,iy+2
-	ei
+	inc.l hl
+	inc.l hl
+	exx
 	jp (ix)
 	
 ophandlerRETnomatch:
@@ -138,18 +139,14 @@ ophandlerRETnomatch:
 	ld sp,myz80stack
 ophandlerRET:
 	di
-	ex af,af'
-	xor a
-	ld.lil (mpTimerCtrl),a
 	dec sp
 	dec sp
 	exx
+	ex af,af'
 	call.il pop_and_lookup_code_cached
-	ld bc,(CALL_STACK_DEPTH+1)*256 + TMR_ENABLE
-	ld a,c
-	ld.lil (mpTimerCtrl),a
-	exx
+	ld c,CALL_STACK_DEPTH+1
 	ex af,af'
+	exx
 	ei
 	jp (ix)
 	
@@ -301,7 +298,7 @@ dispatch_int:
 intretaddr = $+1
 	ld de,0
 do_interrupt_write_smc = $+1
-	jp do_push_no_write
+	jp do_push
 	
 do_branch_slow:
 	di
