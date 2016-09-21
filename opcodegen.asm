@@ -2,6 +2,8 @@
 
 opgenroutines:
 opgenE9:
+	lea iy,iy-3
+	call _opgenRET
 	ex de,hl
 	ld (hl),$C3
 	inc hl
@@ -32,6 +34,8 @@ opgenJP:
 	jp _opgenJP
 opgenJR:
 	jp _opgenJR
+opgenRET:
+	jp _opgenRET
 
 opgen08:
 	call opgenroutinecall2byte_5cc
@@ -103,6 +107,7 @@ opgen1byte_3cc:
 	
 opgen33:
 opgen3B:
+	inc iy
 	ex de,hl
 	ld (hl),$D9	; EXX
 	inc hl
@@ -133,22 +138,11 @@ opgenswap:
 	ld a,RST_BITS
 	ld (de),a
 	inc de
-	ld a,(hl)
-	add a,$40
-	jp po,opgen1byte_3cc
+	jr opgen1byte
+	
 opgen1byte_2cc:
 	inc iy
 	jr opgen1byte
-	
-opgenRET:
-	ld a,l
-	add a,iyl
-	add a,4
-	ld (de),a
-	inc de
-	ld a,c
-	ld (de),a
-	ret
 	
 opgen3byte_low:
 	inc b
@@ -172,6 +166,8 @@ opgenJRcond:
 	jr _opgenJRcond
 opgenJPcond:
 	jr _opgenJPcond
+opgenRETcond:
+	jr _opgenRETcond
 	
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
@@ -197,17 +193,21 @@ _opgenJPcond:
 	call _opgenJP
 	jr opgen_next_skip
 	
+_opgenRETcond:
+	inc iy
+	ld a,c
+	xor $C0 ^ $28
+	ld (de),a
+	inc de
+	ld a,4
+	ld (de),a
+	inc de
+	call _opgenRET
+	jr opgen_next_skip
+	
 _opgenRETI:
-	ld a,l
-	add a,iyl
-	add a,4
+	call _opgenRET
 	ex de,hl
-	ld (hl),$ED	;LEA IY,IY+d
-	inc hl
-	ld (hl),$33
-	inc hl
-	ld (hl),a
-	inc hl
 	ld (hl),$C3 ;JP ophandlerRETI
 	inc hl
 	ld (hl),ophandlerRETI & $FF

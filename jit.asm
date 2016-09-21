@@ -781,10 +781,10 @@ opcoderecsizes:
 	.db 5,1,3,1,1,1,2,1
 	.db 0,3,3,1,1,1,2,1
 	.db 0,1,3,1,1,1,2,1
-	.db 3,3,3,1,1,1,2,1
-	.db 3,1,3,1,1,1,2,1
-	.db 3,5,3,3,3,3,4,1
-	.db 3,3,3,3,1,1,2,1
+	.db 9,3,3,1,1,1,2,1
+	.db 9,1,3,1,1,1,2,1
+	.db 9,5,3,4,3,3,4,1
+	.db 9,3,3,4,1,1,2,1
 	
 	.db 0,1,1,1,1,1,3,1
 	.db 1,0,1,1,1,1,3,1
@@ -804,14 +804,14 @@ opcoderecsizes:
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
 	
-	.db 1,2,3,0,7,2,2,5
-	.db 1,0,3,2,7,5,2,5
-	.db 1,2,3,0,7,2,2,5
-	.db 1,0,3,0,7,0,2,5
-	.db 3,2,3,0,0,2,2,5
-	.db 4,0,5,0,0,0,2,5
-	.db 3,2,3,3,0,2,2,5
-	.db 4,3,5,3,0,0,2,5
+	.db 6,2,9,0,9,2,2,7
+	.db 6,0,9,2,9,7,2,7
+	.db 6,2,9,0,9,2,2,7
+	.db 6,0,9,0,9,0,2,7
+	.db 3,2,3,0,0,2,2,7
+	.db 4,0,5,0,0,0,2,7
+	.db 3,2,3,3,0,2,2,7
+	.db 4,3,5,3,0,0,2,7
 	
 ; A table of Game Boy opcode sizes. 0 means it ends the block.
 opcodesizes:
@@ -850,6 +850,45 @@ opcodesizes:
 	.db 2,0,3,0,0,0,2,1
 	.db 2,1,1,1,0,1,2,1
 	.db 2,1,3,1,0,0,2,1
+	
+; A table of Game Boy opcode cycles. Does not apply to block-ending opcodes.
+; Conditional branches are assumed not taken.
+opcodecycles:
+	.db 1,3,2,2,1,1,2,1
+	.db 5,2,2,2,1,1,2,1
+	.db 1,3,2,2,1,1,2,1
+	.db 0,2,2,2,1,1,2,1
+	.db 2,3,2,2,1,1,2,1
+	.db 2,2,2,2,1,1,2,1
+	.db 2,3,2,2,3,3,3,1
+	.db 2,2,2,2,1,1,2,1
+	
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 2,2,2,2,2,2,1,2
+	.db 1,1,1,1,1,1,2,1
+	
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	.db 1,1,1,1,1,1,2,1
+	
+	.db 2,3,3,0,3,4,2,1
+	.db 2,0,3,2,3,3,2,1
+	.db 2,3,3,0,3,4,2,1
+	.db 2,0,3,0,3,0,2,1
+	.db 3,3,2,0,0,4,2,1
+	.db 4,0,4,0,0,0,2,1
+	.db 3,3,2,1,0,4,2,1
+	.db 3,2,4,1,0,0,2,1
 	
 ; A table indexing opcode generation routines.
 ; All entry points live in a 256-byte space.
@@ -1071,7 +1110,7 @@ opgentable:
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;C0
-	.db opgen1byte - opgenroutines
+	.db opgenRETcond - opgenroutines
 	.db opgenPOP - opgenroutines
 	.db opgenJPcond - opgenroutines
 	.db opgenJP - opgenroutines
@@ -1080,7 +1119,7 @@ opgentable:
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;C8
-	.db opgen1byte - opgenroutines
+	.db opgenRETcond - opgenroutines
 	.db opgenRET - opgenroutines
 	.db opgenJPcond - opgenroutines
 	.db opgenCB - opgenroutines
@@ -1089,7 +1128,7 @@ opgentable:
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;D0
-	.db opgen1byte - opgenroutines
+	.db opgenRETcond - opgenroutines
 	.db opgenPOP - opgenroutines
 	.db opgenJPcond - opgenroutines
 	.db opgenINVALID - opgenroutines
@@ -1098,7 +1137,7 @@ opgentable:
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;D8
-	.db opgen1byte - opgenroutines
+	.db opgenRETcond - opgenroutines
 	.db opgenRETI - opgenroutines
 	.db opgenJPcond - opgenroutines
 	.db opgenINVALID - opgenroutines
@@ -1185,7 +1224,6 @@ opgen_emit_call:
 	inc de
 	jp opgen_next_fast
 	
-
 _opgenJR:
 	inc hl
 	ld a,(base_address)
@@ -1233,6 +1271,21 @@ opgen_emit_jump:
 	inc de
 	ret
 	
+_opgenRET:
+	ld a,l
+	add a,iyl
+	add a,4
+	ex de,hl
+	ld (hl),$ED	;LEA IY,IY+d
+	inc hl
+	ld (hl),$33
+	inc hl
+	ld (hl),a
+	inc hl
+	ld (hl),$C9	;RET
+	ex de,hl
+	ret
+	
 opgenroutinecall2byte_5cc:
 	lea iy,iy+2
 opgenroutinecall2byte_3cc:
@@ -1276,7 +1329,8 @@ opgenroutinecall_1cc:
 	jp opgen_next_fast
 	
 opgenCONSTwrite:
-	ld bc,0
+	inc iy
+	inc.s bc
 	inc hl
 	ld c,(hl)
 	inc hl
@@ -1373,6 +1427,7 @@ opgenHMEMwrite:
 	jr _
 	
 opgenFFwrite:
+	inc iy
 	inc hl
 	ld c,(hl)
 	ld b,$FF
@@ -1472,7 +1527,8 @@ opgencartread:
 	jp opgen_next_swap_skip
 	
 opgenCONSTread:
-	ld bc,0
+	inc iy
+	inc.s bc
 	inc hl
 	ld c,(hl)
 	inc hl
@@ -1572,6 +1628,7 @@ opgenHMEMread:
 	jr _
 	
 opgenFFread:
+	inc iy
 	inc hl
 	ld c,(hl)
 	ld b,$FF
