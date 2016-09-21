@@ -25,11 +25,12 @@ debug_printf:
 	
 #ifdef CEMU
 	; HL points to string
+_
 	ld a,(hl)
 	inc hl
 	ld (mpCEmuDbg),a
 	or a
-	jr nz,PutString
+	jr nz,-_
 	ret
 #else
 	push hl

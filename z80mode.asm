@@ -1353,11 +1353,11 @@ _
 	
 mbc_2000:
 	push bc
-	 ld a,(mbc_z80)
-	 ld b,a
 	 ex af,af'
 	 ld c,a
 	 ex af,af'
+mbc_z80 = $+1
+	 ld b,1
 	 djnz _
 	 ld b,$1F
 	 jr mbc_2000_finish
@@ -1415,8 +1415,6 @@ memroutine_next:
 	.dl 0
 render_save_sps:
 	.dw 0
-mbc_z80:
-	.db 0
 	
 	.assume adl=1
 z80codesize = $-0
