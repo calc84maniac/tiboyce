@@ -1,3 +1,13 @@
+decode_jump_helper:
+	ret.l
+	
+decode_call_helper:
+	ret.l
+	
+decode_rst_helper:
+	ret.l
+
+#if 0
 ; When a decoded branch is determined to be a false conditional,
 ; it is patched into a conditional call to do_branch_slow.
 ; The first time the condition is true, that call is executed and
@@ -151,7 +161,7 @@ decode_loop:
 	 ld (mpTimerCtrl),a
 	pop af
 	ret.l
-
+#endif
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
 ; followed inline by the opcode byte in question (and one padding byte).
@@ -194,7 +204,7 @@ decode_loop:
 ; Outputs: IX = address of the RST_MEM instruction
 ;          DE = address of the memory access routine
 ; Destroys AF,HL
-decode_mem:
+decode_mem_helper:
 	xor a
 	ld (mpTimerCtrl),a
 	dec ix

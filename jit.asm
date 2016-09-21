@@ -3,7 +3,7 @@
 #define RST_PUSH $C7+r_push
 #define RST_POP $C7+r_pop
 #define RST_CALL $C7+r_call
-#define RST_BRANCH $C7+r_branch
+#define RST_CYCLE_CHECK $C7+r_cycle_check
 #define RST_INTERRUPT $C7+r_interrupt
 
 #define RAM_PREFIX_SIZE 5
@@ -1142,6 +1142,138 @@ opgentable:
 	.db opgenINVALID - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenINVALID - opgenroutines
+	
+	
+_opgenCALLcond:
+	ld a,c
+	xor $C4 ^ $28
+	ld (de),a
+	inc de
+	ld a,7
+	ld (de),a
+	inc de
+_opgenCALL:
+	ld c,decode_call & $FF
+	ld a,decode_call >> 8
+	inc hl
+	inc hl
+opgen_emit_call:
+	inc hl
+	ex de,hl
+	ld (hl),$CD
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),a
+	inc hl
+	ex de,hl
+	scf
+	ld a,(base_address)
+	cpl
+	adc a,l
+	ld (de),a
+	inc de
+	ld a,(base_address+1)
+	cpl
+	adc a,h
+	ld (de),a
+	inc de
+	ld a,l
+	add a,iyh
+	ld (de),a
+	inc de
+	inc de
+	jp opgen_next_fast
+	
+
+_opgenJR:
+	inc hl
+	ld a,(base_address)
+	cpl
+	add a,l
+	ld c,a
+	ld a,(base_address+1)
+	cpl
+	adc a,h
+	ld b,a
+	inc bc
+	inc bc
+	push hl
+	 ld a,(hl)
+	 rlca
+	 sbc hl,hl
+	 rrca
+	 ld l,a
+	 add hl,bc
+	 ex (sp),hl
+	pop bc
+	jr opgen_emit_jump
+
+_opgenJP:
+	inc hl
+	ld c,(hl)
+	inc hl
+	ld b,(hl)
+opgen_emit_jump:
+	ex de,hl
+	ld (hl),$CD
+	inc hl
+	ld (hl),decode_jump & $FF
+	inc hl
+	ld (hl),decode_jump >> 8
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),b
+	inc hl
+	ex de,hl
+	ld a,l
+	add a,iyl
+	ld (de),a
+	inc de
+	ret
+	
+opgenroutinecall2byte_5cc:
+	lea iy,iy+2
+opgenroutinecall2byte_3cc:
+	inc hl
+	ld a,$CD
+	ld (de),a
+	inc de
+	ex (sp),hl
+	ldi
+	ldi
+	pop hl
+	jp opgen2byte
+	
+opgenroutinecall1byte_4cc:
+	inc iy
+opgenroutinecall1byte_3cc:
+	inc iy
+	inc hl
+	ld a,$CD
+	ld (de),a
+	inc de
+	ex (sp),hl
+	ldi
+	ldi
+	pop hl
+	jp opgen1byte
+	
+opgenroutinecall_3cc:
+	inc iy
+opgenroutinecall_2cc:
+	inc iy
+opgenroutinecall_1cc:
+	inc hl
+	ld a,$CD
+	ld (de),a
+	inc de
+	ex (sp),hl
+	ldi
+	ldi
+	pop hl
+	jp opgen_next_fast
 	
 opgenCONSTwrite:
 	ld bc,0

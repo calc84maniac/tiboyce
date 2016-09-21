@@ -16,15 +16,16 @@ r_mem:
 	di
 	pop ix
 	push af
-	 jp do_mem
+	 jp decode_mem
 	
 	.block $10-$
-r_branch:
-	di
-	exx
-	pop hl
-	ld de,(hl)
-	jp do_branch
+r_cycle_check:
+	ex af,af'
+	ld a,iyh
+	inc a
+	jr z,cycle_overflow
+	ex af,af'
+	ret
 	
 	.block $18-$
 r_call:
@@ -89,6 +90,11 @@ on_interrupt:
 	ld.lil (mpIntAcknowledge),a
 CmdExitSMC = $+2
 	jp.lil 0
+	
+cycle_overflow:
+	lea iy,iy+112
+	ex af,af'
+	ret
 	
 do_call_reset_callstack:
 	ld b,CALL_STACK_DEPTH
@@ -300,22 +306,7 @@ intretaddr = $+1
 do_interrupt_write_smc = $+1
 	jp do_push
 	
-do_branch_slow:
-	di
-	exx
-	pop de
-	push bc
-	 call.il decode_branch_slow
-	pop bc
-	ld (hl),de
-	dec hl
-	ld (hl),RST_BRANCH
-	push hl
-	exx
-	ei
-	ret
-	
-do_mem:
+decode_mem:
 	 ld a,(memroutine_next)
 	 sub ixl
 	 ld a,(memroutine_next+1)
@@ -331,7 +322,7 @@ do_mem:
 _
 	 push hl
 	  push de
-	   call.il decode_mem
+	   call.il decode_mem_helper
 	   ld (ix+1),de
 	   ld (ix),$CD
 	  pop de
@@ -340,17 +331,78 @@ _
 	ei
 	jp (ix)
 	
-do_branch:
+decode_jump:
+	di
+	ex af,af'
+	ex (sp),hl
 	push bc
-	 push hl
-	  call.il decode_branch
-	 pop hl
+	 push de
+	  push hl
+	   ld de,(hl)
+	   call.il decode_jump_helper
+	  pop hl
+	  inc hl
+	  inc hl
+	  add a,(hl)	;calc cycle count
+	  inc hl
+	  ld (hl),ix
+	  dec hl
+	  ld (hl),$C3	;JP
+	  dec hl
+	  ld (hl),RST_CYCLE_CHECK
+	  dec hl
+	  ld (hl),a
+	  dec hl
+	  ld (hl),$33
+	  dec hl
+	  ld (hl),$ED	;LEA IY,IY+offset
+	 pop de
 	pop bc
-	ld (hl),ix
-	dec hl
-	ld (hl),a
-	push hl
-	exx
+	ex (sp),hl
+	ex af,af'
+	ei
+	ret
+	
+decode_call:
+	di
+	ex af,af'
+	ex (sp),hl
+	push bc
+	 push de
+	  push hl
+	   ld de,(hl)
+	   call.il decode_call_helper
+	  pop hl
+	  dec hl
+	  dec hl
+	  ld (hl),ix
+	  dec hl
+	  ld (hl),RST_CALL
+	 pop de
+	pop bc
+	ex (sp),hl
+	ex af,af'
+	ei
+	ret
+	
+decode_rst:
+	di
+	ex af,af'
+	ex (sp),hl
+	push bc
+	 push de
+	  push hl
+	   ld de,(hl)
+	   call.il decode_rst_helper
+	  pop hl
+	  dec hl
+	  dec hl
+	  ld (hl),ix
+	  dec hl
+	  ld (hl),RST_CALL
+	 pop de
+	pop bc
+	ex (sp),hl
 	ex af,af'
 	ei
 	ret
