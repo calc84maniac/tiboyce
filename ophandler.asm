@@ -5,45 +5,45 @@
 ; increment/decrement operations. In addition, if SP points to ROM,
 ; push operations are modified to disable the memory writes.
 ;
-; Inputs:  IY = 16-bit Game Boy SP
+; Inputs:  HL = 16-bit Game Boy SP
 ;          IX = Z80-mode return address
-; Outputs: IY = 24-bit literal SP
+;          BCDEHL' have been swaped
+; Outputs: HL' = 24-bit literal SP
+;          BCDEHL' have been unswapped
 ;          SMC applied to push operations
 set_gb_stack:
 	ex af,af'
-	push hl
-	 ld a,iyh
-	 add a,a
-	 jr c,_
-	 add a,a
-	 ld a,$53	;LD D,E
-	 ld hl,(rom_start)
-	 jr nc,set_gb_stack_done
-	 ld hl,(rom_bank_base)
-	 jr set_gb_stack_done
+	ex de,hl
+	ld a,d
+	add a,a
+	jr c,_
+	add a,a
+	ld a,$53	;LD D,E
+	ld hl,(rom_start)
+	jr nc,set_gb_stack_done
+	ld hl,(rom_bank_base)
+	jr set_gb_stack_done
 _
-	 cp -2*2
-	 jr nc,_
-	 ld hl,vram_base
-	 add a,$40
-	 jp po,set_gb_stack_done_ram
-	 ld hl,(cram_bank_base)
-	 jr set_gb_stack_done_ram
+	cp -2*2
+	jr nc,_
+	ld hl,vram_base
+	add a,$40
+	jp po,set_gb_stack_done_ram
+	ld hl,(cram_bank_base)
+	jr set_gb_stack_done_ram
 _
-	 ld hl,hram_base
+	ld hl,hram_base
 set_gb_stack_done_ram:
-	 ld a,$72	;LD (HL),D
+	ld a,$72	;LD (HL),D
 set_gb_stack_done:
-	 ex de,hl
-	 add iy,de
-	 ex de,hl
-	 ld (z80codebase+sp_base_address),hl
-	pop hl
+	ld (z80codebase+sp_base_address),hl
+	add hl,de
+	exx
 	ld (z80codebase+do_push_smc_1),a
+	ld (z80codebase+do_push_smc_3),a
 	or 1	;LD D,E or LD (HL),E
 	ld (z80codebase+do_push_smc_2),a
-	sub r_push_jr_end
-	ld (z80codebase+r_push_jr_end-1),a
+	ld (z80codebase+do_push_smc_4),a
 	ex af,af'
 	ei
 	jp.s (ix)
@@ -61,14 +61,12 @@ set_gb_stack_done:
 ;          BCDEHL' have been unswapped
 flush_normal:
 	ex af,af'
-	xor a
-	ld (mpTimerCtrl),a
+	push hl
 flush_mem_finish:
-	call lookup_code
+	 call lookup_code
+	pop hl
 	ld.sis sp,myz80stack-2
 	ld bc,(CALL_STACK_DEPTH+1)*256
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
 	exx
 	ex af,af'
 	ei
@@ -88,13 +86,12 @@ flush_mem_finish:
 ;          BCDEHL' have been unswapped
 flush_mem:
 	ex af,af'
-	xor a
-	ld (mpTimerCtrl),a
 	dec de
 	dec de
 	dec de
-	call.il lookup_gb_code_address
-	jr flush_mem_finish
+	push hl
+	 call.il lookup_gb_code_address
+	 jr flush_mem_finish
 	
 ; Handles an OAM transfer operation.
 ; Does not use a traditional call/return, must be jumped to directly.

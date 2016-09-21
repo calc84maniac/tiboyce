@@ -4,13 +4,10 @@
 ; It finishes rendering the current frame and updates palettes and key inputs.
 ; In addition, it handles frame synchronization and frameskip logic.
 ;
-; Inputs:  HL = mpTimerIntStatus
-; Outputs: A = (mpTimerIntStatus)
-; Destroys AF
-vblank_stuff:
-	; Reset match bit
-	ld (hl),2
-	
+; Inputs:  None
+; Outputs: None
+; Destroys AF,HL
+vblank_helper:
 	; Update VFPS counter
 vfps = $+1
 	ld a,0
@@ -219,9 +216,8 @@ _
 	jr z,_
 	set 1,(hl)
 _
-	ld hl,mpTimerIntStatus
-	ld a,(hl)
-	ret.l
+	ei
+	jp.sis vblank_handler_ret
 	
 	
 ; Acknowledges one or more interrupt sources and then waits on them.

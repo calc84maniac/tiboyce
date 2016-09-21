@@ -272,6 +272,7 @@ _
 	 inc hl
 	 ld (hl),a
 	pop hl
+	ei
 	ret.l
 	
 	
@@ -281,6 +282,7 @@ int_cached_code = $+2
 	 ld ix,0
 	 xor a
 	pop hl
+	ei
 	ret.l
 	
 	
@@ -299,6 +301,7 @@ lookup_code_cached_found:
 	 ld a,(ix+5)
 	 ld ix,(ix+3)
 	pop hl
+	ei
 	ret.l
 	
 	
@@ -377,15 +380,15 @@ lookup_code_cached_lower:
 ; If executing from ROM or target is not the same block, proceed as normal.
 ;
 ; Inputs:  HL = direct 24-bit GB address to look up
-;          A = upper byte of currently executing direct GB address
+;          C = upper byte of currently executing direct GB address
 ;          (base_address) = base address of pointer in HL
 ; Outputs: IX = recompiled code pointer
 ;          A = cycle index within block
 ; Destroys AF,BC,DE,HL
 lookup_code_link_internal:
 	ex de,hl
-	rla
-	jr nc,lookup_code_by_pointer
+	bit 7,c
+	jr z,lookup_code_by_pointer
 	; We're running from RAM, check if destination is in running block
 current_ram_block = $+2
 	ld ix,0
@@ -786,10 +789,15 @@ coherency_flush:
 	; Start at the very beginning
 	ld de,(ix+2)
 	call flush_and_recompile
-	ld.sis sp,myz80stack-2
+	exx
 	ld bc,(CALL_STACK_DEPTH+1)*256
-	push.s ix
-	jp.sis coherency_return_popped
+	exx
+	pop.s bc
+	pop.s de
+	pop.s hl
+	ld.sis sp,myz80stack-2
+	ex af,af'
+	jp.s (ix)
 	
 #ifdef 0
 print_recompiled_code:
@@ -1263,7 +1271,8 @@ opgen_emit_call:
 	ld (de),a
 	inc de
 	ld a,l
-	add a,iyh
+	inc a
+	sub iyl
 	ld (de),a
 	inc de
 	inc de
@@ -1305,16 +1314,20 @@ opgen_emit_jump:
 	inc hl
 	ld (hl),decode_jump >> 8
 	inc hl
+	; Save negative cycle count
+	ld a,e
+	sub iyl
+	ld (hl),a
+	inc hl
+	; Save upper byte of source address
+	ld a,(base_address+2)
+	ld (hl),a
+	inc hl
+	; Save target address
 	ld (hl),c
 	inc hl
 	ld (hl),b
-	inc hl
 	ex de,hl
-	; Save negative cycle count
-	ld a,l
-	sub iyl
-	ld (de),a
-	inc de
 	ret
 	
 _opgenRET:

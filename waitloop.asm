@@ -133,11 +133,13 @@ waitloop_found_data_op_1:
 	inc de
 waitloop_found_data_op:
 	; See if we reached the loop end
-	inc de
 	push hl
+	 ld hl,7
+	 add hl,de
+	 ex de,hl
 	pop.s hl
 	push.s hl
-	sbc.s hl,de	;Carry is reset
+	 sbc.s hl,de	;Carry is reset
 	pop hl
 	jr z,waitloop_identified
 	

@@ -1,10 +1,42 @@
 decode_jump_helper:
-	ret.l
+	call get_base_address
+	ld (base_address),hl
+	add hl,de
 	
-decode_call_helper:
+	push hl
+	 call lookup_code_link_internal
+	 ; A taken branch adds 1 cycle
+	 dec a
+	pop hl
+	
+	push af
+	 call identify_waitloop
+	pop af
+	
+	ei
 	ret.l
 	
 decode_rst_helper:
+	call get_base_address
+	add hl,de
+	dec hl
+	ld a,(hl)
+	sub $C7
+	ld e,a
+	ld d,0
+	jr _
+	
+decode_call_helper:
+	call get_base_address
+	add hl,de
+	dec hl
+	ld d,(hl)
+	dec hl
+	ld e,(hl)
+_
+	call lookup_code
+	; A taken call adds 3 cycles
+	sub 3
 	ret.l
 
 #if 0
@@ -205,8 +237,6 @@ decode_loop:
 ;          DE = address of the memory access routine
 ; Destroys AF,HL
 decode_mem_helper:
-	xor a
-	ld (mpTimerCtrl),a
 	dec ix
 	
 	; Get index 0-31
@@ -358,8 +388,7 @@ _
 	dec h
 	ld (hl),e
 memroutine_gen_ret:
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
+	ei
 	ret.l
 	
 memroutine_gen_flush:

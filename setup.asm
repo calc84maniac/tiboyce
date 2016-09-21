@@ -455,9 +455,6 @@ RestartFromHere:
 	ld de,$0100
 	call lookup_code
 	
-	ld bc,(CALL_STACK_DEPTH+1)*256
-	exx
-	
 _
 	ld a,(mpIntRawStatus)
 	bit 4,a
@@ -471,7 +468,9 @@ _
 	ld bc,$0013
 	ld de,$00D8
 	ld hl,$014D
-	ld iy,$FFFE
+	exx
+	ld hl,$FFFE
+	ld bc,(CALL_STACK_DEPTH+1)*256
 	jp set_gb_stack
 	
 CmdExit:

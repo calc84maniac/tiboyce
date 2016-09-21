@@ -23,40 +23,34 @@ r_cycle_check:
 	ex af,af'
 	ld a,iyh
 	inc a
-	jr z,cycle_overflow
+	jr z,cycle_overflow_for_jump
 	ex af,af'
 	ret
 	
 	.block $18-$
-r_call:
-	pop ix
-	exx
-	djnz do_call
-	jr do_call_reset_callstack
-	
-	.block $20-$
 r_push:
 	pop ix
 	exx
 	pop de
 	jr do_push
-r_push_jr_end:
 	
-	.block $28-$
+	.block $20-$
 r_pop:
 	exx
 	ld.l ix,(hl)
 	ex (sp),ix
 	jr do_pop
 	
+	.block $28-$
+r_call:
+	pop ix
+	exx
+	djnz do_call
+	jr do_call_reset_callstack
+	
 	.block $30-$
 r_interrupt:
-	di
-	ex af,af'
-	exx
-	pop hl
-	dec hl
-	jp do_interrupt
+	ret
 	
 	.block $38-$
 rst38h:
@@ -75,12 +69,6 @@ _
 	 in a,(pIntMaskedStatus & $FF)
 	 rra
 	 jr c,on_interrupt
-	 rra
-	 jp c,scanline_interrupt
-	 rra
-	 jp c,timer_interrupt
-	 bit 1,a
-	 jr nz,soft_interrupt
 	pop af
 	ei
 	ret
@@ -91,37 +79,10 @@ on_interrupt:
 CmdExitSMC = $+2
 	jp.lil 0
 	
-cycle_overflow:
-	lea iy,iy+112
-	ex af,af'
-	ret
-	
-do_call_reset_callstack:
-	ld b,CALL_STACK_DEPTH
-	ld sp,myz80stack-2
-do_call:
-	pea ix+4
-	ld de,(ix+2)
-	push de
-	ld ix,(ix)
-do_call_write_smc = $+1
-	call do_push
-	; Call stack return here!
-	ex af,af'
-	exx
-	inc b
-	pop de
-	push.l hl
-	 ld.l hl,(hl)
-	 or a
-	 sbc hl,de
-	pop.l hl
-	jr nz,ophandlerRETnomatch
-	inc.l hl
-	inc.l hl
-	exx
-	ex af,af'
-	ret
+cycle_overflow_for_jump:
+	pop ix
+	ld ix,(ix+1)
+	jr cycle_overflow
 	
 do_push:
 	dec.l hl
@@ -139,6 +100,51 @@ do_pop:
 	exx
 	jp (ix)
 	
+do_call_reset_callstack:
+	ld b,CALL_STACK_DEPTH
+	ld sp,myz80stack-2
+do_call:
+	pea ix+6
+	ld de,(ix+2)
+	dec.l hl
+do_push_smc_3 = $+1
+	ld.l (hl),d
+	dec.l hl
+do_push_smc_4 = $+1
+	ld.l (hl),e
+	exx
+	ex af,af'
+	ld a,(ix+5)
+	ld ix,(ix)
+do_call_write_smc = $+1
+	call dispatch_cycles
+	; Call stack return here!
+	ex af,af'
+	exx
+	inc b
+	pop ix
+	ld a,(ix-4)
+	cp.l (hl)
+	jr nz,ophandlerRETnomatch
+	inc.l hl
+	ld a,(ix-3)
+	sub.l (hl)
+	jr nz,ophandlerRETnomatch_dec
+	inc.l hl
+	exx
+	sub (ix-2)
+dispatch_cycles:
+	ld (_+2),a
+_
+	lea iy,iy+0
+	ld a,iyh
+	inc a
+	jr z,cycle_overflow
+	ex af,af'
+	jp (ix)
+	
+ophandlerRETnomatch_dec:
+	dec.l hl
 ophandlerRETnomatch:
 	exx
 	ex af,af'
@@ -147,164 +153,115 @@ ophandlerRET:
 	di
 	dec sp
 	dec sp
-	exx
 	ex af,af'
+ophandlerRETfinish:
+	exx
 	call.il pop_and_lookup_code_cached
-	ld c,CALL_STACK_DEPTH+1
-	ex af,af'
+	ld b,CALL_STACK_DEPTH+1
 	exx
-	ei
+	jr dispatch_cycles
+	
+ophandlerE9:
+	ex af,af'
+	ex de,hl
+	push bc
+	 push de
+	  di
+	  call.il lookup_code_cached
+	 pop de
+	pop bc
+	ex de,hl
+	jr dispatch_cycles
+	
+cycle_overflow:
+	push hl
+cycle_overflow_loop:
+	 ld hl,LY
+	 ld a,(hl)
+	 inc a
+	 cp 154
+	 jr c,_
+	 xor a
+_
+	 ld (hl),a
+	 inc hl
+	 cp (hl)
+	 call z,LYCmatch
+	 cp 144
+	 jr z,vblank_handler
+vblank_handler_ret:
+	 lea iy,iy+112
+	 ld a,iyh
+	 inc a
+	 jr z,cycle_overflow_loop
+	 ld l,h
+	 ld a,(hl)
+	 ld l,IF & $FF
+	 and (hl)
+intstate = $+1
+	 and $00
+	 jr nz,trigger_interrupt
+	pop hl
+	ex af,af'
 	jp (ix)
 	
-soft_interrupt:
-	 push.l hl
-	  xor a
-	  ld.lil (mpTimerCtrl),a
-	  ld a,(TAC)
-	  and $04
-	  or $03
-	  ld.lil (mpIntEnable),a
-	  jr test_interrupts
-	  
-scanline_interrupt:
-	 push.l hl
-	  ld.lil hl,mpTimerCtrl
-	  ld.l (hl),0
-	  ld l,mpTimerIntStatus & $FF
-	  ld.l a,(hl)
-	  bit 1,a
-	  jr z,_
-	  call.il vblank_stuff
-_
-	  rra
-	  ld a,3
-	  ld.l (hl),a
-	  dec a
-	  ld.lil (mpIntAcknowledge),a
-	  jr nc,test_interrupts
-	  
-	  ld hl,LCDC
-	  bit 7,(hl)
-	  jr z,test_interrupts
-	  inc hl
-	  bit 6,(hl)
-	  jr z,test_interrupts
-	  ld l,IF & $FF
-	  set 1,(hl)
-test_interrupts:
-	  ld a,(intstate)
-	  or a
-	  jr z,noints
-	  ld hl,IF
-	  ld a,(hl)
-	  ld l,h
-	  and (hl)
-	  jr nz,interrupt_get
-noints:
-	 pop.l hl
-	 ld a,TMR_ENABLE
-	 ld.lil (mpTimerCtrl),a
-interrupt_fast_exit:
-	pop af
-	ei
-	ret
+vblank_handler:
+	di
+	jp.lil vblank_helper
 	
-timer_interrupt:
-	 xor a
-	 ld.lil (mpTimerCtrl),a
-	 ld a,4
-	 ld.lil (mpIntAcknowledge),a
-	 push.l hl
-	  ld hl,IF
-	  set 2,(hl)
-	  jr test_interrupts
-	
-interrupt_get:
-	  ld (intmask),a
-	 pop af
-	pop hl
-	push hl
-	 push af
-	  ld a,l
-	  sub z80codesize & $FF
-	  ld a,h
-	  sbc a,z80codesize >> 8
-	  jr c,_
-	  ld a,(memroutine_next)
-	  sub l
-	  ld a,(memroutine_next+1)
-	  sbc a,h
-	  jr nc,++_
+trigger_interrupt:
+	 rrca
+	 jr nc,_
+	 res 0,(hl)
+	 ld hl,$0040
+	 jr dispatch_int
 _
-	  ; Do a software interrupt!
-	  ld a,$11
-	  ld.lil (mpIntEnable),a
-	 pop af
-	pop.l hl
-	ret
+	 rrca
+	 jr nc,_
+	 res 1,(hl)
+	 ld hl,$0048
+	 jr dispatch_int
 _
-	  push de
-	   push bc
-	    push.l ix
-	     ex de,hl
-	     call.il lookup_gb_code_address
-	     ld.lil (int_cached_return),ix
-	     ld.lil (int_cached_code),hl
-	     ld (intretaddr),de
-	     xor a
-	     ld (intstate),a
-	     ld a,(hl)
-	     ld (intsavecode),a
-	     ld (hl),RST_INTERRUPT
-	    pop.l ix
-	   pop bc
-	  pop de
-	  ld a,TMR_ENABLE
-	  ld.lil (mpTimerCtrl),a
-	 pop af
-	pop.l hl
-	ei
-	ret
-	
-do_interrupt:
-	xor a
-	ld.lil (mpTimerCtrl),a
-intsavecode = $+1
-	ld (hl),0
-intmask = $+1
-	ld a,0
-	ld hl,IF
-	rrca
-	jr nc,_
-	res 0,(hl)
-	ld de,$0040
-	jr dispatch_int
+	 rrca
+	 jr nc,_
+	 res 2,(hl)
+	 ld hl,$0050
+	 jr dispatch_int
 _
-	rrca
-	jr nc,_
-	res 1,(hl)
-	ld de,$0048
-	jr dispatch_int
-_
-	rrca
-	jr nc,_
-	res 2,(hl)
-	ld de,$0050
-	jr dispatch_int
-_
-	res 3,(hl)
-	ld de,$0058
+	 res 3,(hl)
+	 ld hl,$0058
 dispatch_int:
-	push bc
-	 call.il lookup_code_cached
-	pop bc
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
+	 push bc
+	  push de
+	   push hl
+	    lea de,ix
+	    di
+	    call.il lookup_gb_code_address
+	    ld.lil (int_cached_return),ix
+	    ld.lil (int_cached_code),hl
+	    push.l de
+	   pop de
+	   call.il lookup_code_cached
+	  pop de
+	 pop bc
+	pop hl
+	xor a
+	ld (intstate),a
 	ex af,af'
-intretaddr = $+1
-	ld de,0
-do_interrupt_write_smc = $+1
+	exx
+	pop.l de
 	jp do_push
+	
+LYCmatch:
+	ld l,LCDC - ioregs
+	bit 7,(hl)
+	ret z
+	inc hl
+	bit 6,(hl)
+	ret z
+	ld l,IF - ioregs
+	set 1,(hl)
+	ret
 	
 decode_mem:
 	 ld a,(memroutine_next)
@@ -328,27 +285,26 @@ _
 	  pop de
 	 pop hl
 	pop af
-	ei
 	jp (ix)
 	
 decode_jump:
-	di
 	ex af,af'
 	ex (sp),hl
 	push bc
 	 push de
+	  inc hl
+	  ld c,(hl)
+	  inc hl
+	  ld de,(hl)
 	  push hl
-	   ld de,(hl)
+	   di
 	   call.il decode_jump_helper
 	  pop hl
-	  inc hl
-	  inc hl
-	  add a,(hl)	;calc cycle count
-	  inc hl
 	  ld (hl),ix
 	  dec hl
 	  ld (hl),$C3	;JP
 	  dec hl
+	  add a,(hl)	;calc cycle count
 	  ld (hl),RST_CYCLE_CHECK
 	  dec hl
 	  ld (hl),a
@@ -360,21 +316,25 @@ decode_jump:
 	pop bc
 	ex (sp),hl
 	ex af,af'
-	ei
 	ret
 	
 decode_call:
-	di
 	ex af,af'
 	ex (sp),hl
 	push bc
 	 push de
 	  push hl
 	   ld de,(hl)
+	   di
 	   call.il decode_call_helper
 	  pop hl
-	  dec hl
-	  dec hl
+	  inc hl
+	  inc hl
+	  add a,(hl)
+	  inc hl
+	  ld (hl),a
+	  ld de,-5
+	  add hl,de
 	  ld (hl),ix
 	  dec hl
 	  ld (hl),RST_CALL
@@ -382,7 +342,6 @@ decode_call:
 	pop bc
 	ex (sp),hl
 	ex af,af'
-	ei
 	ret
 	
 decode_rst:
@@ -393,6 +352,7 @@ decode_rst:
 	 push de
 	  push hl
 	   ld de,(hl)
+	   di
 	   call.il decode_rst_helper
 	  pop hl
 	  dec hl
@@ -404,7 +364,6 @@ decode_rst:
 	pop bc
 	ex (sp),hl
 	ex af,af'
-	ei
 	ret
 	
 updateLY:
@@ -430,59 +389,56 @@ wait_for_interrupt_stub:
 	ret.l
 	
 flush_handler:
-	di
 	exx
 flush_address = $+1
 	ld de,0
+	di
 	jp.lil flush_normal
 	
 flush_mem_handler:
-	di
 	exx
 	pop de
+	di
 	jp.lil flush_mem
 	
 coherency_handler:
-	di
 	ex af,af'
-	xor a
-	ld.lil (mpTimerCtrl),a
-	exx
-	pop hl
-	ld de,(hl)
+	ex (sp),hl
+	ld ix,(hl)
 	inc hl
 	inc hl
+	ex (sp),hl
 	push hl
-	push bc
-	 ld.lil ix,recompile_struct
-	 add.l ix,de
-	 ld.lil (current_ram_block),ix
-	 ld.l de,(ix+2)
-	 ld.l hl,(ix+5)
-	 sbc hl,de
-	 ld b,h
-	 ld c,l
-	 inc bc
-	 ld.l hl,(ix+8)
-	 sbc hl,bc
+	 push de
+	  push bc
+	   ld.lil de,recompile_struct
+	   add.l ix,de
+	   ld.lil (current_ram_block),ix
+	   ld.l de,(ix+2)
+	   ld.l hl,(ix+5)
+	   sbc hl,de
+	   ld b,h
+	   ld c,l
+	   inc bc
+	   ld.l hl,(ix+8)
+	   sbc hl,bc
 check_coherency_loop:
-	 ld.l a,(de)
-	 inc.l de
-	 cpi
-	 jr nz,check_coherency_failed
-	 jp pe,check_coherency_loop
+	   ld.l a,(de)
+	   inc.l de
+	   cpi
+	   jr nz,check_coherency_failed
+	   jp pe,check_coherency_loop
 coherency_return:
-	pop bc
+	  pop bc
+	 pop de
+	pop hl
 coherency_return_popped:
-	exx
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
 	ex af,af'
-	ei
 	ret
 	
 check_coherency_failed:
-	 jp.lil rerecompile
+	   di
+	   jp.lil rerecompile
 	
 do_swap:
 	inc a
@@ -492,7 +448,6 @@ do_swap:
 	rrca
 	rrca
 	rrca
-	ei
 	ret
 do_swap_generic:
 	inc a
@@ -513,9 +468,9 @@ _
 _
 	ld b,a
 	ex af,af'
-	ei
 	ret
 do_swap_hl:
+	lea iy,iy-2	;Consume 2 extra cycles
 	ex af,af'
 	push af
 	 call mem_read_any
@@ -525,7 +480,6 @@ do_swap_hl:
 	 rrca
 	 call mem_write_any
 	pop af
-	ei
 	ret
 	
 do_bits:
@@ -535,6 +489,7 @@ do_bits:
 	add a,$38-1	;Use L instead of (HL)
 	cp $C0
 	jp pe,do_bits_readonly
+	lea iy,iy-2	;Consume 2 extra cycles
 	ld (do_bits_smc),a
 	call mem_read_any
 	; Use L because we have to affect flags, bleh
@@ -549,9 +504,9 @@ do_bits_smc = $+1
 	 call mem_write_any
 	pop ix
 	ld a,ixh
-	ei
 	ret
 do_bits_readonly:
+	dec iy	;Consume 1 extra cycle
 	ld (do_bits_readonly_smc),a
 	call mem_read_any
 	; Use L because we have to affect flags, bleh
@@ -561,7 +516,6 @@ do_bits_readonly:
 do_bits_readonly_smc = $+1
 	 bit 0,l
 	pop hl
-	ei
 	ret
 	
 ophandler08:
@@ -569,8 +523,10 @@ ophandler08:
 	pea ix+2
 	push af
 	 push de
+	  exx
 	  push hl
-	   lea hl,iy
+	   exx
+	   ex (sp),hl
 	   ld de,(sp_base_address)
 	   or a
 	   sbc hl,de
@@ -584,12 +540,12 @@ ophandler08:
 	  pop hl
 	 pop de
 	pop af
-	ei
 	ret
 	
 ophandler31:
 	pop ix
-	ld iy,(ix)
+	exx
+	ld hl,(ix)
 	lea ix,ix+2
 	di
 	jp.lil set_gb_stack
@@ -600,12 +556,7 @@ ophandler34:
 	ld ixl,a
 	ex af,af'
 	inc ixl
-	push af
-	 ld a,ixl
-	 call mem_write_any
-	pop af
-	ei
-	ret
+	jr _
 	
 ophandler35:
 	ex af,af'
@@ -613,11 +564,11 @@ ophandler35:
 	ld ixl,a
 	ex af,af'
 	dec ixl
+_
 	push af
 	 ld a,ixl
 	 call mem_write_any
 	pop af
-	ei
 	ret
 	
 ophandler36:
@@ -627,120 +578,74 @@ ophandler36:
 	 ld a,(ix)
 	 call mem_write_any
 	pop af
-	ei
 	ret
 	
 ophandler39:
+	ex af,af'
 	push de
-	 ex af,af'
-	 scf
-	 ld a,(sp_base_address)
-	 cpl
-	 adc a,iyl
-	 ld e,a
-	 ld a,(sp_base_address+1)
-	 cpl
-	 adc a,iyh
-	 ld d,a
-	 ex af,af'
+	 exx
+	 push hl
+	  exx
+	  ex (sp),hl
+	  ld de,(sp_base_address)
+	  or a
+	  sbc hl,de
+	  ex de,hl
+	 pop hl
 	 add hl,de
 	pop de
-	ei
+	ex af,af'
 	ret
 	
 handle_waitloop_stat:
-	di
-	ex af,af'
-	exx
-	call updateLY
-	cp 144
-	jr nc,_
-	ld a,h
-	sub SCANDELAY * 204 / 456 - 1
-	jr c,_
-	ld h,a
-	sub (SCANDELAY * (204 + 172) / 456) - (SCANDELAY * 204 / 456)
-	jr c,_
-	ld h,a
-	jr _
+	jr handle_waitloop_stat
 	
 handle_waitloop_variable:
 handle_waitloop_ly:
-	di
 	ex af,af'
-	exx
-	call updateLY
+	pop ix
+	ld ix,(ix)
 _
-	call.il skip_cycles
-	pop hl
-	ld ix,(hl)
-	exx
-	ex af,af'
-	ei
-	jp (ix)
+	ld iy,-1
+	jp cycle_overflow
 	
 ophandler76:
 	ex af,af'
-	exx
-haltloop:
-	di
-	ld hl,IF
-	ld a,(hl)
-	ld l,h
-	and (hl)
+	push hl
+	 ld hl,IF
+	 ld a,(hl)
+	 ld l,h
+	 and (hl)
+	pop hl
 	jr nz,haltdone
-	call updateLY
-	call.il skip_cycles
-	ei
-	jr haltloop
+	pop ix
+	lea ix,ix-3
+	jr -_
 haltdone:
-	exx
 	ex af,af'
-	ei
 	ret
 	
 ophandlerE2:
 	ld ixh,$FF
 	ld ixl,c
-	call mem_write_ports_always
-	ei
-	ret
+	jp mem_write_ports_always
 	
 ophandlerE8:
 	ex af,af'
-	ex (sp),hl
+	exx
+	ex.l de,hl
+	pop hl
 	ld a,(hl)
 	inc hl
-	ex (sp),hl
-	push de
-	 ld e,a
-	 rla
-	 sbc a,a
-	 ld d,a
-	 add iy,de
-	pop de
-	ex af,af'
-	ei
-	ret
-	
-ophandlerE9:
-	di
-	ex af,af'
-	xor a
-	ld.lil (mpTimerCtrl),a
 	push hl
-	 push bc
-	  push de
-	   ex de,hl
-	   call.il lookup_code_cached
-	  pop de
-	 pop bc
-	pop hl
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
+	rlca
+	sbc.l hl,hl
+	rrca
+	ld l,a
+	add.l hl,de
+	exx
 	ex af,af'
-	ei
-	jp (ix)
+	ret
 	
 ophandlerF2:
 	ld ixh,$FF
@@ -748,7 +653,6 @@ ophandlerF2:
 	ex af,af'
 	call mem_read_ports_always
 	ld a,ixl
-	ei
 	ret
 	
 ophandlerF3:
@@ -756,7 +660,6 @@ ophandlerF3:
 	xor a
 	ld (intstate),a
 	ex af,af'
-	ei
 	ret
 	
 ophandlerF8:
@@ -765,20 +668,18 @@ ophandlerF8:
 	ld a,(hl)
 	inc hl
 	push hl
+	exx
+	push hl
+	 exx
+	pop hl
 	push de
+	 ld de,(sp_base_address)
+	 or a
+	 sbc hl,de
 	 ld e,a
 	 rla
 	 sbc a,a
 	 ld d,a
-	 scf
-	 ld a,(sp_base_address)
-	 cpl
-	 adc a,iyl
-	 ld l,a
-	 ld a,(sp_base_address+1)
-	 cpl
-	 adc a,iyh
-	 ld h,a
 	 add hl,de
 	pop de
 	ex af,af'
@@ -788,42 +689,24 @@ ophandlerF8:
 ophandlerF9:
 	pop ix
 	push hl
-	pop iy
+	 exx
+	pop hl
 	di
 	jp.lil set_gb_stack
 	
 ophandlerEI:
 	ex af,af'
-	ld a,1
+	ld a,$1F
 	ld (intstate),a
-	call checkIntPostEnable
-	ei
-	ret
-	
-ophandlerEI_delayed:
-	di
-	ex af,af'
-	ld a,1
-	ld (intstate),a
+	pop ix
 	jp checkIntPostEnable
 	
 ophandlerRETI:
-	di
 	ex af,af'
-	xor a
-	ld.lil (mpTimerCtrl),a
-	inc a
+	ld a,$1F
 	ld (intstate),a
-	exx
-	push bc
-	 call.il pop_and_lookup_code_cached
-	pop bc
-	exx
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
-	call checkIntPostEnable
-	ei
-	jp (ix)
+	di
+	jp ophandlerRETfinish
 	
 ophandlerINVALID:
 	ei
@@ -833,173 +716,131 @@ write_vram_handler:
 	pop ix
 	pea ix+2
 	ld ix,(ix)
-	call mem_write_vram_always
-	ei
-	ret
+	jp mem_write_vram_always
 	
 write_cart_handler:
 	pop ix
 	pea ix+2
 	ld ix,(ix)
-	call mem_write_cart_always
-	ei
-	ret
+	jp mem_write_cart_always
 	
 write_cram_bank_handler:
+	pop ix
+	pea ix+2
 	exx
-	pop hl
-	ld de,(hl)
-	inc hl
-	inc hl
-	push hl
-	ld.lil hl,(cram_bank_base)
+	ld de,(ix)
+	ld.lil ix,(cram_bank_base)
 	ex af,af'
-	add.l hl,de
+	add.l ix,de
 	ex af,af'
-	ld.l (hl),a
+	ld.l (ix),a
 	exx
-	ei
 	ret
 	
 read_rom_bank_handler:
+	pop ix
+	pea ix+2
 	exx
-	pop hl
-	ld de,(hl)
-	inc hl
-	inc hl
-	push hl
-	ld.lil hl,(rom_bank_base)
+	ld de,(ix)
+	ld.lil ix,(rom_bank_base)
 	ex af,af'
-	add.l hl,de
+	add.l ix,de
 	ex af,af'
-	ld.l a,(hl)
+	ld.l a,(ix)
 	exx
-	ei
 	ret
 	
 read_cram_bank_handler:
+	pop ix
+	pea ix+2
 	exx
-	pop hl
-	ld de,(hl)
-	inc hl
-	inc hl
-	push hl
-	ld.lil hl,(cram_bank_base)
+	ld de,(ix)
+	ld.lil ix,(cram_bank_base)
 	ex af,af'
-	add.l hl,de
+	add.l ix,de
 	ex af,af'
-	ld.l a,(hl)
+	ld.l a,(ix)
 	exx
-	ei
 	ret
 	
 readP1handler:
 	ex af,af'
 	call readP1
 	ld a,ixl
-	ei
 	ret
 	
 readDIVhandler:
 	ex af,af'
 	call readDIV
 	ld a,ixl
-	ei
 	ret
 	
 readTIMAhandler:
 	ex af,af'
 	call readTIMA
 	ld a,ixl
-	ei
 	ret
 	
 readLYhandler:
 	ex af,af'
 	call readLY
 	ld a,ixl
-	ei
 	ret
 	
 readSTAThandler:
 	ex af,af'
 	call readSTAT
 	ld a,ixl
-	ei
 	ret
 	
 writeTIMAhandler:
 	ex af,af'
 	xor a
-	call write_timer
-	ei
-	ret
+	jp write_timer
 	
 writeTMAhandler:
 	ex af,af'
 	ld a,1
-	call write_timer
-	ei
-	ret
+	jp write_timer
 	
 writeTAChandler:
 	ex af,af'
-	call writeTAC
-	ei
-	ret
+	jp writeTAC
 	
 writeLCDChandler:
 	ex af,af'
-	call writeLCDC
-	ei
-	ret
+	jp writeLCDC
 	
 writeSCYhandler:
 	ld ix,SCY
-	call write_scroll_swap
-	ei
-	ret
+	jp write_scroll_swap
 	
 writeSCXhandler:
 	ld ix,SCX
-	call write_scroll_swap
-	ei
-	ret
+	jp write_scroll_swap
 	
 writeLYChandler:
-	call writeLYCswap
-	ei
-	ret
+	jp writeLYCswap
 	
 writeWYhandler:
 	ld ix,WY
-	call write_scroll_swap
-	ei
-	ret
+	jp write_scroll_swap
 	
 writeWXhandler:
 	ld ix,WX
-	call write_scroll_swap
-	ei
-	ret
+	jp write_scroll_swap
 	
 writeDMAhandler:
 	ex af,af'
-	call writeDMA
-	ei
-	ret
+	jp writeDMA
 	
 writeIFhandler:
 	ld (IF),a
-	call writeINTswap
-	ei
-	ret
+	jp writeINTswap
 	
 writeIEhandler:
 	ld (IE),a
-	call writeINTswap
-	ei
-	ret
+	jp writeINTswap
 	
 readP1:
 	ld a,(P1)
@@ -1332,6 +1173,7 @@ writeINT:
 	ld (ix),a
 writeINTswap:
 	ex af,af'
+	pop ix
 	ld a,(intstate)
 	or a
 	jr z,_
@@ -1343,13 +1185,10 @@ checkIntPostEnable:
 	 and (hl)
 	pop hl
 	jr z,_
-	; Do a software interrupt!
-	di
-	ld a,$11
-	ld.lil (mpIntEnable),a
+	; TODO
 _
 	ex af,af'
-	ret
+	jp (ix)
 	
 mbc_4000:
 	push bc
@@ -1451,9 +1290,6 @@ mbc_2000_denied:
 	pop bc
 	ex af,af'
 	ret
-	
-intstate:
-	.db 0
 	
 keys:
 	.dw $FFFF
