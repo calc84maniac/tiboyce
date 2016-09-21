@@ -2,7 +2,8 @@
 
 opgenroutines:
 opgenE9:
-	lea iy,iy-3
+	; JP (HL) takes 3 fewer cycles than RET
+	lea iy,iy+3
 	call _opgenRET
 	ex de,hl
 	ld (hl),$C3
@@ -86,7 +87,7 @@ opgenMEM:
 	inc de
 	ldi
 	inc de
-	inc iy
+	dec iy
 	jr opgen_next_fast
 	
 opgenPUSH:
@@ -94,7 +95,7 @@ opgenPUSH:
 	ld a,RST_PUSH
 	ld (de),a
 	inc de
-	lea iy,iy+3
+	lea iy,iy-3
 	jr opgen_next_fast
 	
 opgenPOP:
@@ -102,12 +103,12 @@ opgenPOP:
 	ld (de),a
 	inc de
 opgen1byte_3cc:
-	lea iy,iy+2
+	lea iy,iy-2
 	jr opgen1byte
 	
 opgen33:
 opgen3B:
-	inc iy
+	dec iy
 	ex de,hl
 	ld (hl),$D9	; EXX
 	inc hl
@@ -141,7 +142,7 @@ opgenswap:
 	jr opgen1byte
 	
 opgen1byte_2cc:
-	inc iy
+	dec iy
 	jr opgen1byte
 	
 opgen3byte_low:
@@ -194,7 +195,7 @@ _opgenJPcond:
 	jr opgen_next_skip
 	
 _opgenRETcond:
-	inc iy
+	dec iy
 	ld a,c
 	xor $C0 ^ $28
 	ld (de),a

@@ -217,95 +217,103 @@ lookup_gb_done:
 	
 	; If a cached code lookup misses, resolve it and insert into the cache
 lookup_code_cached_miss:
-	push de
-	 push bc
+	 push de
+	  push bc
 #ifdef DEBUG
-	  push de
-	   ld hl,(base_address)
-	   ex de,hl
-	   xor a
-	   sbc hl,de
-	   push hl
-	    ld h,a
-	    ld a,(z80codebase+curr_rom_bank)
-	    ld l,a
+	   push de
+	    ld hl,(base_address)
+	    ex de,hl
+	    xor a
+	    sbc hl,de
 	    push hl
-	     APRINTF(CacheMissMessage)
+	     ld h,a
+	     ld a,(z80codebase+curr_rom_bank)
+	     ld l,a
+	     push hl
+	      APRINTF(CacheMissMessage)
+	     pop hl
 	    pop hl
-	   pop hl
-	  pop de
+	   pop de
 #endif
-	  call lookup_code_by_pointer
-	  ld hl,(recompile_struct_end)
-	  ld de,(recompile_cache)
-	  ld bc,8
-	  add hl,bc
+	   call lookup_code_by_pointer
+	   ld hl,(recompile_struct_end)
+	   ld de,(recompile_cache)
+	   ld bc,3+6
+	   add hl,bc
+	   sbc hl,de
+	   jr c,_
+	   ld de,recompile_cache_end
+_
+	  pop hl
+	  or a
 	  sbc hl,de
-	  jr c,_
-	  ld de,recompile_cache_end
+	  jr nc,_
+	  cp a	;Set Z
 _
-	 pop hl
-	 or a
-	 sbc hl,de
-	 jr nc,_
-	 xor a	;Set Z
+	  ld b,h
+	  ld c,l
+	  ld hl,-6
+	  add hl,de
+	  ld (recompile_cache),hl
+	  jr z,_
+	  ex de,hl
+	  ldir
+	  ex de,hl
 _
-	 ld b,h
-	 ld c,l
-	 ld hl,-5
-	 add hl,de
-	 ld (recompile_cache),hl
-	 jr z,_
-	 ex de,hl
-	 ldir
-	 ex de,hl
-_
-	pop de
-	ld (hl),de
-	inc hl
-	inc hl
-	inc hl
-	lea de,ix
-	ld (hl),e
-	inc hl
-	ld (hl),d
+	 pop de
+	 ld (hl),de
+	 inc hl
+	 inc hl
+	 inc hl
+	 lea de,ix
+	 ld (hl),e
+	 inc hl
+	 ld (hl),d
+	 inc hl
+	 ld (hl),a
+	pop hl
 	ret.l
 	
 	
-	; Fast return to the last interrupted code address
+	 ; Fast return to the last interrupted code address
 int_cache_hit:
 int_cached_code = $+2
-	ld ix,0
+	 ld ix,0
+	 xor a
+	pop hl
 	ret.l
 	
 	
-	; When the binary search finishes, see if we found it
+	 ; When the binary search finishes, see if we found it
 lookup_code_cached_found:
-	; Past the end of the array means not found
-	ld a,b
-	sub recompile_cache_end>>8 & $FF
-	or c
-	jr z,lookup_code_cached_miss
-	; Does the address match?
-	ld hl,(ix)
-	sbc hl,de
-	jr nz,lookup_code_cached_miss
-	; We found it!
-	ld ix,(ix+3)
+	 ; Past the end of the array means not found
+	 ld a,b
+	 sub recompile_cache_end>>8 & $FF
+	 or c
+	 jr z,lookup_code_cached_miss
+	 ; Does the address match?
+	 ld hl,(ix)
+	 sbc hl,de
+	 jr nz,lookup_code_cached_miss
+	 ; We found it!
+	 ld a,(ix+5)
+	 ld ix,(ix+3)
+	pop hl
 	ret.l
 	
 	
 ; Pops an address from the Game Boy stack and does a cached lookup.
 ;
-; Inputs:  IY = direct Game Boy stack pointer
+; Inputs:  HL = direct Game Boy stack pointer
 ; Outputs: IX = recompiled code address
-;          IY = updated stack pointer
+;          HL = updated stack pointer
 ; Destroys AF,BC,DE,HL
 pop_and_lookup_code_cached:
-	ld de,(iy)
-	inc de
-	dec.s de
-	lea iy,iy+2
+	inc.s de
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	inc hl
 	
 ; Looks up a Game Boy address from the cached code mappings, and
 ; adds it to the cache upon miss.
@@ -318,44 +326,49 @@ pop_and_lookup_code_cached:
 ;
 ; Inputs:  DE = Game Boy address
 ; Outputs: IX = recompiled code address
-; Destroys AF,BC,DE,HL
+;          A = cycle index within block
+; Destroys AF,BC,DE
 lookup_code_cached:
-	; Get the direct address in DE
-	call get_base_address
-	ld (base_address),hl
-	add hl,de
-	ex de,hl
+	push hl
+	
+	 ; Get the direct address in DE
+	 call get_base_address
+	 ld (base_address),hl
+	 add hl,de
+	 ex de,hl
 	
 	; Quickly check against the last interrupt return address
 int_cached_return = $+1
-	ld hl,0
-	sbc hl,de
-	jr z,int_cache_hit
-	
-	; Binary search the cache for the pointer
-	ld bc,(recompile_cache)
-	ld ix,recompile_cache_end
-lookup_code_cached_loop:
-	lea hl,ix
-	or a
-	sbc hl,bc
-	jr z,lookup_code_cached_found
-	srl h
-	rr l
-	jr nc,_
-	dec hl
-	dec hl
-_
-	add hl,bc
-	push hl
-	 ld hl,(hl)
+	 ld hl,0
 	 sbc hl,de
-	 jr nc,lookup_code_cached_lower
-	 ex (sp),ix
-	 lea bc,ix+5
+	 jr z,int_cache_hit
+	
+	 ; Binary search the cache for the pointer
+	 ld bc,(recompile_cache)
+	 ld ix,recompile_cache_end
+lookup_code_cached_loop:
+	 lea hl,ix
+	 or a
+	 sbc hl,bc
+	 jr z,lookup_code_cached_found
+	 srl h
+	 rr l
+	 bit 0,l
+	 jr z,_
+	 dec hl
+	 dec hl
+	 dec hl
+_
+	 add hl,bc
+	 push hl
+	  ld hl,(hl)
+	  sbc hl,de
+	  jr nc,lookup_code_cached_lower
+	  ex (sp),ix
+	  lea bc,ix+5
 lookup_code_cached_lower:
-	pop ix
-	jr lookup_code_cached_loop
+	 pop ix
+	 jr lookup_code_cached_loop
 	
 	
 ; Looks up a recompiled code pointer from a direct GB address,
@@ -367,6 +380,7 @@ lookup_code_cached_lower:
 ;          A = upper byte of currently executing direct GB address
 ;          (base_address) = base address of pointer in HL
 ; Outputs: IX = recompiled code pointer
+;          A = cycle index within block
 ; Destroys AF,BC,DE,HL
 lookup_code_link_internal:
 	ex de,hl
@@ -376,7 +390,7 @@ lookup_code_link_internal:
 current_ram_block = $+2
 	ld ix,0
 	ld hl,(ix+5)
-	or a
+	xor a
 	sbc hl,de
 	jr c,lookup_code_by_pointer
 	ld hl,(ix+2)
@@ -385,29 +399,36 @@ current_ram_block = $+2
 	lea ix,ix+RAM_PREFIX_SIZE
 	ret z
 	jr nc,lookup_code_by_pointer
-	ld bc,opcodesizes
+	push iy
+	 ld bc,opcodesizes
 foundloop_internal:
-	add hl,de
-	ld c,(hl)
-	ld a,(bc)
-	or a
-	jr z,lookup_code_by_pointer
-	add a,l
-	ld l,a
-	jr nc,_
-	inc h
+	 ld iyl,a
+	 add hl,de
+	 ld c,(hl)
+	 ld a,(bc)
+	 or a
+	 jr z,lookup_code_by_pointer_pushed
+	 add a,l
+	 ld l,a
+	 jr nc,_
+	 inc h
 _
-	dec b
-	ld a,(bc)
-	inc b
-	add a,ixl
-	ld ixl,a
-	jr nc,_
-	inc ixh
-	or a
+	 dec b
+	 ld a,(bc)
+	 inc b
+	 add a,ixl
+	 jr nc,_
+	 ld ixl,$FF
+	 inc ix
 _
-	sbc hl,de
-	jr nz,foundloop_internal
+	 ld ixl,a
+	 inc b
+	 ld a,(bc)
+	 dec b
+	 add a,iyl
+	 sbc hl,de
+	 jr nz,foundloop_internal
+	pop iy
 	ret
 	
 	
@@ -427,146 +448,165 @@ lookup_code:
 ; Inputs:  DE = direct 24-bit GB address to look up
 ;          (base_address) = base address of pointer in DE
 ; Outputs: IX = recompiled code pointer
+;          A = cycle index within block
 ; Destroys AF,BC,DE,HL
 lookup_code_by_pointer:
+	push iy
+lookup_code_by_pointer_pushed:
 #ifdef 0
-	push de
-	 ld hl,(base_address)
-	 ex de,hl
-	 or a
-	 sbc hl,de
-	 push hl
-	  sbc hl,hl
-	  ld a,(z80codebase+curr_rom_bank)
-	  ld l,a
+	 push de
+	  ld hl,(base_address)
+	  ex de,hl
+	  or a
+	  sbc hl,de
 	  push hl
-	   APRINTF(LookupMessage)
+	   sbc hl,hl
+	   ld a,(z80codebase+curr_rom_bank)
+	   ld l,a
+	   push hl
+	    APRINTF(LookupMessage)
+	   pop hl
 	  pop hl
-	 pop hl
-	pop de
+	 pop de
 #endif
-	ld hl,(recompile_struct_end)
-	push hl
-	 ld bc,(hl)
-	 ld hl,(z80codebase+memroutine_next)
-	 or a
-	 sbc hl,bc
-	 jr c,flush_and_recompile_pop
-	 ld bc,opcodesizes
+	 ld hl,(recompile_struct_end)
+	 push hl
+	  ld bc,(hl)
+	  ld hl,(z80codebase+memroutine_next)
+	  xor a
+	  sbc hl,bc
+	  jr c,flush_and_recompile_pop
+	  ld bc,opcodesizes
 lookuploop_restore:
-	pop ix
+	  ld iyl,a	;IYL = 0
+	 pop ix
 lookuploop:
-	ld a,ixh
-	or ixl
-	jr z,recompile
-	lea ix,ix-8
-	ld hl,(ix+5)
-	sbc hl,de
-	jr c,lookuploop
-	ld hl,(ix+2)
-	sbc hl,de
-	jr z,lookupfoundstart
-	jr nc,lookuploop
-	; Don't allow jumping to the middle of a RAM block
-	bit 7,(ix+4)
-	jr nz,lookuploop
-	push ix
-	 ld ix,(ix)
-foundloop:
-	 add hl,de
-	 ld c,(hl)
-	 ld a,(bc)
-	 or a
-	 jr z,lookuploop_restore
-	 add a,l
-	 ld l,a
-	 jr nc,_
-	 inc h
-_
-	 dec b
-	 ld a,(bc)
-	 inc b
-	 add a,ixl
-	 ld ixl,a
-	 jr nc,_
-	 inc ixh
-	 or a
-_
+	 ld a,ixh
+	 or ixl
+	 jr z,recompile
+	 lea ix,ix-8
+	 ld hl,(ix+5)
 	 sbc hl,de
-	 jr nz,foundloop
-	 
-	pop hl
+	 jr c,lookuploop
+	 ld hl,(ix+2)
+	 sbc hl,de
+	 jr z,lookupfoundstart
+	 jr nc,lookuploop
+	 ; Don't allow jumping to the middle of a RAM block
+	 bit 7,(ix+4)
+	 jr nz,lookuploop
+	 push ix
+	  ld ix,(ix)
+foundloop:
+	  add hl,de
+	  ld c,(hl)
+	  ld a,(bc)
+	  or a
+	  jr z,lookuploop_restore
+	  add a,l
+	  ld l,a
+	  jr nc,_
+	  inc h
+_
+	  dec b
+	  ld a,(bc)
+	  inc b
+	  add a,ixl
+	  jr nc,_
+	  ld ixl,$FF
+	  inc ix
+_
+	  ld ixl,a
+	  inc b
+	  ld a,(bc)
+	  dec b
+	  add a,iyl
+	  ld iyl,a
+	  sbc hl,de
+	  jr nz,foundloop
+	 pop hl
+	pop iy
 	ret
 	
 lookupfoundstart:
-	ld ix,(ix)
+	 ld ix,(ix)
+	pop iy
+	xor a
 	ret
 	
 flush_and_recompile_pop:
-	pop hl
+	 pop hl
+	pop iy
 flush_and_recompile:
-	push de
-	 call flush_code
-	pop de
+	push iy
+	 push de
+	  call flush_code
+	 pop de
 	
 	
 ; Recompiles a new code block starting from a direct GB address.
 ;
 ; Inputs:  DE = direct 24-bit GB address to recompile
+;          A = 0
+;          IY saved on stack
 ;          (base_address) = base address of pointer in DE
 ; Outputs: IX = recompiled code pointer
+;          A = 0 (cycle count at start)
 ; Destroys AF,BC,DE,HL
 recompile:
-	ld ix,(recompile_struct_end)
-	lea hl,ix+8
-	ld (recompile_struct_end),hl
-	push hl
-	 ; Check for collision with cache
-	 ld hl,(recompile_cache)
-	 lea bc,ix+16
-	 or a
-	 sbc hl,bc
-	 call c,flush_cache
-	 ld hl,(ix)
-	 ld (ix+2),de
-	 bit 7,(ix+4)
-	 jr nz,recompile_ram
+	 ; Cycle count while recompiling is l-iyl. Start at zero.
+	 ld iyl,e
+	 ld ix,(recompile_struct_end)
+	 lea hl,ix+8
+	 ld (recompile_struct_end),hl
+	 push hl
+	  ; Check for collision with cache
+	  ld hl,(recompile_cache)
+	  lea bc,ix+16
+	  or a
+	  sbc hl,bc
+	  call c,flush_cache
+	  ld hl,(ix)
+	  ld (ix+2),de
+	  bit 7,(ix+4)
+	  jr nz,recompile_ram
 	
 #ifdef DEBUG
-	 push hl
-	  inc hl
-	  dec.s hl
 	  push hl
-	   push de
-	    ld hl,(base_address)
-	    ex de,hl
-	    or a
-	    sbc hl,de
-	    push hl
-	     or a,a
-	     sbc hl,hl
-	     ld a,(z80codebase+curr_rom_bank)
-	     ld l,a
+	   inc hl
+	   dec.s hl
+	   push hl
+	    push de
+	     ld hl,(base_address)
+	     ex de,hl
+	     or a
+	     sbc hl,de
 	     push hl
-	      APRINTF(RecompileMessage)
+	      or a
+	      sbc hl,hl
+	      ld a,(z80codebase+curr_rom_bank)
+	      ld l,a
+	      push hl
+	       APRINTF(RecompileMessage)
+	      pop hl
 	     pop hl
-	    pop hl
-	   pop de
+	    pop de
+	   pop hl
 	  pop hl
-	 pop hl
 #endif
 	 
-	 ex de,hl
-	 ld ix,opgenroutines
-	 ld bc,opgentable
-	 call opgen_next_fast
+	  ex de,hl
+	  ld ix,opgenroutines
+	  ld bc,opgentable
+	  call opgen_next_fast
 	
-	pop ix
-	inc de
-	ld (ix-3),hl
-	or a
+	 pop ix
+	 inc de
+	 ld (ix-3),hl
+	 xor a
 	
 recompile_end_common:
+	pop iy
 	ld (ix),de
 	ld hl,(z80codebase+memroutine_next)
 	sbc hl,de
@@ -586,63 +626,63 @@ flush_cache:
 	
 recompile_ram:
 #ifdef DEBUG
-	 push ix
-	  push hl
-	   inc hl
-	   dec.s hl
+	  push ix
 	   push hl
-	    push de
-	     ld hl,(base_address)
-	     ex de,hl
-	     or a
-	     sbc hl,de
-	     push hl
-	      APRINTF(RecompileRamMessage)
-	     pop hl
-	    pop de
+	    inc hl
+	    dec.s hl
+	    push hl
+	     push de
+	      ld hl,(base_address)
+	      ex de,hl
+	      or a
+	      sbc hl,de
+	      push hl
+	       APRINTF(RecompileRamMessage)
+	      pop hl
+	     pop de
+	    pop hl
 	   pop hl
-	  pop hl
-	 pop ix
+	  pop ix
 #endif
 	 
-	 ld (hl),$CD
-	 inc hl
-	 ld (hl),coherency_handler & $FF
-	 inc hl
-	 ld (hl),coherency_handler >> 8
-	 inc hl
-	 ld (hl),ix
-	 inc hl
-	 inc hl
+	  ld (hl),$CD
+	  inc hl
+	  ld (hl),coherency_handler & $FF
+	  inc hl
+	  ld (hl),coherency_handler >> 8
+	  inc hl
+	  ld (hl),ix
+	  inc hl
+	  inc hl
 	 
-	 ex de,hl
-	 ld ix,opgenroutines
-	 ld bc,opgentable
-	 call opgen_next_fast
-	pop ix
-	ld (ix-3),hl
+	  ex de,hl
+	  ld ix,opgenroutines
+	  ld bc,opgentable
+	  call opgen_next_fast
+	 pop ix
+	 ld (ix-3),hl
 	
-	; Copy the GB opcodes for coherency
-	ld bc,(ix-6)
-	or a
-	sbc hl,bc
-	push hl
-	pop bc
-	inc bc
+	 ; Copy the GB opcodes for coherency
+	 ld bc,(ix-6)
+	 xor a
+	 sbc hl,bc
+	 push hl
+	 pop bc
+	 inc bc
 	
-	; Add in padding to avoid flushes (must be at least 1)
+	 ; Add in padding to avoid flushes (must be at least 1)
 ram_block_padding = $+1
-	ld hl,1
-	add hl,de
-	ex de,hl
+	 ld hl,1
+	 add hl,de
+	 ex de,hl
 	
-	ld hl,(ix-3)
-	ldir
+	 ld hl,(ix-3)
+	 ldir
 	
 #ifdef DEBUG
-	jp recompile_end_common
+	 jp recompile_end_common
 #else
-	jr recompile_end_common
+	 jr recompile_end_common
 #endif
 	
 ; Recompiles an existing RAM code block in-place.
@@ -668,6 +708,7 @@ rerecompile:
 	
 	ld hl,(ix+2)
 	ld de,vram_base
+	xor a
 	sbc hl,de
 	ld bc,$FE00
 	sbc hl,bc
@@ -682,18 +723,22 @@ rerecompile:
 	ld de,(cram_bank_base)
 rerecompile_found_base:
 	ld (base_address),de
-	ld hl,(ix)
-	inc.s hl
-	ld de,z80codebase + RAM_PREFIX_SIZE - 1
-	add hl,de
-	ex de,hl
-	ld hl,(ix+2)
 	
-	push ix
-	 ld ix,opgenroutines
-	 ld bc,opgentable
-	 call opgen_next_fast
-	pop ix
+	push iy
+	 ; Set cycle count to 0
+	 ld iyl,e
+	 ld hl,(ix)
+	 inc.s hl
+	 ld de,z80codebase + RAM_PREFIX_SIZE - 1
+	 add hl,de
+	 ex de,hl
+	 ld hl,(ix+2)
+	 push ix
+	  ld ix,opgenroutines
+	  ld bc,opgentable
+	  call opgen_next_fast
+	 pop ix
+	pop iy
 	ld (ix+5),hl
 	
 	; Get the size of the GB opcodes
@@ -1265,16 +1310,18 @@ opgen_emit_jump:
 	ld (hl),b
 	inc hl
 	ex de,hl
+	; Save negative cycle count
 	ld a,l
-	add a,iyl
+	sub iyl
 	ld (de),a
 	inc de
 	ret
 	
 _opgenRET:
+	; Use negative cycle count
 	ld a,l
-	add a,iyl
-	add a,4
+	sub iyl
+	sub 4
 	ex de,hl
 	ld (hl),$ED	;LEA IY,IY+d
 	inc hl
@@ -1287,7 +1334,7 @@ _opgenRET:
 	ret
 	
 opgenroutinecall2byte_5cc:
-	lea iy,iy+2
+	lea iy,iy-2
 opgenroutinecall2byte_3cc:
 	inc hl
 	ld a,$CD
@@ -1300,9 +1347,9 @@ opgenroutinecall2byte_3cc:
 	jp opgen2byte
 	
 opgenroutinecall1byte_4cc:
-	inc iy
+	dec iy
 opgenroutinecall1byte_3cc:
-	inc iy
+	dec iy
 	inc hl
 	ld a,$CD
 	ld (de),a
@@ -1314,9 +1361,9 @@ opgenroutinecall1byte_3cc:
 	jp opgen1byte
 	
 opgenroutinecall_3cc:
-	inc iy
+	dec iy
 opgenroutinecall_2cc:
-	inc iy
+	dec iy
 opgenroutinecall_1cc:
 	inc hl
 	ld a,$CD
@@ -1329,7 +1376,7 @@ opgenroutinecall_1cc:
 	jp opgen_next_fast
 	
 opgenCONSTwrite:
-	inc iy
+	dec iy
 	inc.s bc
 	inc hl
 	ld c,(hl)
@@ -1427,7 +1474,7 @@ opgenHMEMwrite:
 	jr _
 	
 opgenFFwrite:
-	inc iy
+	dec iy
 	inc hl
 	ld c,(hl)
 	ld b,$FF
@@ -1527,7 +1574,7 @@ opgencartread:
 	jp opgen_next_swap_skip
 	
 opgenCONSTread:
-	inc iy
+	dec iy
 	inc.s bc
 	inc hl
 	ld c,(hl)
@@ -1628,7 +1675,7 @@ opgenHMEMread:
 	jr _
 	
 opgenFFread:
-	inc iy
+	dec iy
 	inc hl
 	ld c,(hl)
 	ld b,$FF
