@@ -408,38 +408,33 @@ foundloop_internal:
 	 ld iyl,a
 	 add hl,de
 	 ld c,(hl)
+	 ; Add GB instruction size
 	 ld a,(bc)
-	 or a
-	 jr z,lookup_code_by_pointer_pushed
 	 add a,l
 	 ld l,a
 	 jr nc,_
-	 inc h
+	 ld l,$FF
+	 inc hl
 _
+	 ; Add recompiled instruction size
 	 dec b
 	 ld a,(bc)
 	 inc b
 	 add a,ixl
-	 jr nc,_
-	 ld ixl,$FF
-	 inc ix
-_
 	 ld ixl,a
+	 jr nc,_
+	 inc ixh
+_
+	 ; Add cycles
 	 inc b
 	 ld a,(bc)
 	 dec b
 	 add a,iyl
-	 jr nc,_
-	 sbc a,a
-	 or a
-_
 	 sbc hl,de
-	 jr nz,foundloop_internal
+	 jr c,foundloop_internal
 	pop iy
-	cp $80
-	ret c
-	ld a,$7F
-	ret
+	ret z
+	jr lookup_code_by_pointer
 	
 	
 ; Looks up a recompiled code pointer from a GB address.
@@ -462,7 +457,6 @@ lookup_code:
 ; Destroys AF,BC,DE,HL
 lookup_code_by_pointer:
 	push iy
-lookup_code_by_pointer_pushed:
 #ifdef 0
 	 push de
 	  ld hl,(base_address)
@@ -488,7 +482,6 @@ lookup_code_by_pointer_pushed:
 	  jr c,flush_and_recompile_pop
 	  ld bc,opcodesizes
 lookuploop_restore:
-	  ld iyl,a	;IYL = 0
 	 pop ix
 lookuploop:
 	 ld a,ixh
@@ -507,42 +500,38 @@ lookuploop:
 	 jr nz,lookuploop
 	 push ix
 	  ld ix,(ix)
+	  xor a
 foundloop:
+	  ld iyl,a
 	  add hl,de
 	  ld c,(hl)
+	  ; Add GB instruction size
 	  ld a,(bc)
-	  or a
-	  jr z,lookuploop_restore
 	  add a,l
-	  ld l,a
 	  jr nc,_
-	  inc h
+	  ld l,$FF
+	  inc hl
 _
+	  ld l,a
+	  ; Add recompiled instruction size
 	  dec b
 	  ld a,(bc)
 	  inc b
 	  add a,ixl
-	  jr nc,_
-	  ld ixl,$FF
-	  inc ix
-_
 	  ld ixl,a
+	  jr nc,_
+	  inc ixh
+_
+	  ; Add cycles
 	  inc b
 	  ld a,(bc)
 	  dec b
 	  add a,iyl
-	  jr nc,_
-	  sbc a,a
-	  or a
-_
-	  ld iyl,a
 	  sbc hl,de
-	  jr nz,foundloop
+	  jr c,foundloop
+	  jr nz,lookuploop_restore
 	 pop hl
 	pop iy
-	cp $80
-	ret c
-	ld a,$7F
 	ret
 	
 lookupfoundstart:
@@ -584,7 +573,7 @@ recompile:
 	  ld hl,(ix)
 	  ld (ix+2),de
 	  ; Cycle count while recompiling is hl-iy. Start at zero.
-	  ld iy,(ix+2)
+	  ld iyl,e
 	  bit 7,(ix+4)
 	  jr nz,recompile_ram
 	
@@ -616,6 +605,7 @@ recompile:
 	  ld ix,opgenroutines
 	  ld bc,opgentable
 	  call opgen_next_fast
+	  call m,opgen_cycle_overflow
 	
 	 pop ix
 	 inc de
@@ -676,6 +666,7 @@ recompile_ram:
 	  ld ix,opgenroutines
 	  ld bc,opgentable
 	  call opgen_next_fast
+	  call m,opgen_cycle_overflow
 	 pop ix
 	 ld (ix-3),hl
 	
@@ -745,15 +736,16 @@ rerecompile_found_base:
 	inc.s hl
 	ld de,z80codebase + RAM_PREFIX_SIZE - 1
 	add hl,de
-	ex de,hl
 	push iy
+	 ld de,(ix+2)
 	 ; Set cycle count to 0
-	 ld iy,(ix+2)
-	 lea hl,iy
+	 ld iyl,e
+	 ex de,hl
 	 push ix
 	  ld ix,opgenroutines
 	  ld bc,opgentable
 	  call opgen_next_fast
+	  call m,opgen_cycle_overflow
 	 pop ix
 	pop iy
 	ld (ix+5),hl
@@ -882,16 +874,16 @@ opcoderecsizes:
 	.db 3,2,3,3,0,2,2,7
 	.db 4,3,5,3,0,0,2,7
 	
-; A table of Game Boy opcode sizes. 0 means it ends the block.
+; A table of Game Boy opcode sizes.
 opcodesizes:
 	.db 1,3,1,1,1,1,2,1
 	.db 3,1,1,1,1,1,2,1
 	.db 1,3,1,1,1,1,2,1
-	.db 0,1,1,1,1,1,2,1
-	.db 2,3,1,1,1,1,2,1
 	.db 2,1,1,1,1,1,2,1
 	.db 2,3,1,1,1,1,2,1
 	.db 2,1,1,1,1,1,2,1
+	.db 2,3,1,1,1,1,2,1
+	.db 2,1,1,1,1,1,2,1
 	
 	.db 1,1,1,1,1,1,1,1
 	.db 1,1,1,1,1,1,1,1
@@ -911,16 +903,16 @@ opcodesizes:
 	.db 1,1,1,1,1,1,1,1
 	.db 1,1,1,1,1,1,1,1
 	
-	.db 1,1,3,0,3,1,2,1
-	.db 1,0,3,2,3,3,2,1
-	.db 1,1,3,0,3,1,2,1
-	.db 1,0,3,0,3,0,2,1
-	.db 2,1,1,0,0,1,2,1
-	.db 2,0,3,0,0,0,2,1
-	.db 2,1,1,1,0,1,2,1
-	.db 2,1,3,1,0,0,2,1
+	.db 1,1,3,3,3,1,2,1
+	.db 1,1,3,2,3,3,2,1
+	.db 1,1,3,1,3,1,2,1
+	.db 1,1,3,1,3,1,2,1
+	.db 2,1,1,1,1,1,2,1
+	.db 2,1,3,1,1,1,2,1
+	.db 2,1,1,1,1,1,2,1
+	.db 2,1,3,1,1,1,2,1
 	
-; A table of Game Boy opcode cycles. Does not apply to block-ending opcodes.
+; A table of Game Boy opcode cycles. Block-ending opcodes are set to 0.
 ; Conditional branches are assumed not taken.
 opcodecycles:
 	.db 1,3,2,2,1,1,2,1
@@ -1251,50 +1243,7 @@ opgentable:
 	.db opgen2byte - opgenroutines
 	.db opgenINVALID - opgenroutines
 	
-	
-_opgenCALLcond:
-	ld a,c
-	xor $C4 ^ $28
-	ld (de),a
-	inc de
-	ld a,7
-	ld (de),a
-	inc de
-_opgenCALL:
-	ld c,decode_call & $FF
-	ld a,decode_call >> 8
-	inc hl
-	inc hl
-opgen_emit_call:
-	inc hl
-	ex de,hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),a
-	inc hl
-	ex de,hl
-	scf
-	ld a,(base_address)
-	cpl
-	adc a,l
-	ld (de),a
-	inc de
-	ld a,(base_address+1)
-	cpl
-	adc a,h
-	ld (de),a
-	inc de
-	ld a,3
-	call get_saturated_cycles
-	ld (de),a
-	inc de
-	inc de
-	jp opgen_next
-	
-_opgenJR:
-	inc hl
+opgen_cycle_overflow:
 	ld a,(base_address)
 	cpl
 	add a,l
@@ -1304,28 +1253,104 @@ _opgenJR:
 	adc a,h
 	ld b,a
 	inc bc
-	inc bc
-	push hl
-	 ld a,(hl)
-	 rlca
-	 sbc hl,hl
-	 rrca
-	 ld l,a
-	 add hl,bc
-	 ex (sp),hl
-	 jr opgen_emit_jump
+	ld a,l
+	sub iyl
+	dec hl
+	jp p,opgen_emit_jump
+	ex de,hl
+	ld (hl),$ED	;LEA IY,IY-128
+	inc hl
+	ld (hl),$33
+	inc hl
+	ld (hl),$80
+	sub (hl)
+	inc hl
+	jr opgen_emit_jump_swapped
+	
+_opgenCALLcond:
+	ld b,a
+	add a,6
+	ret m
+	ld a,c
+	xor $C4 ^ $28
+	ld (de),a
+	inc de
+	ld a,7
+	ld (de),a
+	inc de
+	ld a,b
+_opgenCALL:
+	add a,6
+	ret m
+	ld.sis bc,decode_call
+	inc hl
+	inc hl
+opgen_emit_call:
+	ex de,hl
+	inc de
+	ld (hl),$CD
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),b
+	inc hl
+	ld b,a
+	scf
+	ld a,(base_address)
+	cpl
+	adc a,e
+	ld (hl),a
+	inc hl
+	ld a,(base_address+1)
+	cpl
+	adc a,d
+	ld (hl),a
+	inc hl
+	ld (hl),b
+	inc hl
+	inc hl
+	ex de,hl
+	jp opgen_next
+	
+_opgenJR:
+	add a,3
+	ret m
+opgen_emit_JR:
+	push af
+	 inc hl
+	 ld a,(base_address)
+	 cpl
+	 add a,l
+	 ld c,a
+	 ld a,(base_address+1)
+	 cpl
+	 adc a,h
+	 ld b,a
+	 inc bc
+	 inc bc
+	 push hl
+	  ld a,(hl)
+	  rlca
+	  sbc hl,hl
+	  rrca
+	  ld l,a
+	  add hl,bc
+	  ex (sp),hl
+	 pop bc
+	pop af
+	jr opgen_emit_jump
 
 _opgenJP:
+	add a,4
+	ret m
+opgen_emit_JP:
 	inc hl
 	ld c,(hl)
 	inc hl
 	ld b,(hl)
-	push bc
 opgen_emit_jump:
-	 ld a,2
-	 call get_saturated_cycles
-	pop bc
 	ex de,hl
+opgen_emit_jump_swapped:
 	ld (hl),$CD
 	inc hl
 	ld (hl),decode_jump & $FF
@@ -1348,9 +1373,9 @@ opgen_emit_jump:
 	
 _opgenRET:
 	; Use negative cycle count
-	ld a,4
-opgen_finisher:
-	call get_saturated_cycles
+	add a,4
+	ret m
+opgen_emit_RET:
 	neg
 	ex de,hl
 	ld (hl),$ED	;LEA IY,IY+d
@@ -1361,26 +1386,7 @@ opgen_finisher:
 	inc hl
 	ld (hl),$C9	;RET
 	ex de,hl
-	ret
-	
-	; Inputs: HL=GB pointer, IY=cycle counter, A=extra cycles
-	; Outputs: A=saturated total
-	; Destroys: BC
-get_saturated_cycles:
-	lea bc,iy
-	or a
-	sbc hl,bc
-	add a,l
-	jr c,_
-	cp $80
-	jr nc,_
-	inc h
-	dec h
-	jr z,++_
-_
-	ld a,$7F
-_
-	add hl,bc
+	xor a
 	ret
 	
 opgenroutinecall2byte_5cc:

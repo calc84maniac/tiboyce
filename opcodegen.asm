@@ -2,8 +2,9 @@
 
 opgenroutines:
 opgenE9:
-	ld a,1
-	call opgen_finisher
+	inc a
+	ret m
+	call opgen_emit_RET
 	ex de,hl
 	ld (hl),$C3
 	inc hl
@@ -27,9 +28,10 @@ opgenCALLcond:
 opgenCALL:
 	jp _opgenCALL
 opgenRST:
-	ld c,decode_rst & $FF
-	ld a,decode_rst >> 8
-	jp opgen_emit_call
+	ld.sis bc,decode_rst
+	add a,4
+	jp p,opgen_emit_call
+	ret
 opgenJP:
 	jp _opgenJP
 opgenJR:
@@ -156,6 +158,9 @@ opgen_next_fast:
 	ld c,(hl)
 	ld a,(bc)
 	ld ixl,a
+	ld a,l
+	sub iyl
+	ret m
 	jp (ix)
 	
 opgenRETI:
@@ -172,6 +177,9 @@ opgenRETcond:
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
 _opgenJRcond:
+	add a,3
+	ret m
+	ld b,a
 	ld a,c
 	xor $20 ^ $28
 	ld (de),a
@@ -179,10 +187,14 @@ _opgenJRcond:
 	ld a,7
 	ld (de),a
 	inc de
-	call _opgenJR
+	ld a,b
+	call opgen_emit_JR
 	jr opgen_next_skip
 	
 _opgenJPcond:
+	add a,4
+	ret m
+	ld b,a
 	ld a,c
 	xor $C2 ^ $28
 	ld (de),a
@@ -190,11 +202,15 @@ _opgenJPcond:
 	ld a,7
 	ld (de),a
 	inc de
-	call _opgenJP
+	ld a,b
+	call opgen_emit_JP
 	jr opgen_next_skip
 	
 _opgenRETcond:
+	add a,5
+	ret m
 	dec iy
+	ld b,a
 	ld a,c
 	xor $C0 ^ $28
 	ld (de),a
@@ -202,11 +218,13 @@ _opgenRETcond:
 	ld a,4
 	ld (de),a
 	inc de
-	call _opgenRET
+	ld a,b
+	call opgen_emit_RET
 	jr opgen_next_skip
 	
 _opgenRETI:
 	call _opgenRET
+	ret m
 	ex de,hl
 	ld (hl),$C3 ;JP ophandlerRETI
 	inc hl
