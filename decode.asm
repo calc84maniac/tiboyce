@@ -5,11 +5,9 @@ decode_jump_helper:
 	
 	push hl
 	 call lookup_code_link_internal
-	 ; A taken branch adds 1 cycle
-	 dec a
 	pop hl
 	
-#if 1
+#if 0
 	push af
 	 call identify_waitloop
 	pop af
@@ -37,8 +35,6 @@ decode_call_helper:
 	ld e,(hl)
 _
 	call lookup_code
-	; A taken call adds 3 cycles
-	sub 3
 	ret.l
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM

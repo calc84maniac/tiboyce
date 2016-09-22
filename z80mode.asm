@@ -121,18 +121,19 @@ do_call_write_smc = $+1
 	; Call stack return here!
 	ex af,af'
 	exx
-	inc b
 	pop ix
 	ld a,(ix-4)
 	cp.l (hl)
 	jr nz,ophandlerRETnomatch
 	inc.l hl
-	ld a,(ix-3)
+	ld de,(ix-3)
+	ld a,e
 	cp.l (hl)
 	jr nz,ophandlerRETnomatch_dec
 	inc.l hl
+	ld a,d
+	inc b
 	exx
-	ld a,(ix-2)
 dispatch_cycles:
 	ld (_+2),a
 _
@@ -251,17 +252,17 @@ dispatch_int:
 _
 	    ld.lil (int_cached_return),ix
 	    ld.lil (int_cached_code),hl
-	    push.l de
-	   pop de
+	   pop hl
+	   ex de,hl
 	   call.il lookup_code_cached
 	  pop de
 	 pop bc
-	pop hl
-	xor a
-	ld (intstate),a
-	ex af,af'
-	exx
-	pop.l de
+	 ex (sp),hl
+	 xor a
+	 ld (intstate),a
+	 ex af,af'
+	 exx
+	pop de
 	jp do_push
 	
 LYCmatch:
@@ -921,6 +922,7 @@ readTIMA:
 	bit 2,a
 	di
 	call.il nz,updateTIMA
+	ei
 	ld ix,(TIMA)
 	ex af,af'
 	ret
@@ -1202,16 +1204,18 @@ cram_base_0 = $+3
 	 add.l ix,bc
 	 ld.lil (cram_bank_base),ix
 	 ; See if SP is pointing into the swapped bank
-	 ld bc,(sp_base_address)
-	 ld a,iyl
-	 sub c
-	 ld c,a
-	 ld a,iyh
-	 sub b
-	 ld b,a
+	 exx
+	 ld de,(sp_base_address)
+	 ld a,l
+	 sub e
+	 ld e,a
+	 ld a,h
+	 sbc a,d
+	 ld d,a
 	 sub $A0
 	 cp $20
 	 jr c,mbc_fix_sp
+	 exx
 _
 	pop bc
 	ex af,af'
@@ -1250,20 +1254,23 @@ curr_rom_bank = $+1
 	 ld.l ix,(ix)
 	 ld.lil (rom_bank_base),ix
 	 ; See if SP is pointing into the swapped bank
-	 ld bc,(sp_base_address)
-	 ld a,iyl
-	 sub c
-	 ld c,a
-	 ld a,iyh
-	 sbc a,b
+	 exx
+	 ld de,(sp_base_address)
+	 ld a,l
+	 sub e
+	 ld e,a
+	 ld a,h
+	 sbc a,d
 	 cp $C0
-	 jp po,mbc_2000_denied
+	 jp po,mbc_no_fix_sp
 	 ; If so, update it
-	 ld b,a
+	 ld d,a
 mbc_fix_sp:
-	 ld.lil (z80codebase+sp_base_address),ix
-	 add.l ix,bc
-	 lea.l iy,ix
+	 lea.l hl,ix
+	 ld.lil (z80codebase+sp_base_address),hl
+	 add.l hl,de
+mbc_no_fix_sp:
+	 exx
 mbc_2000_denied:
 	pop bc
 	ex af,af'

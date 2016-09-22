@@ -2,9 +2,8 @@
 
 opgenroutines:
 opgenE9:
-	; JP (HL) takes 3 fewer cycles than RET
-	lea iy,iy+3
-	call _opgenRET
+	ld a,1
+	call opgen_finisher
 	ex de,hl
 	ld (hl),$C3
 	inc hl

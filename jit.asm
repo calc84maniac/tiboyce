@@ -129,7 +129,7 @@ lookup_gb_lower:
 lookup_gb_found_region:
 	ld a,b
 	or c
-	ret.l z
+	jr z,$
 	ld bc,opcodesizes
 	ld hl,(ix-8)
 	ld ix,(ix-6)
@@ -429,9 +429,16 @@ _
 	 ld a,(bc)
 	 dec b
 	 add a,iyl
+	 jr nc,_
+	 sbc a,a
+	 or a
+_
 	 sbc hl,de
 	 jr nz,foundloop_internal
 	pop iy
+	cp $80
+	ret c
+	ld a,$7F
 	ret
 	
 	
@@ -524,11 +531,18 @@ _
 	  ld a,(bc)
 	  dec b
 	  add a,iyl
+	  jr nc,_
+	  sbc a,a
+	  or a
+_
 	  ld iyl,a
 	  sbc hl,de
 	  jr nz,foundloop
 	 pop hl
 	pop iy
+	cp $80
+	ret c
+	ld a,$7F
 	ret
 	
 lookupfoundstart:
@@ -557,8 +571,6 @@ flush_and_recompile:
 ;          A = 0 (cycle count at start)
 ; Destroys AF,BC,DE,HL
 recompile:
-	 ; Cycle count while recompiling is l-iyl. Start at zero.
-	 ld iyl,e
 	 ld ix,(recompile_struct_end)
 	 lea hl,ix+8
 	 ld (recompile_struct_end),hl
@@ -571,6 +583,8 @@ recompile:
 	  call c,flush_cache
 	  ld hl,(ix)
 	  ld (ix+2),de
+	  ; Cycle count while recompiling is hl-iy. Start at zero.
+	  ld iy,(ix+2)
 	  bit 7,(ix+4)
 	  jr nz,recompile_ram
 	
@@ -727,15 +741,15 @@ rerecompile:
 rerecompile_found_base:
 	ld (base_address),de
 	
+	ld hl,(ix)
+	inc.s hl
+	ld de,z80codebase + RAM_PREFIX_SIZE - 1
+	add hl,de
+	ex de,hl
 	push iy
 	 ; Set cycle count to 0
-	 ld iyl,e
-	 ld hl,(ix)
-	 inc.s hl
-	 ld de,z80codebase + RAM_PREFIX_SIZE - 1
-	 add hl,de
-	 ex de,hl
-	 ld hl,(ix+2)
+	 ld iy,(ix+2)
+	 lea hl,iy
 	 push ix
 	  ld ix,opgenroutines
 	  ld bc,opgentable
@@ -1272,12 +1286,12 @@ opgen_emit_call:
 	adc a,h
 	ld (de),a
 	inc de
-	ld a,l
-	sub iyl
+	ld a,3
+	call get_saturated_cycles
 	ld (de),a
 	inc de
 	inc de
-	jp opgen_next_fast
+	jp opgen_next
 	
 _opgenJR:
 	inc hl
@@ -1299,15 +1313,18 @@ _opgenJR:
 	 ld l,a
 	 add hl,bc
 	 ex (sp),hl
-	pop bc
-	jr opgen_emit_jump
+	 jr opgen_emit_jump
 
 _opgenJP:
 	inc hl
 	ld c,(hl)
 	inc hl
 	ld b,(hl)
+	push bc
 opgen_emit_jump:
+	 ld a,2
+	 call get_saturated_cycles
+	pop bc
 	ex de,hl
 	ld (hl),$CD
 	inc hl
@@ -1316,9 +1333,6 @@ opgen_emit_jump:
 	ld (hl),decode_jump >> 8
 	inc hl
 	; Save cycle count
-	ld a,e
-	inc a
-	sub iyl
 	ld (hl),a
 	inc hl
 	; Save upper byte of source address
@@ -1334,9 +1348,10 @@ opgen_emit_jump:
 	
 _opgenRET:
 	; Use negative cycle count
-	ld a,iyl
-	sub l
-	sub 4
+	ld a,4
+opgen_finisher:
+	call get_saturated_cycles
+	neg
 	ex de,hl
 	ld (hl),$ED	;LEA IY,IY+d
 	inc hl
@@ -1346,6 +1361,26 @@ _opgenRET:
 	inc hl
 	ld (hl),$C9	;RET
 	ex de,hl
+	ret
+	
+	; Inputs: HL=GB pointer, IY=cycle counter, A=extra cycles
+	; Outputs: A=saturated total
+	; Destroys: BC
+get_saturated_cycles:
+	lea bc,iy
+	or a
+	sbc hl,bc
+	add a,l
+	jr c,_
+	cp $80
+	jr nc,_
+	inc h
+	dec h
+	jr z,++_
+_
+	ld a,$7F
+_
+	add hl,bc
 	ret
 	
 opgenroutinecall2byte_5cc:
