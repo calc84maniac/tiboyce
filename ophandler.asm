@@ -102,54 +102,28 @@ flush_mem:
 ; Outputs: OAM written with 160 bytes from source address
 ;          AF' has been unswapped
 oam_transfer_helper:
-	xor a
-	ld (mpTimerCtrl),a
 	exx
-	sbc hl,hl
-	ex de,hl
-	ex af,af'
-	ld d,a
-	ex af,af'
-	call get_base_address
-	add hl,de
-	ld a,b
-	ld bc,$00A0
-	ld de,hram_start
-	ldir
-	ld b,a
+	push hl
+	 or a
+	 sbc hl,hl
+	 ex de,hl
+	 ex af,af'
+	 ld d,a
+	 ex af,af'
+	 call get_base_address
+	 add hl,de
+	 ld a,b
+	 ld bc,$00A0
+	 ld de,hram_start
+	 ldir
+	 ld b,a
+	pop hl
 	exx
+	ex af,af'
 	pop.s ix
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	ex af,af'
+	ei
 	jp.s (ix)
-	
-; Gets the current value of LY, after disabling timers.
-; Returns 0 if the LCD is disabled.
-;
-; Inputs:  AFBCDEHL' have been swapped
-; Outputs: A = current LY (0-153)
-;          Timers are disabled
-updateLY_ADL:
-	xor a
-	ld (mpTimerCtrl),a
-	ld a,(hram_base+LCDC)
-	add a,a
-	sbc a,a
-	ret nc
-	ld hl,(mpTimer1Count+1)
-	ld de,-SCANDELAY*128
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	ld a,153
-	sub l
-	ret
+
 	
 ; Catches up the renderer before changing an LCD register.
 ; Must be called only if the current frame is being rendered.
@@ -157,15 +131,19 @@ updateLY_ADL:
 ; Inputs:  AF' has been swapped
 ; Outputs: Scanlines rendered if applicable
 render_catchup:
-	exx
-	call updateLY_ADL
+	ld a,(hram_base+LCDC)
+	add a,a
+	ret nc
+	ld a,(hram_base+LY)
 	cp 144
+	ret nc
+	exx
 	push bc
-	 call c,render_scanlines
+	 push hl
+	  call c,render_scanlines
+	 pop hl
 	pop bc
 	exx
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
 	ret
 	
 ; Writes to an LCD scroll register (SCX,SCY,WX,WY).
@@ -235,6 +213,7 @@ scroll_write_done_swap:
 scroll_write_done:
 	ld.s (ix),a
 	pop.s ix
+	ei
 	jp.s (ix)
 	
 ; Writes to the LCD control register (LCDC).
@@ -251,81 +230,78 @@ lcdc_write_helper:
 	ld a,(render_this_frame)
 	or a
 	call nz,render_catchup
-	exx
-	ld hl,hram_base+LCDC
-	ld a,(hl)
-	ex af,af'
-	ld (hl),a
-	ex af,af'
-	xor (hl)
-	ld l,a
-	bit 0,l
-	jr z,_
-	ld a,(LCDC_0_smc)
-	xor $39 ^ $31	;ADD.SIS SP,HL \ LD.SIS SP,HL vs LD.SIS SP,$F940
-	ld (LCDC_0_smc),a
+	push hl
+	 ld hl,hram_base+LCDC
+	 ld a,(hl)
+	 ex af,af'
+	 ld (hl),a
+	 ex af,af'
+	 xor (hl)
+	 ld l,a
+	 bit 0,l
+	 jr z,_
+	 ld a,(LCDC_0_smc)
+	 xor $39 ^ $31	;ADD.SIS SP,HL \ LD.SIS SP,HL vs LD.SIS SP,$F940
+	 ld (LCDC_0_smc),a
 _
-	bit 1,l
-	jr z,_
-	ld a,(LCDC_1_smc)
-	xor $77 ^ $1F	;LD (IY),A vs LD (IY),DE
-	ld (LCDC_1_smc),a
+	 bit 1,l
+	 jr z,_
+	 ld a,(LCDC_1_smc)
+	 xor $77 ^ $1F	;LD (IY),A vs LD (IY),DE
+	 ld (LCDC_1_smc),a
 _
-	bit 2,l
-	jr z,_
-	ld a,(LCDC_2_smc_1)
-	xor $38^$78
-	ld (LCDC_2_smc_1),a
-	ld a,(LCDC_2_smc_2)
-	xor 8^16
-	ld (LCDC_2_smc_2),a
-	ld a,(LCDC_2_smc_3)
-	xor $80 ^ $81	;RES 0,B vs RES 0,C
-	ld (LCDC_2_smc_3),a
+	 bit 2,l
+	 jr z,_
+	 ld a,(LCDC_2_smc_1)
+	 xor $38^$78
+	 ld (LCDC_2_smc_1),a
+	 ld a,(LCDC_2_smc_2)
+	 xor 8^16
+	 ld (LCDC_2_smc_2),a
+	 ld a,(LCDC_2_smc_3)
+	 xor $80 ^ $81	;RES 0,B vs RES 0,C
+	 ld (LCDC_2_smc_3),a
 	
 _
-	bit 3,l
-	jr z,_
-	ld a,(LCDC_3_smc)
-	xor (vram_tiles_start ^ (vram_tiles_start + $2000)) >> 8
-	ld (LCDC_3_smc),a
+	 bit 3,l
+	 jr z,_
+	 ld a,(LCDC_3_smc)
+	 xor (vram_tiles_start ^ (vram_tiles_start + $2000)) >> 8
+	 ld (LCDC_3_smc),a
 _
-	bit 4,l
-	jr z,_
-	ld a,(LCDC_4_smc)
-	xor $80
-	ld (LCDC_4_smc),a
-	ld (window_tile_ptr),a
+	 bit 4,l
+	 jr z,_
+	 ld a,(LCDC_4_smc)
+	 xor $80
+	 ld (LCDC_4_smc),a
+	 ld (window_tile_ptr),a
 _
-	bit 5,l
-	jr z,_
-	ld a,(LCDC_5_smc)
-	xor $08	;JR NC vs JR C
-	ld (LCDC_5_smc),a
+	 bit 5,l
+	 jr z,_
+	 ld a,(LCDC_5_smc)
+	 xor $08	;JR NC vs JR C
+	 ld (LCDC_5_smc),a
 _
-	bit 6,l
-	jr z,_
-	ld a,(window_tile_ptr+1)
-	sub (vram_tiles_start >> 8) & $FF
-	xor $20
-	add a,(vram_tiles_start >> 8) & $FF
-	ld (window_tile_ptr+1),a
+	 bit 6,l
+	 jr z,_
+	 ld a,(window_tile_ptr+1)
+	 sub (vram_tiles_start >> 8) & $FF
+	 xor $20
+	 add a,(vram_tiles_start >> 8) & $FF
+	 ld (window_tile_ptr+1),a
 _
-	bit 7,l
-	jr z,_
-	ld a,(LCDC_7_smc)
-	xor $08	;JR NZ vs JR Z
-	ld (LCDC_7_smc),a
-	xor a
-	ld (mpTimerCtrl),a
-	sbc hl,hl
-	ld (mpTimer1Count),hl
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
+	 bit 7,l
+	 jr z,_
+	 ld a,(LCDC_7_smc)
+	 xor $08	;JR NZ vs JR Z
+	 ld (LCDC_7_smc),a
+	 xor a
+	 ld (hram_base+LY),a
 _
+	pop hl
 	ex af,af'
-	exx
 	pop.s ix
+	ei
 	jp.s (ix)
 	
 ; Post-write operation for the LY compare register (LYC).
@@ -341,93 +317,31 @@ lyc_write_helper:
 	exx
 	ld c,a
 	ex af,af'
-	call updateLY_ADL
-	cp c
-	jr nz,_
-	ld hl,hram_base+STAT
-	bit 6,(hl)
-	jr z,_
-	ld l,IF & $FF
-	set 1,(hl)
+	push hl
+	 ld hl,hram_base+LY
+	 ld a,(hl)
+	 cp c
+	 jr nz,_
+	 ld l,STAT & $FF
+	 bit 6,(hl)
+	 jr z,_
+	 ld l,IF & $FF
+	 set 1,(hl)
 _
-	ld a,154
-	sub c
-	ld l,a
-	ld h,SCANDELAY
-	mlt hl
-	dec hl
-	ld (mpTimer1Match1+1),hl
+	pop hl
+	ex af,af'
 	exx
 	pop.s ix
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	ex af,af'
+	ei
 	jp.s (ix)
-	
-; Skips a certain number of emulated cycles. Used for HALT or waitloops.
-; Attempting to skip past the end of a scanline is undefined behavior.
-;
-; In every case it attempts to skip to a multiple of 256 on the scanline timer,
-; so only the minimum number of cycles times 256 is passed to the routine.
-; Generally, the residue output from updateLY is used to skip to the end of the
-; current scanline, but skipping to a different scanline mode is also possible.
-; If the number of consumed cycles causes a GB timer overflow, the number of
-; skipped cycles is limited to the remaining cycles on that timer.
-;
-; Inputs:  H = number of cycles to skip, times 256
-;          HLU = 0
-;          Timers are disabled
-; Outputs: Cycles skipped from all applicable timers
-;          Timers are enabled
-skip_cycles:
-	ld ix,mpTimer1Count
-	ld l,(ix)
-	ex de,hl
-	ld a,(hram_base+TAC)
-	and 4
-	jr z,++_
-	ld hl,(ix-mpTimer1Count+mpTimer2Count)
-	sbc hl,de
-	jr nc,_
-	add hl,de
-	ex de,hl
-	or a
-	sbc hl,hl
-_
-	ld (ix-mpTimer1Count+mpTimer2Count),hl
-_
-	ld hl,(ix)
-	sbc hl,de
-	ld (ix),hl
-	ld (ix-mpTimer1Count+mpTimerCtrl),TMR_ENABLE
-	ret.l
 	
 ; Updates the current value of the GB timer counter (TIMA).
 ;
 ; Inputs:  AF' has been swapped
 ; Outputs: Current value written to (TIMA)
 updateTIMA:
-	xor a
-	ld (mpTimerCtrl),a
-	exx
-	ld hl,(mpTimer2Count)
-	dec hl
-updateTIMA_smc = $+1
-	ld de,0
-	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ rla \ add hl,hl
-	add hl,de
-	exx
-	rla
-	cpl
+	ld a,(hram_base+TIMA)
 	ld (hram_base+TIMA),a
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
 	ret.l
 	
 ; Writes to the GB timer control (TAC).
@@ -449,46 +363,21 @@ tac_write_helper:
 	exx
 	ex af,af'
 	ld (hram_base+TAC),a
-	ld l,a
+	ld c,a
 	ex af,af'
-	bit 2,l
-	jr nz,_
-	; If disabling timer, disable interrupt as well
-	ld hl,mpIntEnable
-	res 2,(hl)
-	exx
-	jr ++_
-_
+	bit 2,c
+	jr z,_
 	; Apply SMC to write shifts
 	xor a
 	sub l
 	and 3
 	add a,a
 	ld (timer_update_smc),a
-	; Apply SMC to TIMA update divisor
-	ld hl,-TIMA_LENGTH * 128
-	ld de,updateTIMA_smc
-	call timer_smc_calculate
-	; Update TMA with current value
-	ld hl,TMA
-	or a
-	call timer_update
-	; Update TIMA with current value
-	ex de,hl
-	ld hl,TIMA
-	call timer_update_count
-	; Acknowledge any pending GB timer interrupt
-	ld a,4
-	ld (mpIntAcknowledge),a
-	; If scanline timer interrupt is enabled, enable GB timer too
-	ld a,(mpIntEnable)
-	bit 1,a
-	jr z,_
-	or 4
-	ld (mpIntEnable),a
 _
+	exx
 	ex af,af'
 	pop.s ix
+	ei
 	jp.s (ix)
 	
 	
@@ -506,19 +395,22 @@ _
 ;          AF' has been unswapped
 timer_write_helper:
 	exx
-	ld hl,TIMA
-	add a,l
-	ld l,a
-	ex af,af'
-	ld.s (hl),a
-	ex af,af'
-	rra	; Set carry flag if TIMA
-	ld a,(hram_base+TAC)
-	bit 2,a
-	call nz,timer_update
+	push hl
+	 ld hl,TIMA
+	 add a,l
+	 ld l,a
+	 ex af,af'
+	 ld.s (hl),a
+	 ex af,af'
+	 rra	; Set carry flag if TIMA
+	 ld a,(hram_base+TAC)
+	 bit 2,a
+	 call nz,timer_update
+	pop hl
 	exx
 	ex af,af'
 	pop.s ix
+	ei
 	jp.s (ix)
 	
 ; Updates a host timer register based on a GB timer register (TIMA/TMA).
@@ -537,12 +429,10 @@ timer_update_count:
 	ld e,mpTimer2Count & $FF
 _
 	
-	xor a
-	ld (mpTimerCtrl),a
 	; Multiply timer step length by (256-TMA)
 	sub.s (hl)
 	ld l,a
-	ld h,TIMA_LENGTH
+	ld h,16
 	jr z,_
 	mlt hl
 _
@@ -560,7 +450,5 @@ timer_update_smc = $+1
 	; Set new value
 	ex de,hl
 	ld (hl),de
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
 	ret
 	

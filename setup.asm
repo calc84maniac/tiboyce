@@ -285,9 +285,9 @@ RestartFromHere:
 	push hl
 	ld hl,(mpIntLatch)
 	push hl
-	ld hl,$000803
+	ld hl,$000801
 	ld (mpIntEnable),hl
-	ld hl,$000017
+	ld hl,$000011
 	ld (mpIntLatch),hl
 	
 	ld hl,(mpLcdBase)
@@ -337,31 +337,6 @@ RestartFromHere:
 	ld (mpKeypadScanMode),a
 	inc a
 	ld (mpLcdImsc),a
-	
-	ld hl,(mpTimerCtrl)
-	push hl
-	xor a
-	sbc hl,hl
-	ld (mpTimerCtrl),hl
-	ld (mpTimer1Count),hl
-	ld (mpTimer1Count+3),a
-	ld (mpTimer2Count),hl
-	ld (mpTimer2Count+3),a
-	ld (mpTimer2Match1),hl
-	ld (mpTimer2Match1+3),a
-	ld (mpTimer2Match2),hl
-	ld (mpTimer2Match2+3),a
-	ld (mpTimer2Reset),hl
-	ld (mpTimer2Reset+3),a
-	dec hl
-	ld (mpTimer1Match1),hl
-	ld (mpTimer1Match1+3),a
-	ld hl,FRAME_LENGTH - 1
-	ld (mpTimer1Reset),hl
-	ld (mpTimer1Reset+3),a
-	ld hl,FRAME_LENGTH - (SCANDELAY*256*144) - 1
-	ld (mpTimer1Match2),hl
-	ld (mpTimer1Match2+3),a
 	
 	ld (saveSP),sp
 	
@@ -459,12 +434,10 @@ _
 	ld a,(mpIntRawStatus)
 	bit 4,a
 	jr z,-_
-
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
 	
 	ld a,1
 	ld (z80codebase+curr_rom_bank),a
+	ld iy,0
 	ld bc,$0013
 	ld de,$00D8
 	ld hl,$014D
@@ -489,8 +462,6 @@ CmdExit:
 	ld (mpKeypadScanMode),a
 	xor a
 	ld (mpLcdImsc),a
-	pop hl
-	ld (mpTimerCtrl),hl
 	pop hl
 	ACALL(SetLCDTiming)
 	pop hl

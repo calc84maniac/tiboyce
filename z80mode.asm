@@ -79,11 +79,6 @@ on_interrupt:
 CmdExitSMC = $+2
 	jp.lil 0
 	
-cycle_overflow_for_jump:
-	pop ix
-	ld ix,(ix+1)
-	jr cycle_overflow
-	
 do_push:
 	dec.l hl
 do_push_smc_1 = $+1
@@ -93,6 +88,11 @@ do_push_smc_2 = $+1
 	ld.l (hl),e
 	exx
 	jp (ix)
+	
+cycle_overflow_for_jump:
+	pop ix
+	ld ix,(ix+1)
+	jr cycle_overflow
 	
 do_pop:
 	inc.l hl
@@ -128,11 +128,11 @@ do_call_write_smc = $+1
 	jr nz,ophandlerRETnomatch
 	inc.l hl
 	ld a,(ix-3)
-	sub.l (hl)
+	cp.l (hl)
 	jr nz,ophandlerRETnomatch_dec
 	inc.l hl
 	exx
-	sub (ix-2)
+	ld a,(ix-2)
 dispatch_cycles:
 	ld (_+2),a
 _
@@ -146,6 +146,7 @@ _
 ophandlerRETnomatch_dec:
 	dec.l hl
 ophandlerRETnomatch:
+	ld b,CALL_STACK_DEPTH+1
 	exx
 	ex af,af'
 	ld sp,myz80stack
@@ -156,8 +157,9 @@ ophandlerRET:
 	ex af,af'
 ophandlerRETfinish:
 	exx
-	call.il pop_and_lookup_code_cached
-	ld b,CALL_STACK_DEPTH+1
+	push bc
+	 call.il pop_and_lookup_code_cached
+	pop bc
 	exx
 	jr dispatch_cycles
 	
@@ -237,6 +239,16 @@ dispatch_int:
 	    lea de,ix
 	    di
 	    call.il lookup_gb_code_address
+	    ; If we're on a HALT, exit it
+	    ld.l a,(ix)
+	    cp $76
+	    jr nz,_
+	    inc.l ix
+	    inc de
+	    inc hl
+	    inc hl
+	    inc hl
+_
 	    ld.lil (int_cached_return),ix
 	    ld.lil (int_cached_code),hl
 	    push.l de
@@ -304,7 +316,7 @@ decode_jump:
 	  dec hl
 	  ld (hl),$C3	;JP
 	  dec hl
-	  add a,(hl)	;calc cycle count
+	  sub (hl)	;calc cycle count
 	  ld (hl),RST_CYCLE_CHECK
 	  dec hl
 	  ld (hl),a
@@ -327,10 +339,11 @@ decode_call:
 	   ld de,(hl)
 	   di
 	   call.il decode_call_helper
+_
 	  pop hl
 	  inc hl
 	  inc hl
-	  add a,(hl)
+	  sub (hl)
 	  inc hl
 	  ld (hl),a
 	  ld de,-5
@@ -345,7 +358,6 @@ decode_call:
 	ret
 	
 decode_rst:
-	di
 	ex af,af'
 	ex (sp),hl
 	push bc
@@ -354,34 +366,7 @@ decode_rst:
 	   ld de,(hl)
 	   di
 	   call.il decode_rst_helper
-	  pop hl
-	  dec hl
-	  dec hl
-	  ld (hl),ix
-	  dec hl
-	  ld (hl),RST_CALL
-	 pop de
-	pop bc
-	ex (sp),hl
-	ex af,af'
-	ret
-	
-updateLY:
-	xor a
-	ld.lil (mpTimerCtrl),a
-	ld.lil hl,(mpTimer1Count+1)
-	ld de,-SCANDELAY*128
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	ld a,153
-	sub l
-	ret
+	   jr -_
 	
 wait_for_interrupt_stub:
 	ei
@@ -683,7 +668,6 @@ ophandlerF8:
 	 add hl,de
 	pop de
 	ex af,af'
-	ei
 	ret
 	
 ophandlerF9:
@@ -859,7 +843,7 @@ _
 	ret
 	
 readDIV:
-	ld.lil a,(mpTimer1Count)
+	ld a,iyl
 	cpl
 	ld ixl,a
 	ex af,af'
@@ -873,27 +857,25 @@ readSTAT:
 	ld a,(LCDC)
 	add a,a
 	jr nc,_
-	ld ix,(LYC)
-	call updateLY
-	cp ixl
+	ld ix,(LY)
+	ld a,ixl
+	cp ixh
 	jr nz,_
 	set 2,c
 _
 	cp 144
 	jr nc,_
-	ld a,h
-	cp SCANDELAY * 204 / 456 - 1
+	ld a,iyl
+	cp 51
 	jr c,++_
 	set 1,c
-	cp SCANDELAY * (204 + 172) / 456 - 1
+	cp 51 + 43
 	jr nc,++_
 _
 	inc c
 _
 	ld ixl,c
 	exx
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ret
 	
@@ -902,13 +884,9 @@ readLY:
 	add a,a
 	sbc a,a
 	jr z,_
-	exx
-	call updateLY
-	exx
+	ld a,(LY)
 _
 	ld ixl,a
-	ld a,TMR_ENABLE
-	ld.lil (mpTimerCtrl),a
 	ex af,af'
 	ret
 	

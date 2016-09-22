@@ -201,90 +201,87 @@ draw_sprite_priority_vclip:
 write_vram_and_expand:
 	exx
 	push bc
-	 ld c,a
-	 ex af,af'
-	 xor a
-	 ld (mpTimerCtrl),a
-	 ld a,$FE
-	 ld (mpTimer1Count),a
-	 ld hl,vram_base
-	 lea de,ix
-	 add hl,de
-	 ld (hl),c
-	 ld a,d
-	 sub $98
-	 jr c,write_vram_pixels
-	 ld h,a
-	 ld a,e
-	 and $E0
-	 ld l,a
-	 xor e
-	 add a,a
-	 ld e,a
-	 ld a,c
-	 add hl,hl
-	 add hl,hl
-	 add.s hl,hl
-	 ld bc,vram_tiles_start
-	 add hl,bc
-	 ld d,0
-	 add hl,de
-	 ld e,64
-	 ld c,a
-	 ld b,e
-	 mlt bc
-	 ld (hl),c
-	 inc hl
-	 ld (hl),b
-	 add hl,de
-	 ld (hl),b
-	 dec hl
-	 ld (hl),c
-	 add hl,de
-	 add a,a
-	 jr c,_
-	 set 6,b
+	 push hl
+	  ld c,a
+	  ex af,af'
+	  ld hl,vram_base
+	  lea de,ix
+	  add hl,de
+	  ld (hl),c
+	  ld a,d
+	  sub $98
+	  jr c,write_vram_pixels
+	  ld h,a
+	  ld a,e
+	  and $E0
+	  ld l,a
+	  xor e
+	  add a,a
+	  ld e,a
+	  ld a,c
+	  add hl,hl
+	  add hl,hl
+	  add.s hl,hl
+	  ld bc,vram_tiles_start
+	  add hl,bc
+	  ld d,0
+	  add hl,de
+	  ld e,64
+	  ld c,a
+	  ld b,e
+	  mlt bc
+	  ld (hl),c
+	  inc hl
+	  ld (hl),b
+	  add hl,de
+	  ld (hl),b
+	  dec hl
+	  ld (hl),c
+	  add hl,de
+	  add a,a
+	  jr c,_
+	  set 6,b
 _
-	 ld (hl),c
-	 inc hl
-	 ld (hl),b
-	 add hl,de
-	 ld (hl),b
-	 dec hl
-	 ld (hl),c
+	  ld (hl),c
+	  inc hl
+	  ld (hl),b
+	  add hl,de
+	  ld (hl),b
+	  dec hl
+	  ld (hl),c
+	 pop hl
 	pop bc
 	exx
-	pop.s ix
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
 	ex af,af'
+	pop.s ix
+	ei
 	jp.s (ix)
 write_vram_pixels:
-	 res 0,l
-	 ld hl,(hl)
-	 ex de,hl
-	 res 0,l
-	 add hl,hl
-	 add hl,hl
-	 ld bc,vram_pixels_start-($8000*4)
-	 add hl,bc
-	 ld bc,$0011
-	 ld a,d \ cpl \ add a,a \ ld d,a
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	 sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a
+	  res 0,l
+	  ld hl,(hl)
+	  ex de,hl
+	  res 0,l
+	  add hl,hl
+	  add hl,hl
+	  ld bc,vram_pixels_start-($8000*4)
+	  add hl,bc
+	  ld bc,$0011
+	  ld a,d \ cpl \ add a,a \ ld d,a
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
+	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a
 
+	 pop hl
 	pop bc
 	exx
-	pop.s ix
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
 	ex af,af'
+	pop.s ix
+	ei
 	jp.s (ix)
 	
 scanline_do_subtile:

@@ -368,7 +368,7 @@ _
 	  sbc hl,de
 	  jr nc,lookup_code_cached_lower
 	  ex (sp),ix
-	  lea bc,ix+5
+	  lea bc,ix+6
 lookup_code_cached_lower:
 	 pop ix
 	 jr lookup_code_cached_loop
@@ -770,6 +770,7 @@ rerecompile_found_base:
 	ld hl,(ix+5)
 	dec de
 	lddr
+	ei
 	jp.sis coherency_return
 	
 coherency_flush:
@@ -797,6 +798,7 @@ coherency_flush:
 	pop.s hl
 	ld.sis sp,myz80stack-2
 	ex af,af'
+	ei
 	jp.s (ix)
 	
 #ifdef 0
@@ -1271,7 +1273,6 @@ opgen_emit_call:
 	ld (de),a
 	inc de
 	ld a,l
-	inc a
 	sub iyl
 	ld (de),a
 	inc de
@@ -1314,8 +1315,9 @@ opgen_emit_jump:
 	inc hl
 	ld (hl),decode_jump >> 8
 	inc hl
-	; Save negative cycle count
+	; Save cycle count
 	ld a,e
+	inc a
 	sub iyl
 	ld (hl),a
 	inc hl
@@ -1332,8 +1334,8 @@ opgen_emit_jump:
 	
 _opgenRET:
 	; Use negative cycle count
-	ld a,l
-	sub iyl
+	ld a,iyl
+	sub l
 	sub 4
 	ex de,hl
 	ld (hl),$ED	;LEA IY,IY+d

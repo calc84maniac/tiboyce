@@ -9,9 +9,11 @@ decode_jump_helper:
 	 dec a
 	pop hl
 	
+#if 1
 	push af
 	 call identify_waitloop
 	pop af
+#endif
 	
 	ei
 	ret.l
@@ -38,162 +40,6 @@ _
 	; A taken call adds 3 cycles
 	sub 3
 	ret.l
-
-#if 0
-; When a decoded branch is determined to be a false conditional,
-; it is patched into a conditional call to do_branch_slow.
-; The first time the condition is true, that call is executed and
-; we end up in this routine that helps restore the original handler.
-;
-; Inputs:  DE = address directly following the conditional call
-;          BCDEHL' have been swapped, BC can be destroyed
-; Outputs: HL = address of the recompiled branch instruction plus 1
-;          DE = Game Boy address of branch instruction
-decode_branch_slow:
-	ex af,af'
-	xor a
-	ld (mpTimerCtrl),a
-	dec de
-	dec de
-	dec de
-	call.il lookup_gb_code_address
-	inc hl
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	ex af,af'
-	ret.l
-	
-; An emitted branch instruction consists of RST_BRANCH followed
-; inline by the Game Boy address of the branch instruction.
-; Once the RST_BRANCH is taken, this routine resolves the branch
-; and helps patch a hard link into the recompiled code.
-;
-; The Game Boy address is fetched to determine the type of branch.
-; If a conditional branch is false, it patches the code with a
-; conditional call to do_branch_slow (see decode_branch_slow above).
-; Otherwise, the branch target is decoded and a pointer to the
-; recompiled code is retrieved (or JIT recompiled if necessary).
-; Also, for JP or JR, the result is filtered by identify_waitloop.
-;
-; Generally, a branch target in RAM is only allowed to be the start
-; of a block, which includes self-modifying code checks. However,
-; as an exception a JR or JP may always link within the same block.
-;
-; Inputs:  DE = 16-bit GB branch instruction address
-;          (SPS) = branch recompiled code address (plus 1)
-; Outputs: IX = recompiled target address
-;          A = patched JIT opcode (taking address in IX as immediate)
-; Destroys BC,DE,HL
-decode_branch:
-	ex af,af'
-	xor a
-	ld (mpTimerCtrl),a
-	call get_base_address
-	ld (base_address),hl
-	add hl,de
-	ld a,(hl)
-	cp $C3
-	jr z,decode_jp
-	cp $CD
-	jr z,decode_call
-	and 7
-	jr z,decode_jr
-	rra
-	jr c,decode_rst
-	rra
-	jr c,decode_jp_cond
-	
-decode_call:
-	inc hl
-	ld e,(hl)
-	inc hl
-	ld d,(hl)
-	call lookup_code
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	ld a,RST_CALL
-	ret.l
-	
-decode_rst:
-	ld a,(hl)
-	sub $C7
-	ld e,a
-	ld d,0
-	call lookup_code
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	ld a,RST_CALL
-	ret.l
-	
-decode_jp_cond:
-	ld a,(hl)
-	ld (decode_jp_cond_smc),a
-	ex af,af'
-decode_jp_cond_smc = $+0
-	jp decode_jp_cond_true
-	ex af,af'
-	add a,$C4-$C2
-	jr decode_jp_cond_false
-decode_jp_cond_true:
-	ex af,af'
-decode_jp:
-	push af
-	 inc hl
-	 ld e,(hl)
-	 inc hl
-	 ld d,(hl)
-	 call get_base_address
-	 ld a,(base_address+2)
-	 ld (base_address),hl
-	 jr decode_loop
-	
-decode_jr_cond:
-	ld (decode_jr_cond_smc),a
-	ex af,af'
-decode_jr_cond_smc = $+0
-	jr decode_jr_cond_true
-	ex af,af'
-	add a,$C4-$20
-decode_jp_cond_false:
-	ld ix,do_branch_slow
-	ld e,a
-	ld a,TMR_ENABLE
-	ld (mpTimerCtrl),a
-	ld a,e
-	ret.l
-	
-decode_jr:
-	ld a,(hl)
-	cp $18
-	jr nz,decode_jr_cond
-	ld a,$C3 - ($C2-$20)
-	ex af,af'
-decode_jr_cond_true:
-	ex af,af'
-	add a,$C2-$20
-	push af
-	 inc hl
-	 ld a,(hl)
-	 inc hl
-	 ex de,hl
-	 rla
-	 sbc hl,hl
-	 rra
-	 ld l,a
-	 ld a,(base_address+2)
-decode_loop:
-	 add hl,de
-	 push hl
-	  call lookup_code_link_internal
-	 pop hl
-	 
-	 call identify_waitloop
-	 
-	 ld a,TMR_ENABLE
-	 ld (mpTimerCtrl),a
-	pop af
-	ret.l
-#endif
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
 ; followed inline by the opcode byte in question (and one padding byte).
