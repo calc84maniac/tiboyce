@@ -114,12 +114,11 @@ do_push_smc_3 = $+1
 do_push_smc_4 = $+1
 	ld.l (hl),e
 	push.l hl
-	exx
 	ex af,af'
 	ld a,(ix+5)
 	ld ix,(ix)
 do_call_write_smc = $+1
-	call dispatch_cycles
+	call dispatch_cycles_exx
 call_stack_ret:
 	ex af,af'
 	exx
@@ -130,16 +129,16 @@ call_stack_ret:
 	jr nz,ophandlerRETskip
 	pop ix
 	inc b
+	ld c,b	;C is now at least 2
 	ld a,(ix-4)
-	cp.l (hl)
-	jr nz,ophandlerRETnomatch
-	inc.l hl
+	cpi.l
+	jr nz,ophandlerRETnomatch_dec
 	ld de,(ix-3)
 	ld a,e
-	cp.l (hl)
-	jr nz,ophandlerRETnomatch_dec
-	inc.l hl
+	cpi.l
+	jr nz,ophandlerRETnomatch_dec2
 	ld a,d
+dispatch_cycles_exx:
 	exx
 dispatch_cycles:
 	ld (_+2),a
@@ -165,24 +164,16 @@ ophandlerRETsave:
 	push de
 	jr ophandlerRETnomatch
 	
+ophandlerRETnomatch_dec2:
+	dec.l hl
 ophandlerRETnomatch_dec:
 	dec.l hl
-	jr ophandlerRETnomatch
-	
-ophandlerRET:
-	di
-	dec sp
-	dec sp
-	ex af,af'
-ophandlerRETfinish:
-	exx
 ophandlerRETnomatch:
 	push bc
 	 di
 	 call.il pop_and_lookup_code_cached
 	pop bc
-	exx
-	jr dispatch_cycles
+	jr dispatch_cycles_exx
 	
 cycle_overflow:
 	push hl
@@ -465,14 +456,15 @@ _
 	ret
 do_swap_hl:
 	lea iy,iy-2	;Consume 2 extra cycles
+	call mem_read_any
+	rrca
+	rrca
+	rrca
+	rrca
+	ld ixl,a
 	ex af,af'
 	push af
-	 call mem_read_any
-	 rrca
-	 rrca
-	 rrca
-	 rrca
-	 call mem_write_any
+	 call mem_write_any_ixl
 	pop af
 	ret
 	
@@ -560,8 +552,7 @@ ophandler35:
 	dec ixl
 _
 	push af
-	 ld a,ixl
-	 call mem_write_any
+	 call mem_write_any_ixl
 	pop af
 	ret
 	
@@ -711,7 +702,19 @@ ophandlerRETI:
 	ld a,$1F
 	ld (intstate),a
 	di
-	jp ophandlerRETfinish
+	jr ophandlerRETfinish
+	
+ophandlerRET:
+	di
+	dec sp
+	dec sp
+	ex af,af'
+ophandlerRETfinish:
+	exx
+	push bc
+	 call.il pop_and_lookup_code_cached
+	pop bc
+	jp dispatch_cycles_exx
 	
 ophandlerINVALID:
 	ei
@@ -877,7 +880,7 @@ readSTAT:
 	ld c,a
 	ld a,(LCDC)
 	add a,a
-	jr nc,_
+	jr nc,++_
 	ld ix,(LY)
 	ld a,ixl
 	cp ixh
@@ -1004,6 +1007,9 @@ _
 	ld a,(hl)
 	ret
 	
+	;HL=GB address, IXL=data, destroys AF,AF'
+mem_write_any_ixl:
+	ld a,ixl
 	;HL=GB address, A=data, preserves AF, destroys AF'
 mem_write_any:
 	ex af,af'
