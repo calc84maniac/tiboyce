@@ -226,6 +226,10 @@ IE = $ffff
 z80codebase = vRam
 ; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
 myz80stack = $FE00
+; The end of the memory routines.
+memroutine_end = myz80stack-256
+read_cycle_LUT = memroutine_end+1
+
 ; The bottom of the ADL stack. Grows down from the end of palette memory.
 myADLstack = mpLcdPalette + $0200
 

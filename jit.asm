@@ -36,7 +36,7 @@ flush_code:
 	ld de,z80codebase+z80codesize
 	ld (hl),de
 	; Set the next memory access routine output below the Z80 stack
-	ld hl,z80codebase+myz80stack-256
+	ld hl,z80codebase+memroutine_end
 	ld (z80codebase+memroutine_next),hl
 	; Empty the recompiled code mapping cache
 	ld hl,recompile_cache_end
@@ -48,6 +48,13 @@ flush_code:
 	inc de
 	ld (hl),l
 	ld bc,$01FF
+	ldir
+	ld hl,z80codebase+read_cycle_LUT
+	ld (hl),e
+	push hl
+	pop de
+	inc de
+	ld c,READ_CYCLE_LUT_SIZE*3
 	ldir
 	; Set the cached interrupt return address to NULL
 	ld (int_cached_return),bc
@@ -97,6 +104,7 @@ _
 ;          HL = 16-bit Z80 code pointer (rounded up)
 ;          DE = GB address
 ;          IX = Literal 24-bit pointer to GB address
+;          A = cycle offset within block
 ; Destroys AF,BC
 lookup_gb_code_address:
 #ifdef 0
@@ -130,87 +138,85 @@ lookup_gb_found_region:
 	ld a,b
 	or c
 	jr z,$
-	ld bc,opcodesizes
-	ld hl,(ix-8)
-	ld ix,(ix-6)
-	sbc.s hl,de
-	jr z,lookup_gb_found
-	push ix
-	 add ix,ix
-	pop ix
-	jr nc,lookup_gb_found_loop
-	ld a,RAM_PREFIX_SIZE
-	jr lookup_gb_add
+	push iy
+	 ld bc,opcodesizes
+	 ld hl,(ix-8)
+	 ld ix,(ix-6)
+	 sbc.s hl,de
+	 jr z,lookup_gb_found
+	 lea iy,ix
+	 add iy,iy
+	 ld iyl,0
+	 jr nc,lookup_gb_found_loop
+	 ld a,RAM_PREFIX_SIZE
+	 jr lookup_gb_add
 lookup_gb_found_loop:
-	ld c,(ix)
-	ld a,(bc)
-	or a
-	jr z,lookup_gb_found
-	add a,ixl
-	ld ixl,a
-	jr nc,_
-	inc ixh
+	 ld c,(ix)
+	 inc b
+	 ld a,(bc)
+	 dec b
+	 add a,iyl
+	 ld iyl,a
+	 ld a,(bc)
+	 add a,ixl
+	 jr nc,_
+	 ld ixl,$FF
+	 inc ix
 _
-	dec b
-	ld a,(bc)
-	inc b
+	 ld ixl,a
+	 dec b
+	 ld a,(bc)
+	 inc b
 lookup_gb_add:
-	add a,l
-	ld l,a
-	jr nc,lookup_gb_found_loop
-	inc h
-	jr nz,lookup_gb_found_loop
-	ld a,c
-	and %11100111
-	sub $C4
-	jr nz,lookup_gb_found
-	cp l
-	jr z,lookup_gb_found
-	; In the middle of a conditional call, don't round up
-	lea ix,ix-3
-	ld l,a
+	 add a,l
+	 ld l,a
+	 jr nc,lookup_gb_found_loop
+	 inc h
+	 jr nz,lookup_gb_found_loop
 lookup_gb_found:
-	add hl,de
-	push hl
-	 lea hl,ix
-	 ld de,(rom_start)
-	 sbc hl,de
-	 ld de,$4000
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,(rom_bank_base)
-	 sbc hl,de
-	 ld de,$8000
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,vram_base
-	 sbc hl,de
-	 ld de,$FE00
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,(cram_bank_base)
-	 sbc hl,de
-	 ld de,$C000
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,-hram_base
-lookup_gb_done:
 	 add hl,de
-	 ex de,hl
+	 push hl
+	  lea hl,ix
+	  ld de,(rom_start)
+	  sbc hl,de
+	  ld de,$4000
+	  sbc hl,de
+	  jr c,lookup_gb_done
+	  lea hl,ix
+	  ld de,(rom_bank_base)
+	  sbc hl,de
+	  ld de,$8000
+	  sbc hl,de
+	  jr c,lookup_gb_done
+	  lea hl,ix
+	  ld de,vram_base
+	  sbc hl,de
+	  ld de,$FE00
+	  sbc hl,de
+	  jr c,lookup_gb_done
+	  lea hl,ix
+	  ld de,(cram_bank_base)
+	  sbc hl,de
+	  ld de,$C000
+	  sbc hl,de
+	  jr c,lookup_gb_done
+	  lea hl,ix
+	  ld de,-hram_base
+lookup_gb_done:
+	  add hl,de
+	  ex de,hl
 #ifdef 0
-	 push bc
-	  push ix
-	   push de
-	    APRINTF(LookupGBFoundMessage)
-	   pop de
-	  pop ix
-	 pop bc
+	  push bc
+	   push ix
+	    push de
+	     APRINTF(LookupGBFoundMessage)
+	    pop de
+	   pop ix
+	  pop bc
 #endif
-	pop hl
+	 pop hl
+	 ld a,iyl
+	pop iy
 	scf
 	ret.l
 	

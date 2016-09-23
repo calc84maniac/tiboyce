@@ -1,4 +1,5 @@
 #define CALL_STACK_DEPTH 32
+#define READ_CYCLE_LUT_SIZE 8
 
 z80code:
 	.assume adl=0
@@ -17,6 +18,8 @@ r_mem:
 	pop ix
 	push af
 	 jp decode_mem
+last_read_cycle:
+	.db 0
 	
 	.block $10-$
 r_cycle_check:
@@ -875,6 +878,7 @@ readDIV:
 	
 readSTAT:
 	exx
+	call get_read_cycle_offset
 	ld a,(STAT)
 	and $F8
 	ld c,a
@@ -889,7 +893,7 @@ readSTAT:
 _
 	cp 144
 	jr nc,_
-	ld a,iyl
+	ld a,e
 	cp 51
 	jr c,++_
 	set 1,c
@@ -1300,6 +1304,82 @@ mbc_no_fix_sp:
 mbc_2000_denied:
 	pop bc
 	ex af,af'
+	ret
+	
+; Inputs: IY = current block cycle base
+;         (SP+4) or (SP+6) = JIT return address
+;         AFBCDEHL' have been swapped
+; Outputs: E = adjusted current cycle count
+; Destroys DE,IX
+get_read_cycle_offset:
+	push.l hl
+	 push bc
+	  ld hl,6
+	  add hl,sp
+	  ld bc,(hl)
+	  ld a,b
+	  cp z80codesize >> 8
+	  jr nc,_
+	  inc hl
+	  inc hl
+	  ld bc,(hl)
+	  or a
+_
+	  ld hl,read_cycle_LUT+(READ_CYCLE_LUT_SIZE*3)-2
+	  ld a,-(READ_CYCLE_LUT_SIZE*3)
+read_cycle_lookup_loop:
+	  ld de,(hl)
+	  dec hl
+	  ex de,hl
+	  sbc hl,bc
+	  jr z,read_cycle_lookup_found
+	  ex de,hl
+	  dec hl
+	  dec hl
+	  add a,3
+	  jr nc,read_cycle_lookup_loop
+	  ld d,b
+	  ld e,c
+	  di
+	  call.il lookup_gb_code_address
+	  ei
+	  push hl
+	   ld hl,last_read_cycle
+	   ld de,read_cycle_LUT
+	   ld c,(READ_CYCLE_LUT_SIZE-1)*3
+	   jr read_cycle_lookup_shift
+read_cycle_lookup_found:
+	  ld l,last_read_cycle
+	  add a,READ_CYCLE_LUT_SIZE*3
+	  jr z,read_cycle_lookup_found_fast
+	  cp (hl)
+	  jr nz,read_cycle_lookup_found_fast
+	  push bc
+	   ld c,a
+	   ld a,(de)
+read_cycle_lookup_shift:
+	   ld (hl),h
+	   ld b,h
+	   ld l,3
+	   add hl,de
+	   ldir
+	   ld (de),a
+	  pop bc
+	  dec hl
+	  ld (hl),b
+	  dec hl
+	  ld a,c
+read_cycle_lookup_found_fast:
+	  ld (hl),a
+	  ex de,hl
+	  ld a,iyl
+	  sub (hl)
+	  ld e,a
+	 pop bc
+	pop.l hl
+	ret nc
+	add a,112
+	ld e,a
 	ret
 	
 keys:
