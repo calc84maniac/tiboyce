@@ -66,6 +66,7 @@ flush_mem_finish:
 	 call lookup_code
 	pop hl
 	ld.sis sp,myz80stack-2
+	ld sp,myADLstack
 	ld bc,(CALL_STACK_DEPTH+1)*256
 	exx
 	ex af,af'

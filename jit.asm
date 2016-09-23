@@ -803,6 +803,7 @@ coherency_flush:
 	pop.s de
 	pop.s hl
 	ld.sis sp,myz80stack-2
+	ld sp,myADLstack
 	ex af,af'
 	ei
 	jp.s (ix)

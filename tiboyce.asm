@@ -226,6 +226,8 @@ IE = $ffff
 z80codebase = vRam
 ; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
 myz80stack = $FE00
+; The bottom of the ADL stack. Grows down from the end of palette memory.
+myADLstack = mpLcdPalette + $0200
 
 ; A list of scanline start addresses for sprites. 174 pointers in size.
 ; Bit 0 set if disabled. The top/bottom 15 entries are permanently disabled.

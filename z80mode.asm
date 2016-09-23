@@ -89,19 +89,20 @@ do_push_smc_2 = $+1
 	exx
 	jp (ix)
 	
-cycle_overflow_for_jump:
-	pop ix
-	ld ix,(ix+1)
-	jr cycle_overflow
-	
 do_pop:
 	inc.l hl
 	inc.l hl
 	exx
 	jp (ix)
 	
+cycle_overflow_for_jump:
+	pop ix
+	ld ix,(ix+1)
+	jr cycle_overflow
+	
 do_call_reset_callstack:
 	ld b,CALL_STACK_DEPTH
+	ld.lil sp,myADLstack
 	ld sp,myz80stack-2
 do_call:
 	pea ix+6
@@ -112,16 +113,23 @@ do_push_smc_3 = $+1
 	dec.l hl
 do_push_smc_4 = $+1
 	ld.l (hl),e
+	push.l hl
 	exx
 	ex af,af'
 	ld a,(ix+5)
 	ld ix,(ix)
 do_call_write_smc = $+1
 	call dispatch_cycles
-	; Call stack return here!
+call_stack_ret:
 	ex af,af'
 	exx
+	pop.l de
+	or a
+	sbc.l hl,de
+	add.l hl,de
+	jr nz,ophandlerRETskip
 	pop ix
+	inc b
 	ld a,(ix-4)
 	cp.l (hl)
 	jr nz,ophandlerRETnomatch
@@ -132,7 +140,6 @@ do_call_write_smc = $+1
 	jr nz,ophandlerRETnomatch_dec
 	inc.l hl
 	ld a,d
-	inc b
 	exx
 dispatch_cycles:
 	ld (_+2),a
@@ -144,13 +151,24 @@ _
 	ex af,af'
 	jp (ix)
 	
-ophandlerRETnomatch_dec:
-	dec.l hl
-ophandlerRETnomatch:
-	ld b,CALL_STACK_DEPTH+1
+ophandlerRETskip:
+	jr c,ophandlerRETsave
+	pop de
+	inc b
 	exx
 	ex af,af'
-	ld sp,myz80stack
+	ret
+	
+ophandlerRETsave:
+	push.l de
+	ld de,call_stack_ret
+	push de
+	jr ophandlerRETnomatch
+	
+ophandlerRETnomatch_dec:
+	dec.l hl
+	jr ophandlerRETnomatch
+	
 ophandlerRET:
 	di
 	dec sp
@@ -158,22 +176,12 @@ ophandlerRET:
 	ex af,af'
 ophandlerRETfinish:
 	exx
+ophandlerRETnomatch:
 	push bc
+	 di
 	 call.il pop_and_lookup_code_cached
 	pop bc
 	exx
-	jr dispatch_cycles
-	
-ophandlerE9:
-	ex af,af'
-	ex de,hl
-	push bc
-	 push de
-	  di
-	  call.il lookup_code_cached
-	 pop de
-	pop bc
-	ex de,hl
 	jr dispatch_cycles
 	
 cycle_overflow:
@@ -632,6 +640,18 @@ ophandlerE8:
 	exx
 	ex af,af'
 	ret
+	
+ophandlerE9:
+	ex af,af'
+	ex de,hl
+	push bc
+	 push de
+	  di
+	  call.il lookup_code_cached
+	 pop de
+	pop bc
+	ex de,hl
+	jp dispatch_cycles
 	
 ophandlerF2:
 	ld ixh,$FF

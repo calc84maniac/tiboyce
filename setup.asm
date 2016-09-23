@@ -340,7 +340,7 @@ RestartFromHere:
 	
 	ld (saveSP),sp
 	
-	ld sp,mpLcdPalette + $0200
+	ld sp,myADLstack
 	
 	ld hl,z80codebase
 	push hl
