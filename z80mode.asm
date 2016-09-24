@@ -870,8 +870,8 @@ _
 	ret
 	
 readDIV:
-	ld a,iyl
-	cpl
+	ld a,r
+	sub iyl
 	ld ixl,a
 	ex af,af'
 	ret
