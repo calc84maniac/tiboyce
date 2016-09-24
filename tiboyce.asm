@@ -16,6 +16,13 @@
 
 ; A call to a routine located in the archived appvar.
 ; Destroys flags before entry to routine.
+#macro ACALL_SAFERET(address)
+	call ArcCallArcReturn
+	.dw address+1
+#endmacro
+
+; A call to a routine located in the archived appvar.
+; Destroys flags before entry to routine. Nothing above this may archive.
 #macro ACALL(address)
 	call ArcCall
 	.dw address+1
@@ -76,6 +83,7 @@ _CreatePVar4 = $020524
 _CreatePVar3 = $020528
 _DelVar = $020588
 _DelMem = $020590
+_ErrUndefined = $020764
 _ClrLCDFull = $020808
 _HomeUp = $020828
 _VPutS = $020834
@@ -91,6 +99,7 @@ _ChkInRAM = $021F98
 ramStart = $D00000
 penCol = $D008D2
 penRow = $D008D5
+tSymPtr1 = $D0257B
 pTemp = $D0259A
 progPtr = $D0259D
 drawFGColor = $D026AC
@@ -337,6 +346,7 @@ ArcCall:
 	inc hl
 	inc hl
 	ex (sp),hl
+ArcCallEntry:
 	push hl
 	 push de
 ArcCallSMC = $+1
@@ -348,6 +358,30 @@ ArcBase = $+1
 	 pop de
 	 ex (sp),hl
 	 ret
+	 
+; Calls a routine located in the archived appvar. Returns to the appvar.
+; The 16-bit offset (plus 1) is stored at the return address.
+ArcCallArcReturn:
+	ex (sp),hl
+	ld (ArcCallSMC),hl
+	inc hl
+	inc hl
+	push de
+	 ld de,(ArcBase)
+	 or a
+	 sbc hl,de
+	pop de
+	ex (sp),hl
+	call ArcCallEntry
+	ex (sp),hl
+	push af
+	 push de
+	  ld de,(ArcBase)
+	  add hl,de
+	 pop de
+	pop af
+	ex (sp),hl
+	ret
 	 
 ; Jumps to an address located in the archived appvar.
 ; The 16-bit offset (plus 1) is stored at the return address.
@@ -375,6 +409,33 @@ ArcPtr:
 	 ld hl,(ArcBase)
 	 add hl,de
 	ret
+	
+; Archives or unarchives a variable. Updates appvar in case of garbage collect.
+Arc_Unarc_Safe:
+	push ix
+	 ld ix,(tSymPtr1)
+	 ld hl,(ix-7)
+	 ld h,(ix-4)
+	 ld l,(ix-3)
+	pop ix
+	push hl
+	 call _Arc_Unarc
+	 ld hl,SelfName
+	 call _Mov9ToOP1
+	 call _chkFindSym
+	 jp c,_ErrUndefined
+	 ld (tSymPtr1),hl
+	pop hl
+	ex de,hl
+	or a
+	sbc hl,de
+	ex de,hl
+	ld hl,(ArcBase)
+	add hl,de
+	ld (ArcBase),hl
+	pop hl
+	add hl,de
+	jp (hl)
 	
 ; Compares the buffers at HL and DE, with size BC. Returns Z if equal.
 memcmp:
@@ -496,6 +557,9 @@ ROMName:
 ; The ROM appvar magic header.
 MetaHeader:
 	.db "TIBOYCE",0
+; The name of the appvar itself.
+SelfName:
+	.db appVarObj,"TIBoyDat"
 	
 ; The backup of SP before beginning emulation.
 saveSP:

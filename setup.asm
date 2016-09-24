@@ -209,12 +209,12 @@ _
 	xor a
 	ld (de),a
 	
-	ACALL(StartROM)
+	ACALL_SAFERET(StartROM)
 	jr c,RestoreHomeScreen
 	AJUMP(RepopulateMenu)
 	
 StartROM:
-	ACALL(LoadROM)
+	ACALL_SAFERET(LoadROM)
 	ret c
 	
 	ld hl,(rombankLUT)
@@ -482,7 +482,7 @@ CmdExit:
 _
 	push af
 	 ACALL(RestoreHomeScreen)
-	 ACALL(SaveRAM)
+	 ACALL_SAFERET(SaveRAM)
 	pop af
 	ret
 	
@@ -528,7 +528,7 @@ _
 LoadROMLoop:
 	push de
 	 ld hl,ROMName
-	 ACALL(LookUpAppvarForceARC)
+	 ACALL_SAFERET(LookUpAppvarForceARC)
 	pop de
 	ret c
 	ld a,(hl)
@@ -726,7 +726,8 @@ SaveRAMRecreate:
 	ret z
 	ld hl,ROMName
 	call _Mov9ToOP1
-	jp _Arc_Unarc
+	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
+	ret
 	
 SaveRAMDeleteMem:
 	ld hl,program_end
@@ -765,7 +766,7 @@ _
 	ret c
 	call _ChkInRAM
 	jr nz,_
-	call _Arc_Unarc
+	call Arc_Unarc_Safe
 	jr -_
 _
 	ex de,hl
@@ -787,7 +788,7 @@ _
 	ret c
 	call _ChkInRAM
 	jr z,_
-	call _Arc_Unarc
+	call Arc_Unarc_Safe
 	jr -_
 _
 	ex de,hl

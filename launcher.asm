@@ -7,6 +7,7 @@ _ErrCustom1 = $02120C
 _Arc_Unarc = $021448
 _ChkInRAM = $021F98
 OP1 = $D005F8
+tSymPtr1 = $D0257B
 asm_prgm_size = $D0118C
 appErr1 = $D025A9 ; use with _ErrCustom1
 userMem = $D1A881
@@ -22,6 +23,7 @@ LookUpAppvar:
 	push hl
 	 call _Mov9ToOP1
 	 call _chkFindSym
+	 ld (tSymPtr1),hl
 	pop hl
 	ld bc,9
 	jr c,ErrorMissing
