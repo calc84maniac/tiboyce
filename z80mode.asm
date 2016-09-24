@@ -25,8 +25,8 @@ last_read_cycle:
 r_cycle_check:
 	ex af,af'
 	ld a,iyh
-	inc a
-	jr z,cycle_overflow_for_jump
+	add a,a
+	jr c,cycle_overflow_for_jump
 	ex af,af'
 	ret
 	
@@ -148,8 +148,8 @@ dispatch_cycles:
 _
 	lea iy,iy+0
 	ld a,iyh
-	inc a
-	jr z,cycle_overflow
+	add a,a
+	jr c,cycle_overflow
 	ex af,af'
 	jp (ix)
 	
