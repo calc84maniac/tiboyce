@@ -313,7 +313,8 @@ text_frame_2 = gb_frame_buffer_2 + (160*150)
 ; Each entry is 8 bytes in size, and contains the following members:
 ;   +0: A 16-bit pointer to the start of the recompiled Z80 code block.
 ;   +2: A 24-bit pointer to the first GB source opcode.
-;   +5: A 24-bit pointer to the start of the last GB source opcode.
+;   +5: A 16-bit size of the GB opcode block.
+;   +7: Currently unused.
 ; The address of the first unused entry is stored in (recompile_struct_end).
 ; The blocks are sorted in ascending order by Z80 block start address.
 ; Note: The first unused entry always contains a *24-bit* pointer to the next
@@ -323,9 +324,10 @@ recompile_struct = z80codebase + $010000
 
 ; End of array caching mappings of GB addresses to recompiled code. 11KB max.
 ; Grows backward into the recompiled code block information (see above).
-; Each entry is 5 bytes in size, and contains the following members:
+; Each entry is 6 bytes in size, and contains the following members:
 ;   +0: 24-bit pointer to a Game Boy opcode.
-;   +3: 16-bit pointer to a recompiled code pointer. May be inside a block.
+;   +3: 16-bit pointer to recompiled code. May be inside a non-RAM-based block.
+;   +5: 8-bit clock cycle index within the block.
 ; The start of the array is stored in (recompile_cache).
 ; The array is sorted in ascending order by Game Boy opcode address.
 ; Lookup is O(log n) on number of entries, and insertion is O(n) plus mapping.
