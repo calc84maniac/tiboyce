@@ -305,10 +305,10 @@ decode_jump:
 	push bc
 	 push de
 	  inc hl
-	  ld c,(hl)
+	  ld ix,(hl)
+	  inc hl
 	  inc hl
 	  ld de,(hl)
-	  inc hl
 	  push hl
 	   di
 	   call.il decode_jump_helper
@@ -401,7 +401,6 @@ coherency_handler:
 	  push bc
 	   ld.lil de,recompile_struct
 	   add.l ix,de
-	   ld.lil (current_ram_block),ix
 	   ld.l de,(ix+2)
 	   ld.l bc,(ix+5)
 	   ld.l hl,(ix+8)

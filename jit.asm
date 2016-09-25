@@ -20,7 +20,8 @@ base_address:
 ; persist between flushes to reduce flush rates overall.
 flush_code_reset_padding:
 	; Set RAM padding to minimum (none)
-	ld hl,1
+	or a
+	sbc hl,hl
 	ld (ram_block_padding),hl
 	
 ; Flushes the recompiled code, generated routines, and all caches.
@@ -386,18 +387,16 @@ lookup_code_cached_lower:
 ; If executing from ROM or target is not the same block, proceed as normal.
 ;
 ; Inputs:  HL = direct 24-bit GB address to look up
-;          C = upper byte of currently executing direct GB address
+;          IX = struct pointer of currently executing block
 ;          (base_address) = base address of pointer in HL
 ; Outputs: IX = recompiled code pointer
 ;          A = cycle index within block
 ; Destroys AF,BC,DE,HL
 lookup_code_link_internal:
 	ex de,hl
-	bit 7,c
+	bit 7,(ix+4)
 	jr z,lookup_code_by_pointer
 	; We're running from RAM, check if destination is in running block
-current_ram_block = $+2
-	ld ix,0
 	ld hl,(ix+2)
 	xor a
 	sbc hl,de
@@ -575,19 +574,17 @@ recompile:
 	 ld ix,(recompile_struct_end)
 	 lea hl,ix+8
 	 ld (recompile_struct_end),hl
-	 push hl
-	  ; Check for collision with cache
-	  ld hl,(recompile_cache)
-	  lea bc,ix+16
-	  or a
-	  sbc hl,bc
-	  call c,flush_cache
-	  ld hl,(ix)
-	  ld (ix+2),de
-	  ; Cycle count while recompiling is hl-iy. Start at zero.
-	  ld iyl,e
-	  bit 7,(ix+4)
-	  jr nz,recompile_ram
+	 
+	 ; Check for collision with cache
+	 ld hl,(recompile_cache)
+	 lea bc,ix+16
+	 or a
+	 sbc hl,bc
+	 call c,flush_cache
+	 ld hl,(ix)
+	 ld (ix+2),de
+	 bit 7,(ix+4)
+	 jr nz,recompile_ram
 	
 #ifdef DEBUG
 	  push hl
@@ -613,26 +610,15 @@ recompile:
 	  pop hl
 #endif
 	 
-	  ex de,hl
-	  ld ix,opgenroutines
-	  ld bc,opgentable
-	  call opgen_next_fast
-	  call m,opgen_cycle_overflow
-	
-	 pop ix
-	 inc de
-	 ld bc,(ix-6)
-	 xor a
-	 sbc hl,bc
-	 inc hl
-	 ld (ix-3),hl
+	 call generate_opcodes
 	
 recompile_end_common:
+	 xor a
 	pop iy
-	ld (ix),de
+	ld (ix+8),de
 	ld hl,(z80codebase+memroutine_next)
 	sbc hl,de
-	ld ix,(ix-8)
+	ld ix,(ix)
 	ret nc
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
@@ -667,35 +653,25 @@ recompile_ram:
 	  pop ix
 #endif
 	 
-	  ld (hl),$CD
-	  inc hl
-	  ld (hl),coherency_handler & $FF
-	  inc hl
-	  ld (hl),coherency_handler >> 8
-	  inc hl
-	  ld (hl),ix
-	  inc hl
-	  inc hl
+	 ld (hl),$CD
+	 inc hl
+	 ld (hl),coherency_handler & $FF
+	 inc hl
+	 ld (hl),coherency_handler >> 8
+	 inc hl
+	 ld (hl),ix
+	 inc hl
+	 inc hl
 	 
-	  ex de,hl
-	  ld ix,opgenroutines
-	  ld bc,opgentable
-	  call opgen_next_fast
-	  call m,opgen_cycle_overflow
-	 pop ix
+	 call generate_opcodes
 	
 	 ; Copy the GB opcodes for coherency
-	 ld bc,(ix-6)
-	 xor a
-	 sbc hl,bc
-	 inc hl
-	 ld (ix-3),hl
 	 push bc
 	  ex (sp),hl
-	  ; Add in padding to avoid flushes (must be at least 1)
+	  ; Add in padding to avoid flushes
 	  ex de,hl
 ram_block_padding = $+1
-	  ld bc,1
+	  ld bc,0
 	  add hl,bc
 	  ex de,hl
 	 pop bc
@@ -750,25 +726,13 @@ rerecompile_found_base:
 	inc.s hl
 	ld de,z80codebase + RAM_PREFIX_SIZE - 1
 	add hl,de
+	ld de,(ix+2)
 	push iy
-	 ld de,(ix+2)
-	 ; Set cycle count to 0
-	 ld iyl,e
-	 ex de,hl
 	 push ix
-	  ld ix,opgenroutines
-	  ld bc,opgentable
-	  call opgen_next_fast
-	  call m,opgen_cycle_overflow
+	  call generate_opcodes
 	 pop ix
 	pop iy
 	
-	; Get the size of the GB opcodes
-	ld bc,(ix+2)
-	or a
-	sbc hl,bc
-	inc hl
-	ld (ix+5),hl
 	push hl
 	pop bc
 	
@@ -781,7 +745,8 @@ rerecompile_found_base:
 	ex de,hl
 	
 	; Make sure there is no overlap
-	sbc hl,de	; Carry is reset
+	scf
+	sbc hl,de
 	jr nc,coherency_flush
 	
 	; Copy the new opcodes, from first to last
@@ -819,6 +784,47 @@ coherency_flush:
 	ex af,af'
 	ei
 	jp.s (ix)
+	
+; Inputs:  IX = struct entry
+;          DE = GB opcodes start
+;          HL = block start
+; Outputs: IX = struct entry
+;          BC = GB opcodes start
+;          DE = block end
+;          HL = GB opcodes size
+;          A = total block cycle count
+;          Carry flag reset
+; Destroys None
+generate_opcodes:
+	; Cycle count while recompiling is hl-iy. Start at zero.
+	ld iyl,e
+	ex de,hl
+	ld bc,opgentable
+	ld a,ixl
+	ld (opgen_emit_jump_smc_1),a
+	ld a,ixh
+	ld (opgen_emit_jump_smc_2),a
+	push ix
+	 ld ix,opgenroutines
+	 call opgen_next_fast
+	 call m,opgen_cycle_overflow
+	pop ix
+	inc hl
+	inc de
+	; Get the cycle count
+	ld a,l
+	sub iyl
+	; Get the size of the GB opcodes and save it
+	ld bc,(ix+2)
+	or a
+	sbc hl,bc
+	ld (ix+5),hl
+	ld (ix+7),a
+	; Check cycle count and reset carry
+	or a
+	ret p
+	ld (ix+7),$7F
+	ret
 	
 #ifdef 0
 print_recompiled_code:
@@ -1328,6 +1334,7 @@ opgen_emit_call:
 _opgenJR:
 	add a,3
 	ret m
+	dec iy
 opgen_emit_JR:
 	push af
 	 inc hl
@@ -1356,6 +1363,7 @@ opgen_emit_JR:
 _opgenJP:
 	add a,4
 	ret m
+	dec iy
 opgen_emit_JP:
 	inc hl
 	ld c,(hl)
@@ -1373,15 +1381,17 @@ opgen_emit_jump_swapped:
 	; Save cycle count
 	ld (hl),a
 	inc hl
-	; Save upper byte of source address
-	ld a,(base_address+2)
-	ld (hl),a
+	; Save block struct pointer
+opgen_emit_jump_smc_1 = $+1
+	ld (hl),0
+	inc hl
+opgen_emit_jump_smc_2 = $+1
+	ld (hl),0
 	inc hl
 	; Save target address
 	ld (hl),c
 	inc hl
 	ld (hl),b
-	inc hl
 	ex de,hl
 	ret
 	
@@ -1389,6 +1399,7 @@ _opgenRET:
 	; Use negative cycle count
 	add a,4
 	ret m
+	lea iy,iy-3
 opgen_emit_RET:
 	neg
 	ex de,hl

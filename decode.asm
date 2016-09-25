@@ -3,6 +3,9 @@ decode_jump_helper:
 	ld (base_address),hl
 	add hl,de
 	
+	ld de,recompile_struct
+	add ix,de
+	
 	push hl
 	 call lookup_code_link_internal
 	pop hl
