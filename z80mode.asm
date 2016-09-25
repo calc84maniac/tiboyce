@@ -403,11 +403,7 @@ coherency_handler:
 	   add.l ix,de
 	   ld.lil (current_ram_block),ix
 	   ld.l de,(ix+2)
-	   ld.l hl,(ix+5)
-	   sbc hl,de
-	   ld b,h
-	   ld c,l
-	   inc bc
+	   ld.l bc,(ix+5)
 	   ld.l hl,(ix+8)
 	   sbc hl,bc
 check_coherency_loop:

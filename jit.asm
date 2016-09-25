@@ -398,17 +398,22 @@ lookup_code_link_internal:
 	; We're running from RAM, check if destination is in running block
 current_ram_block = $+2
 	ld ix,0
-	ld hl,(ix+5)
+	ld hl,(ix+2)
 	xor a
 	sbc hl,de
-	jr c,lookup_code_by_pointer
-	ld hl,(ix+2)
-	sbc hl,de
+	jr z,internal_found_start
+	jr nc,lookup_code_by_pointer
+	ld bc,(ix+5)
+	dec.s bc
+	add hl,bc
+	jr nc,lookup_code_by_pointer
+internal_found_start:
 	ld ix,(ix)
 	lea ix,ix+RAM_PREFIX_SIZE
 	ret z
-	jr nc,lookup_code_by_pointer
 	push iy
+	 or a
+	 sbc hl,bc
 	 ld bc,opcodesizes
 foundloop_internal:
 	 ld iyl,a
@@ -441,7 +446,6 @@ _
 	pop iy
 	ret z
 	jr lookup_code_by_pointer
-	
 	
 ; Looks up a recompiled code pointer from a GB address.
 ;
@@ -486,7 +490,6 @@ lookup_code_by_pointer:
 	  xor a
 	  sbc hl,bc
 	  jr c,flush_and_recompile_pop
-	  ld bc,opcodesizes
 lookuploop_restore:
 	 pop ix
 lookuploop:
@@ -494,19 +497,22 @@ lookuploop:
 	 or ixl
 	 jr z,recompile
 	 lea ix,ix-8
-	 ld hl,(ix+5)
-	 sbc hl,de
-	 jr c,lookuploop
 	 ld hl,(ix+2)
 	 sbc hl,de
 	 jr z,lookupfoundstart
+	 jr nc,lookuploop
+	 ld bc,(ix+5)
+	 dec.s bc
+	 add hl,bc
 	 jr nc,lookuploop
 	 ; Don't allow jumping to the middle of a RAM block
 	 bit 7,(ix+4)
 	 jr nz,lookuploop
 	 push ix
-	  ld ix,(ix)
 	  xor a
+	  sbc hl,bc
+	  ld bc,opcodesizes
+	  ld ix,(ix)
 foundloop:
 	  ld iyl,a
 	  add hl,de
@@ -615,8 +621,11 @@ recompile:
 	
 	 pop ix
 	 inc de
-	 ld (ix-3),hl
+	 ld bc,(ix-6)
 	 xor a
+	 sbc hl,bc
+	 inc hl
+	 ld (ix-3),hl
 	
 recompile_end_common:
 	pop iy
@@ -674,12 +683,13 @@ recompile_ram:
 	  call opgen_next_fast
 	  call m,opgen_cycle_overflow
 	 pop ix
-	 ld (ix-3),hl
 	
 	 ; Copy the GB opcodes for coherency
 	 ld bc,(ix-6)
 	 xor a
 	 sbc hl,bc
+	 inc hl
+	 ld (ix-3),hl
 	 push bc
 	  ex (sp),hl
 	  ; Add in padding to avoid flushes (must be at least 1)
@@ -689,7 +699,6 @@ ram_block_padding = $+1
 	  add hl,bc
 	  ex de,hl
 	 pop bc
-	 inc bc
 	 ldir
 	 
 #ifdef DEBUG
@@ -753,34 +762,32 @@ rerecompile_found_base:
 	  call m,opgen_cycle_overflow
 	 pop ix
 	pop iy
-	ld (ix+5),hl
 	
 	; Get the size of the GB opcodes
 	ld bc,(ix+2)
 	or a
 	sbc hl,bc
+	inc hl
+	ld (ix+5),hl
 	push hl
 	pop bc
-	inc bc
-	
-	; Add this size to the end of the generated code
-	ex de,hl
-	add hl,bc	; Resets carry
 	
 	; Get the address to copy the opcodes to
 	ld a,(ix+10)
 	ld (ix+10),z80codebase >> 16
-	ld de,(ix+8)
+	ld hl,(ix+8)
 	ld (ix+10),a
+	sbc hl,bc	; Carry is reset
+	ex de,hl
 	
 	; Make sure there is no overlap
 	sbc hl,de	; Carry is reset
 	jr nc,coherency_flush
 	
-	; Copy the new opcodes, from last to first
-	ld hl,(ix+5)
-	dec de
-	lddr
+	; Copy the new opcodes, from first to last
+	
+	ld hl,(ix+2)
+	ldir
 	ei
 	jp.sis coherency_return
 	
