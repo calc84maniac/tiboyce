@@ -680,19 +680,18 @@ recompile_ram:
 	 ld bc,(ix-6)
 	 xor a
 	 sbc hl,bc
-	 push hl
+	 push bc
+	  ex (sp),hl
+	  ; Add in padding to avoid flushes (must be at least 1)
+	  ex de,hl
+ram_block_padding = $+1
+	  ld bc,1
+	  add hl,bc
+	  ex de,hl
 	 pop bc
 	 inc bc
-	
-	 ; Add in padding to avoid flushes (must be at least 1)
-ram_block_padding = $+1
-	 ld hl,1
-	 add hl,de
-	 ex de,hl
-	
-	 ld hl,(ix-3)
 	 ldir
-	
+	 
 #ifdef DEBUG
 	 jp recompile_end_common
 #else
