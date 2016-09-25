@@ -26,9 +26,8 @@ r_cycle_check:
 	ex af,af'
 	ld a,iyh
 	add a,a
-	jr c,cycle_overflow_for_jump
-	ex af,af'
-	ret
+	ret nc
+	jp cycle_overflow_for_jump
 	
 	.block $18-$
 r_push:
@@ -97,11 +96,6 @@ do_pop:
 	inc.l hl
 	exx
 	jp (ix)
-	
-cycle_overflow_for_jump:
-	pop ix
-	ld ix,(ix+1)
-	jr cycle_overflow
 	
 do_call_reset_callstack:
 	ld b,CALL_STACK_DEPTH
@@ -178,6 +172,9 @@ ophandlerRETnomatch:
 	pop bc
 	jr dispatch_cycles_exx
 	
+cycle_overflow_for_jump:
+	pop ix
+	ld ix,(ix+2)
 cycle_overflow:
 	push hl
 cycle_overflow_loop:
@@ -311,6 +308,7 @@ decode_jump:
 	  ld c,(hl)
 	  inc hl
 	  ld de,(hl)
+	  inc hl
 	  push hl
 	   di
 	   call.il decode_jump_helper
@@ -318,6 +316,8 @@ decode_jump:
 	  ld (hl),ix
 	  dec hl
 	  ld (hl),$C3	;JP
+	  dec hl
+	  ld (hl),$08	;EX AF,AF'
 	  dec hl
 	  sub (hl)	;calc cycle count
 	  ld (hl),RST_CYCLE_CHECK

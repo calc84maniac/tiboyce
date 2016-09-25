@@ -184,7 +184,7 @@ _opgenJRcond:
 	xor $20 ^ $28
 	ld (de),a
 	inc de
-	ld a,7
+	ld a,8
 	ld (de),a
 	inc de
 	ld a,b
@@ -199,7 +199,7 @@ _opgenJPcond:
 	xor $C2 ^ $28
 	ld (de),a
 	inc de
-	ld a,7
+	ld a,8
 	ld (de),a
 	inc de
 	ld a,b
