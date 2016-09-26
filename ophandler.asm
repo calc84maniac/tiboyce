@@ -68,10 +68,8 @@ flush_mem_finish:
 	ld.sis sp,myz80stack-2
 	ld sp,myADLstack
 	ld bc,(CALL_STACK_DEPTH+1)*256
-	exx
-	ex af,af'
 	ei
-	jp.s (ix)
+	jp.sis dispatch_cycles_exx
 	
 ; Flushes the JIT code and recompiles anew.
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -92,6 +90,9 @@ flush_mem:
 	dec de
 	push hl
 	 call.il lookup_gb_code_address
+	 ld (_+2),a
+_
+	 lea iy,iy+0
 	 jr flush_mem_finish
 	
 ; Handles an OAM transfer operation.

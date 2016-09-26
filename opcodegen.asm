@@ -4,7 +4,6 @@ opgenroutines:
 opgenE9:
 	inc a
 	ret m
-	call opgen_emit_RET
 	ex de,hl
 	ld (hl),$C3
 	inc hl
@@ -38,6 +37,8 @@ opgenJR:
 	jp _opgenJR
 opgenRET:
 	jp _opgenRET
+opgenRETcond:
+	jp _opgenRETcond
 
 opgen08:
 	call opgenroutinecall2byte_5cc
@@ -171,8 +172,6 @@ opgenJRcond:
 	jr _opgenJRcond
 opgenJPcond:
 	jr _opgenJPcond
-opgenRETcond:
-	jr _opgenRETcond
 	
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
@@ -204,22 +203,6 @@ _opgenJPcond:
 	inc de
 	ld a,b
 	call opgen_emit_JP
-	jr opgen_next_skip
-	
-_opgenRETcond:
-	add a,5
-	ret m
-	dec iy
-	ld b,a
-	ld a,c
-	xor $C0 ^ $28
-	ld (de),a
-	inc de
-	ld a,4
-	ld (de),a
-	inc de
-	ld a,b
-	call opgen_emit_RET
 	jr opgen_next_skip
 	
 _opgenRETI:

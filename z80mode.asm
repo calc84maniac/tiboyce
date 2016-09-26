@@ -26,7 +26,7 @@ r_cycle_check:
 	ex af,af'
 	ld a,iyh
 	add a,a
-	ret nc
+	ret c
 	jp cycle_overflow_for_jump
 	
 	.block $18-$
@@ -143,7 +143,7 @@ _
 	lea iy,iy+0
 	ld a,iyh
 	add a,a
-	jr c,cycle_overflow
+	jr nc,cycle_overflow
 	ex af,af'
 	jp (ix)
 	
@@ -192,10 +192,10 @@ _
 	 cp 144
 	 jr z,vblank_handler
 vblank_handler_ret:
-	 lea iy,iy+112
+	 lea iy,iy-112
 	 ld a,iyh
-	 inc a
-	 jr z,cycle_overflow_loop
+	 add a,a
+	 jr nc,cycle_overflow_loop
 	 ld l,h
 	 ld a,(hl)
 	 ld l,IF & $FF
@@ -239,6 +239,12 @@ dispatch_int:
 	    lea de,ix
 	    di
 	    call.il lookup_gb_code_address
+	    ld.lil (int_cached_cycles),a
+	    ; Subtract cycles from block end (but spend 5 for dispatch)
+	    add a,5
+	    ld (_+2),a
+_
+	    lea iy,iy+0
 	    ; If we're on a HALT, exit it
 	    ld.l a,(ix)
 	    cp $76
@@ -254,6 +260,9 @@ _
 	   pop hl
 	   ex de,hl
 	   call.il lookup_code_cached
+	   ld (_+2),a
+_
+	   lea iy,iy+0
 	  pop de
 	 pop bc
 	 ex (sp),hl
@@ -304,22 +313,25 @@ decode_jump:
 	ex (sp),hl
 	push bc
 	 push de
-	  inc hl
 	  ld ix,(hl)
 	  inc hl
 	  inc hl
 	  ld de,(hl)
+	  inc hl
+	  inc hl
+	  ld a,(hl)
 	  push hl
 	   di
 	   call.il decode_jump_helper
 	  pop hl
+	  add a,(hl)	;calc cycle count
+	  dec hl
 	  ld (hl),ix
 	  dec hl
 	  ld (hl),$C3	;JP
 	  dec hl
 	  ld (hl),$08	;EX AF,AF'
 	  dec hl
-	  sub (hl)	;calc cycle count
 	  ld (hl),RST_CYCLE_CHECK
 	  dec hl
 	  ld (hl),a
@@ -338,14 +350,14 @@ decode_call:
 	ex (sp),hl
 	push bc
 	 push de
+	  ld de,(hl)
+	  inc hl
+	  inc hl
 	  push hl
-	   ld de,(hl)
 	   di
 	   call.il decode_call_helper
 _
 	  pop hl
-	  inc hl
-	  inc hl
 	  sub (hl)
 	  inc hl
 	  ld (hl),a
@@ -365,11 +377,34 @@ decode_rst:
 	ex (sp),hl
 	push bc
 	 push de
+	  ld de,(hl)
+	  inc hl
+	  inc hl
 	  push hl
-	   ld de,(hl)
 	   di
 	   call.il decode_rst_helper
 	   jr -_
+	   
+decode_ret_cond:
+	ex af,af'
+	ex (sp),hl
+	push bc
+	 push de
+	  di
+	  call.il decode_ret_cond_helper
+	  sub (hl)
+	  ld (hl),$C9
+	  dec hl
+	  ld (hl),a
+	  dec hl
+	  ld (hl),$33
+	  dec hl
+	  ld (hl),$ED	;LEA IY,IY+d
+	 pop de
+	pop bc
+	ex (sp),hl
+	ex af,af'
+	ret
 	
 wait_for_interrupt_stub:
 	ei
@@ -453,7 +488,7 @@ _
 	ex af,af'
 	ret
 do_swap_hl:
-	lea iy,iy-2	;Consume 2 extra cycles
+	lea iy,iy+2	;Consume 2 extra cycles
 	call mem_read_any
 	rrca
 	rrca
@@ -490,7 +525,7 @@ do_bits_smc = $+1
 	ld a,ixh
 	ret
 do_bits_readonly:
-	dec iy	;Consume 1 extra cycle
+	inc iy	;Consume 1 extra cycle
 	ld (do_bits_readonly_smc),a
 	call mem_read_any
 	; Use L because we have to affect flags, bleh
@@ -589,7 +624,7 @@ handle_waitloop_ly:
 	pop ix
 	ld ix,(ix)
 _
-	ld iy,-1
+	ld iy,0
 	jp cycle_overflow
 	
 ophandler76:
@@ -866,7 +901,7 @@ _
 	
 readDIV:
 	ld a,r
-	sub iyl
+	add a,iyl
 	ld ixl,a
 	ex af,af'
 	ret
@@ -889,10 +924,10 @@ _
 	cp 144
 	jr nc,_
 	ld a,e
-	cp 51
+	add a,51
 	jr c,++_
 	set 1,c
-	cp 51 + 43
+	add a,43
 	jr nc,++_
 _
 	inc c
@@ -1368,14 +1403,14 @@ read_cycle_lookup_found_fast:
 	  ld (hl),a
 	  ex de,hl
 	  ld a,iyl
-	  sub (hl)
-	  ld e,a
+	  add a,(hl)
 	 pop bc
 	pop.l hl
-	ret nc
-	add a,112
+_
 	ld e,a
-	ret
+	add a,112
+	ret c
+	jr -_
 	
 keys:
 	.dw $FFFF

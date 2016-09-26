@@ -1,10 +1,12 @@
 decode_jump_helper:
+	ld bc,recompile_struct
+	add ix,bc
+	sub (ix+7)
+	ld.s (hl),a
+	
 	call get_base_address
 	ld (base_address),hl
 	add hl,de
-	
-	ld de,recompile_struct
-	add ix,de
 	
 	push hl
 	 call lookup_code_link_internal
@@ -20,6 +22,15 @@ decode_jump_helper:
 	ret.l
 	
 decode_rst_helper:
+	push de
+	 ex de,hl
+	 call lookup_code_block
+	 ex de,hl
+	 dec bc
+	 ld a,(bc)
+	 sub.s (hl)
+	 ld.s (hl),a
+	pop de
 	call get_base_address
 	add hl,de
 	dec hl
@@ -30,6 +41,15 @@ decode_rst_helper:
 	jr _
 	
 decode_call_helper:
+	push de
+	 ex de,hl
+	 call lookup_code_block
+	 ex de,hl
+	 dec bc
+	 ld a,(bc)
+	 sub.s (hl)
+	 ld.s (hl),a
+	pop de
 	call get_base_address
 	add hl,de
 	dec hl
@@ -38,6 +58,17 @@ decode_call_helper:
 	ld e,(hl)
 _
 	call lookup_code
+	add a,3	; Taken call eats 3 cycles
+	ei
+	ret.l
+	
+decode_ret_cond_helper:
+	ex de,hl
+	call lookup_code_block
+	ex de,hl
+	dec bc
+	ld a,(bc)
+	ei
 	ret.l
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM

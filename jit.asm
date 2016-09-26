@@ -139,7 +139,7 @@ lookup_code_block_lower:
 ;          HL = 16-bit Z80 code pointer (rounded up)
 ;          DE = GB address
 ;          IX = Literal 24-bit pointer to GB address
-;          A = cycle offset within block
+;          A = NEGATIVE number of cycles until block end
 ; Destroys AF,BC
 lookup_gb_code_address:
 #ifdef 0
@@ -159,7 +159,8 @@ lookup_gb_code_address:
 	 jr z,lookup_gb_found
 	 lea iy,ix
 	 add iy,iy
-	 ld iyl,0
+	 ld a,(ix+7)
+	 ld iyl,a
 	 jr nc,lookup_gb_found_loop
 	 ld a,RAM_PREFIX_SIZE
 	 jr lookup_gb_add
@@ -168,6 +169,7 @@ lookup_gb_found_loop:
 	 inc b
 	 ld a,(bc)
 	 dec b
+	 neg
 	 add a,iyl
 	 ld iyl,a
 	 ld a,(bc)
@@ -300,6 +302,8 @@ int_cache_hit:
 int_cached_code = $+2
 	 ld ix,0
 	 xor a
+int_cached_cycles = $+1
+	 sub 0
 	pop hl
 	ei
 	ret.l
@@ -348,7 +352,7 @@ pop_and_lookup_code_cached:
 ;
 ; Inputs:  DE = Game Boy address
 ; Outputs: IX = recompiled code address
-;          A = cycle index within block
+;          A = number of cycles until block end
 ; Destroys AF,BC,DE
 lookup_code_cached:
 	push hl
@@ -402,7 +406,7 @@ lookup_code_cached_lower:
 ;          IX = struct pointer of currently executing block
 ;          (base_address) = base address of pointer in HL
 ; Outputs: IX = recompiled code pointer
-;          A = cycle index within block
+;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
 lookup_code_link_internal:
 	ex de,hl
@@ -410,7 +414,7 @@ lookup_code_link_internal:
 	jr z,lookup_code_by_pointer
 	; We're running from RAM, check if destination is in running block
 	ld hl,(ix+2)
-	xor a
+	or a
 	sbc hl,de
 	jr z,internal_found_start
 	jr nc,lookup_code_by_pointer
@@ -419,6 +423,7 @@ lookup_code_link_internal:
 	add hl,bc
 	jr nc,lookup_code_by_pointer
 internal_found_start:
+	ld a,(ix+7)
 	ld ix,(ix)
 	lea ix,ix+RAM_PREFIX_SIZE
 	ret z
@@ -451,7 +456,9 @@ _
 	 inc b
 	 ld a,(bc)
 	 dec b
+	 neg
 	 add a,iyl
+	 or a
 	 sbc hl,de
 	 jr c,foundloop_internal
 	pop iy
@@ -474,7 +481,7 @@ lookup_code:
 ; Inputs:  DE = direct 24-bit GB address to look up
 ;          (base_address) = base address of pointer in DE
 ; Outputs: IX = recompiled code pointer
-;          A = cycle index within block
+;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
 lookup_code_by_pointer:
 	push iy
@@ -517,12 +524,13 @@ lookuploop:
 	 add hl,bc
 	 jr nc,lookuploop
 	 ; Don't allow jumping to the middle of a RAM block
-	 bit 7,(ix+4)
-	 jr nz,lookuploop
+	 ld a,(ix+4)
+	 rla
+	 jr c,lookuploop
 	 push ix
-	  xor a
 	  sbc hl,bc
 	  ld bc,opcodesizes
+	  ld a,(ix+7)
 	  ld ix,(ix)
 foundloop:
 	  ld iyl,a
@@ -549,7 +557,9 @@ _
 	  inc b
 	  ld a,(bc)
 	  dec b
+	  neg
 	  add a,iyl
+	  or a
 	  sbc hl,de
 	  jr c,foundloop
 	  jr nz,lookuploop_restore
@@ -558,9 +568,9 @@ _
 	ret
 	
 lookupfoundstart:
+	 ld a,(ix+7)
 	 ld ix,(ix)
 	pop iy
-	xor a
 	ret
 	
 flush_and_recompile_pop:
@@ -580,7 +590,7 @@ flush_and_recompile:
 ;          IY saved on stack
 ;          (base_address) = base address of pointer in DE
 ; Outputs: IX = recompiled code pointer
-;          A = 0 (cycle count at start)
+;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
 recompile:
 	 ld ix,(recompile_struct_end)
@@ -625,7 +635,6 @@ recompile:
 	 call generate_opcodes
 	
 recompile_end_common:
-	 xor a
 	pop iy
 	ld (ix+8),de
 	ld hl,(z80codebase+memroutine_next)
@@ -635,7 +644,7 @@ recompile_end_common:
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
 	ld de,(base_address)
-	or a
+	xor a
 	sbc hl,de
 	ld.sis (flush_address),hl
 	ld ix,flush_handler
@@ -835,7 +844,8 @@ generate_opcodes:
 	; Check cycle count and reset carry
 	or a
 	ret p
-	ld (ix+7),$7F
+	ld a,$7F
+	ld (ix+7),a
 	ret
 	
 #ifdef 0
@@ -1325,6 +1335,8 @@ opgen_emit_call:
 	inc hl
 	ld (hl),b
 	inc hl
+	; Store cycle count for call not taken, used by cached RET
+	sub 3
 	ld b,a
 	scf
 	ld a,(base_address)
@@ -1390,9 +1402,6 @@ opgen_emit_jump_swapped:
 	inc hl
 	ld (hl),decode_jump >> 8
 	inc hl
-	; Save cycle count
-	ld (hl),a
-	inc hl
 	; Save block struct pointer
 opgen_emit_jump_smc_1 = $+1
 	ld (hl),0
@@ -1404,27 +1413,41 @@ opgen_emit_jump_smc_2 = $+1
 	ld (hl),c
 	inc hl
 	ld (hl),b
+	inc hl
+	; Save cycle count
+	ld (hl),a
 	ex de,hl
 	ret
 	
 _opgenRET:
-	; Use negative cycle count
 	add a,4
 	ret m
+	; Update total cycle count
 	lea iy,iy-3
-opgen_emit_RET:
-	neg
+	ld a,c
+	ld (de),a
+	ret
+	
+_opgenRETcond:
+	add a,5
+	ret m
+	dec iy
+	ld b,a
 	ex de,hl
-	ld (hl),$ED	;LEA IY,IY+d
-	inc hl
-	ld (hl),$33
-	inc hl
+	ld a,c
+	xor $C0 ^ $28
 	ld (hl),a
 	inc hl
-	ld (hl),$C9	;RET
-	ex de,hl
-	xor a
-	ret
+	ld (hl),4
+	inc hl
+	ld (hl),$CD
+	inc hl
+	ld (hl),decode_ret_cond & $FF
+	inc hl
+	ld (hl),decode_ret_cond >> 8
+	inc hl
+	ld (hl),b
+	jp opgen_next_swap_skip
 	
 opgenroutinecall2byte_5cc:
 	lea iy,iy-2
