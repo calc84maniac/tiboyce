@@ -90,6 +90,40 @@ _
 	ld hl,hram_base
 	ret
 	
+; Gets the recompile struct entry for a given code pointer.
+;
+; Locating the code block is O(log N) in number of blocks.
+;
+; Inputs: DE = 16-bit Z80 code pointer
+; Outputs: IX = BC = following struct entry
+; Destroys F,BC,HL
+lookup_code_block:
+#ifdef 0
+	push de
+	 APRINTF(LookupGBMessage)
+	pop de
+#endif
+	ld bc,recompile_struct
+	ld ix,(recompile_struct_end)
+lookup_code_block_loop:
+	lea hl,ix
+	or a
+	sbc hl,bc
+	ret z
+	srl h
+	rr l
+	res 2,l
+	add hl,bc
+	push hl
+	 ld hl,(hl)
+	 scf
+	 sbc.s hl,de
+	 jr nc,lookup_code_block_lower
+	 ex (sp),ix
+	 lea bc,ix+8
+lookup_code_block_lower:
+	pop ix
+	jr lookup_code_block_loop
 	
 ; Gets the Game Boy opcode address from a recompiled code pointer, rounding up.
 ;
@@ -113,29 +147,7 @@ lookup_gb_code_address:
 	 APRINTF(LookupGBMessage)
 	pop de
 #endif
-	ld bc,recompile_struct
-	ld ix,(recompile_struct_end)
-lookup_gb_loop:
-	lea hl,ix
-	or a
-	sbc hl,bc
-	jr z,lookup_gb_found_region
-	srl h
-	rr l
-	res 2,l
-	add hl,bc
-	push hl
-	 ld hl,(hl)
-	 scf
-	 sbc.s hl,de
-	 jr nc,lookup_gb_lower
-	 ex (sp),ix
-	 lea bc,ix+8
-lookup_gb_lower:
-	pop ix
-	jr lookup_gb_loop
-	
-lookup_gb_found_region:
+	call lookup_code_block
 	ld a,b
 	or c
 	jr z,$
