@@ -135,8 +135,7 @@ lookup_code_block_lower:
 ; Locating the address within the block is O(N) in number of instructions.
 ;
 ; Inputs:  DE = 16-bit Z80 code pointer
-; Outputs: NC if not found, or:
-;          HL = 16-bit Z80 code pointer (rounded up)
+; Outputs: HL = 16-bit Z80 code pointer (rounded up)
 ;          DE = GB address
 ;          IX = Literal 24-bit pointer to GB address
 ;          A = NEGATIVE number of cycles until block end
@@ -151,76 +150,69 @@ lookup_gb_code_address:
 	ld a,b
 	or c
 	jr z,$
-	push iy
-	 ld bc,opcodesizes
-	 ld hl,(ix-8)
-	 ld ix,(ix-6)
-	 sbc.s hl,de
-	 jr z,lookup_gb_found
-	 lea iy,ix
-	 add iy,iy
-	 ld a,(ix+7)
-	 ld iyl,a
-	 jr nc,lookup_gb_found_loop
-	 ld a,RAM_PREFIX_SIZE
-	 jr lookup_gb_add
+	ld hl,(ix-8)
+	xor a
+	sub (ix-1)
+	ld ix,(ix-6)
+	or a
+	sbc.s hl,de
+	jr z,lookup_gb_found
+	push hl
+	 ex (sp),iy
+	 lea hl,ix
+	 add hl,hl
+	 ld hl,opcodesizes
+	 ld bc,RAM_PREFIX_SIZE
+	 jr c,lookup_gb_add
 lookup_gb_found_loop:
-	 ld c,(ix)
-	 inc b
-	 ld a,(bc)
-	 dec b
-	 neg
-	 add a,iyl
-	 ld iyl,a
-	 ld a,(bc)
-	 add a,ixl
-	 jr nc,_
-	 ld ixl,$FF
-	 inc ix
-_
-	 ld ixl,a
-	 dec b
-	 ld a,(bc)
-	 inc b
-lookup_gb_add:
-	 add a,l
-	 ld l,a
-	 jr nc,lookup_gb_found_loop
+	 ld l,(ix)
 	 inc h
-	 jr nz,lookup_gb_found_loop
+	 add a,(hl)
+	 dec h
+	 ld c,(hl)
+	 add ix,bc
+	 dec h
+	 ld c,(hl)
+	 inc h
+lookup_gb_add:
+	 add.s iy,bc
+	 jr nc,lookup_gb_found_loop
+	 ex (sp),iy
+	pop hl
 lookup_gb_found:
-	 add hl,de
-	 push hl
-	  lea hl,ix
-	  ld de,(rom_start)
-	  sbc hl,de
-	  ld de,$4000
-	  sbc hl,de
-	  jr c,lookup_gb_done
-	  lea hl,ix
-	  ld de,(rom_bank_base)
-	  sbc hl,de
-	  ld de,$8000
-	  sbc hl,de
-	  jr c,lookup_gb_done
-	  lea hl,ix
-	  ld de,vram_base
-	  sbc hl,de
-	  ld de,$FE00
-	  sbc hl,de
-	  jr c,lookup_gb_done
-	  lea hl,ix
-	  ld de,(cram_bank_base)
-	  sbc hl,de
-	  ld de,$C000
-	  sbc hl,de
-	  jr c,lookup_gb_done
-	  lea hl,ix
-	  ld de,-hram_base
+	add hl,de
+	push hl
+	 lea hl,ix
+	 ld de,(rom_start)
+	 sbc hl,de
+	 ld de,$4000
+	 sbc hl,de
+	 jr c,lookup_gb_done
+	 lea hl,ix
+	 ld de,(rom_bank_base)
+	 sbc hl,de
+	 ld de,$8000
+	 sbc hl,de
+	 jr c,lookup_gb_done
+	 lea hl,ix
+	 ld de,vram_base
+	 sbc hl,de
+	 ld de,$FE00
+	 sbc hl,de
+	 jr c,lookup_gb_done
+	 lea hl,ix
+	 ld de,(cram_bank_base)
+	 sbc hl,de
+	 ld de,$C000
+	 sbc hl,de
+	 jr c,lookup_gb_done
+	 lea hl,ix
+	 ld de,-hram_base
 lookup_gb_done:
-	  add hl,de
-	  ex de,hl
+	 add hl,de
+	 ex de,hl
 #ifdef 0
+	 push af
 	  push bc
 	   push ix
 	    push de
@@ -228,11 +220,9 @@ lookup_gb_done:
 	    pop de
 	   pop ix
 	  pop bc
+	 pop af
 #endif
-	 pop hl
-	 ld a,iyl
-	pop iy
-	scf
+	pop hl
 	ret.l
 	
 	
@@ -427,41 +417,37 @@ internal_found_start:
 	ld ix,(ix)
 	lea ix,ix+RAM_PREFIX_SIZE
 	ret z
-	push iy
-	 or a
-	 sbc hl,bc
-	 ld bc,opcodesizes
-foundloop_internal:
-	 ld iyl,a
+	or a
+	sbc hl,bc
+	push hl
+	 ex (sp),iy
 	 add hl,de
-	 ld c,(hl)
-	 ; Add GB instruction size
-	 ld a,(bc)
-	 add a,l
-	 ld l,a
-	 jr nc,_
-	 ld l,$FF
-	 inc hl
-_
-	 ; Add recompiled instruction size
-	 dec b
-	 ld a,(bc)
-	 inc b
-	 add a,ixl
-	 ld ixl,a
-	 jr nc,_
-	 inc ixh
-_
-	 ; Add cycles
-	 inc b
-	 ld a,(bc)
-	 dec b
-	 neg
-	 add a,iyl
-	 or a
-	 sbc hl,de
-	 jr c,foundloop_internal
+	 push de
+	  ld de,opcodesizes
+	  ld b,e
+foundloop_internal:
+	  ; Get current opcode
+	  ld e,(hl)
+	  ex de,hl
+	  ; Add recompiled instruction size
+	  dec h
+	  ld c,(hl)
+	  inc h
+	  add ix,bc
+	  ; Add cycles
+	  inc h
+	  sub (hl)
+	  dec h
+	  ; Add GB instruction size
+	  ld c,(hl)
+	  ex de,hl
+	  add hl,bc
+	  add iy,bc
+	  jr nc,foundloop_internal
+	 pop de
 	pop iy
+	or a
+	sbc hl,de
 	ret z
 	jr lookup_code_by_pointer
 	
@@ -529,39 +515,36 @@ lookuploop:
 	 jr c,lookuploop
 	 push ix
 	  sbc hl,bc
-	  ld bc,opcodesizes
-	  ld a,(ix+7)
-	  ld ix,(ix)
-foundloop:
-	  ld iyl,a
+	  push hl
+	  pop iy
 	  add hl,de
-	  ld c,(hl)
-	  ; Add GB instruction size
-	  ld a,(bc)
-	  add a,l
-	  jr nc,_
-	  ld l,$FF
-	  inc hl
-_
-	  ld l,a
-	  ; Add recompiled instruction size
-	  dec b
-	  ld a,(bc)
-	  inc b
-	  add a,ixl
-	  ld ixl,a
-	  jr nc,_
-	  inc ixh
-_
-	  ; Add cycles
-	  inc b
-	  ld a,(bc)
-	  dec b
-	  neg
-	  add a,iyl
+	  push de
+	   ld de,opcodesizes
+	   ld b,e
+	   ld a,(ix+7)
+	   ld ix,(ix)
+foundloop:
+	   ; Get current opcode
+	   ld e,(hl)
+	   ex de,hl
+	   ; Add recompiled instruction size
+	   dec h
+	   ld c,(hl)
+	   inc h
+	   add ix,bc
+	   ; Add cycles
+	   inc h
+	   sub (hl)
+	   dec h
+	   ; Add GB instruction size
+	   ld c,(hl)
+	   ex de,hl
+	   add hl,bc
+	   add iy,bc
+	   jr nc,foundloop
+	  pop de
 	  or a
 	  sbc hl,de
-	  jr c,foundloop
 	  jr nz,lookuploop_restore
 	 pop hl
 	pop iy
