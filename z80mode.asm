@@ -192,7 +192,7 @@ _
 	 cp 144
 	 jr z,vblank_handler
 vblank_handler_ret:
-	 lea iy,iy-112
+	 lea iy,iy-114
 	 ld a,iyh
 	 add a,a
 	 jr nc,cycle_overflow_loop
@@ -1408,7 +1408,7 @@ read_cycle_lookup_found_fast:
 	pop.l hl
 _
 	ld e,a
-	add a,112
+	add a,114
 	ret c
 	jr -_
 	
