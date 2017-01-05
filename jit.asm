@@ -50,12 +50,13 @@ flush_code:
 	ld (hl),l
 	ld bc,$01FF
 	ldir
+	; Invalidate both the read and write cycle LUTs
 	ld hl,z80codebase+read_cycle_LUT
 	ld (hl),e
 	push hl
 	pop de
 	inc de
-	ld c,READ_CYCLE_LUT_SIZE*3
+	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 - 1
 	ldir
 	; Set the cached interrupt return address to NULL
 	ld (int_cached_return),bc
@@ -287,17 +288,6 @@ _
 	ret.l
 	
 	
-	 ; Fast return to the last interrupted code address
-int_cache_hit:
-int_cached_code = $+2
-	 ld ix,0
-	 xor a
-int_cached_cycles = $+1
-	 sub 0
-	pop hl
-	ei
-	ret.l
-	
 	
 	 ; When the binary search finishes, see if we found it
 lookup_code_cached_found:
@@ -313,6 +303,19 @@ lookup_code_cached_found:
 	 ; We found it!
 	 ld a,(ix+5)
 	 ld ix,(ix+3)
+	pop hl
+	ei
+	ret.l
+	
+
+	
+	 ; Fast return to the last interrupted code address
+int_cache_hit:
+int_cached_code = $+2
+	 ld ix,0
+	 xor a
+int_cached_cycles = $+1
+	 sub 0
 	pop hl
 	ei
 	ret.l
@@ -592,6 +595,7 @@ recompile:
 	 jr nz,recompile_ram
 	
 #ifdef DEBUG
+	 push ix
 	  push hl
 	   inc hl
 	   dec.s hl
@@ -613,6 +617,7 @@ recompile:
 	    pop de
 	   pop hl
 	  pop hl
+	 pop ix
 #endif
 	 
 	 call generate_opcodes
@@ -638,23 +643,23 @@ flush_cache:
 	
 recompile_ram:
 #ifdef DEBUG
-	  push ix
+	 push ix
+	  push hl
+	   inc hl
+	   dec.s hl
 	   push hl
-	    inc hl
-	    dec.s hl
-	    push hl
-	     push de
-	      ld hl,(base_address)
-	      ex de,hl
-	      or a
-	      sbc hl,de
-	      push hl
-	       APRINTF(RecompileRamMessage)
-	      pop hl
-	     pop de
-	    pop hl
+	    push de
+	     ld hl,(base_address)
+	     ex de,hl
+	     or a
+	     sbc hl,de
+	     push hl
+	      APRINTF(RecompileRamMessage)
+	     pop hl
+	    pop de
 	   pop hl
-	  pop ix
+	  pop hl
+	 pop ix
 #endif
 	 
 	 ld (hl),$CD

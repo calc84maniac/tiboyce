@@ -1,6 +1,3 @@
-#define CALL_STACK_DEPTH 32
-#define READ_CYCLE_LUT_SIZE 8
-
 z80code:
 	.assume adl=0
 	.org 0
@@ -18,8 +15,6 @@ r_mem:
 	pop ix
 	push af
 	 jp decode_mem
-last_read_cycle:
-	.db 0
 	
 	.block $10-$
 r_cycle_check:
@@ -172,37 +167,59 @@ ophandlerRETnomatch:
 	pop bc
 	jr dispatch_cycles_exx
 	
+	; Carry should be reset
 cycle_overflow_for_jump:
 	pop ix
 	ld ix,(ix+2)
+	; Carry should be reset
 cycle_overflow:
 	push hl
+	 push de
+	  push bc
 cycle_overflow_loop:
-	 ld hl,LY
-	 ld a,(hl)
-	 inc a
-	 cp 154
-	 jr c,_
-	 xor a
-_
-	 ld (hl),a
-	 inc hl
-	 cp (hl)
-	 call z,LYCmatch
-	 cp 144
-	 jr z,vblank_handler
+	   ld bc,(cycle_target_count)
+	   ld hl,CYCLES_PER_SCANLINE * 144
+	   sbc hl,bc
+	   jr z,vblank_handler
 vblank_handler_ret:
-	 lea iy,iy-114
-	 ld a,iyh
-	 add a,a
-	 jr nc,cycle_overflow_loop
-	 ld l,h
-	 ld a,(hl)
-	 ld l,IF & $FF
-	 and (hl)
+current_lyc_target_count = $+1
+	   ld hl,CYCLES_PER_SCANLINE * 0
+	   or a
+	   sbc hl,bc
+	   call z,LYCmatch
+	  
+	   call update_cycle_target
+	   ld hl,-CYCLES_PER_FRAME
+	   add hl,de
+	   jr c,_
+	   ex de,hl
+_
+	   ld (cycle_target_count),hl
+	   ex de,hl
+	   ld h,b
+	   ld l,c
+	   or a
+	   sbc hl,de
+	   jr c,_
+	   ld de,-CYCLES_PER_FRAME
+	   add hl,de
+_
+	   ex de,hl
+	   add iy,de
+	   
+	   ld a,iyh
+	   add a,a
+	   jr nc,cycle_overflow_loop
+	   
+	   sbc hl,hl	;ld hl,IE
+	   ld a,(hl)
+	   ld l,IF - ioregs
+	   and (hl)
 intstate = $+1
-	 and $00
-	 jr nz,trigger_interrupt
+	   and $00
+	   jr nz,trigger_interrupt
+	  pop bc
+	 pop de
 	pop hl
 	ex af,af'
 	jp (ix)
@@ -212,29 +229,27 @@ vblank_handler:
 	jp.lil vblank_helper
 	
 trigger_interrupt:
-	 rrca
-	 jr nc,_
-	 res 0,(hl)
-	 ld hl,$0040
-	 jr dispatch_int
+	   rrca
+	   jr nc,_
+	   res 0,(hl)
+	   ld hl,$0040
+	   jr dispatch_int
 _
-	 rrca
-	 jr nc,_
-	 res 1,(hl)
-	 ld hl,$0048
-	 jr dispatch_int
+	   rrca
+	   jr nc,_
+	   res 1,(hl)
+	   ld hl,$0048
+	   jr dispatch_int
 _
-	 rrca
-	 jr nc,_
-	 res 2,(hl)
-	 ld hl,$0050
-	 jr dispatch_int
+	   rrca
+	   jr nc,_
+	   res 2,(hl)
+	   ld hl,$0050
+	   jr dispatch_int
 _
-	 res 3,(hl)
-	 ld hl,$0058
+	   res 3,(hl)
+	   ld hl,$0058
 dispatch_int:
-	 push bc
-	  push de
 	   push hl
 	    lea de,ix
 	    di
@@ -263,8 +278,8 @@ _
 	   ld (_+2),a
 _
 	   lea iy,iy+0
-	  pop de
-	 pop bc
+	  pop bc
+	 pop de
 	 ex (sp),hl
 	 xor a
 	 ld (intstate),a
@@ -274,7 +289,7 @@ _
 	jp do_push
 	
 LYCmatch:
-	ld l,LCDC - ioregs
+	ld hl,LCDC
 	bit 7,(hl)
 	ret z
 	inc hl
@@ -625,6 +640,7 @@ handle_waitloop_ly:
 	ld ix,(ix)
 _
 	ld iy,0
+	or a
 	jp cycle_overflow
 	
 ophandler76:
@@ -908,27 +924,31 @@ readDIV:
 	
 readSTAT:
 	exx
-	call get_read_cycle_offset
+	push.l hl
+	 call get_read_cycle_count
+	 call get_scanline_from_cycle_count
+	 ld d,a
+	pop.l hl
 	ld a,(STAT)
 	and $F8
 	ld c,a
 	ld a,(LCDC)
 	add a,a
 	jr nc,++_
-	ld ix,(LY)
-	ld a,ixl
-	cp ixh
+	ld a,(LYC)
+	cp e
 	jr nz,_
 	set 2,c
 _
+	ld a,e
 	cp 144
 	jr nc,_
-	ld a,e
-	add a,51
-	jr c,++_
-	set 1,c
-	add a,43
+	ld a,d
+	cp 20 + 43
 	jr nc,++_
+	set 1,c
+	cp 20
+	jr c,++_
 _
 	inc c
 _
@@ -942,7 +962,13 @@ readLY:
 	add a,a
 	sbc a,a
 	jr z,_
-	ld a,(LY)
+	exx
+	push.l hl
+	 call get_read_cycle_count
+	 call get_scanline_from_cycle_count
+	 ld a,e
+	pop.l hl
+	exx
 _
 	ld ixl,a
 	ex af,af'
@@ -1077,7 +1103,7 @@ mem_write_bail:
 	jp (ix)
 	
 writeLCDC:
-	di
+	call get_scanline_from_write
 	jp.lil lcdc_write_helper
 	
 writeTAC:
@@ -1160,14 +1186,15 @@ writeDMA:
 write_scroll_swap:
 	ex af,af'
 write_scroll:
-	di
+	push ix
+	 call get_scanline_from_write
+	pop hl
 	jp.lil scroll_write_helper
 	
-writeLYC:
-	ex af,af'
 writeLYCswap:
-	di
-	ld (LYC),a
+	ex af,af'
+writeLYC:
+	call get_scanline_from_write
 	jp.lil lyc_write_helper
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
@@ -1213,6 +1240,7 @@ writeINT:
 	ld (ix),a
 writeINTswap:
 	ex af,af'
+checkIntPostUpdatePop:
 	pop ix
 	ld a,(intstate)
 	or a
@@ -1336,81 +1364,187 @@ mbc_2000_denied:
 	ex af,af'
 	ret
 	
+get_read_cycle_count:
+	ld ix,read_cycle_LUT
 ; Inputs: IY = current block cycle base
+;         IX = pointer to cache LUT
+;         B = number of empty call stack entries
 ;         (SP+4) or (SP+6) = JIT return address
 ;         AFBCDEHL' have been swapped
-; Outputs: E = adjusted current cycle count
-; Destroys DE,IX
-get_read_cycle_offset:
-	push.l hl
-	 push bc
-	  ld hl,6
-	  add hl,sp
-	  ld bc,(hl)
-	  ld a,b
-	  cp z80codesize >> 8
-	  jr nc,_
-	  inc hl
-	  inc hl
-	  ld bc,(hl)
-	  or a
-_
-	  ld hl,read_cycle_LUT+(READ_CYCLE_LUT_SIZE*3)-2
-	  ld a,-(READ_CYCLE_LUT_SIZE*3)
-read_cycle_lookup_loop:
-	  ld de,(hl)
-	  dec hl
-	  ex de,hl
-	  sbc hl,bc
-	  jr z,read_cycle_lookup_found
-	  ex de,hl
-	  dec hl
-	  dec hl
-	  add a,3
-	  jr nc,read_cycle_lookup_loop
-	  ld d,b
-	  ld e,c
+; Outputs: HL = adjusted current cycle count
+; Destroys DE,HL,IX
+get_mem_cycle_count:
+	push bc
+	 ; Get the address of the recompiled code: the bottom stack entry
+	 ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * 4) - 2
+	 ld c,4
+	 mlt bc
+	 add hl,bc
+	 ld bc,(hl)
+	 
+	 lea hl,ix+MEM_CYCLE_LUT_SIZE-2
+	 ld a,-MEM_CYCLE_LUT_SIZE
+mem_cycle_lookup_loop:
+	 ld de,(hl)
+	 dec hl
+	 ex de,hl
+	 sbc hl,bc
+	 jr z,mem_cycle_lookup_found
+	 ex de,hl
+	 dec hl
+	 dec hl
+	 add a,3
+	 jr nc,mem_cycle_lookup_loop
+	 ld d,b
+	 ld e,c
+	 push ix
 	  di
 	  call.il lookup_gb_code_address
 	  ei
-	  push hl
-	   ld hl,last_read_cycle
-	   ld de,read_cycle_LUT
-	   ld c,(READ_CYCLE_LUT_SIZE-1)*3
-	   jr read_cycle_lookup_shift
-read_cycle_lookup_found:
-	  ld l,last_read_cycle
-	  add a,READ_CYCLE_LUT_SIZE*3
-	  jr z,read_cycle_lookup_found_fast
-	  cp (hl)
-	  jr nz,read_cycle_lookup_found_fast
-	  push bc
-	   ld c,a
-	   ld a,(de)
-read_cycle_lookup_shift:
-	   ld (hl),h
-	   ld b,h
-	   ld l,3
-	   add hl,de
-	   ldir
-	   ld (de),a
-	  pop bc
-	  dec hl
-	  ld (hl),b
-	  dec hl
-	  ld a,c
-read_cycle_lookup_found_fast:
-	  ld (hl),a
+	  ex (sp),hl
 	  ex de,hl
-	  ld a,iyl
-	  add a,(hl)
+	  ld hl,MEM_CYCLE_LUT_SIZE
+	  add hl,de
+	  ld c,MEM_CYCLE_LUT_SIZE-3
+	  jr mem_cycle_lookup_shift
+mem_cycle_lookup_found:
+	 lea hl,ix+MEM_CYCLE_LUT_SIZE
+	 add a,MEM_CYCLE_LUT_SIZE
+	 jr z,mem_cycle_lookup_found_fast
+	 cp (hl)
+	 jr nz,mem_cycle_lookup_found_fast
+	 push bc
+	  ld c,a
+	  ld a,(de)
+mem_cycle_lookup_shift:
+	  ld (hl),h
+	  ld hl,3
+	  ld b,h
+	  add hl,de
+	  ldir
+	  ld (de),a
 	 pop bc
-	pop.l hl
-_
-	ld e,a
-	add a,114
+	 dec hl
+	 ld (hl),b
+	 dec hl
+	 ld a,c
+mem_cycle_lookup_found_fast:
+	 ld (hl),a
+	 ld a,(de)
+	pop bc
+	
+; Inputs: IY = (negative) cycles until target
+;         A = (negative) number of cycles to subtract
+; Outputs: HL = cycle count within frame
+; Destroys: DE
+get_cycle_count_with_offset:
+	ld (get_cycle_count_with_offset_smc),a
+get_cycle_count_with_offset_smc = $+2
+	lea hl,iy+0
+; Inputs: HL = (negative) cycles until target
+; Outputs: HL = cycle count within frame
+; Destroys: DE
+get_block_end_cycle_count:
+cycle_target_count = $+1
+	ld de,0
+	add hl,de
 	ret c
-	jr -_
+	ld de,CYCLES_PER_FRAME
+	add hl,de
+	ret
+	
+; Inputs: BC = current cycle count
+; Outputs: DE = new cycle target (possibly offset by CYCLES_PER_FRAME)
+update_cycle_target:
+	ld hl,CYCLES_PER_FRAME
+	add hl,bc
+	ex de,hl
+	
+	ld hl,CYCLES_PER_SCANLINE * 144
+	sbc hl,bc
+	jr z,_
+	add hl,bc
+	jr nc,++_
+_
+	ld hl,CYCLES_PER_SCANLINE * 144 + CYCLES_PER_FRAME
+	or a
+_
+	sbc hl,de
+	jr nc,_
+	add hl,de
+	ex de,hl
+	or a
+_
+	
+	ld hl,(current_lyc_target_count)
+	sbc hl,bc
+	jr z,_
+	add hl,bc
+	jr nc,++_
+_
+	ld a,l
+	add a,CYCLES_PER_FRAME & $FF
+	ld l,a
+	ld a,h
+	adc a,CYCLES_PER_FRAME >> 8
+	ld h,a
+_
+	sbc hl,de
+	ret nc
+	add hl,de
+	ex de,hl
+	ret
+	
+get_scanline_from_write:
+	exx
+	push.l hl
+	ld ix,write_cycle_LUT
+	call get_mem_cycle_count
+	di
+	
+; Inputs: HL = cycle count within frame
+; Outputs: A = cycle count within scanline
+;          E = scanline index (0-153)
+; Destroys: D, HL
+get_scanline_from_cycle_count:
+scanline_cycle_count_cache = $+1
+	ld de,0
+	xor a
+	sbc hl,de
+	cp h
+	jr nz,++_
+	ld a,l
+scanline_index_cache = $+1
+	ld de,CYCLES_PER_SCANLINE * 256 + 0
+	cp d
+	ret c
+	sub d
+	cp d
+	jr nc,_
+	inc e
+	ex de,hl
+get_scanline_from_cycle_count_finish:
+	ld e,l
+	ld (scanline_index_cache),hl
+	mlt hl
+	ld (scanline_cycle_count_cache),hl
+	ret
+_
+	mlt de
+_
+	add hl,de
+	ld de,-(CYCLES_PER_SCANLINE * 128)
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
+	ld a,h
+	ld h,CYCLES_PER_SCANLINE
+	jr get_scanline_from_cycle_count_finish
 	
 keys:
 	.dw $FFFF

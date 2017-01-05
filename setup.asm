@@ -437,7 +437,7 @@ _
 	
 	ld a,1
 	ld (z80codebase+curr_rom_bank),a
-	ld iy,-114
+	ld iy,0
 	ld bc,$0013
 	ld de,$00D8
 	ld hl,$014D

@@ -1,3 +1,6 @@
+#define CALL_STACK_DEPTH 32
+#define MEM_CYCLE_LUT_SIZE 8*3
+
 #ifdef DEBUG
 #ifndef CEMU
 #define DBGNOSCALE
@@ -177,6 +180,10 @@ mpCEmuDbg = $FB0000
 mpZeroPage = $FF0000
 
 ;GB IO equates
+CYCLES_PER_SCANLINE = 114
+SCANLINES_PER_FRAME = 154
+CYCLES_PER_FRAME = CYCLES_PER_SCANLINE * SCANLINES_PER_FRAME
+
 ioregs = $ff00
 P1 = $ff00
 SB = $ff01
@@ -238,6 +245,7 @@ myz80stack = $FE00
 ; The end of the memory routines.
 memroutine_end = myz80stack-256
 read_cycle_LUT = memroutine_end+1
+write_cycle_LUT = read_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
 
 ; The bottom of the ADL stack. Grows down from the end of palette memory.
 myADLstack = mpLcdPalette + $0200

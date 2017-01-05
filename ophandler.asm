@@ -130,22 +130,20 @@ oam_transfer_helper:
 ; Catches up the renderer before changing an LCD register.
 ; Must be called only if the current frame is being rendered.
 ;
-; Inputs:  AF' has been swapped
+; Inputs:  E = current scanline
+;          AF' has been swapped
+;          BCDEHL' have been swapped
 ; Outputs: Scanlines rendered if applicable
+; Destroys: AF, DE
 render_catchup:
 	ld a,(hram_base+LCDC)
 	add a,a
 	ret nc
-	ld a,(hram_base+LY)
+	ld a,e
 	cp 144
-	ret nc
-	exx
 	push bc
-	 push hl
-	  call c,render_scanlines
-	 pop hl
+	 call c,render_scanlines
 	pop bc
-	exx
 	ret
 	
 ; Writes to an LCD scroll register (SCX,SCY,WX,WY).
@@ -153,67 +151,73 @@ render_catchup:
 ;
 ; Catches up the renderer before writing, and then applies SMC to renderer.
 ;
-; Inputs:  IX = 16-bit register address
+; Inputs:  HL = 16-bit register address
+;          E = current scanline
 ;          A' = value being written
 ;          AF' has been swapped
+;          BCDEHL' have been swapped
 ;          (SPS) = Z80 return address
+;          (SPL) = saved HL'
 ; Outputs: Scanlines rendered if applicable, SMC applied, value written
 ;          AF' has been unswapped
 scroll_write_helper:
 render_this_frame = $+1
-	ld a,1
-	or a
-	call nz,render_catchup
-	ld a,ixl
-	sub SCY - ioregs
-	jr nz,_
-	ex af,af'
-	ld (SCY_smc),a
-	jr scroll_write_done
+	 ld a,1
+	 or a
+	 jr z,_
+	 push hl
+	  call render_catchup
+	 pop hl
 _
-	sub WY - SCY
-	jr c,scroll_write_SCX
-	jr nz,scroll_write_WX
-	ex af,af'
-	ld (WY_smc),a
-	jr scroll_write_done
+	 ld a,l
+	 sub SCY - ioregs
+	 jr nz,_
+	 ex af,af'
+	 ld (SCY_smc),a
+	 jr scroll_write_done
+_
+	 sub WY - SCY
+	 jr c,scroll_write_SCX
+	 jr nz,scroll_write_WX
+	 ex af,af'
+	 ld (WY_smc),a
+	 jr scroll_write_done
 	
 scroll_write_WX:
-	exx
-	ex af,af'
-	ld c,a
-	ex af,af'
-	ld a,c
-	ld (WX_smc_2),a
-	cp 167
-	inc a
-	ld (WX_smc_3),a
-	sbc a,a
-	and $20
-	or $18	;JR vs JR C
-	ld (WX_smc_1),a
-	jr scroll_write_done_swap
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 ld (WX_smc_2),a
+	 cp 167
+	 inc a
+	 ld (WX_smc_3),a
+	 sbc a,a
+	 and $20
+	 or $18	;JR vs JR C
+	 ld (WX_smc_1),a
+	 jr scroll_write_done_swap
 	
 scroll_write_SCX:
-	exx
-	ex af,af'
-	ld c,a
-	ex af,af'
-	ld a,c
-	rrca
-	rrca
-	and $3E
-	ld (SCX_smc_1),a
-	ld a,c
-	cpl
-	and 7
-	inc a
-	ld (SCX_smc_2),a
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 rrca
+	 rrca
+	 and $3E
+	 ld (SCX_smc_1),a
+	 ld a,c
+	 cpl
+	 and 7
+	 inc a
+	 ld (SCX_smc_2),a
 scroll_write_done_swap:
-	exx
-	ex af,af'
+	 ex af,af'
 scroll_write_done:
-	ld.s (ix),a
+	 ld.s (hl),a
+	pop hl
+	exx
 	pop.s ix
 	ei
 	jp.s (ix)
@@ -224,15 +228,18 @@ scroll_write_done:
 ; Catches up the renderer before writing, and then applies SMC to renderer.
 ;
 ; Inputs:  A' = value being written
+;          E = current scanline
 ;          AF' has been swapped
+;          BCDEHL' have been swapped
 ;          (SPS) = Z80 return address
+;          (SPL) = saved HL'
 ; Outputs: Scanlines rendered if applicable, SMC applied, value written
 ;          AF' has been unswapped
+;          BCDEHL' have been unswapped
 lcdc_write_helper:
-	ld a,(render_this_frame)
-	or a
-	call nz,render_catchup
-	push hl
+	 ld a,(render_this_frame)
+	 or a
+	 call nz,render_catchup
 	 ld hl,hram_base+LCDC
 	 ld a,(hl)
 	 ex af,af'
@@ -297,10 +304,11 @@ _
 	 ld a,(LCDC_7_smc)
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
-	 xor a
-	 ld (hram_base+LY),a
+	 ;xor a
+	 ;ld (hram_base+LY),a
 _
 	pop hl
+	exx
 	ex af,af'
 	pop.s ix
 	ei
@@ -309,33 +317,53 @@ _
 ; Post-write operation for the LY compare register (LYC).
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
-; Sets the host timer match value according to the new value of LYC.
+; Sets the new cycle target according to the new value of LYC.
 ; Triggers a GB interrupt if LY already matches the new LYC value.
 ;
-; Inputs:  A = value being written
+; Inputs:  A' = value being written
+;          E = current scanline
 ;          (SPS) = Z80 return address
-; Outputs: Host timer match register updated
+;          (SPL) = saved HL'
+;          BCDEHL' are swapped
+; Outputs: LYC and cycle targets updated
 lyc_write_helper:
-	exx
-	ld c,a
-	ex af,af'
-	push hl
-	 ld hl,hram_base+LY
-	 ld a,(hl)
-	 cp c
+	 ex af,af'
+	 ld d,a
+	 ex af,af'
+	 ld a,d
+	 ld (hram_base + LYC),a
+	 xor e
 	 jr nz,_
-	 ld l,STAT & $FF
+	 ld hl,hram_base + STAT
 	 bit 6,(hl)
 	 jr z,_
-	 ld l,IF & $FF
+	 ld l,IF - ioregs
 	 set 1,(hl)
 _
+	
+	 ; Set new target
+	 ld e,CYCLES_PER_SCANLINE
+	 mlt de
+	 ld.sis hl,(cycle_target_count)
+	 ld.sis (current_lyc_target_count),de
+	 sbc hl,de
+	 jr nc,_
+	 ld de,CYCLES_PER_FRAME
+	 add hl,de
+_
+	 lea de,iy
+	 add hl,de
+	 jr c,_
+	 push hl
+	 pop iy
+	 ld.sis hl,(current_lyc_target_count)
+	 ld.sis (cycle_target_count),hl
+_
 	pop hl
-	ex af,af'
 	exx
-	pop.s ix
 	ei
-	jp.s (ix)
+	jp.sis checkIntPostUpdatePop
+	
 	
 ; Updates the current value of the GB timer counter (TIMA).
 ;
