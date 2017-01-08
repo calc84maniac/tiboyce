@@ -651,9 +651,26 @@ ophandler76:
 	 and (hl)
 	pop hl
 	jr nz,haltdone
-	pop ix
-	lea ix,ix-3
-	jr -_
+	 ex (sp),hl
+	 push de
+	  push bc
+	   ex de,hl
+	   dec de
+	   dec de
+	   dec de
+	   di
+	   call.il lookup_gb_code_address
+	   ei
+	   push de
+	   pop ix
+	  pop bc
+	 pop de
+	pop hl
+	ld iy,0
+	neg
+	ld iyl,a
+	or a
+	jp cycle_overflow
 haltdone:
 	ex af,af'
 	ret
@@ -1475,6 +1492,10 @@ _
 	ex de,hl
 	or a
 _
+	
+	ld a,(LYC)
+	add a,256-SCANLINES_PER_FRAME
+	ret c
 	
 	ld hl,(current_lyc_target_count)
 	sbc hl,bc

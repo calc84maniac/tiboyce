@@ -189,7 +189,7 @@ lookup_gb_code_address:
 	jr z,$
 	ld hl,(ix-8)
 	xor a
-	sub (ix-1)
+	sub (ix-1)	; Should set carry flag
 	jr nc,$
 	ld ix,(ix-6)
 	inc.s hl
