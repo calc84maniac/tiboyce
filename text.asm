@@ -185,7 +185,7 @@ LookupGBMessage:
 	.db "Looking up GB address from %04X\n",0
 	
 LookupGBFoundMessage:
-	.db "Found GB %04X @ %04X\n",0
+	.db "Found GB %06X @ %04X\n",0
 	
 FlushMessage:
 	.db "Flushing recompiled code!\n",0

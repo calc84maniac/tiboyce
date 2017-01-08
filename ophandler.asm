@@ -93,6 +93,8 @@ flush_mem:
 	 ld (_+2),a
 _
 	 lea iy,iy+0
+	 call.il get_gb_address
+	 ex de,hl
 	 jr flush_mem_finish
 	
 ; Handles an OAM transfer operation.

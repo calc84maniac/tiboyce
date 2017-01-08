@@ -391,6 +391,7 @@ render_scanlines:
 myLY = $+1
 	ld c,0
 	sub c
+	ret c
 	ret z
 	ld b,a
 	push ix

@@ -266,14 +266,13 @@ _
 	    jr nz,_
 	    inc.l ix
 	    inc de
-	    inc hl
-	    inc hl
-	    inc hl
+	    inc de
+	    inc de
 _
 	    ld.lil (int_cached_return),ix
-	    ld.lil (int_cached_code),hl
-	   pop hl
-	   ex de,hl
+	    ld.lil (int_cached_code),de
+	    call.il get_gb_address
+	   pop de
 	   call.il lookup_code_cached
 	   ld (_+2),a
 _
@@ -1401,6 +1400,7 @@ mem_cycle_lookup_loop:
 	  di
 	  call.il lookup_gb_code_address
 	  ei
+	  ex de,hl
 	  ex (sp),hl
 	  ex de,hl
 	  ld hl,MEM_CYCLE_LUT_SIZE

@@ -91,6 +91,45 @@ _
 	ld hl,hram_base
 	ret
 	
+	
+; Gets the 16-bit Game Boy address from a 24-bit literal pointer.
+;
+; Inputs:  IX = 24-bit pointer
+; Outputs: HL = GB address
+; Destroys F,DE
+get_gb_address:
+	or a
+	lea hl,ix
+	ld de,(rom_start)
+	sbc hl,de
+	ld de,$4000
+	sbc hl,de
+	jr c,_
+	lea hl,ix
+	ld de,(rom_bank_base)
+	sbc hl,de
+	ld de,$8000
+	sbc hl,de
+	jr c,_
+	lea hl,ix
+	ld de,vram_base
+	sbc hl,de
+	ld de,$FE00
+	sbc hl,de
+	jr c,_
+	lea hl,ix
+	ld de,(cram_bank_base)
+	sbc hl,de
+	ld de,$C000
+	sbc hl,de
+	jr c,_
+	lea hl,ix
+	ld de,-hram_base
+_
+	add hl,de
+	ret.l
+	
+	
 ; Gets the recompile struct entry for a given code pointer.
 ;
 ; Locating the code block is O(log N) in number of blocks.
@@ -126,21 +165,18 @@ lookup_code_block_lower:
 	pop ix
 	jr lookup_code_block_loop
 	
-; Gets the Game Boy opcode address from a recompiled code pointer, rounding up.
+; Gets the Game Boy opcode address from a recompiled code pointer.
 ;
-; Rounding up occurs if the code address happens to be inside a recompiled
-; instruction - if you are guaranteed to be at the start of a recompiled
-; instruction then you are guaranteed that no rounding occurs.
+; The pointer must point either to the start of a recompiled instruction
+; or directly following the end of the last recompiled instruction in a block.
 ;
 ; Locating the code block is O(log N) in number of blocks.
 ; Locating the address within the block is O(N) in number of instructions.
 ;
 ; Inputs:  DE = 16-bit Z80 code pointer
-; Outputs: HL = 16-bit Z80 code pointer (rounded up)
-;          DE = GB address
-;          IX = Literal 24-bit pointer to GB address
+; Outputs: IX = Literal 24-bit pointer to GB opcode
 ;          A = NEGATIVE number of cycles until block end
-; Destroys AF,BC
+; Destroys F,BC,HL
 lookup_gb_code_address:
 #ifdef 0
 	push de
@@ -154,9 +190,10 @@ lookup_gb_code_address:
 	ld hl,(ix-8)
 	xor a
 	sub (ix-1)
+	jr nc,$
 	ld ix,(ix-6)
-	or a
-	sbc.s hl,de
+	inc.s hl
+	sbc hl,de
 	jr z,lookup_gb_found
 	push hl
 	 ex (sp),iy
@@ -176,54 +213,23 @@ lookup_gb_found_loop:
 	 ld c,(hl)
 	 inc h
 lookup_gb_add:
-	 add.s iy,bc
+	 add iy,bc
 	 jr nc,lookup_gb_found_loop
-	 ex (sp),iy
-	pop hl
+	 lea bc,iy
+	 sbc hl,hl
+	 adc hl,bc
+	 jr nz,$
+	pop iy
 lookup_gb_found:
-	add hl,de
-	push hl
-	 lea hl,ix
-	 ld de,(rom_start)
-	 sbc hl,de
-	 ld de,$4000
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,(rom_bank_base)
-	 sbc hl,de
-	 ld de,$8000
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,vram_base
-	 sbc hl,de
-	 ld de,$FE00
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,(cram_bank_base)
-	 sbc hl,de
-	 ld de,$C000
-	 sbc hl,de
-	 jr c,lookup_gb_done
-	 lea hl,ix
-	 ld de,-hram_base
-lookup_gb_done:
-	 add hl,de
-	 ex de,hl
 #ifdef 0
-	 push af
-	  push bc
-	   push ix
-	    push de
-	     APRINTF(LookupGBFoundMessage)
-	    pop de
-	   pop ix
-	  pop bc
-	 pop af
+	push af
+	 push ix
+	  push de
+	   APRINTF(LookupGBFoundMessage)
+	  pop de
+	 pop ix
+	pop af
 #endif
-	pop hl
 	ret.l
 	
 	
