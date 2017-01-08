@@ -66,8 +66,8 @@ decode_ret_cond_helper:
 	ex de,hl
 	call lookup_code_block
 	ex de,hl
-	dec bc
-	ld a,(bc)
+	ld.s a,(hl)
+	sub (ix-1)
 	ei
 	ret.l
 	

@@ -406,7 +406,6 @@ decode_ret_cond:
 	 push de
 	  di
 	  call.il decode_ret_cond_helper
-	  sub (hl)
 	  ld (hl),$C9
 	  dec hl
 	  ld (hl),a
