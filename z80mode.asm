@@ -20,8 +20,8 @@ r_mem:
 r_cycle_check:
 	ex af,af'
 	ld a,iyh
-	add a,a
-	ret c
+	or a
+	ret nz
 	jp cycle_overflow_for_jump
 	
 	.block $18-$
@@ -46,8 +46,11 @@ r_call:
 	jr do_call_reset_callstack
 	
 	.block $30-$
-r_interrupt:
-	ret
+r_event:
+	ex af,af'
+	pop ix
+	dec ix
+	jp do_event
 	
 	.block $38-$
 rst38h:
@@ -76,6 +79,8 @@ on_interrupt:
 CmdExitSMC = $+2
 	jp.lil 0
 	
+do_push_and_return:
+	ex (sp),ix
 do_push:
 	dec.l hl
 do_push_smc_1 = $+1
@@ -98,7 +103,10 @@ do_call_reset_callstack:
 	ld sp,myz80stack-2
 do_call:
 	pea ix+6
+	ex af,af'
 	ld de,(ix+2)
+	ld a,(ix+5)
+	ld ix,(ix)
 	dec.l hl
 do_push_smc_3 = $+1
 	ld.l (hl),d
@@ -106,10 +114,6 @@ do_push_smc_3 = $+1
 do_push_smc_4 = $+1
 	ld.l (hl),e
 	push.l hl
-	ex af,af'
-	ld a,(ix+5)
-	ld ix,(ix)
-do_call_write_smc = $+1
 	call dispatch_cycles_exx
 call_stack_ret:
 	ex af,af'
@@ -137,8 +141,8 @@ dispatch_cycles:
 _
 	lea iy,iy+0
 	ld a,iyh
-	add a,a
-	jr nc,cycle_overflow
+	or a
+	jr z,cycle_overflow
 	ex af,af'
 	jp (ix)
 	
@@ -173,13 +177,52 @@ cycle_overflow_for_jump:
 	ld ix,(ix+2)
 	; Carry should be reset
 cycle_overflow:
+	push ix
 	push hl
 	 push de
 	  push bc
-cycle_overflow_loop:
+	   lea de,ix
+	
+schedule_event:
+	   ld a,(event_value)
+event_address = $+1
+	   ld (event_value),a
+	
+	   di
+	   call.il schedule_event_helper
+	
+	   ld (event_cycle_count),a
+	   ld (event_address),hl
+	   ld a,(hl)
+	   ld (event_value),a
+	   ld (hl),RST_EVENT
+	  pop bc
+	 pop de
+	pop hl
+	ex af,af'
+	ret
+	
+do_event:
+event_value = $+3
+	ld (ix),0
+	push hl
+	 push de
+	  push bc
+	   ld hl,event_value
+	   ld (event_address),hl
+event_cycle_loop:
+	   ld a,iyh
+	   or a
+	   jr nz,not_expired
+	   ld a,iyl
+event_cycle_count = $+1
+	   add a,0
+	   jr nc,not_expired
+	   
+	   ; Event expired
 	   ld bc,(cycle_target_count)
-	   ld hl,CYCLES_PER_SCANLINE * 144
-	   sbc hl,bc
+	   ld hl,CYCLES_PER_SCANLINE * 144 + 1
+	   sbc hl,bc	; Carry is set
 	   jr z,vblank_handler
 vblank_handler_ret:
 current_lyc_target_count = $+1
@@ -187,7 +230,7 @@ current_lyc_target_count = $+1
 	   or a
 	   sbc hl,bc
 	   call z,LYCmatch
-	  
+	   
 	   call update_cycle_target
 	   ld hl,-CYCLES_PER_FRAME
 	   add hl,de
@@ -206,12 +249,10 @@ _
 _
 	   ex de,hl
 	   add iy,de
+	   jr event_cycle_loop
 	   
-	   ld a,iyh
-	   add a,a
-	   jr nc,cycle_overflow_loop
-	   
-	   sbc hl,hl	;ld hl,IE
+not_expired:
+	   ld hl,IE
 	   ld a,(hl)
 	   ld l,IF - ioregs
 	   and (hl)
@@ -250,42 +291,47 @@ _
 	   res 3,(hl)
 	   ld hl,$0058
 dispatch_int:
+	
+	   xor a
+	   ld (intstate),a
+	
 	   push hl
-	    lea de,ix
-	    di
-	    call.il lookup_gb_code_address
+	    push ix
+	     di
+	     call.il get_event_gb_address
+	    pop de
+	 
+	    ; If we're on a HALT, exit it
+	    ld.l a,(ix)
+	    cp $76
+	    ld a,(event_cycle_count)
+	    jr nz,_
+	    inc.l ix
+	    inc hl
+	    inc de
+	    inc de
+	    inc de
+	    inc a
+_
+	    ld.lil (int_cached_return),ix
+	    ld.lil (int_cached_code),de
 	    ld.lil (int_cached_cycles),a
 	    ; Subtract cycles from block end (but spend 5 for dispatch)
 	    add a,5
 	    ld (_+2),a
 _
 	    lea iy,iy+0
-	    ; If we're on a HALT, exit it
-	    ld.l a,(ix)
-	    cp $76
-	    jr nz,_
-	    inc.l ix
-	    inc de
-	    inc de
-	    inc de
-_
-	    ld.lil (int_cached_return),ix
-	    ld.lil (int_cached_code),de
-	    call.il get_gb_address
+	
 	   pop de
 	   call.il lookup_code_cached
-	   ld (_+2),a
-_
-	   lea iy,iy+0
 	  pop bc
 	 pop de
 	 ex (sp),hl
-	 xor a
-	 ld (intstate),a
-	 ex af,af'
 	 exx
 	pop de
-	jp do_push
+	call do_push_and_return
+	pop ix
+	jp dispatch_cycles
 	
 LYCmatch:
 	ld hl,LCDC
@@ -297,6 +343,15 @@ LYCmatch:
 	ld l,IF - ioregs
 	set 1,(hl)
 	ret
+	
+schedule_event_from_stack:
+	; Get the address of the recompiled code: the bottom stack entry
+	ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * 4) - 2
+	ld c,4
+	mlt bc
+	add hl,bc
+	ld de,(hl)
+	jp schedule_event
 	
 decode_mem:
 	 ld a,(memroutine_next)
@@ -665,7 +720,7 @@ ophandler76:
 	  pop bc
 	 pop de
 	pop hl
-	ld iy,0
+	ld iyh,0
 	neg
 	ld iyl,a
 	or a

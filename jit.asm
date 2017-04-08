@@ -4,7 +4,7 @@
 #define RST_POP $C7+r_pop
 #define RST_CALL $C7+r_call
 #define RST_CYCLE_CHECK $C7+r_cycle_check
-#define RST_INTERRUPT $C7+r_interrupt
+#define RST_EVENT $C7+r_event
 
 #define RAM_PREFIX_SIZE 5
 
@@ -91,6 +91,12 @@ _
 	ld hl,hram_base
 	ret
 	
+; Outputs: IX = 24-bit pointer
+;          HL = GB address
+; Destroys: F,DE
+get_event_gb_address:
+event_gb_address = $+2
+	ld ix,0
 	
 ; Gets the 16-bit Game Boy address from a 24-bit literal pointer.
 ;
@@ -953,7 +959,7 @@ opcodecycles:
 	.db 1,3,2,2,1,1,2,1
 	.db 5,2,2,2,1,1,2,1
 	.db 1,3,2,2,1,1,2,1
-	.db 0,2,2,2,1,1,2,1
+	.db -1,2,2,2,1,1,2,1
 	.db 2,3,2,2,1,1,2,1
 	.db 2,2,2,2,1,1,2,1
 	.db 2,3,2,2,3,3,3,1
@@ -977,14 +983,14 @@ opcodecycles:
 	.db 1,1,1,1,1,1,2,1
 	.db 1,1,1,1,1,1,2,1
 	
-	.db 2,3,3,0,3,4,2,1
-	.db 2,0,3,2,3,3,2,1
-	.db 2,3,3,0,3,4,2,1
-	.db 2,0,3,0,3,0,2,1
-	.db 3,3,2,0,0,4,2,1
-	.db 4,0,4,0,0,0,2,1
-	.db 3,3,2,1,0,4,2,1
-	.db 3,2,4,1,0,0,2,1
+	.db 2,3,3,-1,3,4,2,1
+	.db 2,-1,3,2,3,3,2,1
+	.db 2,3,3,-1,3,4,2,1
+	.db 2,-1,3,-1,3,-1,2,1
+	.db 3,3,2,-1,-1,4,2,1
+	.db 4,-1,4,-1,-1,-1,2,1
+	.db 3,3,2,1,-1,4,2,1
+	.db 3,2,4,1,-1,-1,2,1
 	
 ; A table indexing opcode generation routines.
 ; All entry points live in a 256-byte space.

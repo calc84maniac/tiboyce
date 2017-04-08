@@ -356,7 +356,7 @@ _
 	 add hl,de
 _
 	 lea de,iy
-	 add hl,de
+	 add.s hl,de
 	 jr c,_
 	 push hl
 	 pop iy
@@ -486,3 +486,43 @@ timer_update_smc = $+1
 	ld (hl),de
 	ret
 	
+; Inputs: DE = starting recompiled address
+;         IY = cycle count at end of block (>= 0)
+; Outputs: DE = event recompiled address
+;          IX = event opcode address
+;          A = event cycle count (negative)
+	
+schedule_event_helper:
+	call.il lookup_gb_code_address
+	add a,iyl
+	jr c,schedule_event_now
+	
+	ld hl,opcodecycles
+	ld bc,0
+	
+schedule_event_cycle_loop:
+	dec h
+	ld l,(ix)
+	dec h
+	ld c,(hl)
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	inc h
+	ld c,(hl)
+	add ix,bc
+	inc h
+	add a,(hl)
+	jr nc,schedule_event_cycle_loop
+	
+	jp p,schedule_event_now
+	; If we passed the end, disable event
+	ld de,event_value
+	
+schedule_event_now:
+	sub iyl
+	
+	ld (event_gb_address),ix
+	ex de,hl
+	ei
+	ret.l
