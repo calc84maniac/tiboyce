@@ -171,11 +171,9 @@ ophandlerRETnomatch:
 	pop bc
 	jr dispatch_cycles_exx
 	
-	; Carry should be reset
 cycle_overflow_for_jump:
 	pop ix
 	ld ix,(ix+2)
-	; Carry should be reset
 cycle_overflow:
 	push ix
 	push hl
@@ -189,13 +187,15 @@ event_address = $+1
 	   ld (event_value),a
 	
 	   di
-	   call.il schedule_event_helper
+	   jp.lil schedule_event_helper
 	
+schedule_event_enable:
 	   ld (event_cycle_count),a
 	   ld (event_address),hl
 	   ld a,(hl)
 	   ld (event_value),a
 	   ld (hl),RST_EVENT
+schedule_event_disable:
 	  pop bc
 	 pop de
 	pop hl
@@ -693,7 +693,6 @@ handle_waitloop_ly:
 	ld ix,(ix)
 _
 	ld iy,0
-	or a
 	jp cycle_overflow
 	
 ophandler76:
@@ -723,7 +722,6 @@ ophandler76:
 	ld iyh,0
 	neg
 	ld iyl,a
-	or a
 	jp cycle_overflow
 haltdone:
 	ex af,af'

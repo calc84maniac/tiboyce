@@ -512,17 +512,20 @@ schedule_event_cycle_loop:
 	ld c,(hl)
 	add ix,bc
 	inc h
-	add a,(hl)
+	add a,(hl)	; If this is a block-ender, -1 is added and the loop exits.
 	jr nc,schedule_event_cycle_loop
 	
-	jp p,schedule_event_now
-	; If we passed the end, disable event
-	ld de,event_value
-	
 schedule_event_now:
-	sub iyl
+	sbc a,iyl ; Carry is set
+	jr nc,schedule_event_never
+	inc a
 	
 	ld (event_gb_address),ix
 	ex de,hl
 	ei
-	ret.l
+	jp.sis schedule_event_enable
+	
+schedule_event_never:
+	; If we passed the end, disable event
+	ei
+	jp.sis schedule_event_disable

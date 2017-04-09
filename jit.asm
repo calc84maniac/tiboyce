@@ -60,6 +60,9 @@ flush_code:
 	ldir
 	; Set the cached interrupt return address to NULL
 	ld (int_cached_return),bc
+	; Reset the event address
+	ld hl,event_value
+	ld.sis (event_address),hl
 	ret
 	
 ; Gets the 24-bit base pointer for a given Game Boy address.
@@ -1299,13 +1302,16 @@ opgen_cycle_overflow:
 	dec hl
 	jp p,opgen_emit_jump
 	ex de,hl
-	ld (hl),$ED	;LEA IY,IY-128
+	ld (hl),$ED	;LEA IY,IY+overflow
 	inc hl
 	ld (hl),$33
 	inc hl
-	ld (hl),$80
-	sub (hl)
+	sub $7F
+	ld (hl),a
 	inc hl
+	add a,iyl
+	ld iyl,a
+	ld a,$7F
 	jr opgen_emit_jump_swapped
 	
 _opgenCALLcond:
