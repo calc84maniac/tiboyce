@@ -189,19 +189,6 @@ event_address = $+1
 	   di
 	   jp.lil schedule_event_helper
 	
-schedule_event_enable:
-	   ld (event_cycle_count),a
-	   ld (event_address),hl
-	   ld a,(hl)
-	   ld (event_value),a
-	   ld (hl),RST_EVENT
-schedule_event_disable:
-	  pop bc
-	 pop de
-	pop hl
-	ex af,af'
-	ret
-	
 do_event:
 event_value = $+3
 	ld (ix),0
@@ -343,15 +330,6 @@ LYCmatch:
 	ld l,IF - ioregs
 	set 1,(hl)
 	ret
-	
-schedule_event_from_stack:
-	; Get the address of the recompiled code: the bottom stack entry
-	ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * 4) - 2
-	ld c,4
-	mlt bc
-	add hl,bc
-	ld de,(hl)
-	jp schedule_event
 	
 decode_mem:
 	 ld a,(memroutine_next)
@@ -704,25 +682,64 @@ ophandler76:
 	 and (hl)
 	pop hl
 	jr nz,haltdone
-	 ex (sp),hl
+	ex (sp),hl
+	dec hl
+	dec hl
+	dec hl
+	ex (sp),hl
+	
+	scf
+	push hl
+trigger_event:
 	 push de
 	  push bc
-	   ex de,hl
-	   dec de
-	   dec de
-	   dec de
-	   di
-	   call.il lookup_gb_code_address
-	   ei
+	   push af
+	    ld hl,(event_address)
+	    ld a,(event_value)
+	    ld (hl),a
+	   
+	    ; Get the address of the recompiled code: the bottom stack entry
+	    ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * 4) - 2
+	    exx
+	    ld a,b
+	    exx
+	    ld d,a
+	    ld e,4
+	    mlt de
+	    add hl,de
+	    ld de,(hl)
+	
+	    di
+	    call.il lookup_gb_code_address
+	    ei
+	    ld c,a
+	   pop af
 	   push de
-	   pop ix
+	    jr c,_
+	    call get_cycle_count_with_offset
+	    ld (cycle_target_count),hl
+_
+	   pop hl
+	   xor a
+	   ld iyh,a
+	   sub c
+	   ld iyl,a
+	   ld a,c
+	
+schedule_event_enable:
+	   ld.lil (event_gb_address),ix
+	   ld (event_cycle_count),a
+	   ld (event_address),hl
+	   ld a,(hl)
+	   ld (event_value),a
+	   ld (hl),RST_EVENT
+schedule_event_disable:
 	  pop bc
 	 pop de
 	pop hl
-	ld iyh,0
-	neg
-	ld iyl,a
-	jp cycle_overflow
+	ex af,af'
+	ret
+	
 haltdone:
 	ex af,af'
 	ret
@@ -811,25 +828,36 @@ ophandlerEI:
 	ex af,af'
 	ld a,$1F
 	ld (intstate),a
-	pop ix
 	jp checkIntPostEnable
 	
 ophandlerRETI:
 	ex af,af'
 	ld a,$1F
 	ld (intstate),a
-	di
-	jr ophandlerRETfinish
+	exx
+	push bc
+	 di
+	 call.il pop_and_lookup_code_cached
+	 ei
+	pop bc
+	exx
+	push ix
+	 push af
+	  call checkIntPostEnable
+	  ex af,af'
+	 pop af
+	pop ix
+	jp dispatch_cycles
 	
 ophandlerRET:
 	di
 	dec sp
 	dec sp
 	ex af,af'
-ophandlerRETfinish:
 	exx
 	push bc
 	 call.il pop_and_lookup_code_cached
+	 ei
 	pop bc
 	jp dispatch_cycles_exx
 	
@@ -1308,23 +1336,21 @@ writeINT:
 	ld (ix),a
 writeINTswap:
 	ex af,af'
-checkIntPostUpdatePop:
-	pop ix
+checkIntPostUpdate:
 	ld a,(intstate)
 	or a
-	jr z,_
+	jr z,checkIntDisabled
 checkIntPostEnable:
 	push hl
 	 ld hl,IF
 	 ld a,(hl)
 	 ld l,h
 	 and (hl)
+	 jp z,trigger_event
 	pop hl
-	jr z,_
-	; TODO
-_
+checkIntDisabled:
 	ex af,af'
-	jp (ix)
+	ret
 	
 mbc_4000:
 	push bc

@@ -366,7 +366,7 @@ _
 	pop hl
 	exx
 	ei
-	jp.sis checkIntPostUpdatePop
+	jp.sis checkIntPostUpdate
 	
 	
 ; Updates the current value of the GB timer counter (TIMA).
@@ -520,7 +520,6 @@ schedule_event_now:
 	jr nc,schedule_event_never
 	inc a
 	
-	ld (event_gb_address),ix
 	ex de,hl
 	ei
 	jp.sis schedule_event_enable
