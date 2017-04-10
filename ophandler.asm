@@ -356,30 +356,18 @@ lyc_write_helper:
 	 set 1,(hl)
 _
 	 add a,256-SCANLINES_PER_FRAME
-	 jr c,++_
+	 jr c,_
 	 
 	 ; Set new target
 	 ld e,CYCLES_PER_SCANLINE
 	 mlt de
-	 ld.sis hl,(cycle_target_count)
 	 ld.sis (current_lyc_target_count),de
-	 sbc hl,de
-	 jr nc,_
-	 ld de,CYCLES_PER_FRAME
-	 add hl,de
-_
-	 lea de,iy
-	 add.s hl,de
-	 jr c,_
-	 push hl
-	 pop iy
-	 ld.sis hl,(current_lyc_target_count)
-	 ld.sis (cycle_target_count),hl
 _
 	pop hl
 	exx
+	or a
 	ei
-	jp.sis checkIntPostUpdate
+	jp.sis trigger_event
 	
 	
 ; Updates the current value of the GB timer counter (TIMA).
@@ -507,6 +495,7 @@ timer_update_smc = $+1
 	
 schedule_event_helper:
 	call.il lookup_gb_code_address
+schedule_event_helper_post_lookup:
 	add a,iyl
 	jr c,schedule_event_now
 	

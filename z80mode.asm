@@ -496,7 +496,6 @@ coherency_return:
 	  pop bc
 	 pop de
 	pop hl
-coherency_return_popped:
 	ex af,af'
 	ret
 	
@@ -690,8 +689,9 @@ ophandler76:
 	
 trigger_event_fast_forward:
 	scf
-	push hl
 trigger_event:
+	push hl
+trigger_event_pushed:
 	 push de
 	  push bc
 	   push af
@@ -717,6 +717,7 @@ trigger_event:
 	   pop af
 	   push de
 	    jr c,_
+	    ld a,c
 	    call get_cycle_count_with_offset
 	    ld (cycle_target_count),hl
 _
@@ -1347,7 +1348,7 @@ checkIntPostEnable:
 	 ld a,(hl)
 	 ld l,h
 	 and (hl)
-	 jp nz,trigger_event
+	 jp nz,trigger_event_pushed
 	pop hl
 checkIntDisabled:
 	ex af,af'

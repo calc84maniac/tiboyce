@@ -184,6 +184,7 @@ lookup_code_block_lower:
 ;
 ; Inputs:  DE = 16-bit Z80 code pointer
 ; Outputs: IX = Literal 24-bit pointer to GB opcode
+;          DE = 16-bit Z80 code pointer (adjusted past ram code prefix if necessary)
 ;          A = NEGATIVE number of cycles until block end
 ; Destroys F,BC,HL
 lookup_gb_code_address:
@@ -203,7 +204,7 @@ lookup_gb_code_address:
 	ld ix,(ix-6)
 	inc.s hl
 	sbc hl,de
-	jr z,lookup_gb_found
+	jr z,lookup_gb_found_start
 	push hl
 	 ex (sp),iy
 	 lea hl,ix
@@ -229,7 +230,6 @@ lookup_gb_add:
 	 adc hl,bc
 	 jr nz,$
 	pop iy
-lookup_gb_found:
 #ifdef 0
 	push af
 	 push ix
@@ -241,6 +241,14 @@ lookup_gb_found:
 #endif
 	ret.l
 	
+lookup_gb_found_start:
+	lea hl,ix
+	add hl,hl
+	ret.l nc
+	ld hl,RAM_PREFIX_SIZE
+	add hl,de
+	ex de,hl
+	ret.l
 	
 	; If a cached code lookup misses, resolve it and insert into the cache
 lookup_code_cached_miss:
@@ -728,6 +736,18 @@ rerecompile:
 	or a
 #endif
 	
+	; Remove any outstanding scheduled event
+	ld.sis hl,(event_address)
+	ld de,z80codebase + event_value
+	ld a,(de)
+	ld.s (hl),a
+	ld.sis (event_address),de
+	
+	; Undo any cycles that would have been consumed
+	xor a
+	sub (ix+7)
+	ld (rerecompile_undo_cycle_smc),a
+	
 	ld hl,(ix+2)
 	ld de,vram_base
 	xor a
@@ -751,11 +771,17 @@ rerecompile_found_base:
 	ld de,z80codebase + RAM_PREFIX_SIZE - 1
 	add hl,de
 	ld de,(ix+2)
-	push iy
+rerecompile_undo_cycle_smc = $+2
+	pea iy+0
 	 push ix
 	  call generate_opcodes
 	 pop ix
 	pop iy
+	
+	; Consume cycles
+	ld (_+2),a
+_
+	lea iy,iy+0
 	
 	push hl
 	pop bc
@@ -774,11 +800,23 @@ rerecompile_found_base:
 	jr nc,coherency_flush
 	
 	; Copy the new opcodes, from first to last
-	
 	ld hl,(ix+2)
 	ldir
+	
+	ld a,iyh
+	or a
+	jr z,coherency_cycle_overflow
 	ei
 	jp.sis coherency_return
+	
+coherency_cycle_overflow:
+	sub (ix+7)
+	ld hl,(ix)
+	ld de,RAM_PREFIX_SIZE
+	add hl,de
+	ex de,hl
+	ld ix,(ix+2)
+	jp schedule_event_helper_post_lookup
 	
 coherency_flush:
 	; Get the number of bytes in the overflow
@@ -805,9 +843,8 @@ coherency_flush:
 	pop.s hl
 	ld.sis sp,myz80stack-2
 	ld sp,myADLstack
-	ex af,af'
 	ei
-	jp.s (ix)
+	jp.sis dispatch_cycles
 	
 ; Inputs:  IX = struct entry
 ;          DE = GB opcodes start
