@@ -688,6 +688,7 @@ ophandler76:
 	dec hl
 	ex (sp),hl
 	
+trigger_event_fast_forward:
 	scf
 	push hl
 trigger_event:
@@ -729,11 +730,11 @@ _
 schedule_event_enable:
 	   ld.lil (event_gb_address),ix
 	   ld (event_cycle_count),a
-	   ld (event_address),hl
 	   ld a,(hl)
 	   ld (event_value),a
 	   ld (hl),RST_EVENT
 schedule_event_disable:
+	   ld (event_address),hl
 	  pop bc
 	 pop de
 	pop hl
@@ -1030,7 +1031,7 @@ readSTAT:
 	ld c,a
 	ld a,(LCDC)
 	add a,a
-	jr nc,++_
+	jr nc,readSTAT_mode0
 	ld a,(LYC)
 	cp e
 	jr nz,_
@@ -1038,16 +1039,16 @@ readSTAT:
 _
 	ld a,e
 	cp 144
-	jr nc,_
+	jr nc,readSTAT_mode1
 	ld a,d
-	cp 20 + 43
-	jr nc,++_
+	cp MODE_2_CYCLES + MODE_3_CYCLES
+	jr nc,readSTAT_mode0
 	set 1,c
-	cp 20
-	jr c,++_
-_
+	cp MODE_2_CYCLES
+	jr c,readSTAT_mode0
+readSTAT_mode1:
 	inc c
-_
+readSTAT_mode0:
 	ld ixl,c
 	exx
 	ex af,af'
@@ -1346,7 +1347,7 @@ checkIntPostEnable:
 	 ld a,(hl)
 	 ld l,h
 	 and (hl)
-	 jp z,trigger_event
+	 jp nz,trigger_event
 	pop hl
 checkIntDisabled:
 	ex af,af'

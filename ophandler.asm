@@ -163,6 +163,10 @@ render_catchup:
 ; Outputs: Scanlines rendered if applicable, SMC applied, value written
 ;          AF' has been unswapped
 scroll_write_helper:
+	 cp MODE_2_CYCLES + MODE_3_CYCLES
+	 jr c,_
+	 inc e
+_
 render_this_frame = $+1
 	 ld a,1
 	 or a
@@ -239,6 +243,10 @@ scroll_write_done:
 ;          AF' has been unswapped
 ;          BCDEHL' have been unswapped
 lcdc_write_helper:
+	 cp MODE_2_CYCLES + MODE_3_CYCLES
+	 jr c,_
+	 inc e
+_
 	 ld a,(render_this_frame)
 	 or a
 	 call nz,render_catchup
@@ -306,8 +314,13 @@ _
 	 ld a,(LCDC_7_smc)
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
-	 ;xor a
-	 ;ld (hram_base+LY),a
+	 ; Forcibly skip to scanline 0
+	 sbc hl,hl
+	 ld.sis (cycle_target_count),hl
+	pop hl
+	exx
+	ei
+	jp.sis trigger_event_fast_forward
 _
 	pop hl
 	exx
@@ -526,5 +539,6 @@ schedule_event_now:
 	
 schedule_event_never:
 	; If we passed the end, disable event
+	ld hl,event_value
 	ei
 	jp.sis schedule_event_disable
