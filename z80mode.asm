@@ -249,8 +249,21 @@ intstate = $+1
 	  pop bc
 	 pop de
 	pop hl
+	cp iyh
+	jr z,_
 	ex af,af'
 	jp (ix)
+	
+_
+	push ix
+	push hl
+	 push de
+	  push bc
+	  lea de,ix
+	  ld.lil ix,(event_gb_address)
+	  ld a,(event_cycle_count)
+	  di
+	  jp.lil schedule_event_helper_post_lookup
 	
 vblank_handler:
 	di
@@ -553,7 +566,7 @@ do_bits:
 	add a,$38-1	;Use L instead of (HL)
 	cp $C0
 	jp pe,do_bits_readonly
-	lea iy,iy-2	;Consume 2 extra cycles
+	lea iy,iy+2	;Consume 2 extra cycles
 	ld (do_bits_smc),a
 	call mem_read_any
 	; Use L because we have to affect flags, bleh
