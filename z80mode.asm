@@ -174,6 +174,12 @@ ophandlerRETnomatch:
 cycle_overflow_for_jump:
 	pop ix
 	ld ix,(ix+2)
+	ld a,(memroutine_next)
+	sub ixl
+	ld a,(memroutine_next+1)
+	sbc a,ixh
+	jr nc,cycle_overflow
+	ld ix,(ix+3)
 cycle_overflow:
 	push ix
 	push hl
@@ -193,6 +199,7 @@ do_event:
 event_value = $+3
 	ld (ix),0
 	push hl
+do_event_pushed:
 	 push de
 	  push bc
 	   ld hl,event_value
@@ -259,11 +266,11 @@ _
 	push hl
 	 push de
 	  push bc
-	  lea de,ix
-	  ld.lil ix,(event_gb_address)
-	  ld a,(event_cycle_count)
-	  di
-	  jp.lil schedule_event_helper_post_lookup
+	   lea de,ix
+	   ld.lil ix,(event_gb_address)
+	   ld a,(event_cycle_count)
+	   di
+	   jp.lil schedule_event_helper_post_lookup
 	
 vblank_handler:
 	di
@@ -370,38 +377,40 @@ _
 	
 decode_jump:
 	ex af,af'
-	ex (sp),hl
+	exx
+	push.l hl
+	pop hl
 	push bc
-	 push de
-	  ld ix,(hl)
-	  inc hl
-	  inc hl
-	  ld de,(hl)
-	  inc hl
-	  inc hl
-	  ld a,(hl)
-	  push hl
-	   di
-	   call.il decode_jump_helper
-	  pop hl
-	  add a,(hl)	;calc cycle count
-	  dec hl
-	  ld (hl),ix
-	  dec hl
-	  ld (hl),$C3	;JP
-	  dec hl
-	  ld (hl),$08	;EX AF,AF'
-	  dec hl
-	  ld (hl),RST_CYCLE_CHECK
-	  dec hl
-	  ld (hl),a
-	  dec hl
-	  ld (hl),$33
-	  dec hl
-	  ld (hl),$ED	;LEA IY,IY+offset
-	 pop de
+	 ld ix,(hl)
+	 inc hl
+	 inc hl
+	 ld de,(hl)
+	 inc hl
+	 inc hl
+	 ld a,(hl)
+	 push hl
+	  di
+	  call.il decode_jump_helper
+	 pop hl
+	 add a,(hl)	;calc cycle count
+	 dec hl
+	 ld (hl),ix
+	 dec hl
+	 ld (hl),$C3	;JP
+	 dec hl
+	 ld (hl),$08	;EX AF,AF'
+	 dec hl
+	 ld (hl),RST_CYCLE_CHECK
+	 dec hl
+	 ld (hl),a
+	 dec hl
+	 ld (hl),$33
+	 dec hl
+	 ld (hl),$ED	;LEA IY,IY+offset
 	pop bc
-	ex (sp),hl
+	push hl
+	pop.l hl
+	exx
 	ex af,af'
 	ret
 	
@@ -677,13 +686,68 @@ handle_waitloop_stat:
 	jr handle_waitloop_stat
 	
 handle_waitloop_variable:
+	ex af,af'
+	pop ix
+	push hl
+handle_waitloop_main:
+	 xor a
+	 ld iyh,a
+	 sub (ix+2)
+	 ld iyl,a
+	 ld hl,(event_address)
+	 ld a,(event_value)
+	 ld (hl),a
+	 ex de,hl
+	 ld.lil de,z80codebase
+	 add.l ix,de
+	 ex de,hl
+	 ld.l hl,(ix+3)
+	 ld.lil (event_gb_address),hl
+	 ld a,(ix+2)
+	 ld (event_cycle_count),a
+	 ld ix,(ix)
+	 jp do_event_pushed
+	
 handle_waitloop_ly:
 	ex af,af'
 	pop ix
-	ld ix,(ix)
+	push hl
+	 push de
+	  ld a,(ix+2)
+	  call get_cycle_count_with_offset
+	  call get_scanline_from_cycle_count
+	 pop de
+	 cpl
+	 add a,CYCLES_PER_SCANLINE + 1
+	 add a,iyl
+	 ld iyl,a
+	 jr nc,_
+	 inc iyh
+	 jr z,++_
 _
-	ld iy,0
-	jp cycle_overflow
+	 ld ix,(ix)
+	pop hl
+	ex af,af'
+	jp (ix)
+_
+	 add a,(ix+2)
+	 jr c,handle_waitloop_main
+	 
+	 ld hl,(event_address)
+	 ld a,(event_value)
+	 ld (hl),a
+	 ld hl,(ix)
+	ex (sp),hl
+	push hl
+	 push de
+	  push bc
+	   ld.lil de,z80codebase
+	   add.l ix,de
+	   ld de,(ix)
+	   ld a,(ix+2)
+	   ld.l ix,(ix+3)
+	   di
+	   jp.lil schedule_event_helper_post_lookup
 	
 ophandler76:
 	ex af,af'

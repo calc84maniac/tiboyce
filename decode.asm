@@ -12,11 +12,9 @@ decode_jump_helper:
 	 call lookup_code_link_internal
 	pop hl
 	
-#if 0
 	push af
 	 call identify_waitloop
 	pop af
-#endif
 	
 	ei
 	ret.l

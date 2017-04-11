@@ -15,6 +15,7 @@
 ; Inputs:  IX = branch target recompiled code
 ;          HL = branch target GB literal 24-bit address
 ;          (SPS) = branch recompiled code address (plus 1)
+;          (SPL+4) = number of cycles to block end from target
 ;          BC',DE',HL' = Game Boy BC,DE,HL registers
 ; Outputs: IX = filtered branch target
 identify_waitloop:
@@ -74,10 +75,10 @@ waitloop_found_read_2:
 	ld c,(hl)
 	inc hl
 	ld b,(hl)
-waitloop_try_next_target:
 	; Consume 2 more bytes of recompiled code
 	inc de
 	inc de
+waitloop_try_next_target:
 	; Consume immediate value
 	inc hl
 	jr waitloop_find_data_op
@@ -102,7 +103,7 @@ waitloop_found_read_rr:
 waitloop_find_data_op:
 	; Consume first byte of recompiled code
 	inc de
-waitloop_find_data_op_again:
+waitloop_find_data_op_again_loop:
 	ld a,(hl)
 	; Consume first byte of opcode
 	inc hl
@@ -134,7 +135,7 @@ waitloop_found_data_op_1:
 waitloop_found_data_op:
 	; See if we reached the loop end
 	push hl
-	 ld hl,7
+	 ld hl,9
 	 add hl,de
 	 ex de,hl
 	pop.s hl
@@ -191,6 +192,14 @@ _
 	jr z,waitloop_try_next_target
 	ret
 	
+waitloop_find_data_op_again:
+	ld a,e
+	sub 8
+	ld e,a
+	jr nc,waitloop_find_data_op_again_loop
+	dec d
+	jr waitloop_find_data_op_again_loop
+	
 waitloop_identified:
 #ifdef DEBUG
 	push bc
@@ -212,7 +221,7 @@ waitloop_identified:
 	ret z
 	
 	ld hl,(z80codebase+memroutine_next)
-	ld de,-5
+	ld de,-9
 	add hl,de	;Sets C flag
 	
 	; Bail if not enough room for trampoline
@@ -251,6 +260,18 @@ waitloop_variable:
 	 ld (hl),handle_waitloop_variable >> 8
 waitloop_finish:
 	 inc hl
-	 ld.s (hl),ix
+	 ld (hl),ix
+	 inc hl
+	 inc hl
+	 ex de,hl
+	 ld hl,7
+	 add hl,sp
+	 xor a
+	 sub (hl)
+	 ld (de),a
+	 inc de
+	 ld hl,(waitloop_jr_smc)
+	 ex de,hl
+	 ld (hl),de
 	pop ix
 	ret
