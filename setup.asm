@@ -238,6 +238,10 @@ StartROM:
 	inc b	;MBC3
 	sub $0F-$05
 	cp $14-$0F
+	jr c,mbc_valid
+	;MBC5
+	sub $19-$0F
+	cp $1F-$19
 mbc_valid:
 	ccf
 mbc_valid_no_carry:

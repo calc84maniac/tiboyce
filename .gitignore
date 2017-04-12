@@ -2,6 +2,7 @@
 *.8xv
 *.lab
 *.gb
+*.gbc
 *.sav
 *.exe
 *.lst
