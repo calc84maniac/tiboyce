@@ -219,11 +219,20 @@ event_cycle_count = $+1
 	   sbc hl,bc	; Carry is set
 	   jr z,vblank_handler
 vblank_handler_ret:
+
+	   ld hl,CYCLES_PER_FRAME
+	   add hl,bc
+	   ex de,hl
+	   
 current_lyc_target_count = $+1
 	   ld hl,CYCLES_PER_SCANLINE * 0
-	   or a
 	   sbc hl,bc
 	   call z,LYCmatch
+	   
+	   ld hl,STAT
+	   ld a,(hl)
+	   and $28
+	   call nz,stat_mode_handler
 	   
 	   call update_cycle_target
 	   ld hl,-CYCLES_PER_FRAME
@@ -349,6 +358,73 @@ LYCmatch:
 	ret z
 	ld l,IF - ioregs
 	set 1,(hl)
+	ret
+	
+	; Input: HL = STAT
+	;        BC = current cycle count
+	;        DE = BC + CYCLES_PER_FRAME
+	;        A = bits 3 and 5 of (STAT)
+	;        Carry is reset
+	; Output: DE = cycle target upper bound
+	;         Carry is reset
+stat_mode_handler:
+	dec hl
+	bit 7,(hl)
+	ret z
+	
+	ld l,a
+	push hl
+	 ld h,b
+	 ld l,c
+	 call get_scanline_from_cycle_count
+	pop hl
+	ld d,a
+	ld a,e
+	cp 144
+	jr nc,stat_mode_1
+	
+	ld a,d
+	or a
+	jr nz,_
+	set 6,l
+_
+	cp MODE_2_CYCLES + MODE_3_CYCLES
+	jr nz,_
+	set 4,l
+_
+	inc e
+	ld d,CYCLES_PER_SCANLINE
+	mlt de
+	ld a,e
+	jr c,_
+	bit 5,l
+	jr nz,+++_
+	add a,MODE_2_CYCLES + MODE_3_CYCLES
+	jr nc,++_
+	inc d
+	jr ++_
+_
+	bit 3,l
+	jr z,++_
+	sub MODE_0_CYCLES
+	jr nc,_
+	dec d
+_
+	ld e,a
+_
+	ld a,l
+	rlca
+	and l
+	ret z
+	ld l,IF - ioregs
+	set 1,(hl)
+	ret
+	
+stat_mode_1:
+	ld de,CYCLES_PER_FRAME
+	bit 5,l
+	ret nz
+	ld e,(CYCLES_PER_FRAME + MODE_2_CYCLES + MODE_3_CYCLES) & $FF
 	ret
 	
 decode_mem:
@@ -1074,6 +1150,10 @@ writeIEhandler:
 	ld (IE),a
 	jp writeINTswap
 	
+writeSTAThandler:
+	ld (STAT),a
+	jp writeINTswap
+	
 readP1:
 	ld a,(P1)
 	or $0F
@@ -1344,7 +1424,9 @@ mem_write_ports_swap:
 	jr z,writeINT
 	sub LCDC - IF
 	jr z,writeLCDC
-	sub SCY - LCDC
+	dec a
+	jr z,writeINT
+	dec a
 	cp 2
 	jr c,write_scroll
 	sub WY - SCY
@@ -1628,12 +1710,10 @@ cycle_target_count = $+1
 	ret
 	
 ; Inputs: BC = current cycle count
+;         DE = upper bound of cycle target
+;         Carry is reset
 ; Outputs: DE = new cycle target (possibly offset by CYCLES_PER_FRAME)
 update_cycle_target:
-	ld hl,CYCLES_PER_FRAME
-	add hl,bc
-	ex de,hl
-	
 	ld hl,CYCLES_PER_SCANLINE * 144
 	sbc hl,bc
 	jr z,_

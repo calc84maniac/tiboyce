@@ -7,6 +7,7 @@
 #define RST_EVENT $C7+r_event
 
 #define RAM_PREFIX_SIZE 5
+#define MAX_CYCLES_PER_BLOCK 64
 
 recompile_struct_end:
 	.dl 0
@@ -857,8 +858,10 @@ coherency_flush:
 ;          Carry flag reset
 ; Destroys None
 generate_opcodes:
-	; Cycle count while recompiling is hl-iy. Start at zero.
-	ld iyl,e
+	; Cycle count while recompiling is hl-iy. Start at negative maximum.
+	ld a,e
+	add a,MAX_CYCLES_PER_BLOCK
+	ld iyl,a
 	ex de,hl
 	ld bc,opgentable
 	ld a,ixl
@@ -868,23 +871,19 @@ generate_opcodes:
 	push ix
 	 ld ix,opgenroutines
 	 call opgen_next_fast
-	 call m,opgen_cycle_overflow
+	 call p,opgen_cycle_overflow
 	pop ix
 	inc hl
 	inc de
 	; Get the cycle count
 	ld a,l
 	sub iyl
+	add a,MAX_CYCLES_PER_BLOCK
 	; Get the size of the GB opcodes and save it
 	ld bc,(ix+2)
 	or a
 	sbc hl,bc
 	ld (ix+5),hl
-	ld (ix+7),a
-	; Check cycle count and reset carry
-	or a
-	ret p
-	ld a,$7F
 	ld (ix+7),a
 	ret
 	
@@ -1336,25 +1335,13 @@ opgen_cycle_overflow:
 	inc bc
 	ld a,l
 	sub iyl
+	add a,MAX_CYCLES_PER_BLOCK
 	dec hl
-	jp p,opgen_emit_jump
-	ex de,hl
-	ld (hl),$ED	;LEA IY,IY+overflow
-	inc hl
-	ld (hl),$33
-	inc hl
-	sub $7F
-	ld (hl),a
-	inc hl
-	add a,iyl
-	ld iyl,a
-	ld a,$7F
-	jr opgen_emit_jump_swapped
+	dec iy
+	jr opgen_emit_jump
 	
 _opgenCALLcond:
 	ld b,a
-	add a,6
-	ret m
 	ld a,c
 	xor $C4 ^ $28
 	ld (de),a
@@ -1364,8 +1351,6 @@ _opgenCALLcond:
 	inc de
 	ld a,b
 _opgenCALL:
-	add a,6
-	ret m
 	ld.sis bc,decode_call
 	inc hl
 	inc hl
@@ -1379,7 +1364,7 @@ opgen_emit_call:
 	ld (hl),b
 	inc hl
 	; Store cycle count for call not taken, used by cached RET
-	sub 3
+	add a,MAX_CYCLES_PER_BLOCK + 3
 	ld b,a
 	scf
 	ld a,(base_address)
@@ -1399,10 +1384,9 @@ opgen_emit_call:
 	jp opgen_next
 	
 _opgenJR:
-	add a,3
-	ret m
 	dec iy
 opgen_emit_JR:
+	add a,MAX_CYCLES_PER_BLOCK + 3
 	push af
 	 inc hl
 	 ld a,(base_address)
@@ -1428,10 +1412,9 @@ opgen_emit_JR:
 	jr opgen_emit_jump
 
 _opgenJP:
-	add a,4
-	ret m
 	dec iy
 opgen_emit_JP:
+	add a,MAX_CYCLES_PER_BLOCK + 4
 	inc hl
 	ld c,(hl)
 	inc hl
@@ -1460,11 +1443,10 @@ opgen_emit_jump_smc_2 = $+1
 	; Save cycle count
 	ld (hl),a
 	ex de,hl
+	sbc a,a	; Carry was set, so set sign flag
 	ret
 	
 _opgenRET:
-	add a,4
-	ret m
 	; Update total cycle count
 	lea iy,iy-3
 	ld a,c
@@ -1472,10 +1454,9 @@ _opgenRET:
 	ret
 	
 _opgenRETcond:
-	add a,5
-	ret m
-	dec iy
+	add a,MAX_CYCLES_PER_BLOCK + 5
 	ld b,a
+	dec iy
 	ex de,hl
 	ld a,c
 	xor $C0 ^ $28
@@ -1671,7 +1652,12 @@ _
 	ld bc,writeLCDChandler
 	jr opgenHMEMwriteroutine
 _
-	sub SCY - LCDC
+	dec a
+	jr nz,_
+	ld bc,writeSTAThandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
 	jr nz,_
 	ld bc,writeSCYhandler
 	jr opgenHMEMwriteroutine

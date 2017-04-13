@@ -496,6 +496,8 @@ timer_update_smc = $+1
 schedule_event_helper:
 	call.il lookup_gb_code_address
 schedule_event_helper_post_lookup:
+	or a
+	jr z,$
 	add a,iyl
 	jr c,schedule_event_now
 	
@@ -518,9 +520,8 @@ schedule_event_cycle_loop:
 	jr nc,schedule_event_cycle_loop
 	
 schedule_event_now:
-	sbc a,iyl ; Carry is set
+	sub iyl
 	jr nc,schedule_event_never
-	inc a
 	
 	ex de,hl
 	ei
