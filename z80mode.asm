@@ -1150,10 +1150,6 @@ writeIEhandler:
 	ld (IE),a
 	jp writeINTswap
 	
-writeSTAThandler:
-	ld (STAT),a
-	jp writeINTswap
-	
 readP1:
 	ld a,(P1)
 	or $0F
@@ -1425,7 +1421,7 @@ mem_write_ports_swap:
 	sub LCDC - IF
 	jr z,writeLCDC
 	dec a
-	jr z,writeINT
+	jr z,writeSTAT
 	dec a
 	cp 2
 	jr c,write_scroll
@@ -1453,6 +1449,14 @@ writeLYCswap:
 writeLYC:
 	call get_scanline_from_write
 	jp.lil lyc_write_helper
+	
+writeSTAT:
+	ex af,af'
+writeSTAThandler:
+	ld (STAT),a
+	ex af,af'
+	or a
+	jp trigger_event
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart:
