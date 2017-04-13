@@ -77,8 +77,8 @@ waitloop_found_read_2:
 	ld b,(hl)
 	; Consume 2 more bytes of recompiled code
 	inc de
-	inc de
 waitloop_try_next_target:
+	inc de
 	; Consume immediate value
 	inc hl
 	jr waitloop_find_data_op
