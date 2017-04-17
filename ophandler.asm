@@ -144,7 +144,9 @@ render_catchup:
 	ld a,e
 	cp 144
 	push bc
-	 call c,render_scanlines
+	 push hl
+	  call c,render_scanlines
+	 pop hl
 	pop bc
 	ret
 	
@@ -170,11 +172,7 @@ _
 render_this_frame = $+1
 	 ld a,1
 	 or a
-	 jr z,_
-	 push hl
-	  call render_catchup
-	 pop hl
-_
+	 call nz,render_catchup
 	 ld a,l
 	 sub SCY - ioregs
 	 jr nz,_
@@ -234,7 +232,8 @@ scroll_write_done:
 ; Catches up the renderer before writing, and then applies SMC to renderer.
 ;
 ; Inputs:  A' = value being written
-;          E = current scanline
+;          DE = current div cycle count
+;          L = current scanline
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
 ;          (SPS) = Z80 return address
@@ -243,6 +242,7 @@ scroll_write_done:
 ;          AF' has been unswapped
 ;          BCDEHL' have been unswapped
 lcdc_write_helper:
+	 ex de,hl
 	 cp MODE_2_CYCLES + MODE_3_CYCLES
 	 jr c,_
 	 inc e
@@ -250,6 +250,7 @@ _
 	 ld a,(render_this_frame)
 	 or a
 	 call nz,render_catchup
+	 ex de,hl
 	 ld hl,hram_base+LCDC
 	 ld a,(hl)
 	 ex af,af'
@@ -310,24 +311,18 @@ _
 	 ld (window_tile_ptr+1),a
 _
 	 bit 7,l
-	 jr z,_
+	 jr z,return_from_write_helper
 	 ld a,(LCDC_7_smc)
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
 	 ; Forcibly skip to scanline 0
 	 sbc hl,hl
-	 ld.sis (cycle_target_count),hl
+	 ld.sis (frame_cycle_target),hl
+	 ld.sis (div_cycle_count),de
 	pop hl
 	exx
 	ei
 	jp.sis trigger_event_fast_forward
-_
-	pop hl
-	exx
-	ex af,af'
-	pop.s ix
-	ei
-	jp.s (ix)
 	
 ; Post-write operation for the LY compare register (LYC).
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -370,122 +365,94 @@ _
 	jp.sis trigger_event
 	
 	
-; Updates the current value of the GB timer counter (TIMA).
-;
-; Inputs:  AF' has been swapped
-; Outputs: Current value written to (TIMA)
-updateTIMA:
-	ld a,(hram_base+TIMA)
-	ld (hram_base+TIMA),a
-	ret.l
-	
 ; Writes to the GB timer control (TAC).
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
 ; Updates the GB timer based on the new mode; applies SMC to getters/setters
 ;
-; Inputs:  A' = value being written
+; Inputs:  DE = current div cycle count
+;          A' = value being written
 ;          (SPS) = Z80 return address
-;          AF' has been swapped
+;          (SPL) = saved HL'
+;          BCDEHL' are swapped
 ; Outputs: Current value written to (TAC)
 ;          GB timer updated
 tac_write_helper:
-	; If the timer was enabled, update TIMA
-	ld a,(hram_base+TAC)
-	bit 2,a
-	call.il nz,updateTIMA
-	; Set new TAC value
-	exx
-	ex af,af'
-	ld (hram_base+TAC),a
-	ld c,a
-	ex af,af'
-	bit 2,c
-	jr z,_
-	; Apply SMC to write shifts
-	xor a
-	sub l
-	and 3
-	add a,a
-	ld (timer_update_smc),a
-_
-	exx
-	ex af,af'
-	pop.s ix
-	ei
-	jp.s (ix)
-	
-	
-; Writes to the GB timer count or modulo (TIMA/TMA).
-; Does not use a traditional call/return, must be jumped to directly.
-;
-; Updates the GB timer based on the new value, if enabled.
-;
-; Inputs:  A=0 for TIMA, A=1 for TMA
-;          A' = value being written
-;          (SPS) = Z80 return address
-;          AF' has been swapped
-; Outputs: Current value written to the register
-;          GB timer updated
-;          AF' has been unswapped
-timer_write_helper:
-	exx
-	push hl
-	 ld hl,TIMA
-	 add a,l
-	 ld l,a
+	 ; Set new TAC value
 	 ex af,af'
-	 ld.s (hl),a
+	 ld (hram_base+TAC),a
+	 ld c,a
 	 ex af,af'
-	 rra	; Set carry flag if TIMA
-	 ld a,(hram_base+TAC)
-	 bit 2,a
-	 call nz,timer_update
+	 bit 2,c
+	 jr nz,_
+return_from_write_helper:
 	pop hl
 	exx
 	ex af,af'
 	pop.s ix
 	ei
 	jp.s (ix)
-	
-; Updates a host timer register based on a GB timer register (TIMA/TMA).
-;
-; Disables timers first to ensure atomicity.
-;
-; Inputs:  HL = zero-extended pointer to GB timer register
-;          CA = reset for TMA, set for TIMA
-; Outputs: HL = output host timer register
-;          Timer value is written to the output register
-;          Timers are enabled
-timer_update:
-	ld de,mpTimer2Reset
-	jr nc,_
-timer_update_count:
-	ld e,mpTimer2Count & $FF
 _
+	 ; Get SMC data
+	 ld a,c
+	 and 3
+	 ld c,a
+	 ld a,b
+	 ld b,2
+	 mlt bc
+	 ld hl,timer_smc_data
+	 add hl,bc
+	 ld b,a
+	 
+	 ld a,(hl)
+	 ld (z80codebase + updateTIMA_smc),a
+	 inc hl
+	 ld a,(hl)
+	 ld (z80codebase + timer_cycles_reset_factor_smc),a
+	 ld (writeTIMA_smc),a
 	
-	; Multiply timer step length by (256-TMA)
-	sub.s (hl)
-	ld l,a
-	ld h,16
-	jr z,_
-	mlt hl
-_
-	; This entry point is for calculating and setting TIMA read SMC
-timer_smc_calculate:
-	; Do shifting based on the TAC mode
-timer_update_smc = $+1
-	jr $
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	add hl,hl
-	; Set new value
-	ex de,hl
-	ld (hl),de
-	ret
+; Writes to the GB timer count (TIMA).
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; Updates the GB timer based on the new value, if enabled.
+;
+; Inputs:  (TIMA) = value written
+;          (SPS) = Z80 return address
+;          (SPL) = saved HL'
+;          BCDEHL' are swapped
+; Outputs: GB timer updated
+;          Event triggered
+tima_write_helper:
+	 ld hl,hram_base+TAC
+	 bit 2,(hl)
+	 jr z,return_from_write_helper
+	 
+	 ld l,TIMA & $FF
+	 ld a,(hl)
+	 cpl
+	 ld l,a
+writeTIMA_smc = $+1
+	 ld h,0
+	 ld a,h
+	 mlt hl
+	 add hl,hl
+	 add hl,de
+	 add a,a
+	 dec a
+	 or l
+	 ld l,a
+	 inc hl
+	 ld.sis (timer_cycle_target),hl
+	pop hl
+	exx
+	ei
+	jp.sis trigger_event
+	
+timer_smc_data:
+	.db 6,$80
+	.db 0,$02
+	.db 2,$08
+	.db 4,$20
 	
 ; Inputs: DE = starting recompiled address
 ;         IY = cycle count at end of block (>= 0)
@@ -497,7 +464,7 @@ schedule_event_helper:
 	call.il lookup_gb_code_address
 schedule_event_helper_post_lookup:
 	or a
-	jr z,$
+	jr z,schedule_event_never
 	add a,iyl
 	jr c,schedule_event_now
 	

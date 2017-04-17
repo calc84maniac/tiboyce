@@ -185,8 +185,8 @@ lookup_code_block_lower:
 ;
 ; Inputs:  DE = 16-bit Z80 code pointer
 ; Outputs: IX = Literal 24-bit pointer to GB opcode
-;          DE = 16-bit Z80 code pointer (adjusted past ram code prefix if necessary)
-;          A = NEGATIVE number of cycles until block end
+;          DE = 16-bit Z80 code pointer
+;          A = NEGATIVE number of cycles until block end, or 0 if at start of RAM block
 ; Destroys F,BC,HL
 lookup_gb_code_address:
 #ifdef 0
@@ -246,9 +246,10 @@ lookup_gb_found_start:
 	lea hl,ix
 	add hl,hl
 	ret.l nc
-	ld hl,RAM_PREFIX_SIZE
-	add hl,de
-	ex de,hl
+	xor a
+	;ld hl,RAM_PREFIX_SIZE
+	;add hl,de
+	;ex de,hl
 	ret.l
 	
 	; If a cached code lookup misses, resolve it and insert into the cache
@@ -579,8 +580,12 @@ foundloop:
 	
 lookupfoundstart:
 	 ld a,(ix+7)
+	 bit 7,(ix+4)
 	 ld ix,(ix)
 	pop iy
+	ret z
+	; Report a cycle length of 0 for RAM blocks
+	xor a
 	ret
 	
 flush_and_recompile_pop:
@@ -710,6 +715,9 @@ ram_block_padding = $+1
 	 pop bc
 	 ldir
 	 
+	 ; Report block size of 0
+	 xor a
+	 
 #ifdef DEBUG
 	 jp recompile_end_common
 #else
@@ -744,11 +752,6 @@ rerecompile:
 	ld.s (hl),a
 	ld.sis (event_address),de
 	
-	; Undo any cycles that would have been consumed
-	xor a
-	sub (ix+7)
-	ld (rerecompile_undo_cycle_smc),a
-	
 	ld hl,(ix+2)
 	ld de,vram_base
 	xor a
@@ -772,17 +775,11 @@ rerecompile_found_base:
 	ld de,z80codebase + RAM_PREFIX_SIZE - 1
 	add hl,de
 	ld de,(ix+2)
-rerecompile_undo_cycle_smc = $+2
-	pea iy+0
+	push iy
 	 push ix
 	  call generate_opcodes
 	 pop ix
 	pop iy
-	
-	; Consume cycles
-	ld (_+2),a
-_
-	lea iy,iy+0
 	
 	push hl
 	pop bc
@@ -804,13 +801,11 @@ _
 	ld hl,(ix+2)
 	ldir
 	
-	ld a,iyh
-	or a
-	jr z,coherency_cycle_overflow
 	ei
 	jp.sis coherency_return
 	
 coherency_cycle_overflow:
+	xor a
 	sub (ix+7)
 	ld hl,(ix)
 	ld de,RAM_PREFIX_SIZE
@@ -1632,12 +1627,7 @@ _
 	ld bc,writeTIMAhandler
 	jr opgenHMEMwriteroutine
 _
-	dec a
-	jr nz,_
-	ld bc,writeTMAhandler
-	jr opgenHMEMwriteroutine
-_
-	dec a
+	sub TAC - TIMA
 	jr nz,_
 	ld bc,writeTAChandler
 	jr opgenHMEMwriteroutine

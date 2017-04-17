@@ -214,7 +214,7 @@ event_cycle_count = $+1
 	   jr nc,not_expired
 	   
 	   ; Event expired
-	   ld bc,(cycle_target_count)
+	   ld bc,(frame_cycle_target)
 	   ld hl,CYCLES_PER_SCANLINE * 144 + 1
 	   sbc hl,bc	; Carry is set
 	   jr z,vblank_handler
@@ -240,7 +240,7 @@ current_lyc_target_count = $+1
 	   jr c,_
 	   ex de,hl
 _
-	   ld (cycle_target_count),hl
+	   ld (frame_cycle_target),hl
 	   ex de,hl
 	   ld h,b
 	   ld l,c
@@ -252,7 +252,39 @@ _
 _
 	   ex de,hl
 	   add iy,de
+div_cycle_count = $+1
+	   ld hl,0
+	   or a
+	   sbc hl,de
+	   ld (div_cycle_count),hl
+	   ld a,(TAC)
+	   and 4
+	   jr z,event_cycle_loop
+timer_cycles_reset_loop:
+	   add hl,de
+timer_cycle_target = $+1
+	   ld bc,0
+	   xor a
+	   sbc hl,bc
+	   jr z,timer_cycles_reset
+	   or a
+	   sbc hl,de
+	   jr c,event_cycle_loop
+	   ld (div_cycle_count),bc
+	   ex de,hl
+	   ld hl,(frame_cycle_target)
+	   sbc hl,de
+	   jr nc,_
+	   ld bc,CYCLES_PER_FRAME
+	   add hl,bc
+_
+	   ld (frame_cycle_target),hl
+	   add iy,de
 	   jr event_cycle_loop
+	   
+vblank_handler:
+	   di
+	   jp.lil vblank_helper
 	   
 not_expired:
 	   ld hl,IE
@@ -281,9 +313,22 @@ _
 	   di
 	   jp.lil schedule_event_helper_post_lookup
 	
-vblank_handler:
-	di
-	jp.lil vblank_helper
+timer_cycles_reset:
+	   ld hl,IF
+	   set 2,(hl)
+	   ld l,TMA & $0F
+	   sub (hl)
+	   ld l,a
+timer_cycles_reset_factor_smc = $+1
+	   ld h,0
+	   jr z,_
+	   mlt hl
+_
+	   add hl,hl
+	   add hl,bc
+	   ld (timer_cycle_target),hl
+	   ld hl,(div_cycle_count)
+	   jr timer_cycles_reset_loop
 	
 trigger_interrupt:
 	   rrca
@@ -591,16 +636,30 @@ check_coherency_loop:
 	   jr nz,check_coherency_failed
 	   jp pe,check_coherency_loop
 coherency_return:
+	   ld.l a,(ix+7)
+	   ld (_+2),a
+_
+	   lea iy,iy+0
+	   ld a,iyh
+	   or a
+	   jr z,check_coherency_cycle_overflow
 	  pop bc
 	 pop de
 	pop hl
 	ex af,af'
 	ret
 	
+check_coherency_cycle_overflow:
+	   ld hl,(event_address)
+	   ld a,(event_value)
+	   ld (hl),a
+	   di
+	   jp.lil coherency_cycle_overflow
+	
 check_coherency_failed:
 	   di
 	   jp.lil rerecompile
-	
+	   
 do_swap:
 	inc a
 	jr nz,do_swap_generic
@@ -790,8 +849,8 @@ handle_waitloop_ly:
 	push hl
 	 push de
 	  ld a,(ix+2)
-	  call get_cycle_count_with_offset
-	  call get_scanline_from_cycle_count
+	  call get_cycle_offset
+	  call get_scanline_from_cycle_offset
 	 pop de
 	 cpl
 	 add a,CYCLES_PER_SCANLINE + 1
@@ -869,10 +928,19 @@ trigger_event_pushed:
 	    ld c,a
 	   pop af
 	   push de
-	    jr c,_
+	    jr c,++_
 	    ld a,c
-	    call get_cycle_count_with_offset
-	    ld (cycle_target_count),hl
+	    call get_cycle_offset
+	    ld hl,(div_cycle_count)
+	    add hl,de
+	    ld (div_cycle_count),hl
+	    ld hl,(frame_cycle_target)
+	    add hl,de
+	    jr c,_
+	    ld de,CYCLES_PER_FRAME
+	    add hl,de
+_
+	    ld (frame_cycle_target),hl
 _
 	   pop hl
 	   xor a
@@ -1103,13 +1171,7 @@ readSTAThandler:
 	
 writeTIMAhandler:
 	ex af,af'
-	xor a
-	jp write_timer
-	
-writeTMAhandler:
-	ex af,af'
-	ld a,1
-	jp write_timer
+	jp writeTIMA
 	
 writeTAChandler:
 	ex af,af'
@@ -1166,18 +1228,11 @@ _
 	ex af,af'
 	ret
 	
-readDIV:
-	ld a,r
-	add a,iyl
-	ld ixl,a
-	ex af,af'
-	ret
-	
 readSTAT:
 	exx
 	push.l hl
-	 call get_read_cycle_count
-	 call get_scanline_from_cycle_count
+	 call get_read_cycle_offset
+	 call get_scanline_from_cycle_offset
 	 ld d,a
 	pop.l hl
 	ld a,(STAT)
@@ -1215,8 +1270,8 @@ readLY:
 	jr z,_
 	exx
 	push.l hl
-	 call get_read_cycle_count
-	 call get_scanline_from_cycle_count
+	 call get_read_cycle_offset
+	 call get_scanline_from_cycle_offset
 	 ld a,e
 	pop.l hl
 	exx
@@ -1252,12 +1307,18 @@ mem_read_oam:
 	ret
 	
 readTIMA:
-	ld a,(TAC)
-	bit 2,a
-	di
-	call.il nz,updateTIMA
-	ei
-	ld ix,(TIMA)
+	call updateTIMA
+	 ld ixl,a
+	pop.l hl
+	exx
+	ex af,af'
+	ret
+	
+readDIV:
+	call updateTIMA
+	 ld ixl,d
+	pop.l hl
+	exx
 	ex af,af'
 	ret
 	
@@ -1355,15 +1416,22 @@ mem_write_bail:
 	
 writeLCDC:
 	call get_scanline_from_write
+	ex de,hl
+	call get_last_cycle_offset
 	jp.lil lcdc_write_helper
 	
 writeTAC:
+	call updateTIMA
 	di
 	jp.lil tac_write_helper
 	
-write_timer:
+writeTIMA:
+	call updateTIMA
+	ex af,af'
+	ld (TIMA),a
+	ex af,af'
 	di
-	jp.lil timer_write_helper
+	jp.lil tima_write_helper
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_vram:
@@ -1412,11 +1480,11 @@ mem_write_ports_swap:
 	inc a
 	jp m,mem_write_oam_swap
 	jr z,writeINT
-	sub (TAC & $FF) + 1
+	sub (TIMA & $FF) + 1
+	jr z,writeTIMA
+	sub TAC - TIMA
 	jr z,writeTAC
-	add a,TAC - TIMA
-	jr c,write_timer
-	sub IF - TIMA
+	sub IF - TAC
 	jr z,writeINT
 	sub LCDC - IF
 	jr z,writeLCDC
@@ -1623,16 +1691,16 @@ mbc_2000_denied:
 	ex af,af'
 	ret
 	
-get_read_cycle_count:
+get_read_cycle_offset:
 	ld ix,read_cycle_LUT
 ; Inputs: IY = current block cycle base
 ;         IX = pointer to cache LUT
 ;         B = number of empty call stack entries
-;         (SP+4) or (SP+6) = JIT return address
+;         (bottom of stack) = JIT return address
 ;         AFBCDEHL' have been swapped
-; Outputs: HL = adjusted current cycle count
-; Destroys DE,HL,IX
-get_mem_cycle_count:
+; Outputs: DE = (negative) cycle offset
+; Destroys HL,IX
+get_mem_cycle_offset:
 	push bc
 	 ; Get the address of the recompiled code: the bottom stack entry
 	 ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * 4) - 2
@@ -1695,22 +1763,12 @@ mem_cycle_lookup_found_fast:
 	
 ; Inputs: IY = (negative) cycles until target
 ;         A = (negative) number of cycles to subtract
-; Outputs: HL = cycle count within frame
-; Destroys: DE
-get_cycle_count_with_offset:
-	ld (get_cycle_count_with_offset_smc),a
-get_cycle_count_with_offset_smc = $+2
-	lea hl,iy+0
-; Inputs: HL = (negative) cycles until target
-; Outputs: HL = cycle count within frame
-; Destroys: DE
-get_block_end_cycle_count:
-cycle_target_count = $+1
-	ld de,0
-	add hl,de
-	ret c
-	ld de,CYCLES_PER_FRAME
-	add hl,de
+; Outputs: DE = (negative) cycle offset
+get_cycle_offset:
+	ld (get_cycle_offset_smc),a
+get_last_cycle_offset:
+get_cycle_offset_smc = $+2
+	lea de,iy+0
 	ret
 	
 ; Inputs: BC = current cycle count
@@ -1719,6 +1777,7 @@ cycle_target_count = $+1
 ; Outputs: DE = new cycle target (possibly offset by CYCLES_PER_FRAME)
 update_cycle_target:
 	ld hl,CYCLES_PER_SCANLINE * 144
+	ASSERT_NC
 	sbc hl,bc
 	jr z,_
 	add hl,bc
@@ -1751,6 +1810,7 @@ _
 	adc a,CYCLES_PER_FRAME >> 8
 	ld h,a
 _
+	ASSERT_NC
 	sbc hl,de
 	ret nc
 	add hl,de
@@ -1761,8 +1821,20 @@ get_scanline_from_write:
 	exx
 	push.l hl
 	ld ix,write_cycle_LUT
-	call get_mem_cycle_count
+	call get_mem_cycle_offset
 	di
+	
+; Inputs: DE = (negative) cycles until target
+; Outputs: A = cycle count within scanline
+;          E = scanline index (0-153)
+; Destroys: D, HL
+get_scanline_from_cycle_offset:
+frame_cycle_target = $+1
+	ld hl,0
+	add hl,de
+	jr c,get_scanline_from_cycle_count
+	ld de,CYCLES_PER_FRAME
+	add hl,de
 	
 ; Inputs: HL = cycle count within frame
 ; Outputs: A = cycle count within scanline
@@ -1807,6 +1879,34 @@ _
 	ld a,h
 	ld h,CYCLES_PER_SCANLINE
 	jr get_scanline_from_cycle_count_finish
+	
+updateTIMA:
+	exx
+	push.l hl
+	 call get_read_cycle_offset
+	 ld hl,(div_cycle_count)
+	 add hl,de
+	 ex de,hl
+	 ld a,(TAC)
+	 and 4
+	 ld a,(TIMA)
+	 ret z
+	 ld hl,(timer_cycle_target)
+	 sbc hl,de
+updateTIMA_smc = $+1
+	 jr $+8
+	 add hl,hl
+	 add hl,hl
+	 add hl,hl
+	 add hl,hl
+	 add hl,hl
+	 add hl,hl
+	 xor a
+	 sub l
+	 sbc a,a
+	 sub h
+	 ld (TIMA),a
+	 ret
 	
 keys:
 	.dw $FFFF

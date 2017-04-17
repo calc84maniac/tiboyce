@@ -7,15 +7,17 @@
 #endif
 #endif
 
-; The length of a GB scanline, proportional to host CPU clock speed
-#ifndef SCANDELAY
-#define SCANDELAY 12
+#macro ASSERT_NC
+#ifdef DEBUG
+	jr c,$
 #endif
+#endmacro
 
-; The length of an entire GB frame in host CPU cycles
-#define FRAME_LENGTH (SCANDELAY*256*154)
-; The length of the shortest GB timer tick (16 cycles) in host CPU cycles
-#define TIMA_LENGTH (SCANDELAY*256*16/456)
+#macro ASSERT_C
+#ifdef DEBUG
+	jr nc,$
+#endif
+#endmacro
 
 ; A call to a routine located in the archived appvar.
 ; Destroys flags before entry to routine.
