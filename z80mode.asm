@@ -668,6 +668,7 @@ do_swap:
 	rrca
 	rrca
 	rrca
+	or a
 	ret
 do_swap_generic:
 	inc a
@@ -679,28 +680,33 @@ do_swap_generic:
 	add a,a
 	sub $79		;LD r,A
 	ld (++_),a
-_
-	ld a,b
-	rrca
-	rrca
-	rrca
-	rrca
-_
-	ld b,a
 	ex af,af'
+	push af
+_
+	 ld a,b
+	 rrca
+	 rrca
+	 rrca
+	 rrca
+	 or a
+_
+	 ld b,a
+	pop ix
+	ld a,ixh
 	ret
 do_swap_hl:
 	lea iy,iy+2	;Consume 2 extra cycles
-	call mem_read_any
-	rrca
-	rrca
-	rrca
-	rrca
-	ld ixl,a
 	ex af,af'
 	push af
-	 call mem_write_any_ixl
-	pop af
+	 call mem_read_any
+	 rrca
+	 rrca
+	 rrca
+	 rrca
+	 or a
+	 call mem_write_any
+	pop ix
+	ld a,ixh
 	ret
 	
 do_bits:
@@ -812,9 +818,9 @@ ophandler39:
 	  sbc hl,de
 	  ex de,hl
 	 pop hl
+	 ex af,af'
 	 add hl,de
 	pop de
-	ex af,af'
 	ret
 	
 handle_waitloop_stat:
@@ -1001,6 +1007,21 @@ ophandlerE9:
 	ex de,hl
 	jp dispatch_cycles
 	
+ophandlerF1:
+	exx
+	ld.l e,(hl)
+	inc.l hl
+	ld d,flags_lut >> 8
+	res 3,e
+	ld a,(de)
+	ld e,a
+	ld.l d,(hl)
+	inc.l hl
+	push de
+	pop af
+	exx
+	ret
+	
 ophandlerF2:
 	ld ixh,$FF
 	ld ixl,c
@@ -1014,6 +1035,22 @@ ophandlerF3:
 	xor a
 	ld (intstate),a
 	ex af,af'
+	ret
+	
+ophandlerF5:
+	exx
+	ld c,a
+	dec.l hl
+	ld.l (hl),a
+	push af
+	pop de
+	ld d,flags_lut >> 8
+	set 3,e
+	ld a,(de)
+	dec.l hl
+	ld.l (hl),a
+	ld a,c
+	exx
 	ret
 	
 ophandlerF8:
@@ -1314,14 +1351,6 @@ readTIMA:
 	ex af,af'
 	ret
 	
-readDIV:
-	call updateTIMA
-	 ld ixl,d
-	pop.l hl
-	exx
-	ex af,af'
-	ret
-	
 	;HL=GB address, reads into A, AF'=GB AF
 mem_read_any:
 	ld a,h
@@ -1364,6 +1393,18 @@ mem_write_bail_a:
 	lea ix,ix-8
 	jp (ix)
 	
+readDIV:
+	call updateTIMA
+	 ex de,hl
+	 add hl,hl
+	 add hl,hl
+	 ex de,hl
+	 ld ixl,d
+	pop.l hl
+	exx
+	ex af,af'
+	ret
+	
 mem_read_any_ports:
 	jr z,_
 	ld a,l
@@ -1379,7 +1420,7 @@ _
 	ld a,(hl)
 	ret
 	
-	;HL=GB address, IXL=data, destroys AF,AF'
+	;HL=GB address, IXL=data, destroys A,AF'
 mem_write_any_ixl:
 	ld a,ixl
 	;HL=GB address, A=data, preserves AF, destroys AF'

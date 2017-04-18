@@ -67,12 +67,18 @@ opgen76:
 opgenE2:
 	call opgenroutinecall_2cc
 	.dw ophandlerE2
+opgenF1:
+	call opgenroutinecall_3cc
+	.dw ophandlerF1
 opgenF2:
 	call opgenroutinecall_2cc
 	.dw ophandlerF2
 opgenF3:
 	call opgenroutinecall_1cc
 	.dw ophandlerF3
+opgenF5:
+	call opgenroutinecall_4cc
+	.dw ophandlerF5
 opgenF9:
 	call opgenroutinecall_2cc
 	.dw ophandlerF9

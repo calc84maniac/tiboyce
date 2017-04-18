@@ -946,7 +946,7 @@ opcoderecsizes:
 	.db 6,0,10,0,9,0,2,7
 	.db 3,2,3,0,0,2,2,7
 	.db 4,0,5,0,0,0,2,7
-	.db 3,2,3,3,0,2,2,7
+	.db 3,3,3,3,0,3,2,7
 	.db 4,3,5,3,0,0,2,7
 	
 ; A table of Game Boy opcode sizes.
@@ -1301,11 +1301,11 @@ opgentable:
 	.db opgenRST - opgenroutines
 ;F0
 	.db opgenF0 - opgenroutines
-	.db opgenPOP - opgenroutines
+	.db opgenF1 - opgenroutines
 	.db opgenF2 - opgenroutines
 	.db opgenF3 - opgenroutines
 	.db opgenINVALID - opgenroutines
-	.db opgenPUSH - opgenroutines
+	.db opgenF5 - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;F8
@@ -1316,7 +1316,8 @@ opgentable:
 	.db opgenINVALID - opgenroutines
 	.db opgenINVALID - opgenroutines
 	.db opgen2byte - opgenroutines
-	.db opgenINVALID - opgenroutines
+	.db opgenRST - opgenroutines
+	
 	
 opgen_cycle_overflow:
 	ld a,(base_address)
@@ -1495,6 +1496,8 @@ opgenroutinecall1byte_3cc:
 	pop hl
 	jp opgen1byte
 	
+opgenroutinecall_4cc:
+	dec iy
 opgenroutinecall_3cc:
 	dec iy
 opgenroutinecall_2cc:
