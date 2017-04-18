@@ -7,14 +7,16 @@
 ;
 ; Inputs:  HL = 16-bit Game Boy SP
 ;          IX = Z80-mode return address
-;          BCDEHL' have been swaped
+;          BCDEHL' have been swapped
 ; Outputs: HL' = 24-bit literal SP
 ;          BCDEHL' have been unswapped
 ;          SMC applied to push operations
 set_gb_stack:
 	ex af,af'
 	ex de,hl
+	dec de
 	ld a,d
+	inc de
 	add a,a
 	jr c,_
 	add a,a

@@ -695,15 +695,16 @@ _
 	ld a,ixh
 	ret
 do_swap_hl:
-	lea iy,iy+2	;Consume 2 extra cycles
 	ex af,af'
 	push af
+	 inc iy	;Consume 1 extra cycle
 	 call mem_read_any
 	 rrca
 	 rrca
 	 rrca
 	 rrca
 	 or a
+	 inc iy	;Consume 1 more cycle
 	 call mem_write_any
 	pop ix
 	ld a,ixh
@@ -715,8 +716,8 @@ do_bits:
 	jr c,do_swap
 	add a,$38-1	;Use L instead of (HL)
 	cp $C0
+	inc iy	;Consume 1 extra cycle
 	jp pe,do_bits_readonly
-	lea iy,iy+2	;Consume 2 extra cycles
 	ld (do_bits_smc),a
 	call mem_read_any
 	; Use L because we have to affect flags, bleh
@@ -728,12 +729,12 @@ do_bits_smc = $+1
 	 rlc l
 	 ld a,l
 	 ex (sp),hl
+	 inc iy	;Consume 1 more cycle
 	 call mem_write_any
 	pop ix
 	ld a,ixh
 	ret
 do_bits_readonly:
-	inc iy	;Consume 1 extra cycle
 	ld (do_bits_readonly_smc),a
 	call mem_read_any
 	; Use L because we have to affect flags, bleh
@@ -760,9 +761,11 @@ ophandler08:
 	   ex de,hl
 	   ld hl,(ix)
 	   ld a,e
+	   dec iy
 	   call mem_write_any
 	   inc hl
 	   ld a,d
+	   inc iy
 	   call mem_write_any
 	  pop hl
 	 pop de
@@ -779,6 +782,7 @@ ophandler31:
 	
 ophandler34:
 	ex af,af'
+	dec iy
 	call mem_read_any
 	ld ixl,a
 	ex af,af'
@@ -787,11 +791,13 @@ ophandler34:
 	
 ophandler35:
 	ex af,af'
+	dec iy
 	call mem_read_any
 	ld ixl,a
 	ex af,af'
 	dec ixl
 _
+	inc iy
 	push af
 	 call mem_write_any_ixl
 	pop af
@@ -1206,18 +1212,6 @@ readSTAThandler:
 	ld a,ixl
 	ret
 	
-writeTIMAhandler:
-	ex af,af'
-	jp writeTIMA
-	
-writeTAChandler:
-	ex af,af'
-	jp writeTAC
-	
-writeLCDChandler:
-	ex af,af'
-	jp writeLCDC
-	
 writeSCYhandler:
 	ld ix,SCY
 	jp write_scroll_swap
@@ -1225,9 +1219,6 @@ writeSCYhandler:
 writeSCXhandler:
 	ld ix,SCX
 	jp write_scroll_swap
-	
-writeLYChandler:
-	jp writeLYCswap
 	
 writeWYhandler:
 	ld ix,WY
@@ -1455,24 +1446,41 @@ mem_write_bail:
 	ex af,af'
 	jp (ix)
 	
+writeLCDChandler:
+	ex af,af'
 writeLCDC:
 	call get_scanline_from_write
 	ex de,hl
 	call get_last_cycle_offset
 	jp.lil lcdc_write_helper
 	
+writeTAChandler:
+	ex af,af'
 writeTAC:
 	call updateTIMA
 	di
 	jp.lil tac_write_helper
 	
+writeTIMAhandler:
+	ex af,af'
 writeTIMA:
 	call updateTIMA
 	ex af,af'
 	ld (TIMA),a
 	ex af,af'
+_
 	di
 	jp.lil tima_write_helper
+	
+writeDIVhandler:
+	ex af,af'
+writeDIV:
+	call updateTIMA
+	or a
+	sbc hl,hl
+	ld (div_cycle_count),hl
+	ex de,hl
+	jr -_
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_vram:
@@ -1521,7 +1529,9 @@ mem_write_ports_swap:
 	inc a
 	jp m,mem_write_oam_swap
 	jr z,writeINT
-	sub (TIMA & $FF) + 1
+	sub (DIV & $FF) + 1
+	jr z,writeDIV
+	dec a
 	jr z,writeTIMA
 	sub TAC - TIMA
 	jr z,writeTAC
@@ -1553,7 +1563,7 @@ write_scroll:
 	pop hl
 	jp.lil scroll_write_helper
 	
-writeLYCswap:
+writeLYChandler:
 	ex af,af'
 writeLYC:
 	call get_scanline_from_write
@@ -1921,6 +1931,11 @@ _
 	ld h,CYCLES_PER_SCANLINE
 	jr get_scanline_from_cycle_count_finish
 	
+; Output: BCDEHL' are swapped
+;         (SPL) = saved HL'
+;         DE = current DIV counter
+;         A = current TIMA value
+;         (TIMA) updated to current value
 updateTIMA:
 	exx
 	push.l hl

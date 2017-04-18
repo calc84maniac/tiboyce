@@ -1,9 +1,9 @@
 #define RST_BITS $C7+r_bits
 #define RST_MEM $C7+r_mem
+#define RST_CYCLE_CHECK $C7+r_cycle_check
 #define RST_PUSH $C7+r_push
 #define RST_POP $C7+r_pop
 #define RST_CALL $C7+r_call
-#define RST_CYCLE_CHECK $C7+r_cycle_check
 #define RST_EVENT $C7+r_event
 
 #define RAM_PREFIX_SIZE 5
@@ -799,6 +799,15 @@ rerecompile_found_base:
 	
 	; Copy the new opcodes, from first to last
 	ld hl,(ix+2)
+	ldir
+	
+	; Invalidate both the read and write cycle LUTs
+	ld hl,z80codebase+read_cycle_LUT
+	ld (hl),c
+	push hl
+	pop de
+	inc de
+	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 - 1
 	ldir
 	
 	ei
@@ -1625,7 +1634,12 @@ _
 	ld bc,writeIEhandler
 	jr opgenHMEMwriteroutine
 _
-	sub (TIMA & $FF)+1
+	sub (DIV & $FF)+1
+	jr nz,_
+	ld bc,writeDIVhandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
 	jr nz,_
 	ld bc,writeTIMAhandler
 	jr opgenHMEMwriteroutine
