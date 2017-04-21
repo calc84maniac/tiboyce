@@ -1658,7 +1658,10 @@ _
 	 dec a
 	 jr nz,_
 mbc1_ram:
-	 ld a,c
+ram_size_smc = $
+	 or a
+	 sbc a,a
+	 and c
 	 rrca
 	 rrca
 	 rrca

@@ -422,6 +422,11 @@ RestartFromHere:
 	ld a,(mbc)
 	ld (z80codebase+mbc_z80),a
 	
+	ld a,(ram_size+1)
+	and $80
+	add a,$B7	; or a / scf
+	ld (z80codebase+ram_size_smc),a
+	
 	ld hl,(cram_start)
 	ld bc,-$A000
 	add hl,bc
