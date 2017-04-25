@@ -1634,7 +1634,12 @@ _
 	ld bc,writeIEhandler
 	jr opgenHMEMwriteroutine
 _
-	sub (DIV & $FF)+1
+	sub (SC & $FF)+1
+	jr nz,_
+	ld bc,writeSChandler
+	jr opgenHMEMwriteroutine
+_
+	sub DIV - SC
 	jr nz,_
 	ld bc,writeDIVhandler
 	jr opgenHMEMwriteroutine

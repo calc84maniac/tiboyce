@@ -1507,7 +1507,7 @@ mem_write_any_vram:
 mem_write_any_cart:
 	push hl
 	pop ix
-	jr mem_write_cart_swap
+	jp mem_write_cart_swap
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_ports:
@@ -1547,7 +1547,9 @@ mem_write_ports_swap:
 	sub WY - SCY
 	cp 2
 	jr c,write_scroll
-	sub LYC - WY
+	sub SC - WY
+	jr z,writeSC
+	sub LYC - SC
 	jr z,writeLYC
 	dec a
 	jr nz,mem_write_oam_swap
@@ -1576,6 +1578,47 @@ writeSTAThandler:
 	ex af,af'
 	or a
 	jp trigger_event
+	
+writeSC:
+	ex af,af'
+writeSChandler:
+	push hl
+	 ld hl,SC
+	 ld (hl),a
+	 ex af,af'
+	 ld a,(hl)
+	 cpl
+	 and $81
+	 jr nz,_
+	 res 7,(hl)
+	 dec hl
+	 ld (hl),h
+	 ld l,IF & $FF
+	 set 3,(hl)
+_
+	pop hl
+	jr checkIntPostUpdate
+	
+writeINT:
+	ex af,af'
+	ld (ix),a
+writeINTswap:
+	ex af,af'
+checkIntPostUpdate:
+	ld a,(intstate)
+	or a
+	jr z,checkIntDisabled
+checkIntPostEnable:
+	push hl
+	 ld hl,IF
+	 ld a,(hl)
+	 ld l,h
+	 and (hl)
+	 jp nz,trigger_event_pushed
+	pop hl
+checkIntDisabled:
+	ex af,af'
+	ret
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart:
@@ -1612,27 +1655,6 @@ _
 	ld (mbc1_ram_smc),a
 mbc_6000_denied:
 mbc_0000:
-	ex af,af'
-	ret
-	
-writeINT:
-	ex af,af'
-	ld (ix),a
-writeINTswap:
-	ex af,af'
-checkIntPostUpdate:
-	ld a,(intstate)
-	or a
-	jr z,checkIntDisabled
-checkIntPostEnable:
-	push hl
-	 ld hl,IF
-	 ld a,(hl)
-	 ld l,h
-	 and (hl)
-	 jp nz,trigger_event_pushed
-	pop hl
-checkIntDisabled:
 	ex af,af'
 	ret
 	
