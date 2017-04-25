@@ -344,7 +344,7 @@ lyc_write_helper:
 	 ex af,af'
 	 ld a,d
 	 ld (hram_base + LYC),a
-	 cp e
+	 xor e
 	 jr nz,_
 	 ld hl,hram_base + STAT
 	 bit 6,(hl)
@@ -352,18 +352,15 @@ lyc_write_helper:
 	 ld l,IF - ioregs
 	 set 1,(hl)
 _
-	 add a,256-SCANLINES_PER_FRAME
-	 jr c,_
 	 
 	 ; Set new target
 	 ld e,CYCLES_PER_SCANLINE
 	 mlt de
 	 ld.sis (current_lyc_target_count),de
-_
 	pop hl
 	exx
-	or a
 	ei
+	; Carry is reset
 	jp.sis trigger_event
 	
 	

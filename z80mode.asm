@@ -1844,12 +1844,11 @@ _
 	jr nc,_
 	add hl,de
 	ex de,hl
-	or a
 _
 	
-	ld a,(LYC)
-	add a,256-SCANLINES_PER_FRAME
-	ret c
+	ld a,(STAT)
+	and $40
+	ret z
 	
 	ld hl,(current_lyc_target_count)
 	sbc hl,bc
