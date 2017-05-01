@@ -29,9 +29,10 @@ vfps = $+1
 	  
 	   ; Display sprites
 	   ld a,(hram_base+LCDC)
-	   rla
+	   cpl
+	   and $82
 	   push iy
-	    call c,draw_sprites
+	    call z,draw_sprites
 	   pop iy
 	
 	   ; Swap buffers
@@ -260,6 +261,7 @@ wait_for_interrupt:
 prepare_next_frame:
 	ld hl,scanlineLUT + (15*3)
 	ld (scanlineLUT_ptr),hl
+	ld (scanlineLUT_sprite_ptr),hl
 	ld hl,(mpLcdBase)
 	ld (current_buffer),hl
 	ld (scanline_ptr),hl
@@ -278,6 +280,7 @@ prepare_next_frame:
 	xor a
 	ld (window_tile_offset),a
 	ld (myLY),a
+	ld (myspriteLY),a
 	ld (mpLcdBase),hl
 	ret
 	

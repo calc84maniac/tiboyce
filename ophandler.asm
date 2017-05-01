@@ -143,8 +143,14 @@ render_catchup:
 	ld a,(hram_base+LCDC)
 	add a,a
 	ret nc
+	ld a,d
+	cp MODE_2_CYCLES + MODE_3_CYCLES
 	ld a,e
+	jr c,_
+	inc e
+_
 	cp 144
+	ld a,e
 	push bc
 	 push hl
 	  call c,render_scanlines
@@ -167,10 +173,7 @@ render_catchup:
 ; Outputs: Scanlines rendered if applicable, SMC applied, value written
 ;          AF' has been unswapped
 scroll_write_helper:
-	 cp MODE_2_CYCLES + MODE_3_CYCLES
-	 jr c,_
-	 inc e
-_
+	 ld d,a
 render_this_frame = $+1
 	 ld a,1
 	 or a
@@ -245,10 +248,7 @@ scroll_write_done:
 ;          BCDEHL' have been unswapped
 lcdc_write_helper:
 	 ex de,hl
-	 cp MODE_2_CYCLES + MODE_3_CYCLES
-	 jr c,_
-	 inc e
-_
+	 ld d,a
 	 ld a,(render_this_frame)
 	 or a
 	 call nz,render_catchup
@@ -259,52 +259,68 @@ _
 	 ld (hl),a
 	 ex af,af'
 	 xor (hl)
-	 ld l,a
-	 bit 0,l
+	 ld c,a
+	 bit 0,c
 	 jr z,_
 	 ld a,(LCDC_0_smc)
 	 xor $39 ^ $31	;ADD.SIS SP,HL \ LD.SIS SP,HL vs LD.SIS SP,$F940
 	 ld (LCDC_0_smc),a
 _
-	 bit 1,l
-	 jr z,_
-	 ld a,(LCDC_1_smc)
-	 xor $77 ^ $1F	;LD (IY),A vs LD (IY),DE
-	 ld (LCDC_1_smc),a
+	 bit 1,c
+	 jr z,++_
+	 bit 1,(hl)
+	 jr nz,_
+	 ld a,(render_this_frame)
+	 or a
+	 push bc
+	  push de
+	   push iy
+	    call nz,draw_sprites
+	   pop iy
+	  pop de
+	 pop bc
 _
-	 bit 2,l
+	 ld a,(myLY)
+	 ld (myspriteLY),a
+	 ld hl,(scanlineLUT_ptr)
+	 ld (scanlineLUT_sprite_ptr),hl
+_
+	 bit 2,c
 	 jr z,_
 	 ld a,(LCDC_2_smc_1)
 	 xor $38^$78
 	 ld (LCDC_2_smc_1),a
 	 ld a,(LCDC_2_smc_2)
-	 xor 8^16
+	 xor 7^15
 	 ld (LCDC_2_smc_2),a
+	 ld (LCDC_2_smc_4),a
+	 xor 7^9
+	 ld (LCDC_2_smc_5),a
 	 ld a,(LCDC_2_smc_3)
 	 xor $80 ^ $81	;RES 0,B vs RES 0,C
 	 ld (LCDC_2_smc_3),a
 	
 _
-	 bit 3,l
+	 bit 3,c
 	 jr z,_
 	 ld a,(LCDC_3_smc)
 	 xor (vram_tiles_start ^ (vram_tiles_start + $2000)) >> 8
 	 ld (LCDC_3_smc),a
 _
-	 bit 4,l
+	 bit 4,c
 	 jr z,_
 	 ld a,(LCDC_4_smc)
 	 xor $80
 	 ld (LCDC_4_smc),a
 	 ld (window_tile_ptr),a
 _
-	 bit 5,l
+	 bit 5,c
 	 jr z,_
 	 ld a,(LCDC_5_smc)
 	 xor $08	;JR NC vs JR C
 	 ld (LCDC_5_smc),a
 _
-	 bit 6,l
+	 bit 6,c
 	 jr z,_
 	 ld a,(window_tile_ptr+1)
 	 sub (vram_tiles_start >> 8) & $FF
@@ -312,10 +328,10 @@ _
 	 add a,(vram_tiles_start >> 8) & $FF
 	 ld (window_tile_ptr+1),a
 _
-	 bit 7,l
+	 bit 7,c
 	 jr z,return_from_write_helper
 	 ld a,(LCDC_7_smc)
-	 xor $08	;JR NZ vs JR Z
+	 xor $08	;JR NC vs JR C
 	 ld (LCDC_7_smc),a
 	 ; Forcibly skip to scanline 0
 	 sbc hl,hl

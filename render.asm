@@ -8,6 +8,18 @@ draw_sprites_save_sp = $+1
 	ret
 	
 draw_sprites:
+myspriteLY = $+1
+	ld c,0
+	ld a,(myLY)
+	sub c
+	ret z
+LCDC_2_smc_4 = $+1
+	add a,7			;add a,15 when 8x16 sprites
+	ld (draw_sprite_height_smc_1),a
+	ld a,c
+LCDC_2_smc_5 = $+1
+	add a,9			;add a,1 when 8x16 sprites
+	ld (draw_sprite_top_smc),a
 	ld (draw_sprites_save_sp),sp
 	ld ix,$FEA4
 draw_next_sprite:
@@ -16,30 +28,60 @@ draw_next_sprite_2:
 	dec ixl
 	jr z,draw_sprites_done
 	ld.s bc,(ix-4)
-	dec c
-	ld a,c
-	cp 159
-	jr nc,draw_next_sprite
+	dec b
 	ld a,b
-	dec a
 	cp 167
+	jr nc,draw_next_sprite
+	ld a,c
+draw_sprite_top_smc = $+1
+	sub 1
+	ld e,a
+draw_sprite_height_smc_1 = $+1
+	sub 144 + 7
 	jr nc,draw_next_sprite
 	
 	pea.s ix-3
-	 
-	 ld hl,scanlineLUT
-	 ld b,3
-	 mlt bc
-	 add hl,bc
+scanlineLUT_sprite_ptr = $+1
+	 ld hl,scanlineLUT + (15*3)
+LCDC_2_smc_2 = $+1
+	 ld c,7			;ld c,15 when 8x16 sprites
+	 ld d,c
+	 adc a,c
+	 jr nc,_
+	 xor c
+	 ld c,a
+_
+	 ld a,e
+	 sub d
+	 jr nc,_
+	 add a,c
+	 ld c,a
+	 ld a,e
+	 xor d
+	 add a,a
+	 add a,a
+	 add a,a
+	 jr ++_
+_
+	 ld e,a
+	 ld d,3
+	 mlt de
+	 add hl,de
+	 xor a
+_
 	 ld sp,hl
 	 
-	 ld.s bc,(ix-2)
-	 ld d,b
+	 ld hl,vram_pixels_start
+	 ld l,a
+	 ld.s de,(ix-2)
+	 inc c
+	 ld ixl,c
+	 ld c,e
+	 ld a,b
 	 ld b,64
 LCDC_2_smc_3 = $+1
 	 res 0,b		;res 0,c when 8x16 sprites
 	 mlt bc
-	 ld hl,vram_pixels_start
 	 add hl,bc
 	 
 	 ld b,a
@@ -80,15 +122,11 @@ _
 	 
 	 sla d
 	 bit 6,d
-LCDC_2_smc_2 = $+2
-	 ld ixl,8
 	 jr c,draw_sprite_priority
 	 jr nz,draw_sprite_flip
 	
 draw_sprite_normal_row:
 	 pop de
-	 bit 0,e
-	 jr nz,draw_sprite_normal_vclip
 	 ld l,a
 	 ld a,iyl
 	 add a,e
@@ -109,7 +147,6 @@ _
 	 ld b,iyh
 	 ld a,l
 	 sub b
-draw_sprite_normal_vclip:
 	 add a,ixh
 	 dec ixl
 	 jr nz,draw_sprite_normal_row
@@ -120,8 +157,6 @@ draw_sprite_flip:
 	 xor 7
 draw_sprite_flip_row:
 	 pop de
-	 bit 0,e
-	 jr nz,draw_sprite_flip_vclip
 	 ld l,a
 	 ld a,iyl
 	 add a,e
@@ -142,7 +177,6 @@ _
 	 ld b,iyh
 	 ld a,l
 	 add a,b
-draw_sprite_flip_vclip:
 	 add a,ixh
 	 dec ixl
 	 jr nz,draw_sprite_flip_row
@@ -161,12 +195,8 @@ _
 	 and $10
 	 add a,$80
 	 ld (draw_sprite_priority_hdir_2),a
-	 ld a,l
 draw_sprite_priority_row:
 	 pop de
-	 bit 0,e
-	 jr nz,draw_sprite_priority_vclip
-	 ld l,a
 	 ld a,iyl
 	 add a,e
 	 jr nc,_
@@ -191,8 +221,8 @@ draw_sprite_priority_hdir:
 	 ld a,l
 draw_sprite_priority_hdir_2:
 	 sub b
-draw_sprite_priority_vclip:
 	 add a,ixh
+	 ld l,a
 	 dec ixl
 	 jr nz,draw_sprite_priority_row
 	pop.s ix
@@ -413,16 +443,12 @@ scanline_scale_accumulator = $+2
 render_scanline_loop:
 	  push bc
 	   ; Store current scanline pointer in LUT
-	   ; Or store 1 to low bit if sprites are disabled
-	   ; Carry flag is set
-	   sbc a,a
-LCDC_1_smc = $+1
-	   ld (iy),a	;or ld (iy),de if enabled
+	   ld (iy),de
 	   lea iy,iy+3
 	   
-	   ; Zero flag is reset
+	   ; Carry flag is set
 LCDC_7_smc:
-	   jr z,render_scanline_off
+	   jr nc,render_scanline_off
 SCY_smc = $+1
 	   ld l,0
 	   add hl,bc
