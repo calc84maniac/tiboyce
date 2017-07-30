@@ -1,7 +1,7 @@
 decode_jump_helper:
-	ld bc,recompile_struct
+	ld bc,recompile_struct+8
 	add ix,bc
-	sub (ix+7)
+	sub (ix-1)
 	ld.s (hl),a
 	
 	call get_base_address
@@ -55,7 +55,10 @@ decode_call_helper:
 	dec hl
 	ld e,(hl)
 _
-	call lookup_code
+	call get_base_address
+	ld (base_address),hl
+	add hl,de
+	call lookup_code_link_internal
 	add a,3	; Taken call eats 3 cycles
 	ei
 	ret.l

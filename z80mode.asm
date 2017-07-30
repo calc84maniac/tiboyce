@@ -168,6 +168,7 @@ ophandlerRETnomatch:
 	push bc
 	 di
 	 call.il pop_and_lookup_code_cached
+	 ei
 	pop bc
 	jr dispatch_cycles_exx
 	
@@ -385,6 +386,7 @@ _
 	
 	   pop de
 	   call.il lookup_code_cached
+	   ei
 	  pop bc
 	 pop de
 	 ex (sp),hl
@@ -1008,6 +1010,7 @@ ophandlerE9:
 	 push de
 	  di
 	  call.il lookup_code_cached
+	  ei
 	 pop de
 	pop bc
 	ex de,hl

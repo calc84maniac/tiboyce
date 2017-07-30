@@ -309,7 +309,6 @@ _
 	 inc hl
 	 ld (hl),a
 	pop hl
-	ei
 	ret.l
 	
 	
@@ -329,7 +328,6 @@ lookup_code_cached_found:
 	 ld a,(ix+5)
 	 ld ix,(ix+3)
 	pop hl
-	ei
 	ret.l
 	
 
@@ -342,7 +340,6 @@ int_cached_code = $+2
 int_cached_cycles = $+1
 	 sub 0
 	pop hl
-	ei
 	ret.l
 	
 	
@@ -381,6 +378,7 @@ lookup_code_cached:
 	 add hl,de
 	 ex de,hl
 	
+lookup_code_cached_by_pointer_pushed:
 	; Quickly check against the last interrupt return address
 int_cached_return = $+1
 	 ld hl,0
@@ -413,7 +411,13 @@ _
 lookup_code_cached_lower:
 	 pop ix
 	 jr lookup_code_cached_loop
-	
+	 
+lookup_code_cached_by_pointer:
+	call.il _
+	ret
+_
+	push hl
+	 jr lookup_code_cached_by_pointer_pushed
 	
 ; Looks up a recompiled code pointer from a direct GB address,
 ; allowing a direct link within the currently executing RAM block.
@@ -421,28 +425,28 @@ lookup_code_cached_lower:
 ; If executing from ROM or target is not the same block, proceed as normal.
 ;
 ; Inputs:  HL = direct 24-bit GB address to look up
-;          IX = struct pointer of currently executing block
+;          IX = struct pointer following the currently executing block
 ;          (base_address) = base address of pointer in HL
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
 lookup_code_link_internal:
 	ex de,hl
-	bit 7,(ix+4)
+	bit 7,(ix-4)
 	jr z,lookup_code_by_pointer
 	; We're running from RAM, check if destination is in running block
-	ld hl,(ix+2)
+	ld hl,(ix-6)
 	or a
 	sbc hl,de
 	jr z,internal_found_start
-	jr nc,lookup_code_by_pointer
-	ld bc,(ix+5)
+	jr nc,lookup_code_cached_by_pointer
+	ld bc,(ix-3)
 	dec.s bc
 	add hl,bc
-	jr nc,lookup_code_by_pointer
+	jr nc,lookup_code_cached_by_pointer
 internal_found_start:
-	ld a,(ix+7)
-	ld ix,(ix)
+	ld a,(ix-1)
+	ld ix,(ix-8)
 	lea ix,ix+RAM_PREFIX_SIZE
 	ret z
 	or a
