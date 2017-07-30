@@ -42,7 +42,7 @@ draw_sprite_height_smc_1 = $+1
 	
 	pea.s ix-3
 scanlineLUT_sprite_ptr = $+1
-	 ld hl,scanlineLUT + (15*3)
+	 ld hl,0
 LCDC_2_smc_2 = $+1
 	 ld c,7			;ld c,15 when 8x16 sprites
 	 ld d,c
@@ -426,14 +426,8 @@ myLY = $+1
 	ld b,a
 	push ix
 	 push iy
-scanline_ptr = $+1
-	  ld de,0
 scanlineLUT_ptr = $+2
 	  ld iy,0
-#ifndef DBGNOSCALE
-scanline_scale_accumulator = $+2
-	  ld ixh,0
-#endif
 	  ld.sis (render_save_sps),sp
 	  ld a,vram_tiles_start >> 16
 	  ld mb,a
@@ -442,13 +436,13 @@ scanline_scale_accumulator = $+2
 	  ld (render_save_spl),hl
 render_scanline_loop:
 	  push bc
-	   ; Store current scanline pointer in LUT
-	   ld (iy),de
+	   ; Get current scanline pointer from LUT
+	   ld de,(iy)
 	   lea iy,iy+3
 	   
-	   ; Carry flag is set
+	   ; Zero flag is reset
 LCDC_7_smc:
-	   jr nc,render_scanline_off
+	   jr z,render_scanline_off
 SCY_smc = $+1
 	   ld l,0
 	   add hl,bc
@@ -514,28 +508,10 @@ scanline_no_window:
 	 
 render_scanline_next:
 	   ; Advance to next scanline
-#ifndef DBGNOSCALE
-	   ld a,ixh
-	   add a,$55
-	   ld ixh,a
-	   jr c,_
-	   ex de,hl
-	   ld c,160
-	   add hl,bc
-	   ex de,hl
-	   scf
-_
-#else
-	   scf
-#endif
 	  pop bc
 	  inc c
 	  djnz render_scanline_loop
-	  ld (scanline_ptr),de
 	  ld (scanlineLUT_ptr),iy
-#ifndef DBGNOSCALE
-	  ld (scanline_scale_accumulator),a
-#endif
 	  ld a,c
 	  ld (myLY),a
 	  ; Restore important Z80 things

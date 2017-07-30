@@ -317,7 +317,7 @@ _
 	 bit 5,c
 	 jr z,_
 	 ld a,(LCDC_5_smc)
-	 xor $08	;JR NC vs JR C
+	 xor $08	;JR Z vs JR NZ
 	 ld (LCDC_5_smc),a
 _
 	 bit 6,c

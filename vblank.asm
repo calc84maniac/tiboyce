@@ -259,19 +259,19 @@ wait_for_interrupt:
 ; Outputs: HL = old framebuffer
 ;          A = 0
 prepare_next_frame:
-	ld hl,scanlineLUT + (15*3)
+	ld hl,(scanlineLUT_ptr)
+	ld a,l
+	cp scanlineLUT_2 & $FF
+	jr z,_
+	ld hl,scanlineLUT_1
 	ld (scanlineLUT_ptr),hl
+_
 	ld (scanlineLUT_sprite_ptr),hl
 	ld hl,(mpLcdBase)
 	ld (current_buffer),hl
-	ld (scanline_ptr),hl
 	ld a,h
 	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	ld h,a
-#ifndef DBGNOSCALE
-	ld a,48 + $55
-	ld (scanline_scale_accumulator),a
-#endif
 	ld a,(hram_base+LCDC)
 	rrca
 	and $20

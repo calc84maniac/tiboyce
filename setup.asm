@@ -377,13 +377,20 @@ RestartFromHere:
 	APTR(CmdExit)
 	ld (z80codebase+CmdExitSMC),hl
 	
-	ld hl,scanlineLUT
-	push hl
-	pop de
-	inc de
-	ld (hl),$FF
-	ld bc,174*3-1
-	ldir
+	ld ix,scanlineLUT_1
+	ld (scanlineLUT_ptr),ix
+	ld hl,gb_frame_buffer_1
+	ld de,160
+	ld b,144/3*2
+_
+	ld (ix),hl
+	add hl,de \ add hl,de
+	ld (ix+3),hl
+	add hl,de
+	ld (ix+6),hl
+	add hl,de \ add hl,de
+	lea ix,ix+9
+	djnz -_
 	
 	ld hl,vram_tiles_start
 	push hl

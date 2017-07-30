@@ -257,17 +257,13 @@ write_cycle_LUT = read_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
 ; The bottom of the ADL stack. Grows down from the end of palette memory.
 myADLstack = mpLcdPalette + $0200
 
-; A list of scanline start addresses for sprites. 174 pointers in size.
-; Bit 0 set if disabled. The top/bottom 15 entries are permanently disabled.
-scanlineLUT = pixelShadow
-
 ; Preprocessed Game Boy tilemap entries. 16KB in size.
 ; Each tile entry is a 2-byte offset of the pixel data from vram_pixels_start.
 ; Every row of 32 tiles is duplicated into 64, to facilitate wraparound.
 ; In addition, each duplicated row is stored twice with different tilesets.
 ; So, each GB tilemap row takes a total of 256 bytes here.
 ; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
-vram_tiles_start = scanlineLUT + (174*3)
+vram_tiles_start = (pixelShadow | $FF) + 1
 
 ; Preprocessed Game Boy tile pixel entries. 24KB in size.
 ; Each tile is converted into one byte per pixel, for 64 bytes per tile.
@@ -286,6 +282,10 @@ fake_tile = $D0F900
 ; A fake tilemap row pointing to fake_tile. 42 bytes in size.
 ; Used when BG tilemap is disabled.
 fake_tilemap = $D0F940
+
+; A list of scanline start addresses. 144*2 pointers in size.
+scanlineLUT_1 = fake_tilemap + 42
+scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
 ; Start of Game Boy WRAM. 8KB in size.
 wram_start = vram_start + $4000
