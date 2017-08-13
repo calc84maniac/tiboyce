@@ -49,6 +49,9 @@ set_gb_stack_done:
 	or 1	;LD D,E or LD (HL),E
 	ld (z80codebase+do_push_smc_2),a
 	ld (z80codebase+do_push_smc_4),a
+	or 7    ;LD D,A or LD (HL),A
+	ld (z80codebase+do_push_smc_5),a
+	ld (z80codebase+do_push_smc_6),a
 	ex af,af'
 	ei
 	jp.s (ix)

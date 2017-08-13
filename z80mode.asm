@@ -907,12 +907,15 @@ ophandler76:
 	 and (hl)
 	pop hl
 	jr nz,haltdone
+	ex af,af'
 	ex (sp),hl
 	dec hl
 	dec hl
 	dec hl
 	ex (sp),hl
 	
+trigger_event_startup:
+	ex af,af'
 trigger_event_fast_forward:
 	scf
 trigger_event:
@@ -1050,6 +1053,7 @@ ophandlerF5:
 	exx
 	ld c,a
 	dec.l hl
+do_push_smc_5 = $+1
 	ld.l (hl),a
 	push af
 	pop de
@@ -1057,6 +1061,7 @@ ophandlerF5:
 	set 3,e
 	ld a,(de)
 	dec.l hl
+do_push_smc_6 = $+1
 	ld.l (hl),a
 	ld a,c
 	exx

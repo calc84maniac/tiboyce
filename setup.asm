@@ -327,6 +327,7 @@ RestartFromHere:
 	ld bc,$0100
 	ldir
 	
+StartFromHere:
 	push iy
 	ld hl,mpFlashWaitStates
 	push hl
@@ -548,6 +549,12 @@ _
 	add hl,bc
 	ld (cram_bank_base),hl
 	
+	bit 0,(iy-state_size+STATE_MBC_MODE)
+	jr z,_
+	ld a,$20 ;JR NZ (overriding JR Z)
+	ld (z80codebase+mbc1_ram_smc),a
+_
+	
 	ld a,(iy-state_size+STATE_INTERRUPTS)
 	ld (z80codebase+intstate),a
 	
@@ -685,8 +692,99 @@ _
 	
 	 ld.s hl,(iy-state_size+STATE_REG_SP)
 	 ld bc,(CALL_STACK_DEPTH+1)*256
-	 ld ix,trigger_event_fast_forward
+	 ld ix,trigger_event_startup
 	 jp set_gb_stack
+	
+CmdLoadSaveState:
+	call.il get_event_gb_address
+	ld ix,state_start+state_size
+	ld (ix-state_size+STATE_REG_PC),hl
+	
+	exx
+	ld de,(z80codebase+sp_base_address)
+	or a
+	sbc hl,de
+	ld.s (ix-state_size+STATE_REG_SP),hl
+	
+	ex af,af'
+	push af
+	pop hl
+	ld h,flags_lut >> 8
+	set 3,l
+	ld.s l,(hl)
+	ld h,a
+	ld (ix-state_size+STATE_REG_AF),hl
+	
+	xor a
+	ld b,a
+	sbc hl,hl
+	add.s hl,sp
+	lea de,ix-state_size+STATE_REG_BC
+	ld c,6
+	ldir.s
+	
+	dec bc
+	ld a,(z80codebase+event_cycle_count)
+	ld c,a
+	lea hl,iy
+	add hl,bc
+	ex de,hl
+	
+	ld.sis hl,(frame_cycle_target)
+	add.s hl,de
+	jr c,_
+	ld bc,CYCLES_PER_FRAME
+	add hl,bc
+_
+	ld (ix-state_size+STATE_FRAME_COUNTER),hl
+	
+	ld.sis hl,(div_cycle_count)
+	add hl,de
+	ld (ix-state_size+STATE_DIV_COUNTER),hl
+	
+	ld a,(ix-ioregs+TAC)
+	and 4
+	jr z,+++_
+	ld.sis de,(timer_cycle_target)
+	sbc hl,de
+	ld a,(z80codebase+updateTIMA_smc)
+	sub 6
+	jr z,++_
+_
+	add hl,hl
+	inc a
+	jr nz,-_
+_
+	ld (ix-ioregs+TIMA),h
+_
+	
+	ld a,(z80codebase+intstate)
+	ld (ix-state_size+STATE_INTERRUPTS),a
+	
+	ld a,(z80codebase+curr_rom_bank)
+	ld (ix-state_size+STATE_ROM_BANK),a
+	
+	ld a,(cram_bank_base+1)
+	ld hl,(z80codebase+cram_base_0)
+	sub h
+	rlca
+	rlca
+	rlca
+	and 3
+	ld (ix-state_size+STATE_RAM_BANK),a
+	
+	ld a,(z80codebase+mbc1_ram_smc)
+	sub $28
+	rlca
+	and 1
+	ld (ix-state_size+STATE_MBC_MODE),a
+	
+	ld hl,hram_start
+	ld de,hram_saved
+	ld bc,$0200
+	ldir
+	
+	ld a,3
 	
 CmdExit:
 	ld sp,(saveSP)
@@ -719,8 +817,11 @@ CmdExit:
 	ld (hl),a
 	pop iy
 	srl b
-	jr z,_
+	jr z,++_
+	jr c,_
 	AJUMP(RestartFromHere)
+_
+	AJUMP(StartFromHere)
 _
 	push af
 	 ACALL(RestoreHomeScreen)
@@ -1182,6 +1283,7 @@ regs_init:
 	.db $00 ; Interrupt enable
 	.db $01 ; Cart ROM bank
 	.db $00 ; Cart RAM bank
+	.db $00 ; MBC mode
 	
 	
 hmem_init:

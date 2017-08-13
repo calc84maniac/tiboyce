@@ -166,7 +166,19 @@ ItemSelectKey:
 	pop hl
 	ld (hl),a
 	ACALL(draw_current_menu)
-	AJUMP(menu_loop)
+	jr menu_loop
+	
+ItemSelectDigit:
+	cp 2
+	jr z,menu_loop
+	APTR(CmdLoadSaveState)
+	ex de,hl
+	ld hl,z80codebase+not_expired
+	; Emit DI
+	ld (hl),$F3 \ inc hl
+	; Emit JP.LIL CmdLoadSaveState
+	ld (hl),$5B \ inc hl \ ld (hl),$C3 \ inc hl \ ld (hl),de
+	jr CmdReturnToGame
 	
 BackToMainMenu:
 	xor a
@@ -185,11 +197,6 @@ _
 ItemSelectOption:
 CmdLoadNewGame:
 CmdRestartGame:
-	jr menu_loop
-	
-ItemSelectDigit:
-	cp 2
-	jr z,menu_loop
 	jr menu_loop
 	
 emulator_menu:
