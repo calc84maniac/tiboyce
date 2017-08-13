@@ -1367,15 +1367,17 @@ _
 	ex de,hl
 	ret
 _
-	add a,$40
-	jp pe,_
-	ld.lil ix,vram_base
+	add a,a
+	jr nc,_
+	ld.lil ix,wram_base
 	add.l ix,de
 	ld.l a,(ix)
 	ex de,hl
 	ret
 _
-	ld.lil ix,(cram_bank_base)
+	add a,a
+	jr c,_
+	ld.lil ix,vram_base
 	add.l ix,de
 	ld.l a,(ix)
 	ex de,hl
@@ -1386,6 +1388,13 @@ mem_read_bail:
 mem_write_bail_a:
 	lea ix,ix-8
 	jp (ix)
+	
+_
+	ld.lil ix,(cram_bank_base)
+	add.l ix,de
+	ld.l a,(ix)
+	ex de,hl
+	ret
 	
 readDIV:
 	call updateTIMA

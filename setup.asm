@@ -274,11 +274,59 @@ _
 	ld (rombankLUT+($60*3)),hl
 _
 	
-	ACALL(LoadRAM)
+	ld hl,save_state_prefix_size + 2
+	call _EnoughMem
 	ret c
+	ex de,hl
+	ld de,program_end
+	push de
+	 push hl
+	  call _InsertMem
+	 pop bc
+	pop hl
+	push hl
+	pop de
+	inc de
+	push hl
+	 push bc
+	  dec bc
+	  ld (hl),0
+	  ldir
+	
+	  ACALL(LoadRAM)
+	 pop de
+	 jr nc,_
+	pop hl
+	call _DelMem
+	scf
+	ret
+_
+	 ld hl,(ram_size)
+	 add hl,de
+	 ex de,hl
+	pop hl
+	ld (hl),de
 	
 	di
 RestartFromHere:
+	ld hl,vram_start
+	push hl
+	pop de
+	inc de
+	ld bc,regs_saved - vram_start - 1
+	ld (hl),0
+	ldir
+	
+	push de
+	 APTR(regs_init)
+	pop de
+	ld bc,hmem_init - regs_init
+	ldir
+	
+	ld de,hram_saved + $0100
+	ld bc,$0100
+	ldir
+	
 	push iy
 	ld hl,mpFlashWaitStates
 	push hl
@@ -350,13 +398,11 @@ RestartFromHere:
 	push hl
 	pop de
 	inc de
-	ld bc,$00FEFF
+	ld bc,hram_start - z80codebase - 1
 	ld (hl),l
 	ldir
-	push de
-	 APTR(hmem_init)
-	pop de
-	inc b
+	ld hl,hram_saved
+	ld b,2
 	ldir
 	
 	APTR(cursorcode)
@@ -392,13 +438,58 @@ _
 	lea ix,ix+9
 	djnz -_
 	
-	ld hl,vram_tiles_start
+	ld hl,vram_start
+	ld de,vram_pixels_start
+	ld c,$0C
+_
 	push hl
-	pop de
-	inc de
-	ld bc,$4000 + $6000 - 1
-	ld (hl),c
-	ldir
+	 ld hl,(hl)
+	 push bc
+	  ld b,8
+_
+	  sla h
+	  ccf
+	  sbc a,a
+	  or $11
+	  sla l
+	  jr nc,$+5 \ rlca \ adc a,0
+	  ld (de),a
+	  inc de
+	  djnz -_
+	 pop bc
+	pop hl
+	inc hl
+	inc hl
+	djnz --_
+	dec c
+	jr nz,--_
+	
+	ld a,vram_tiles_start >> 16
+	ld mb,a
+	ld ix,vram_tiles_start + 128
+	ld c,$40
+	ld a,c
+_
+	ld b,$20
+_
+	ld e,(hl)
+	inc hl
+	ld d,a
+	mlt de
+	ld.s (ix-128),de
+	ld.s (ix-64),de
+	bit 5,d
+	jr nz,_
+	set 6,d
+_
+	ld.s (ix),de
+	ld.s (ix+64),de
+	lea ix,ix+2
+	djnz --_
+	lea ix,ix-64
+	inc ixh
+	dec c
+	jr nz,---_
 	
 	ld hl,fake_tile
 	push hl
@@ -419,11 +510,20 @@ _
 	ld a,z80codebase >> 16
 	ld mb,a
 	
+	ld iy,state_start+state_size
+	
 	ld.sis sp,myz80stack
 	ld hl,ophandlerRET
 	push.s hl
 	
-	ld hl,(rombankLUT+3)
+	ld a,(iy-state_size+STATE_ROM_BANK)
+	ld (z80codebase+curr_rom_bank),a
+	ld c,a
+	ld b,3
+	mlt bc
+	ld hl,rombankLUT
+	add hl,bc
+	ld hl,(hl)
 	ld (rom_bank_base),hl
 	
 	ld a,(mbc)
@@ -433,12 +533,129 @@ _
 	and $80
 	add a,$B7	; or a / scf
 	ld (z80codebase+ram_size_smc),a
+	sbc a,a
+	and (iy-state_size+STATE_RAM_BANK)
+	and 3
 	
 	ld hl,(cram_start)
-	ld bc,-$A000
-	add hl,bc
+	ld bc,$A000
+	sbc hl,bc
 	ld (z80codebase+cram_base_0),hl
+	rrca
+	rrca
+	rrca
+	ld b,a
+	add hl,bc
 	ld (cram_bank_base),hl
+	
+	ld a,(iy-state_size+STATE_INTERRUPTS)
+	ld (z80codebase+intstate),a
+	
+	ld de,(iy-state_size+STATE_DIV_COUNTER)
+	ld.sis (div_cycle_count),de
+	
+	ld a,(iy-ioregs+TAC)
+	bit 2,a
+	jr z,_
+	and 3
+	ld c,a
+	ld hl,timer_smc_data
+	add hl,bc
+	add hl,bc
+	ld a,(hl)
+	ld (z80codebase+updateTIMA_smc),a
+	inc hl
+	ld h,(hl)
+	ld a,(iy-ioregs+TIMA)
+	cpl
+	ld l,a
+	ld a,h
+	ld (z80codebase+timer_cycles_reset_factor_smc),a
+	ld (writeTIMA_smc),a
+	mlt hl
+	add hl,hl
+	add hl,de
+	add a,a
+	dec a
+	or l
+	ld l,a
+	inc hl
+	ld.sis (timer_cycle_target),hl
+_
+	
+	ld hl,(iy-ioregs+LCDC-2)
+	add hl,hl
+	jr c,_
+	ld a,$20 ;JR NZ (overriding JR Z)
+	ld (LCDC_7_smc),a
+_
+	add hl,hl
+	add hl,hl
+	jr nc,_
+	ld a,$38 ;JR C (overriding JR NC)
+	ld (LCDC_5_smc),a
+_
+	add hl,hl
+	jr nc,_
+	xor a ;(overriding $80)
+	ld (LCDC_4_smc),a
+	ld (window_tile_ptr),a
+_	
+	add hl,hl
+	jr nc,_
+	ld a,((vram_tiles_start + $2000) >> 8) & $FF
+	ld (LCDC_3_smc),a
+_
+	add hl,hl
+	jr nc,_
+	ld a,$78 ;(overriding $38)
+	ld (LCDC_2_smc_1),a
+	ld a,15 ;(overriding 7)
+	ld (LCDC_2_smc_2),a
+	ld (LCDC_2_smc_4),a
+	ld a,$81 ;RES 0,C (overriding RES 0,B)
+	ld (LCDC_2_smc_3),a
+	ld a,1 ;(overriding 9)
+	ld (LCDC_2_smc_5),a
+_
+	add hl,hl
+	add hl,hl
+	jr c,_
+	ld a,$31 ;LD SP (overriding ADD HL,SP)
+	ld (LCDC_0_smc),a
+_	
+	
+	ld hl,(iy-ioregs+SCY)
+	ld a,l
+	ld (SCY_smc),a
+	ld a,h
+	rrca
+	rrca
+	and $3E
+	ld (SCX_smc_1),a
+	ld a,h
+	cpl
+	and 7
+	inc a
+	ld (SCX_smc_2),a
+	
+	ld hl,(iy-ioregs+LYC)
+	ld h,CYCLES_PER_SCANLINE
+	mlt hl
+	ld.sis (current_lyc_target_count),hl
+	
+	ld hl,(iy-ioregs+WY)
+	ld a,l
+	ld (WY_smc),a
+	ld a,h
+	ld (WX_smc_2),a
+	cp 167
+	inc a
+	ld (WX_smc_3),a
+	jr c,_
+	ld a,$18 ;JR (overriding default JR C)
+	ld (WX_smc_1),a
+_
 	
 	call prepare_next_frame
 	call update_palettes
@@ -447,25 +664,29 @@ _
 	
 	ACALL(IdentifyDefaultPalette)
 	ACALL(ApplyConfiguration)
-	
-	ld de,$0100
+
+	ld.s de,(iy-state_size+STATE_REG_PC)
 	call lookup_code
+	push.s ix
+
+	 ld.s bc,(iy-state_size+STATE_REG_BC)
+	 ld.s de,(iy-state_size+STATE_REG_DE)
+	 ld.s hl,(iy-state_size+STATE_REG_HL)
+	 exx
+	 ld de,(iy-state_size+STATE_REG_AF)
+	 ld h,flags_lut >> 8
+	 ld l,e
+	 ld.s e,(hl)
+	 push de
+	 pop af
 	
-_
-	ld a,(mpIntRawStatus)
-	bit 4,a
-	jr z,-_
+	 ld hl,(iy-state_size+STATE_FRAME_COUNTER)
+	 ld.sis (frame_cycle_target),hl
 	
-	ld a,1
-	ld (z80codebase+curr_rom_bank),a
-	ld iy,0
-	ld bc,$0013
-	ld de,$00D8
-	ld hl,$014D
-	exx
-	ld hl,$FFFE
-	ld bc,(CALL_STACK_DEPTH+1)*256
-	jp set_gb_stack
+	 ld.s hl,(iy-state_size+STATE_REG_SP)
+	 ld bc,(CALL_STACK_DEPTH+1)*256
+	 ld ix,trigger_event_fast_forward
+	 jp set_gb_stack
 	
 CmdExit:
 	ld sp,(saveSP)
@@ -504,6 +725,9 @@ _
 	push af
 	 ACALL(RestoreHomeScreen)
 	 ACALL_SAFERET(SaveRAM)
+	 ld hl,program_end
+	 ld de,save_state_prefix_size + 2
+	 call _DelMem
 	pop af
 	ret
 	
@@ -681,7 +905,7 @@ LoadRAMNoVar:
 	 call _EnoughMem
 	 ret c
 	 ex de,hl
-	 ld de,program_end
+	 ld de,ram_size
 	 call _InsertMem
 	pop bc
 	ld a,c
@@ -718,7 +942,7 @@ SaveRAM:
 	 dec hl
 	 inc bc
 	 inc bc
-	 ld de,program_end
+	 ld de,ram_size
 	 call memcmp
 	pop hl
 	jr z,SaveRAMDeleteMem
@@ -739,7 +963,7 @@ SaveRAMRecreate:
 	call _CreatePVar4
 	push hl
 	pop ix
-	ld hl,(program_end << 16) | (program_end & $00FF00) | (program_end >> 16)
+	ld hl,(ram_size << 16) | (ram_size & $00FF00) | (ram_size >> 16)
 	ld (ix-5),hl
 	
 	ld a,(AutoArchive)
@@ -751,7 +975,7 @@ SaveRAMRecreate:
 	ret
 	
 SaveRAMDeleteMem:
-	ld hl,program_end
+	ld hl,ram_size
 	ld de,(hl)
 	inc de
 	inc.s de
@@ -949,6 +1173,16 @@ default_palette_found:
 	ld a,(hl)
 	ld (default_palette),a
 	ret
+	
+regs_init:
+	;     AF,   BC,   DE,   HL,   SP,   PC
+	.dw $01B0,$0013,$00D8,$014D,$FFFE,$0100
+	.dw $0000 ; Frame cycle counter
+	.dw $0000 ; Divisor cycle counter
+	.db $00 ; Interrupt enable
+	.db $01 ; Cart ROM bank
+	.db $00 ; Cart RAM bank
+	
 	
 hmem_init:
 	.db 0,0,0,0,0,$00,$00,$00,0,0,0,0,0,0,0,0

@@ -28,9 +28,12 @@ set_gb_stack:
 _
 	cp -2*2
 	jr nc,_
+	ld hl,wram_base
+	add a,a
+	jr c,set_gb_stack_done_ram
 	ld hl,vram_base
-	add a,$40
-	jp po,set_gb_stack_done_ram
+	add a,a
+	jr nc,set_gb_stack_done_ram
 	ld hl,(cram_bank_base)
 	jr set_gb_stack_done_ram
 _
@@ -263,7 +266,7 @@ lcdc_write_helper:
 	 bit 0,c
 	 jr z,_
 	 ld a,(LCDC_0_smc)
-	 xor $39 ^ $31	;ADD.SIS SP,HL \ LD.SIS SP,HL vs LD.SIS SP,$F940
+	 xor $39 ^ $31	;ADD.SIS HL,SP \ LD.SIS SP,HL vs LD.SIS SP,$F940
 	 ld (LCDC_0_smc),a
 _
 	 bit 1,c
@@ -317,7 +320,7 @@ _
 	 bit 5,c
 	 jr z,_
 	 ld a,(LCDC_5_smc)
-	 xor $08	;JR Z vs JR NZ
+	 xor $08	;JR C vs JR NC
 	 ld (LCDC_5_smc),a
 _
 	 bit 6,c
@@ -331,7 +334,7 @@ _
 	 bit 7,c
 	 jr z,return_from_write_helper
 	 ld a,(LCDC_7_smc)
-	 xor $08	;JR NC vs JR C
+	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
 	 ; Forcibly skip to scanline 0
 	 sbc hl,hl
@@ -431,7 +434,8 @@ _
 ;
 ; Updates the GB timer based on the new value, if enabled.
 ;
-; Inputs:  (TIMA) = value written
+; Inputs:  DE = current div cycle count
+;          (TIMA) = value written
 ;          (SPS) = Z80 return address
 ;          (SPL) = saved HL'
 ;          BCDEHL' are swapped

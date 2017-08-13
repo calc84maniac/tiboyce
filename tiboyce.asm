@@ -63,6 +63,19 @@
 	pop hl
 #endmacro
 
+; State variable indices
+STATE_REG_AF = 0
+STATE_REG_BC = 2
+STATE_REG_DE = 4
+STATE_REG_HL = 6
+STATE_REG_SP = 8
+STATE_REG_PC = 10
+STATE_FRAME_COUNTER = 12
+STATE_DIV_COUNTER = 14
+STATE_INTERRUPTS = 16
+STATE_ROM_BANK = 17
+STATE_RAM_BANK = 18
+
 ; Constant color palette entries
 MAGENTA = 10
 OLIVE = 11
@@ -270,32 +283,12 @@ vram_tiles_start = (pixelShadow | $FF) + 1
 ; Buffer must be 256-byte aligned.
 vram_pixels_start = vram_tiles_start + $4000
 
-; Start of Game Boy VRAM. 8KB in size.
-vram_start = vram_pixels_start + $6000
-
-; Preconverted digit pixels for displaying FPS quickly. 400 bytes in size.
-digits = vram_start + $2000
-
-; A fake tile filled with Game Boy color 0. 64 bytes in size.
-; Used when BG tilemap is disabled.
-fake_tile = $D0F900
-; A fake tilemap row pointing to fake_tile. 42 bytes in size.
-; Used when BG tilemap is disabled.
-fake_tilemap = $D0F940
-
-; A list of scanline start addresses. 144*2 pointers in size.
-scanlineLUT_1 = fake_tilemap + 42
-scanlineLUT_2 = scanlineLUT_1 + (144*3)
-
-; Start of Game Boy WRAM. 8KB in size.
-wram_start = vram_start + $4000
-
 ; Start of Z80 memory routine lookup table. 512 bytes in size.
 ; The first 256 bytes are the routine LSBs and the next 256 are the MSBs.
 ; A null address means that the routine has not yet been generated.
 ; The lookup table is indexed uniquely by (mem_region*32)+access_type.
 ; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
-memroutineLUT = vram_start + $6000
+memroutineLUT = vram_pixels_start + $6000
 
 ; Start of the ROM bank lookup table. 128 pointers in size.
 ; Stores the base address of each ROM bank (or mirror), minus $4000.
@@ -304,13 +297,25 @@ memroutineLUT = vram_start + $6000
 rombankLUT = memroutineLUT + $0200
 rombankLUT_end = rombankLUT + (128*3)
 
+; Preconverted digit pixels for displaying FPS quickly. 400 bytes in size.
+digits = rombankLUT_end
+
+; A list of scanline start addresses. 144*2 pointers in size.
+scanlineLUT_1 = digits + 400
+scanlineLUT_2 = scanlineLUT_1 + (144*3)
+
+; A fake tile filled with Game Boy color 0. 64 bytes in size.
+; Used when BG tilemap is disabled.
+fake_tile = $D0F900
+; A fake tilemap row pointing to fake_tile. 42 bytes in size.
+; Used when BG tilemap is disabled.
+fake_tilemap = $D0F940
+
 ; Start of Game Boy HRAM region. 512 bytes in size, includes OAM and MMIO.
 hram_start = z80codebase + $FE00
-
-; Base address of VRAM, can be indexed directly by Game Boy address.
-vram_base = vram_start - $8000
-; Base address of WRAM, can be indexed directly by Game Boy address.
-wram_base = wram_start - $C000
+; Start of state saving/loading area.
+state_start = hram_start + $00A0
+state_size = $60
 ; Base address of HRAM, can be indexed directly by Game Boy address.
 hram_base = z80codebase
 
@@ -683,13 +688,34 @@ KeyConfig:
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	
-; The RAM program ends here.
+; The RAM program ends here. Pad to a multiple of 2 bytes.
+	.block (-$) & 1
 program_end:
 program_size = program_end - userMem
 	.echo "User RAM code size: ", program_size
 
-; The size of the inserted cartridge RAM is located at the end of the program.
-ram_size:
+; The size of the save state is located at the end of the program.
+save_state_size:
+
+; Start of Game Boy VRAM. 8KB in size. Must be 2-byte aligned.
+vram_start = save_state_size + 2
+; Start of Game Boy WRAM. 8KB in size.
+wram_start = vram_start + $2000
+
+; Base address of VRAM, can be indexed directly by Game Boy address.
+vram_base = vram_start - $8000
+; Base address of WRAM, can be indexed directly by Game Boy address.
+wram_base = wram_start - $C000
+
+; A saved copy of OAM/HRAM, when saving/loading state. 512 bytes in size.
+hram_saved = wram_start + $2000
+
+; The start of saved registers, etc. Between the saved OAM and HRAM. 96 bytes in size.
+regs_saved = hram_saved + $00A0
+
+; The size of the inserted cartridge RAM is located at the end of the main save state.
+ram_size = hram_saved + $0200
+save_state_prefix_size = ram_size - vram_start
 	
 ; These files remain in the archived appvar.
 	#include "setup.asm"

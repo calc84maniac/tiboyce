@@ -86,9 +86,12 @@ _
 _
 	cp -2*2
 	jr nc,_
+	ld hl,wram_base
+	add a,a
+	ret c
 	ld hl,vram_base
-	add a,$40
-	ret po
+	add a,a
+	ret nc
 	ld hl,(cram_bank_base)
 	ret
 _
@@ -124,7 +127,13 @@ get_gb_address:
 	lea hl,ix
 	ld de,vram_base
 	sbc hl,de
-	ld de,$FE00
+	ld de,$A000
+	sbc hl,de
+	jr c,_
+	lea hl,ix
+	ld de,wram_base
+	sbc hl,de
+	ld de,$E000
 	sbc hl,de
 	jr c,_
 	lea hl,ix
@@ -487,6 +496,7 @@ foundloop_internal:
 ;
 ; Inputs:  DE = 16-bit GB address to look up
 ; Outputs: IX = recompiled code pointer
+;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
 lookup_code:
 	call get_base_address
@@ -760,14 +770,20 @@ rerecompile:
 	ld de,vram_base
 	xor a
 	sbc hl,de
-	ld bc,$FE00
+	ld bc,$A000
+	sbc hl,bc
+	jr c,rerecompile_found_base
+	ld hl,(ix+2)
+	ld de,wram_base
+	sbc hl,de
+	ld bc,$E000
 	sbc hl,bc
 	jr c,rerecompile_found_base
 	ld hl,(ix+2)
 	ld de,hram_base
 	sbc hl,de
-	inc b
 	dec c
+	ld b,c
 	sbc hl,bc
 	jr c,rerecompile_found_base
 	ld de,(cram_bank_base)
