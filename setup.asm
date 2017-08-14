@@ -214,100 +214,9 @@ _
 	AJUMP(RepopulateMenu)
 	
 StartROM:
-	ACALL_SAFERET(LoadROM)
+	ACALL_SAFERET(LoadROMAndRAM)
 	ret c
-	
-	ld hl,(rombankLUT)
-	ld de,$4000
-	add hl,de
-	ld (rom_start),hl
-	ld bc,$0147
-	add hl,bc
-	ld a,(hl)
-	ld b,0
-	or a
-	jr z,mbc_valid_no_carry
-	inc b	;MBC1
-	dec a
-	cp $04-$01
-	jr c,mbc_valid
-	inc b	;MBC2
-	sub $05-$01
-	cp $07-$05
-	jr c,mbc_valid
-	inc b	;MBC3
-	sub $0F-$05
-	cp $14-$0F
-	jr c,mbc_valid
-	;MBC5
-	sub $19-$0F
-	cp $1F-$19
-mbc_valid:
-	ccf
-mbc_valid_no_carry:
-	ret c
-	ld a,b
-	ld (mbc),a
-	
-	; Mirror ROM across all banks
-	lea de,ix
-	ld hl,rombankLUT_end
-	sbc hl,de
-	jr z,_
-	ret c
-	push hl
-	pop bc
-	ld hl,rombankLUT
-	ldir
-_
-	
-	; Handle MBC-specific mirrors
-	ld hl,(rombankLUT+3)
-	ld (rombankLUT),hl
-	dec a	;MBC1
-	jr nz,_
-	ld hl,(rombankLUT+($21*3))
-	ld (rombankLUT+($20*3)),hl
-	ld hl,(rombankLUT+($41*3))
-	ld (rombankLUT+($40*3)),hl
-	ld hl,(rombankLUT+($61*3))
-	ld (rombankLUT+($60*3)),hl
-_
-	
-	ld hl,save_state_prefix_size + 2
-	call _EnoughMem
-	ret c
-	ex de,hl
-	ld de,program_end
-	push de
-	 push hl
-	  call _InsertMem
-	 pop bc
-	pop hl
-	push hl
-	pop de
-	inc de
-	push hl
-	 push bc
-	  dec bc
-	  ld (hl),0
-	  ldir
-	
-	  ACALL(LoadRAM)
-	 pop de
-	 jr nc,_
-	pop hl
-	call _DelMem
-	scf
-	ret
-_
-	 ld hl,(ram_size)
-	 add hl,de
-	 ex de,hl
-	pop hl
-	ld (hl),de
-	
-	di
+
 RestartFromHere:
 	ld hl,vram_start
 	push hl
@@ -328,6 +237,7 @@ RestartFromHere:
 	ldir
 	
 StartFromHere:
+	di
 	push iy
 	ld hl,mpFlashWaitStates
 	push hl
@@ -817,19 +727,161 @@ CmdExit:
 	ld (hl),a
 	pop iy
 	srl b
-	jr z,++_
+	jr z,+++_
 	jr c,_
 	AJUMP(RestartFromHere)
 _
+	ld a,(main_menu_selection)
+	cp 3
+	jr nz,_
+	ACALL(RestoreHomeScreen)
+	ACALL_SAFERET(SaveStateFile)
+	jr c,++_
+_
+	ACALL(LoadStateFile)
 	AJUMP(StartFromHere)
 _
 	push af
 	 ACALL(RestoreHomeScreen)
 	 ACALL_SAFERET(SaveRAM)
-	 ld hl,program_end
-	 ld de,save_state_prefix_size + 2
-	 call _DelMem
 	pop af
+	ret
+
+	
+SaveStateFile:
+	ld hl,ROMName
+	push hl
+	 inc hl
+	 ld bc,9
+	 xor a
+	 cpir
+	 dec hl
+	 dec hl
+	 ld a,(current_state)
+	 add a,'0'
+	 ld (hl),a
+	 dec hl
+	 ld (hl),'t'
+	 dec hl
+	 ld (hl),'S'
+	 ex (sp),hl
+	 ; Delete the existing variable
+	 push hl
+	  call _Mov9ToOP1
+	  call _chkFindSym
+	  jr c,_
+	  call _DelVarArc
+_
+	 pop hl
+	 push hl
+	  call _Mov9ToOP1
+	  call _CmpPrgNamLen
+	  ld bc,0
+	  call _CreatePVar4
+	  push hl
+	  pop ix
+	  ld hl,(program_end << 16) | (program_end & $00FF00) | (program_end >> 16)
+	  ld (ix-5),hl
+	 pop hl
+	 call _Mov9ToOP1
+	 call Arc_Unarc_Safe
+	pop hl
+	ld (hl),0
+	; Reindex the ROM in case a Garbage Collect occurred, and reinsert the RAM.
+
+LoadROMAndRAM:
+	ACALL_SAFERET(LoadROM)
+	ret c
+	
+	ld hl,(rombankLUT)
+	ld de,$4000
+	add hl,de
+	ld (rom_start),hl
+	ld bc,$0147
+	add hl,bc
+	ld a,(hl)
+	ld b,0
+	or a
+	jr z,mbc_valid_no_carry
+	inc b	;MBC1
+	dec a
+	cp $04-$01
+	jr c,mbc_valid
+	inc b	;MBC2
+	sub $05-$01
+	cp $07-$05
+	jr c,mbc_valid
+	inc b	;MBC3
+	sub $0F-$05
+	cp $14-$0F
+	jr c,mbc_valid
+	;MBC5
+	sub $19-$0F
+	cp $1F-$19
+mbc_valid:
+	ccf
+mbc_valid_no_carry:
+	ret c
+	ld a,b
+	ld (mbc),a
+	
+	; Mirror ROM across all banks
+	lea de,ix
+	ld hl,rombankLUT_end
+	sbc hl,de
+	jr z,_
+	ret c
+	push hl
+	pop bc
+	ld hl,rombankLUT
+	ldir
+_
+	
+	; Handle MBC-specific mirrors
+	ld hl,(rombankLUT+3)
+	ld (rombankLUT),hl
+	dec a	;MBC1
+	jr nz,_
+	ld hl,(rombankLUT+($21*3))
+	ld (rombankLUT+($20*3)),hl
+	ld hl,(rombankLUT+($41*3))
+	ld (rombankLUT+($40*3)),hl
+	ld hl,(rombankLUT+($61*3))
+	ld (rombankLUT+($60*3)),hl
+_
+	
+	ld hl,save_state_prefix_size + 2
+	call _EnoughMem
+	ret c
+	ex de,hl
+	ld de,program_end
+	push de
+	 push hl
+	  call _InsertMem
+	 pop bc
+	pop hl
+	push hl
+	pop de
+	inc de
+	push hl
+	 push bc
+	  dec bc
+	  ld (hl),0
+	  ldir
+	
+	  ACALL(LoadRAM)
+	 pop de
+	 jr nc,_
+	pop hl
+	call _DelMem
+	scf
+	ret
+_
+	 ld hl,(ram_size)
+	 add hl,de
+	 ex de,hl
+	pop hl
+	ld (hl),de
 	ret
 	
 LoadROM:
@@ -855,7 +907,7 @@ _
 	inc hl
 	ld (current_description),hl
 	
-	ld hl,ROMName-1
+	ld hl,ROMName
 _
 	inc hl
 	ld a,(hl)
@@ -1029,12 +1081,30 @@ _
 	
 
 SaveRAM:
-	ld hl,(ram_size)
-	ld a,h
-	or l
-	jr z,SaveRAMDeleteMem
+	ld hl,program_end
+	push hl
+	 ld de,save_state_prefix_size + 2
+	 call _DelMem
+	pop hl
+	ld de,(hl)
+	ld a,d
+	or e
+	jr z,SaveRAMDeleteMemLoaded
 	
 	ld hl,ROMName
+	push hl
+	 inc hl
+	 ld bc,9
+	 xor a
+	 cpir
+	 dec hl
+	 dec hl
+	 ld (hl),'V'
+	 dec hl
+	 ld (hl),'A'
+	 dec hl
+	 ld (hl),'S'
+	pop hl
 	ACALL(LookUpAppvar)
 	jr c,SaveRAMRecreate
 	
@@ -1043,7 +1113,7 @@ SaveRAM:
 	 dec hl
 	 inc bc
 	 inc bc
-	 ld de,ram_size
+	 ld de,program_end
 	 call memcmp
 	pop hl
 	jr z,SaveRAMDeleteMem
@@ -1064,7 +1134,7 @@ SaveRAMRecreate:
 	call _CreatePVar4
 	push hl
 	pop ix
-	ld hl,(ram_size << 16) | (ram_size & $00FF00) | (ram_size >> 16)
+	ld hl,(program_end << 16) | (program_end & $00FF00) | (program_end >> 16)
 	ld (ix-5),hl
 	
 	ld a,(AutoArchive)
@@ -1076,12 +1146,55 @@ SaveRAMRecreate:
 	ret
 	
 SaveRAMDeleteMem:
-	ld hl,ram_size
+	ld hl,program_end
 	ld de,(hl)
+SaveRAMDeleteMemLoaded:
 	inc de
 	inc.s de
 	jp _DelMem
 	
+LoadStateFile:
+	ld hl,ROMName
+	push hl
+	 inc hl
+	 ld bc,9
+	 xor a
+	 cpir
+	 dec hl
+	 dec hl
+	 ld a,(current_state)
+	 add a,'0'
+	 ld (hl),a
+	 dec hl
+	 ld (hl),'t'
+	 dec hl
+	 ld (hl),'S'
+	pop hl
+	
+	ACALL(LookUpAppvar)
+	ret c
+	
+	ex de,hl
+	ld hl,(save_state_size)
+	sbc.s hl,bc
+	scf
+	ret nz
+	
+	ld hl,save_state_prefix_size
+	add hl,de
+	push de
+	 ld de,(hl)
+	 ld hl,(ram_size)
+	 or a
+	 sbc.s hl,de
+	pop hl
+	scf
+	ret nz
+	
+	ld de,save_state_size+2
+	ldir
+	or a
+	ret
 	
 LookUpAppvar:
 	call _Mov9ToOP1
