@@ -13,8 +13,6 @@ recompile_struct_end:
 	.dl 0
 recompile_cache:
 	.dl 0
-base_address:
-	.dl 0
 
 ; Do as in flush_code, but also reset RAM block padding amount.
 ; This is called only at startup, because block padding should 
@@ -886,6 +884,13 @@ generate_opcodes:
 	ld a,e
 	add a,MAX_CYCLES_PER_BLOCK
 	ld iyl,a
+	push hl
+base_address = $+1
+	 ld hl,0
+	 or a
+	 sbc hl,de
+	 ld (opgenCONSTwrite_smc),hl
+	pop hl
 	ex de,hl
 	ld bc,opgentable
 	ld a,ixl
@@ -1550,29 +1555,42 @@ opgenCONSTwrite:
 	inc hl
 	ld b,(hl)
 	ld a,b
-	rlca
+	add a,a
 	jr nc,opgencartwrite
 	
-	rlca
-	jr nc,opgenVRAMwrite
+	cp $FC
+	jr nc,opgenHMEMwrite
 	
-	inc a
-	jr z,opgenHMEMwrite
+	push hl
+opgenCONSTwrite_smc = $+1
+	 ld hl,0
+	 add hl,bc
+	 ex (sp),hl
+	
+	 add a,a
+	 jr nc,opgenVRAMwrite
 	
 opgenWRAMwrite:
-	push hl
-	 ld hl,wram_base
-	 add hl,bc
+	 push hl
+	  ld hl,wram_base
+	  add hl,bc
+	  ex de,hl
+	  ld (hl),$5B ;LD.LIL (addr),A
+	  inc hl
+	  ld (hl),$32
+	  inc hl
+	  ld (hl),de
+	  inc hl
+	  inc hl
+	 pop de
+_
 	 ex de,hl
-	 ld (hl),$5B ;LD.LIL (addr),A
 	 inc hl
-	 ld (hl),$32
-	 inc hl
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	pop de
-	jp opgen_next_swap_skip
+	 inc de
+	pop af
+	or a
+	jp nz,opgen_next
+	ret
 	
 opgencartwrite:
 	ex de,hl
@@ -1588,49 +1606,49 @@ opgencartwrite:
 	jp opgen_next_swap_skip
 	
 opgenVRAMwrite:
-	rlca
-	jr c,opgenCRAMwrite
-	ex de,hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),write_vram_handler & $FF
-	inc hl
-	ld (hl),write_vram_handler >> 8
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip
+	 add a,a
+	 jr c,opgenCRAMwrite
+	 ex de,hl
+	 ld (hl),$CD
+	 inc hl
+	 ld (hl),write_vram_handler & $FF
+	 inc hl
+	 ld (hl),write_vram_handler >> 8
+	 inc hl
+	 ld (hl),c
+	 inc hl
+	 ld (hl),b
+	 jr -_
 	
 opgenCRAMwrite:
-	ld a,(ram_size+1)
-	add a,a
-	jr c,_
-	push hl
-	 ld hl,(cram_bank_base)
-	 add hl,bc
-	 ex de,hl
-	 ld (hl),$5B ;LD.LIL (addr),A
-	 inc hl
-	 ld (hl),$32
-	 inc hl
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	pop de
-	jp opgen_next_swap_skip
+	 ld a,(ram_size+1)
+	 add a,a
+	 jr c,_
+	 push hl
+	  ld hl,(cram_bank_base)
+	  add hl,bc
+	  ex de,hl
+	  ld (hl),$5B ;LD.LIL (addr),A
+	  inc hl
+	  ld (hl),$32
+	  inc hl
+	  ld (hl),de
+	  inc hl
+	  inc hl
+	 pop de
+	 jr -_
 _
-	ex de,hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),write_cram_bank_handler & $FF
-	inc hl
-	ld (hl),write_cram_bank_handler >> 8
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip
+	 ex de,hl
+	 ld (hl),$CD
+	 inc hl
+	 ld (hl),write_cram_bank_handler & $FF
+	 inc hl
+	 ld (hl),write_cram_bank_handler >> 8
+	 inc hl
+	 ld (hl),c
+	 inc hl
+	 ld (hl),b
+	 jr --_
 	
 opgenHMEMwrite:
 	xor a
@@ -1638,7 +1656,10 @@ opgenHMEMwrite:
 	inc de
 	ld (de),a
 	inc de
-	jr _
+	ld a,b
+	inc a
+	jr z,_
+	jr ++_
 	
 opgenFFwrite:
 	dec iy
@@ -1646,9 +1667,10 @@ opgenFFwrite:
 	ld c,(hl)
 	ld b,$FF
 _
-	ex de,hl
 	ld a,c
 	inc a
+_
+	ex de,hl
 	jp m,opgenHRAMwrite
 	jr nz,_
 	ld bc,writeIEhandler
@@ -1758,14 +1780,14 @@ opgenCONSTread:
 	inc hl
 	ld b,(hl)
 	ld a,b
-	rlca
+	add a,a
 	jr nc,opgencartread
 	
-	rlca
+	add a,a
 	jr nc,opgenVRAMread
 	
-	inc a
-	jr z,opgenHMEMread
+	add a,2*4
+	jr c,opgenHMEMread
 	
 opgenWRAMread:
 	push hl
@@ -1849,7 +1871,10 @@ opgenHMEMread:
 	inc de
 	ld (de),a
 	inc de
-	jr _
+	ld a,b
+	inc a
+	jr z,_
+	jr ++_
 	
 opgenFFread:
 	dec iy
@@ -1857,9 +1882,10 @@ opgenFFread:
 	ld c,(hl)
 	ld b,$FF
 _
-	ex de,hl
 	ld a,c
+_
 	rlca
+	ex de,hl
 	jr c,opgenHRAMread
 	cp DIV*2 & $FF
 	jr nz,_
