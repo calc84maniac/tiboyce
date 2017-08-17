@@ -4,6 +4,84 @@ MENU_ITEM_COUNT = 16
 Startup:
 	ld (ArcBase),hl
 	call _RunIndicOff
+	
+CalculateEpochLoop:
+	; Grab current day count
+	ld hl,(mpRtcDayCount)
+	push hl
+	
+	 ; Multiply year by 365
+	 ld hl,(osYear)
+	 push hl
+	 pop de
+	 ld b,(365-1) / 2
+_
+	 add hl,de
+	 add hl,de
+	 djnz -_
+	
+	 ; Add in day-1
+	 ld a,(osDay)
+	 ld c,a
+	 dec.s bc
+	 add hl,bc
+	
+	 ; If we're Feb. or earlier, don't count this leap year
+	 ld a,(osMonth)
+	 cp 3
+	 jr nc,_
+	 dec de
+_
+	
+	 ; Add in months
+	 ld ix,monthLUT
+_
+	 ld c,(ix)
+	 inc ix
+	 add hl,bc
+	 dec a
+	 jr nz,-_
+	
+	 ; Add in year/4
+	 srl d
+	 rr e
+	 srl d
+	 rr e
+	 add hl,de
+	
+	 ; Subtract out year/100
+	 ex de,hl
+	 ld a,25
+	 call _DivHLByA
+	 ex de,hl
+	 or a
+	 sbc hl,de
+	
+	 ; Add in year/400
+	 srl d
+	 rr e
+	 srl d
+	 rr e
+	 add hl,de
+	
+	 ; Subtract out January 1, 1970
+	 ld bc,-719527
+	 add hl,bc
+	 jr c,_
+	 sbc hl,hl
+_
+	 ex de,hl
+	
+	pop bc
+	; Make sure day count matches
+	ld hl,(mpRtcDayCount)
+	or a
+	sbc hl,bc
+	jr nz,CalculateEpochLoop
+	ex de,hl
+	sbc hl,bc
+	ld (epochDayCount),hl
+	
 	or a
 	sbc hl,hl
 	ld (menuFrame),hl
@@ -1316,6 +1394,55 @@ DrawMenuItem:
 	ld b,(hl)
 	inc hl
 	jp _VPutSN
+	
+	; Input: Current time
+	; Output: HLIX = 48-bit timestamp based on current time
+GetUnixTimeStamp:
+	ld ix,(mpRtcDayCount)
+	ld de,(epochDayCount)
+	add ix,de
+	or a
+	sbc hl,hl
+	call MulHLIXBy24
+	ld bc,(mpRtcHourCount)
+	add ix,bc
+	jr nc,_
+	inc hl
+_	
+	
+	call MulHLIXBy24
+	add ix,ix \ adc hl,hl
+	add ix,bc \ adc hl,de
+	ld bc,(mpRtcMinuteCount)
+	add ix,bc
+	jr nc,_
+	inc hl
+_
+	
+	call MulHLIXBy24
+	add ix,ix \ adc hl,hl
+	add ix,bc \ adc hl,de
+	ld bc,(mpRtcSecondCount)
+	add ix,bc
+	ret nc
+	inc hl
+	ret
+	
+	; Input: DEUHLUIX = 64-bit timestamp
+	; Output: B,C,A = hours,minutes,seconds
+	;         UHLUIX = days
+	;         DE = 0
+ExtractUnixTimeStamp:
+	ld c,24
+	call DivDEUHLUIXByC
+	push af
+	 call DivDEUHLUIXBy60
+	pop bc
+	ld c,a
+	push bc
+	 call DivDEUHLUIXBy60
+	pop bc
+	ret
 	
 	; In: HLU = HFP, H = VFP, L = LcdTiming2
 	; Out: DEU = old HFP, D = old VFP, E = old LcdTiming2 

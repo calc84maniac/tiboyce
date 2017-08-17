@@ -112,6 +112,7 @@ _createAppVar = $021330
 _DelVarArc = $021434
 _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
+_DivHLByA = $021D90
 _ChkInRAM = $021F98
 
 ; RAM addresses used
@@ -123,6 +124,9 @@ pTemp = $D0259A
 progPtr = $D0259D
 drawFGColor = $D026AC
 pixelShadow = $D031F6
+osYear = $D177CF
+osDay = $D177D8
+osMonth = $D177DB
 userMem = $D1A881
 vRam = $D40000
 
@@ -178,6 +182,9 @@ mpTimerCtrl = $F20030
 mpTimerIntStatus = $F20034
 
 mpRtcSecondCount = $F30000
+mpRtcMinuteCount = $F30004
+mpRtcHourCount = $F30008
+mpRtcDayCount = $F3000C
 
 mpKeypadScanMode = $F50000
 mpKeypadGrp0 = $F50010
@@ -560,6 +567,31 @@ PutChar_ColorSMC2 = $+1
 	inc (hl)
 	ret
 	
+DivDEUHLUIXBy60:
+	ld c,60
+DivDEUHLUIXByC:
+	ld b,64
+	xor a
+_
+	add ix,ix \ adc hl,hl \ rl e \ rl d \ rla
+	cp c
+	jr c,_
+	sub c
+	inc ix
+_
+	djnz --_
+	ret
+	
+MulHLIXBy24:
+	add ix,ix \ adc hl,hl
+	add ix,ix \ adc hl,hl
+	add ix,ix \ adc hl,hl
+	lea bc,ix
+	push hl \ pop de
+	add ix,ix \ adc hl,hl
+	add ix,bc \ adc hl,de
+	ret
+	
 ; The first ROM in the current list frame.
 menuFrame:
 	.dl 0
@@ -571,6 +603,12 @@ menuLastSelection:
 	.dl 0
 ; The end of the list of discovered ROMs.
 ROMListEnd:
+	.dl 0
+; A list of the number of days before each month
+monthLUT:
+	.db 0,31,28,31,30,31,30,31,31,30,31,30
+; The number of days from 1/1/1970 to the RTC epoch.
+epochDayCount:
 	.dl 0
 	
 ; The name of the currently loaded ROM.
