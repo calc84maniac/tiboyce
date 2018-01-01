@@ -515,29 +515,81 @@ _
 	ld hl,(hl)
 	ld (rom_bank_base),hl
 	
-	ld a,(mbc)
-	ld (z80codebase+mbc_z80),a
-	
 	ld a,(ram_size+1)
 	and $80
 	add a,$B7	; or a / scf
 	ld (z80codebase+ram_size_smc),a
-	sbc a,a
-	and (iy-state_size+STATE_RAM_BANK)
-	and 3
+	
+	xor a
+	ld (memroutine_rtc_smc_1),a
+	ld a,$18	;JR
+	ld (memroutine_rtc_smc_2),a
 	
 	ld hl,(cram_start)
 	ld bc,$A000
 	sbc hl,bc
 	ld (z80codebase+cram_base_0),hl
+	
+	ld a,(mbc)
+	ld (z80codebase+mbc_z80),a
+	cp 4	;MBC3+RTC
+	jr nz,++_
+	ld ix,ram_size-47
+	ld bc,(ix+47)
+	inc.s bc
+	add ix,bc
+	ld b,10
+	ld de,z80codebase+rtc_latched
+_
+	ld a,(ix)
+	ld (de),a
+	lea ix,ix+4
+	inc de
+	djnz -_
+	push de
+	 ld hl,(ix+6)
+	 ex.s de,hl
+	 ld hl,(ix+3)
+	 ld ix,(ix)
+	 ACALL(ExtractUnixTimeStamp)
+	 lea hl,ix
+	 ld de,(epochDayCount)
+	 or a
+	 sbc hl,de
+	pop ix
+	ld (ix),bc
+	ld (ix+2),a
+	ld.s (ix+3),hl
+	ld a,(iy-state_size+STATE_RAM_BANK)
+	sub 8
+	jr c,_
+	ld c,a
+	call mbc_rtc_toggle_smc
+	call update_rtc
+	ld b,0
+	ld hl,z80codebase+rtc_latched
+	jr ++_
+_
+	
+	ld a,(ram_size+1)
+	add a,a
+	sbc a,a
+	and (iy-state_size+STATE_RAM_BANK)
+	and 3
+	
 	rrca
 	rrca
 	rrca
 	ld b,a
+	ld c,0
+	ld hl,(z80codebase+cram_base_0)
+_
 	add hl,bc
 	ld (cram_bank_base),hl
 	
-	bit 0,(iy-state_size+STATE_MBC_MODE)
+	ld a,(iy-state_size+STATE_MBC_MODE)
+	and 1
+	ld (mbc_rtc_last_latch),a
 	jr z,_
 	ld a,$20 ;JR NZ (overriding JR Z)
 	ld (z80codebase+mbc1_ram_smc),a
@@ -752,6 +804,24 @@ _
 	ld a,(z80codebase+curr_rom_bank)
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
+	ld a,(ram_size)
+	or a
+	ld a,(mbc_rtc_last_latch)
+	jr nz,_
+	ld a,(z80codebase+mbc1_ram_smc)
+	sub $28
+	rlca
+_
+	and 1
+	ld (ix-state_size+STATE_MBC_MODE),a
+	
+	ld a,(cram_bank_base+2)
+	cp z80codebase >> 16
+	jr nz,_
+	ld a,(cram_bank_base)
+	sub (rtc_latched-8)&$FF
+	jr ++_
+_
 	ld a,(cram_bank_base+1)
 	ld hl,(z80codebase+cram_base_0)
 	sub h
@@ -759,13 +829,8 @@ _
 	rlca
 	rlca
 	and 3
+_
 	ld (ix-state_size+STATE_RAM_BANK),a
-	
-	ld a,(z80codebase+mbc1_ram_smc)
-	sub $28
-	rlca
-	and 1
-	ld (ix-state_size+STATE_MBC_MODE),a
 	
 	ld hl,hram_start
 	ld de,hram_saved
@@ -775,6 +840,43 @@ _
 	ld a,3
 	
 CmdExit:
+	push af
+	 ld a,(ram_size)
+	 or a
+	 jr z,++_
+	 call update_rtc
+	 ld ix,ram_size-47
+	 ld bc,(ix+47)
+	 inc.s bc
+	 add ix,bc
+	 sbc hl,hl
+	 ld de,z80codebase+rtc_latched
+	 ld b,10
+_
+	 ld a,(de)
+	 ld (ix),a
+	 ld (ix+1),hl
+	 inc de
+	 lea ix,ix+4
+	 djnz -_
+	 push ix
+	  ACALL(GetUnixTimeStamp)
+	  ex de,hl
+	 pop hl
+	 ld (hl),ix
+	 inc hl
+	 inc hl
+	 inc hl
+	 ld (hl),de
+	 inc hl
+	 inc hl
+	 inc hl
+	 xor a
+	 ld (hl),a
+	 inc hl
+	 ld (hl),a
+_
+	pop af
 	ld sp,(saveSP)
 	ld hl,vRam
 	push hl
@@ -889,12 +991,16 @@ LoadROMAndRAM:
 	sub $05-$01
 	cp $07-$05
 	jr c,mbc_valid
-	inc b	;MBC3
+	inc b
+	inc b	;MBC3+RTC
 	sub $0F-$05
-	cp $14-$0F
+	sub $11-$0F
+	jr c,mbc_valid
+	dec b	;MBC3
+	cp $14-$11
 	jr c,mbc_valid
 	;MBC5
-	sub $19-$0F
+	sub $19-$11
 	cp $1F-$19
 mbc_valid:
 	ccf
@@ -1080,15 +1186,19 @@ LoadRAM:
 	
 	ld de,8*1024
 	ld a,(mbc)
-	cp 2
-	jr z,++_
+	cp 2	;MBC2
+	jr z,+++_
+	cp 4	;MBC3+RTC
+	jr nz,_
+	ld e,48
+_
 	ld hl,(rom_start)
 	ld bc,$0149
 	add hl,bc
 	ld a,(hl)
 	or a
 	jr nz,_
-	ld d,e
+	ld d,a
 _
 	cp 3
 	jr c,_
@@ -1099,6 +1209,15 @@ _
 	 ld a,d
 	 or e
 	 jr z,LoadRAMNoVar
+	 ld b,d
+	 ld c,e
+	 ld hl,vram_tiles_start
+	 ld (hl),l
+	 push hl
+	 pop de
+	 inc de
+	 dec bc
+	 ldir
 _
 	 ld hl,ROMName
 	 ACALL(LookUpAppvar)
@@ -1395,16 +1514,17 @@ DrawMenuItem:
 	inc hl
 	jp _VPutSN
 	
-	; Input: Current time
+	; Input: rtc_last
 	; Output: HLIX = 48-bit timestamp based on current time
 GetUnixTimeStamp:
-	ld ix,(mpRtcDayCount)
+	ld.sis ix,(rtc_last+3)
 	ld de,(epochDayCount)
 	add ix,de
 	or a
 	sbc hl,hl
 	call MulHLIXBy24
-	ld bc,(mpRtcHourCount)
+	ld.sis bc,(rtc_last+2)
+	ld b,0
 	add ix,bc
 	jr nc,_
 	inc hl
@@ -1413,7 +1533,8 @@ _
 	call MulHLIXBy24
 	add ix,ix \ adc hl,hl
 	add ix,bc \ adc hl,de
-	ld bc,(mpRtcMinuteCount)
+	ld.sis bc,(rtc_last+1)
+	ld b,0
 	add ix,bc
 	jr nc,_
 	inc hl
@@ -1422,25 +1543,27 @@ _
 	call MulHLIXBy24
 	add ix,ix \ adc hl,hl
 	add ix,bc \ adc hl,de
-	ld bc,(mpRtcSecondCount)
+	ld.sis bc,(rtc_last)
+	ld b,0
 	add ix,bc
 	ret nc
 	inc hl
 	ret
 	
 	; Input: DEUHLUIX = 64-bit timestamp
-	; Output: B,C,A = hours,minutes,seconds
+	; Output: A,B,C = hours,minutes,seconds
 	;         UHLUIX = days
 	;         DE = 0
 ExtractUnixTimeStamp:
-	ld c,24
-	call DivDEUHLUIXByC
-	push af
-	 call DivDEUHLUIXBy60
-	pop bc
+	call DivDEUHLUIXBy60
 	ld c,a
 	push bc
 	 call DivDEUHLUIXBy60
+	pop bc
+	ld b,a
+	push bc
+	 ld c,24
+	 call DivDEUHLUIXByC
 	pop bc
 	ret
 	

@@ -281,6 +281,7 @@ timer_cycle_target = $+1
 _
 	   ld (frame_cycle_target),hl
 	   add iy,de
+event_cycle_loop_shortcut:
 	   jr event_cycle_loop
 	   
 vblank_handler:
@@ -326,10 +327,12 @@ timer_cycles_reset_factor_smc = $+1
 	   mlt hl
 _
 	   add hl,hl
+	   or h
 	   add hl,bc
 	   ld (timer_cycle_target),hl
 	   ld hl,(div_cycle_count)
-	   jr timer_cycles_reset_loop
+	   jr nz,timer_cycles_reset_loop
+	   jr event_cycle_loop_shortcut
 	
 trigger_interrupt:
 	   rrca
@@ -1158,8 +1161,10 @@ write_cram_bank_handler:
 	ld de,(ix)
 	ld.lil ix,(cram_bank_base)
 	ex af,af'
+write_cram_bank_handler_smc_1 = $+2
 	add.l ix,de
 	ex af,af'
+write_cram_bank_handler_smc_2 = $+3
 	ld.l (ix),a
 	exx
 	ret
@@ -1184,6 +1189,7 @@ read_cram_bank_handler:
 	ld de,(ix)
 	ld.lil ix,(cram_bank_base)
 	ex af,af'
+read_cram_bank_handler_smc = $+2
 	add.l ix,de
 	ex af,af'
 	ld.l a,(ix)
@@ -1396,6 +1402,7 @@ mem_write_bail_a:
 	
 _
 	ld.lil ix,(cram_bank_base)
+mem_read_any_rtc_smc = $+2
 	add.l ix,de
 	ld.l a,(ix)
 	ex de,hl
@@ -1428,6 +1435,11 @@ _
 	ld a,(hl)
 	ret
 	
+mem_write_any_cart:
+	push hl
+	pop ix
+	jp mem_write_cart_swap
+	
 	;HL=GB address, IXL=data, destroys A,AF'
 mem_write_any_ixl:
 	ld a,ixl
@@ -1441,15 +1453,22 @@ mem_write_any:
 	jr nc,mem_write_any_cart
 	sub $40
 	jr c,mem_write_any_vram
-	ld.lil ix,wram_base
-	sub $40
-	jr nc,_
-	ld.lil ix,(cram_bank_base)
-_
 	ex de,hl
+	sub $40
+	jr c,mem_write_any_cram
+	ld.lil ix,wram_base
 	add.l ix,de
 	ex de,hl
 	ex af,af'
+	ld.l (ix),a
+	ret
+mem_write_any_cram:
+	ld.lil ix,(cram_bank_base)
+mem_write_any_cram_smc_1 = $+2
+	add.l ix,de
+	ex de,hl
+	ex af,af'
+mem_write_any_cram_smc_2 = $+3
 	ld.l (ix),a
 	ret
 	
@@ -1521,10 +1540,6 @@ mem_write_any_vram:
 	push hl
 	pop ix
 	jr mem_write_vram_swap
-mem_write_any_cart:
-	push hl
-	pop ix
-	jp mem_write_cart_swap
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_ports:
@@ -1658,6 +1673,8 @@ mem_write_cart_always:
 	
 mbc_6000:
 	ld a,(mbc_z80)
+	cp 4 ;MBC3+RTC
+	jr z,++_
 	dec a
 	jr nz,mbc_6000_denied
 	ex af,af'
@@ -1675,6 +1692,10 @@ mbc_0000:
 	ex af,af'
 	ret
 	
+_
+	di
+	jp.lil mbc_rtc_latch_helper
+	
 mbc_4000:
 	push bc
 	 ld b,$60
@@ -1685,7 +1706,7 @@ mbc_4000:
 	 dec a
 	 jr nz,_
 mbc1_ram_smc:
-	 jr z,mbc1_ram
+	 jr z,mbc_ram
 	 ld a,c
 	 rrca
 	 rrca
@@ -1695,8 +1716,12 @@ mbc1_ram_smc:
 _
 	 dec a
 	 dec a
-	 jr nz,_
-mbc1_ram:
+	 jr z,mbc_ram
+	 dec a
+	 jr nz,mbc_4000_denied
+	 di
+	 jp.lil mbc_rtc_helper
+mbc_ram:
 ram_size_smc = $
 	 or a
 	 sbc a,a
@@ -1709,6 +1734,7 @@ ram_size_smc = $
 	 ld c,0
 cram_base_0 = $+3
 	 ld.lil ix,0
+mbc_ram_any:
 	 add.l ix,bc
 	 ld.lil (cram_bank_base),ix
 	 ; See if SP is pointing into the swapped bank
@@ -1724,7 +1750,7 @@ cram_base_0 = $+3
 	 cp $20
 	 jr c,mbc_fix_sp
 	 exx
-_
+mbc_4000_denied:
 	pop bc
 	ex af,af'
 	ret
@@ -1744,7 +1770,6 @@ _
 	 ld b,$0F
 	 jr mbc_2000_finish
 _
-	 djnz mbc_2000_denied
 	 ld b,$7F
 mbc_2000_finish:
 	 ld a,c
@@ -2014,6 +2039,22 @@ memroutine_next:
 	.dl 0
 render_save_sps:
 	.dw 0
+	
+rtc_latched:
+	.db 0	;seconds
+	.db 0	;minutes
+	.db 0	;hours
+	.dw 0	;days
+rtc_current:
+	.db 0	;seconds
+	.db 0	;minutes
+	.db 0	;hours
+	.dw 0	;days
+rtc_last:
+	.db 0   ;seconds
+	.db 0   ;minutes
+	.db 0   ;hours
+	.dw 0   ;days
 	
 	.assume adl=1
 z80codesize = $-0

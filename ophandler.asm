@@ -14,9 +14,7 @@
 set_gb_stack:
 	ex af,af'
 	ex de,hl
-	dec de
 	ld a,d
-	inc de
 	add a,a
 	jr c,_
 	add a,a
@@ -26,9 +24,14 @@ set_gb_stack:
 	ld hl,(rom_bank_base)
 	jr set_gb_stack_done
 _
-	cp -2*2
+	; If RAM, assume pushes will be done first
+	dec de
+	ld a,d
+	inc de
+	cp -2
 	jr nc,_
 	ld hl,wram_base
+	add a,a
 	add a,a
 	jr c,set_gb_stack_done_ram
 	ld hl,vram_base
@@ -521,3 +524,213 @@ schedule_event_never:
 	ld hl,event_value
 	ei
 	jp.sis schedule_event_disable
+	
+mbc_rtc_latch_helper:
+	exx
+	ex af,af'
+	ld c,a
+	ex af,af'
+mbc_rtc_last_latch = $+1
+	ld a,0
+	cpl
+	and c
+	rra
+	jr nc,_
+	push bc
+	 call update_rtc
+	 push hl
+	  ld hl,(z80codebase+rtc_current)
+	  ld (z80codebase+rtc_latched),hl
+	  ld.sis hl,(rtc_current+3)
+	  ld.sis (rtc_latched+3),hl
+	 pop hl
+	pop bc
+_
+	ld a,c
+	and 1
+	ld (mbc_rtc_last_latch),a
+	exx
+	ei
+	jp.sis mbc_6000_denied
+	
+mbc_rtc_helper:
+	ld a,(cram_bank_base+2)
+	cp z80codebase>>16
+	jr z,_
+	bit 3,c
+	jr nz,mbc_rtc_set_rtc_bank
+mbc_rtc_helper_exit_ram:
+	ei
+	jp.sis mbc_ram
+_
+	bit 3,c
+	jr nz,_
+	call mbc_rtc_toggle_smc
+	call update_rtc
+	ld b,$60
+	jr mbc_rtc_helper_exit_ram
+mbc_rtc_set_rtc_bank:
+	call mbc_rtc_toggle_smc
+_
+	call update_rtc
+	ld a,c
+	and 7
+	ld c,a
+	ld b,0
+	ld ix,z80codebase+rtc_latched
+	jp.sis mbc_ram_any
+	
+mbc_rtc_toggle_smc:
+	ld a,(z80codebase+read_cram_bank_handler_smc)
+	xor $19 ^ $94	;ADD.L IX,DE vs SUB.L A,IXH
+	ld (z80codebase+read_cram_bank_handler_smc),a
+	ld (z80codebase+write_cram_bank_handler_smc_1),a
+	ld (z80codebase+mem_read_any_rtc_smc),a
+	ld (z80codebase+mem_write_any_cram_smc_1),a
+	ld a,(memroutine_rtc_smc_1)
+	xor 0^5
+	ld (memroutine_rtc_smc_1),a
+	ld (z80codebase+write_cram_bank_handler_smc_2),a
+	ld (z80codebase+mem_write_any_cram_smc_2),a
+	ld a,(memroutine_rtc_smc_2)
+	xor $18^$38	;JR vs JR C
+	ld (memroutine_rtc_smc_2),a
+	push hl
+	 push de
+	  ld hl,memroutineLUT + $A0
+	  ld b,32
+mbc_rtc_memroutine_smc_loop:
+	  inc.s de
+	  ld e,(hl)
+	  inc h
+	  ld d,(hl)
+	  dec h
+	  ld a,d
+	  or e
+	  jr z,++_ 
+	  ld ix,z80codebase
+	  add ix,de
+	  ld a,l
+	  cp $A4
+	  lea de,ix+16
+	  jr c,_
+	  inc de
+	  lea ix,ix+2
+_
+	  ld a,(de)
+	  xor $09 ^ $84	;ADD.L IX,rr vs op.L A,IXH
+	  ld (de),a
+	  ld de,(ix+20)
+	  ld a,e
+	  sub $70
+	  cp 8
+	  jr nc,_
+	  ld a,d
+	  xor 0^5
+	  ld (ix+21),a
+_
+	  inc l
+	  djnz mbc_rtc_memroutine_smc_loop
+	 pop de
+	pop hl
+	ret
+	
+update_rtc:
+	push hl
+	 push de
+	  ld ix,mpRtcSecondCount
+_
+	  ld b,(ix)
+	  ld e,(ix+4)
+	  ld d,(ix+8)
+	  ld hl,(ix+12)
+	  ld a,(ix)
+	  cp b
+	  jr nz,-_
+	  
+	  ld ix,z80codebase+rtc_last
+	  bit 6,(ix-1)
+	  jr nz,update_rtc_halted
+	
+	  sub (ix)
+	  ld (ix),b
+	  jr nc,_
+	  add a,60
+_
+	  ld b,a
+
+	  ld a,e
+	  sbc a,(ix+1)
+	  ld (ix+1),e
+	  jr nc,_
+	  add a,60
+_
+	  ld e,a
+	  
+	  ld a,d
+	  sbc a,(ix+2)
+	  ld (ix+2),d
+	  jr nc,_
+	  add a,24
+_
+	  ld d,a
+	  
+	  ld a,l
+	  sbc a,(ix+3)
+	  ld (ix+3),l
+	  ld l,a
+	  
+	  ld a,h
+	  sbc a,(ix+4)
+	  ld (ix+4),h
+	  ld h,a
+	  
+	  lea ix,ix-5
+	  ld a,(ix)
+	  add a,b
+	  ld b,a
+	  add a,-60
+	  jr nc,_
+	  ld b,a
+_
+	  
+	  ld a,(ix+1)
+	  adc a,e
+	  ld e,a
+	  add a,-60
+	  jr nc,_
+	  ld e,a
+_
+	  
+	  ld a,(ix+2)
+	  adc a,d
+	  ld d,a
+	  add a,-24
+	  jr nc,_
+	  ld d,a
+_
+	  
+	  ld a,(ix+3)
+	  adc a,l
+	  ld l,a
+	  
+	  ld a,(ix+4)
+	  rla
+	  or $FC
+	  sra a
+	  adc a,h
+	  ld h,(ix+4)
+	  rr h
+	  rra
+	  rl h
+	  jr nc,_
+	  set 7,h
+_
+	  
+update_rtc_halted:
+	  ld (ix),b
+	  ld (ix+1),de
+	  ld.s (ix+3),hl
+	 pop de
+	pop hl
+	ret

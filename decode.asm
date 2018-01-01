@@ -449,9 +449,23 @@ memroutine_gen_not_ports:
 memroutine_gen_not_vram:
 	 djnz memroutine_gen_not_cram
 	
-	 call memroutine_gen_index
+	 sbc a,a
+memroutine_rtc_smc_1 = $+1
+	 and 0	; 5 when RTC bank selected
+	 call memroutine_gen_index_offset
 	 ld de,cram_bank_base
 	 ld (hl),de
+memroutine_rtc_smc_2 = $
+	 jr _   ; JR C when RTC bank selected
+	 ld de,5
+	 cp 1
+	 push hl
+	  adc hl,de
+	  ld a,(hl)
+	  xor $09 ^ $84	;ADD.L IX,rr vs op.L A,IXH
+	  ld (hl),a
+	 pop hl
+_
 	 dec hl
 	 ld (hl),$2A
 	 dec hl
@@ -515,7 +529,9 @@ _
 	 jp memroutine_gen_end_swap
 	
 memroutine_gen_index:
-	 ld (hl),0	;offset
+	 xor a
+memroutine_gen_index_offset:
+	 ld (hl),a	;offset
 	 dec hl
 	 ld (hl),d	;opcode
 	 dec hl

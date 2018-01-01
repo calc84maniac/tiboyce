@@ -529,9 +529,12 @@ lookup_code_by_pointer:
 #endif
 	 ld hl,(recompile_struct_end)
 	 push hl
+	  ld bc,-(recompile_cache_end-16)
+	  add hl,bc
+	  jr c,flush_and_recompile_pop
+	  sbc hl,bc
 	  ld bc,(hl)
 	  ld hl,(z80codebase+memroutine_next)
-	  xor a
 	  sbc hl,bc
 	  jr c,flush_and_recompile_pop
 lookuploop_restore:
@@ -668,8 +671,13 @@ recompile_end_common:
 	ld (ix+8),de
 	ld hl,(z80codebase+memroutine_next)
 	sbc hl,de
-	ld ix,(ix)
+	jr c,_
+	lea hl,ix
+	ld ix,(hl)
+	ld de,-(recompile_cache_end-24)
+	add hl,de
 	ret nc
+_
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
 	ld de,(base_address)
@@ -1621,6 +1629,9 @@ opgenVRAMwrite:
 	 jr -_
 	
 opgenCRAMwrite:
+	 ld a,(ram_size)
+	 or a
+	 jr nz,_
 	 ld a,(ram_size+1)
 	 add a,a
 	 jr c,_
@@ -1836,6 +1847,9 @@ opgenVRAMread:
 	jp opgen_next_swap_skip
 	
 opgenCRAMread:
+	ld a,(ram_size)
+	or a
+	jr nz,_
 	ld a,(ram_size+1)
 	add a,a
 	jr c,_

@@ -585,11 +585,13 @@ _
 MulHLIXBy24:
 	add ix,ix \ adc hl,hl
 	add ix,ix \ adc hl,hl
-	add ix,ix \ adc hl,hl
 	lea bc,ix
 	push hl \ pop de
 	add ix,ix \ adc hl,hl
 	add ix,bc \ adc hl,de
+	lea bc,ix
+	push hl \ pop de
+	add ix,ix \ adc hl,hl
 	ret
 	
 ; The first ROM in the current list frame.
