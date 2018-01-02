@@ -131,13 +131,16 @@ frameskip_type_smc:
 	  jr nz,frameskip_end
 no_frameskip:
 frameskip_value_smc = $+1
-	  ld (hl),1
+	  ld a,1
+	  ld (hl),a
 	  ex de,hl
 	  bit 7,(hl)
 	  jr nz,_
+	  cp (hl)
+	  jr nc,_
 	  ld (hl),a
 _
-	  inc a
+	  ld a,1
 frameskip_end:
 	  ld (render_this_frame),a
 	  
