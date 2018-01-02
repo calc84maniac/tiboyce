@@ -15,6 +15,13 @@ set_gb_stack:
 	ex af,af'
 	ex de,hl
 	ld a,d
+	; If $C000 or higher, assume pushes will be done first
+	cp $C0
+	jr c,_
+	dec de
+	ld a,d
+	inc de
+_
 	add a,a
 	jr c,_
 	add a,a
@@ -24,14 +31,9 @@ set_gb_stack:
 	ld hl,(rom_bank_base)
 	jr set_gb_stack_done
 _
-	; If RAM, assume pushes will be done first
-	dec de
-	ld a,d
-	inc de
-	cp -2
+	cp -2*2
 	jr nc,_
 	ld hl,wram_base
-	add a,a
 	add a,a
 	jr c,set_gb_stack_done_ram
 	ld hl,vram_base
