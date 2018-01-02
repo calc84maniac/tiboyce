@@ -50,16 +50,45 @@ _
 	push hl
 	 ld hl,default_palette
 	 or a
+	 ld bc,0
 	 jr z,_
 	 APTR(ManualPaletteIndexTable-1)
-	 ld bc,0
 	 ld c,a
 	 add hl,bc
 _
-	 ld a,(hl)
-	 ACALL(LoadPalettes)
-	 ld hl,(curr_palettes)
-	 call update_palettes_always
+	 push bc
+	  ld a,(hl)
+	  ACALL(LoadPalettes)
+	  ld hl,(curr_palettes)
+	  call update_palettes_always
+	 pop bc
+	pop hl
+	
+	; Time zone
+	ld c,(hl)
+	inc hl
+	; Daylight saving time
+	ld a,(hl)
+	inc hl
+	push hl
+	 APTR(TimeZoneOffsetTable)
+	 add hl,bc
+	 ld e,(hl)
+	 ld d,225
+	 mlt de
+	 sbc hl,hl
+	 or a
+	 jr z,_
+	 ld hl,60*60
+_
+	 sbc hl,de
+	 ld a,c
+	 cp 19
+	 jr nc,_
+	 add hl,de
+	 add hl,de
+_
+	 ld (timeZoneOffset),hl
 	pop hl
 	
 	; Key configuration
@@ -595,6 +624,8 @@ OptionList:
 	.dw OptionFPSDisplay+1
 	.dw OptionAutoArchive+1
 	.dw OptionPaletteSelection+1
+	.dw OptionTimeZone+1
+	.dw OptionDST+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -686,10 +717,14 @@ ControlsMenu:
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
 EmulationMenu:
-	.db 2
+	.db 4
 	.db 5,11,"Emulation Options",0
 	.db "Enable to automatically archive saves.",0
 	.db ITEM_OPTION,2, 50,1,"Auto-Archive: %-3s",0
+	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
+	.db ITEM_OPTION,4, 70,1,"Time Zone: UTC%-6s",0
+	.db "Set to on if DST is currently active.",0
+	.db ITEM_OPTION,5, 80,1,"Daylight Saving Time: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -701,6 +736,7 @@ OptionFrameskipType:
 	
 OptionFPSDisplay:
 OptionAutoArchive:
+OptionDST:
 	.db 2
 	.db "off",0
 	.db "on",0
@@ -720,6 +756,41 @@ OptionPaletteSelection:
 	.db "dark brown",0
 	.db "yellow",0
 	.db "inverted",0
+	
+OptionTimeZone:
+	.db 32
+	.db "",0
+	.db "+1:00",0
+	.db "+2:00",0
+	.db "+3:00",0
+	.db "+3:30",0
+	.db "+4:00",0
+	.db "+4:30",0
+	.db "+5:00",0
+	.db "+5:30",0
+	.db "+6:00",0
+	.db "+6:30",0
+	.db "+7:00",0
+	.db "+8:00",0
+	.db "+9:00",0
+	.db "+9:30",0
+	.db "+10:00",0
+	.db "+11:00",0
+	.db "+12:00",0
+	.db "+13:00",0
+	.db "-12:00",0
+	.db "-11:00",0
+	.db "-10:00",0
+	.db "-9:00",0
+	.db "-8:00",0
+	.db "-7:00",0
+	.db "-6:00",0
+	.db "-5:00",0
+	.db "-4:00",0
+	.db "-3:30",0
+	.db "-3:00",0
+	.db "-2:00",0
+	.db "-1:00",0
 	
 KeyNames:
 	.db "(press)",0
@@ -787,6 +858,10 @@ KeySMCList:
 	.db key_smc_start - key_smc_select
 	.db key_smc_menu - key_smc_start
 	.db 0
+	
+TimeZoneOffsetTable:
+	.db $00,$10,$20,$30,$38,$40,$48,$50,$58,$60,$68,$70,$80,$90,$98,$A0,$B0,$C0,$D0
+	.db $C0,$B0,$A0,$90,$80,$70,$60,$50,$40,$38,$30,$20,$10
 	
 ManualPaletteIndexTable:
 	.db $16,$12,$17,$B8,$05,$B0,$07,$AD,$7C,$79,$BA,$13

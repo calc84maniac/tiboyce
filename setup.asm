@@ -496,6 +496,9 @@ _
 	
 	ACALL(generate_digits)
 	
+	ACALL(IdentifyDefaultPalette)
+	ACALL(ApplyConfiguration)
+	
 	ld a,z80codebase >> 16
 	ld mb,a
 	
@@ -568,7 +571,6 @@ _
 	ld a,h
 	or l
 	jr nz,_
-	sbc hl,hl
 	ex de,hl
 	ld ix,(ix)
 	ACALL(ExtractUnixTimeStamp)
@@ -728,9 +730,6 @@ _
 	call update_palettes
 	
 	call flush_code_reset_padding
-	
-	ACALL(IdentifyDefaultPalette)
-	ACALL(ApplyConfiguration)
 
 	ld.s de,(iy-state_size+STATE_REG_PC)
 	call lookup_code
@@ -1566,24 +1565,53 @@ _
 	ld.sis bc,(rtc_last)
 	ld b,0
 	add ix,bc
-	ret nc
+	jr nc,_
+	inc hl
+	or a
+_
+	
+	push hl
+	 sbc hl,hl
+	 ld de,(timeZoneOffset)
+	 sbc hl,de
+	 ex de,hl
+	pop hl
+	ret z
+	
+	add ix,de
+	jr c,_
+	dec hl
+_
+	
+	ret m
 	inc hl
 	ret
 	
-	; Input: DEUHLUIX = 64-bit timestamp
+	
+	; Input: HLIX = 48-bit UTC timestamp
 	; Output: A,B,C = hours,minutes,seconds
-	;         UHLUIX = days
-	;         DE = 0
+	;         HLIX = days
 ExtractUnixTimeStamp:
-	call DivDEUHLUIXBy60
+	ld de,(timeZoneOffset)
+	add ix,de
+	jr nc,_
+	inc hl
+_
+	ex de,hl
+	add hl,hl
+	ex de,hl
+	jr nc,_
+	dec hl
+_
+	call DivHLIXBy60
 	ld c,a
 	push bc
-	 call DivDEUHLUIXBy60
+	 call DivHLIXBy60
 	pop bc
 	ld b,a
 	push bc
 	 ld c,24
-	 call DivDEUHLUIXByC
+	 call DivHLIXByC
 	pop bc
 	ret
 	

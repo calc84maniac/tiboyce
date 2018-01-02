@@ -567,13 +567,13 @@ PutChar_ColorSMC2 = $+1
 	inc (hl)
 	ret
 	
-DivDEUHLUIXBy60:
+DivHLIXBy60:
 	ld c,60
-DivDEUHLUIXByC:
-	ld b,64
+DivHLIXByC:
+	ld b,48
 	xor a
 _
-	add ix,ix \ adc hl,hl \ rl e \ rl d \ rla
+	add ix,ix \ adc hl,hl \ rla
 	cp c
 	jr c,_
 	sub c
@@ -611,6 +611,9 @@ monthLUT:
 	.db 0,31,28,31,30,31,30,31,31,30,31,30
 ; The number of days from 1/1/1970 to the RTC epoch.
 epochDayCount:
+	.dl 0
+; The number of seconds offset for the selected time zone.
+timeZoneOffset:
 	.dl 0
 	
 ; The name of the currently loaded ROM.
@@ -716,6 +719,12 @@ AutoArchive:
 	.db 1
 ; Palette selection (0=Default, 1...=Manual)
 PaletteSelection:
+	.db 0
+; Time zone (0-31)
+TimeZone:
+	.db 0
+; Daylight saving time (0=Off, 1=On)
+DaylightSavingTime:
 	.db 0
 	
 ; Key configuration. Each is a GetCSC scan code.
