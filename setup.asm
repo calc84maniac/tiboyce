@@ -533,7 +533,11 @@ _
 	ld a,(mbc)
 	ld (z80codebase+mbc_z80),a
 	cp 4	;MBC3+RTC
-	jr nz,++_
+	jr nz,setup_ram_bank
+	
+	; Update rtc_last
+	call update_rtc
+	
 	ld ix,ram_size-47
 	ld bc,(ix+47)
 	inc.s bc
@@ -546,31 +550,47 @@ _
 	lea ix,ix+4
 	inc de
 	djnz -_
-	push de
-	 ld hl,(ix+6)
-	 ex.s de,hl
-	 ld hl,(ix+3)
-	 ld ix,(ix)
-	 ACALL(ExtractUnixTimeStamp)
-	 lea hl,ix
-	 ld de,(epochDayCount)
+	
+	; Ignore timestamps in the future
+	push ix
+	 ACALL(GetUnixTimeStamp)
+	 ex (sp),ix
+	 ex (sp),hl
+	 ld de,(ix)
 	 or a
 	 sbc hl,de
-	pop ix
-	ld (ix),bc
-	ld (ix+2),a
-	ld.s (ix+3),hl
+	pop hl
+	ld de,(ix+3)
+	sbc hl,de
+	jr c,_
+	
+	ld hl,(ix+6)
+	ld a,h
+	or l
+	jr nz,_
+	sbc hl,hl
+	ex de,hl
+	ld ix,(ix)
+	ACALL(ExtractUnixTimeStamp)
+	lea hl,ix
+	ld de,(epochDayCount)
+	or a
+	sbc hl,de
+	ld.sis (rtc_last),bc
+	ld.sis (rtc_last+2),a
+	ld.sis (rtc_last+3),hl
+_
 	ld a,(iy-state_size+STATE_RAM_BANK)
 	sub 8
-	jr c,_
+	jr c,setup_ram_bank
 	ld c,a
 	call mbc_rtc_toggle_smc
 	call update_rtc
 	ld b,0
 	ld hl,z80codebase+rtc_latched
-	jr ++_
-_
+	jr _
 	
+setup_ram_bank:
 	ld a,(ram_size+1)
 	add a,a
 	sbc a,a
