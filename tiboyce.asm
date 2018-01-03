@@ -119,6 +119,7 @@ _ChkInRAM = $021F98
 ramStart = $D00000
 penCol = $D008D2
 penRow = $D008D5
+asm_prgm_size = $D0118C
 tSymPtr1 = $D0257B
 pTemp = $D0259A
 progPtr = $D0259D
@@ -626,6 +627,9 @@ MetaHeader:
 ; The name of the appvar itself.
 SelfName:
 	.db appVarObj,"TIBoyDat"
+; The name of the config file.
+ConfigFileName:
+	.db appVarObj,"TIBoyCfg"
 	
 ; The backup of SP before beginning emulation.
 saveSP:
@@ -700,8 +704,22 @@ palette_obj1_colors:
 	.dw $0421 * 10
 	.dw $0421 * 0
 	
+; These files are loaded into RAM.
+	#include "jit.asm"
+	#include "decode.asm"
+	#include "ophandler.asm"
+	#include "vblank.asm"
+	#include "waitloop.asm"
+	
+	; Pad to an odd number of bytes
+	.block (~$) & 1
 	
 ; Active configuration info:
+config_start:
+	.dw config_end - ConfigVersion
+	
+ConfigVersion:
+	.db 1
 	
 ; The currently chosen frameskip value.
 FrameskipValue:
@@ -731,15 +749,9 @@ DaylightSavingTime:
 KeyConfig:
 	.db 3,2,4,1,54,48,40,55,15
 	
-; These files are loaded into RAM.
-	#include "jit.asm"
-	#include "decode.asm"
-	#include "ophandler.asm"
-	#include "vblank.asm"
-	#include "waitloop.asm"
+config_end:
 	
-; The RAM program ends here. Pad to a multiple of 2 bytes.
-	.block (-$) & 1
+; The RAM program ends here. Should be at a multiple of 2 bytes.
 program_end:
 program_size = program_end - userMem
 	.echo "User RAM code size: ", program_size

@@ -4,6 +4,7 @@ MENU_ITEM_COUNT = 16
 Startup:
 	ld (ArcBase),hl
 	call _RunIndicOff
+	ACALL(LoadConfigFile)
 	
 CalculateEpochLoop:
 	; Grab current day count
@@ -193,7 +194,7 @@ SelectionLoop:
 	jr z,MenuEnterTrampoline
 	cp 15-4
 	jr nz,SelectionLoop
-	jr RestoreHomeScreen
+	jr SaveConfigAndQuit
 	
 MenuEnterTrampoline:
 	AJUMP(MenuEnter)
@@ -260,6 +261,8 @@ _
 	add hl,de
 	jr RedrawMenuClearTrampoline
 	
+SaveConfigAndQuit:
+	ACALL_SAFERET(SaveConfigFile)
 RestoreHomeScreen:
 	ld hl,pixelShadow
 	ld de,pixelShadow+1
@@ -288,7 +291,7 @@ _
 	ld (de),a
 	
 	ACALL_SAFERET(StartROM)
-	jr c,RestoreHomeScreen
+	jr c,SaveConfigAndQuit
 	AJUMP(RepopulateMenu)
 	
 StartROM:
@@ -945,7 +948,63 @@ _
 	 ACALL_SAFERET(SaveRAM)
 	pop af
 	ret
-
+	
+LoadConfigFile:
+	ld hl,ConfigFileName
+	ACALL(LookUpAppvar)
+	ret c
+	
+	; Check the version byte
+	ld a,(hl)
+	cp 1
+	ret nz
+	
+	inc hl
+	ld de,FrameskipValue
+	ld bc,config_end - FrameskipValue
+	ldir
+	ret
+	
+SaveConfigFile:
+	ld hl,ConfigFileName
+	push hl
+	 ACALL(LookUpAppvar)
+	 jr c,_
+	
+	 dec hl
+	 dec hl
+	 inc bc
+	 inc bc
+	 ld de,config_start
+	 call memcmp
+	pop hl
+	ret z
+	
+	push hl
+	 call _Mov9ToOP1
+	 call _chkFindSym
+	 call nc,_DelVarArc
+_
+	pop hl
+	push hl
+	 call _Mov9ToOP1
+	 call _CmpPrgNamLen
+	 ld bc,0
+	 call _CreatePVar4
+	 push hl
+	 pop ix
+	 ld hl,(config_start << 16) | (config_start & $00FF00) | (config_start >> 16)
+	 ld (ix-5),hl
+	 
+	 ld hl,config_start - userMem
+	 ld (asm_prgm_size),hl
+	pop hl
+	ld a,(AutoArchive)
+	or a
+	ret z
+	call _Mov9ToOP1
+	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
+	ret
 	
 SaveStateFile:
 	ld hl,ROMName
@@ -968,9 +1027,7 @@ SaveStateFile:
 	 push hl
 	  call _Mov9ToOP1
 	  call _chkFindSym
-	  jr c,_
-	  call _DelVarArc
-_
+	  call nc,_DelVarArc
 	 pop hl
 	 push hl
 	  call _Mov9ToOP1
