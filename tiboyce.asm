@@ -711,8 +711,8 @@ palette_obj1_colors:
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	
-	; Pad to an odd number of bytes
-	.block (~$) & 1
+	; Pad to an even number of bytes
+	.block (-$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -721,6 +721,8 @@ config_start:
 ConfigVersion:
 	.db 1
 	
+; Number of option bytes
+	.db option_config_count
 ; The currently chosen frameskip value.
 FrameskipValue:
 	.db 2
@@ -745,11 +747,15 @@ TimeZone:
 DaylightSavingTime:
 	.db 0
 	
+; Number of key bytes
+	.db key_config_count
 ; Key configuration. Each is a GetCSC scan code.
 KeyConfig:
-	.db 3,2,4,1,54,48,40,55,15
+	.db 51,3,2,4,1,54,48,40,55,15
 	
 config_end:
+option_config_count = (KeyConfig-1) - FrameskipValue
+key_config_count = config_end - KeyConfig
 	
 ; The RAM program ends here. Should be at a multiple of 2 bytes.
 program_end:

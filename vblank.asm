@@ -100,9 +100,14 @@ NoFPSDisplay:
 	  ; Signify frame was rendered
 	  scf
 skip_this_frame:
+
+	  ld ix,mpKeypadGrp0
+key_smc_turbo:
+	  bit 2,(ix+1*2)	;ZOOM
+	  ld hl,z80codebase+frame_excess_count
+	  jr nz,no_frame_sync
 	  
 	  ; Handle frame synchronization
-	  ld hl,z80codebase+frame_excess_count
 	  dec (hl)
 	  jp p,no_frame_sync
 	  ; If we didn't render, save for later

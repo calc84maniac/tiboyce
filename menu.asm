@@ -92,12 +92,13 @@ _
 	pop hl
 	
 	; Key configuration
-	ld ix,key_smc_right
+	ld ix,key_smc_turbo
 	push hl
 	 APTR(KeySMCList)
 	 ex de,hl
 	pop hl
-	ld b,9
+	ld b,(hl)
+	inc hl
 key_config_loop:
 	ld a,(hl)
 	dec a
@@ -188,12 +189,25 @@ ItemSelectCmd:
 	
 ItemSelectKey:
 	ACALL(GetKeyConfig)
-	ld (hl),0
-	push hl
-	 ACALL(draw_current_menu)
-	 ACALL(WaitForKey)
+	push bc
+	 ld c,(hl)
+	 ld (hl),0
+	 push bc
+	  push hl
+	   ACALL(draw_current_menu)
+	   ACALL(WaitForKey)
+	  pop de
+	 pop bc
 	pop hl
-	ld (hl),a
+	ld b,key_config_count
+_
+	cp (hl)
+	jr nz,_
+	ld (hl),c
+_
+	inc hl
+	djnz --_
+	ld (de),a
 	ACALL(draw_current_menu)
 	jr menu_loop
 	
@@ -562,6 +576,7 @@ GetOption:
 	pop bc
 	ret
 	
+	; Returns config pointer in HL, start pointer in BC
 GetKeyConfig:
 	or a
 	sbc hl,hl
@@ -682,7 +697,7 @@ GraphicsMenu:
 	.db 5
 	.db 5,12,"Graphics Options",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,0, 70,1,"Frameskip type: %-9s",0
+	.db ITEM_OPTION,0, 70,1,"Frameskip type: %-6s",0
 	.db "",0
 	.db ITEM_DIGIT,2, 80,1,"Frameskip value: %u",0
 	.db "",0
@@ -693,26 +708,28 @@ GraphicsMenu:
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
 ControlsMenu:
-	.db 10
+	.db 11
 	.db 5,12,"Control Options",0
 	.db "",0
-	.db ITEM_KEY,0,  50,1,"Right:  %-7s",0
+	.db ITEM_KEY,1,  50,1,"Right:  %-7s",0
 	.db "",0
-	.db ITEM_KEY,1,  60,1,"Left:   %-7s",0
+	.db ITEM_KEY,2,  60,1,"Left:   %-7s",0
 	.db "",0
-	.db ITEM_KEY,2,  70,1,"Up:     %-7s",0
+	.db ITEM_KEY,3,  70,1,"Up:     %-7s",0
 	.db "",0
-	.db ITEM_KEY,3,  80,1,"Down:   %-7s",0
+	.db ITEM_KEY,4,  80,1,"Down:   %-7s",0
 	.db "",0
-	.db ITEM_KEY,4,  90,1,"A:      %-7s",0
+	.db ITEM_KEY,5,  90,1,"A:      %-7s",0
 	.db "",0
-	.db ITEM_KEY,5, 100,1,"B:      %-7s",0
+	.db ITEM_KEY,6, 100,1,"B:      %-7s",0
 	.db "",0
-	.db ITEM_KEY,6, 110,1,"Select: %-7s",0
+	.db ITEM_KEY,7, 110,1,"Select: %-7s",0
 	.db "",0
-	.db ITEM_KEY,7, 120,1,"Start:  %-7s",0
+	.db ITEM_KEY,8, 120,1,"Start:  %-7s",0
 	.db "",0
-	.db ITEM_KEY,8, 140,1,"Menu:   %-7s",0
+	.db ITEM_KEY,9, 140,1,"Menu:   %-7s",0
+	.db "",0
+	.db ITEM_KEY,0, 150,1,"Turbo:  %-7s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -731,7 +748,7 @@ EmulationMenu:
 OptionFrameskipType:
 	.db 3
 	.db "manual",0
-	.db "automatic",0
+	.db "auto",0
 	.db "off",0
 	
 OptionFPSDisplay:
@@ -849,6 +866,7 @@ KeyNames:
 	.db "del",0
 	
 KeySMCList:
+	.db key_smc_right - key_smc_turbo
 	.db key_smc_left - key_smc_right
 	.db key_smc_up - key_smc_left
 	.db key_smc_down - key_smc_up

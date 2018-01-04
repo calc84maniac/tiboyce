@@ -956,12 +956,27 @@ LoadConfigFile:
 	
 	; Check the version byte
 	ld a,(hl)
-	cp 1
+	inc hl
+	dec a
 	ret nz
 	
-	inc hl
 	ld de,FrameskipValue
-	ld bc,config_end - FrameskipValue
+	ld bc,0
+	ld c,(hl)
+	inc hl
+	ld a,c
+	dec a
+	cp option_config_count
+	ret nc
+	ldir
+	
+	ld de,KeyConfig
+	ld c,(hl)
+	inc hl
+	ld a,c
+	dec a
+	cp key_config_count
+	ret nc
 	ldir
 	ret
 	
