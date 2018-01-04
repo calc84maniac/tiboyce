@@ -25,9 +25,7 @@ opgenCALLcond:
 opgenCALL:
 	jp _opgenCALL
 opgenRST:
-	ld.sis bc,decode_rst
-	sub 2
-	jp opgen_emit_call
+	jp _opgenRST
 opgenJP:
 	jp _opgenJP
 opgenJR:
@@ -127,11 +125,15 @@ opgen_next_swap_skip:
 	ex de,hl
 opgen_next_skip:
 	inc de
-opgen0byte:
 	inc hl
 opgen_next:
 	ld bc,opgentable
 	jr opgen_next_fast
+	
+opgenNOP:
+	xor a
+	ld (de),a
+	jr opgen_next_skip
 	
 opgenCB:
 	ldi

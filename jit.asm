@@ -955,23 +955,23 @@ _
 ; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
 	.block (-$)&255
 opcoderecsizes:
-	.db 0,3,3,1,1,1,2,1
+	.db 1,3,3,1,1,1,2,1
 	.db 5,1,3,1,1,1,2,1
-	.db 0,3,3,1,1,1,2,1
+	.db 1,3,3,1,1,1,2,1
 	.db 0,1,3,1,1,1,2,1
 	.db 10,3,3,1,1,1,2,1
 	.db 10,1,3,1,1,1,2,1
 	.db 10,5,3,4,3,3,4,1
 	.db 10,3,3,4,1,1,2,1
 	
-	.db 0,1,1,1,1,1,3,1
-	.db 1,0,1,1,1,1,3,1
-	.db 1,1,0,1,1,1,3,1
-	.db 1,1,1,0,1,1,3,1
-	.db 1,1,1,1,0,1,3,1
-	.db 1,1,1,1,1,0,3,1
+	.db 1,1,1,1,1,1,3,1
+	.db 1,1,1,1,1,1,3,1
+	.db 1,1,1,1,1,1,3,1
+	.db 1,1,1,1,1,1,3,1
+	.db 1,1,1,1,1,1,3,1
+	.db 1,1,1,1,1,1,3,1
 	.db 3,3,3,3,3,3,3,3
-	.db 1,1,1,1,1,1,3,0
+	.db 1,1,1,1,1,1,3,1
 	
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
@@ -1072,7 +1072,7 @@ opcodecycles:
 ; All entry points live in a 256-byte space.
 opgentable:
 ;00
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgen3byte_low - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte_2cc - opgenroutines
@@ -1090,7 +1090,7 @@ opgentable:
 	.db opgen2byte - opgenroutines
 	.db opgen1byte - opgenroutines
 ;10
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgen3byte - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte_2cc - opgenroutines
@@ -1144,7 +1144,7 @@ opgentable:
 	.db opgen2byte - opgenroutines
 	.db opgen1byte - opgenroutines
 ;40
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
@@ -1154,7 +1154,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 ;48
 	.db opgen1byte - opgenroutines
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
@@ -1164,7 +1164,7 @@ opgentable:
 ;50
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
@@ -1174,7 +1174,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgenMEM - opgenroutines
@@ -1184,7 +1184,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
@@ -1194,7 +1194,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;70
@@ -1214,7 +1214,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen0byte - opgenroutines
+	.db opgenNOP - opgenroutines
 ;80
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
@@ -1377,6 +1377,11 @@ opgen_cycle_overflow:
 	dec hl
 	dec iy
 	jr opgen_emit_jump
+	
+_opgenRST:
+	ld.sis bc,decode_rst
+	sub 2
+	jr opgen_emit_call
 	
 _opgenCALLcond:
 	ld b,a
