@@ -199,6 +199,10 @@ ItemSelectKey:
 	  pop de
 	 pop bc
 	pop hl
+	or a
+	jr nz,_
+	ld a,c
+_
 	ld b,key_config_count
 _
 	cp (hl)
@@ -258,6 +262,8 @@ emulator_menu:
 	  
 menu_loop:
 	  ACALL(WaitForKey)
+	  or a
+	  jp.sis z,on_interrupt
 	  call get_current_menu_selection
 	  dec a
 	  jr z,menu_down
@@ -532,7 +538,12 @@ _
 	call ack_and_wait_for_interrupt
 	ACALL(GetKeyCode)
 	or a
+	ret nz
+	ld a,(mpIntMaskedStatus)
+	and 1
 	jr z,-_
+	ld (mpIntAcknowledge),a
+	xor a
 	ret
 	
 GetKeyCode:
