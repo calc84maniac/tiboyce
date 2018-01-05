@@ -175,12 +175,6 @@ ophandlerRETnomatch:
 cycle_overflow_for_jump:
 	pop ix
 	ld ix,(ix+2)
-	ld a,(memroutine_next)
-	sub ixl
-	ld a,(memroutine_next+1)
-	sbc a,ixh
-	jr nc,cycle_overflow
-	ld ix,(ix+3)
 cycle_overflow:
 	push ix
 	push hl
@@ -516,7 +510,8 @@ decode_jump:
 	 ld a,(hl)
 	 push hl
 	  di
-	  call.il decode_jump_helper
+	  jp.lil decode_jump_helper
+decode_jump_return:
 	 pop hl
 	 add a,(hl)	;calc cycle count
 	 dec hl
@@ -533,6 +528,7 @@ decode_jump:
 	 ld (hl),$33
 	 dec hl
 	 ld (hl),$ED	;LEA IY,IY+offset
+decode_jump_waitloop_return:
 	pop bc
 	push hl
 	pop.l hl
@@ -839,21 +835,24 @@ handle_waitloop_stat:
 	
 handle_waitloop_variable:
 	ex af,af'
-	pop ix
 	push hl
 handle_waitloop_main:
+	 ; Skip straight to the counter expiration
 	 xor a
 	 ld iyh,a
 	 sub (ix+2)
 	 ld iyl,a
+handle_waitloop_noskip:
+	 ; Wipe the previous event trigger
 	 ld hl,(event_address)
 	 ld a,(event_value)
 	 ld (hl),a
+	 ; Run an event using our precomputed lookup
 	 ex de,hl
 	 ld.lil de,z80codebase
 	 add.l ix,de
 	 ex de,hl
-	 ld.l hl,(ix+3)
+	 ld.l hl,(ix+4)
 	 ld.lil (event_gb_address),hl
 	 ld a,(ix+2)
 	 ld (event_cycle_count),a
@@ -862,32 +861,59 @@ handle_waitloop_main:
 	
 handle_waitloop_ly:
 	ex af,af'
-	pop ix
 	push hl
 	 push de
+	  ; Get the (negative) number of cycles until the next event
 	  ld a,(ix+2)
 	  call get_cycle_offset
-	  call get_scanline_from_cycle_offset
+	  push de
+	   ; Get the (negative) number of cycles until the next scanline
+	   call get_scanline_from_cycle_offset
+	   sub CYCLES_PER_SCANLINE
+	  pop de
+	  ; Choose the smaller absolute value
+	  inc d
+	  jr nz,_
+	  cp e
+	  jr nc,_
+	  ld a,e
+_
+	  ld e,a
+	  ; Step by a multiple of the loop length
+	  ld d,(ix+3)
+	  ; Always advance at least one iteration
+	  add a,d
+	  jr c,++_
+	  ; Advance as many iterations as possible without exceeding the cycle count
+_
+	  add a,d
+	  jr nc,-_
+	  sub d
+_
+	  sub e
 	 pop de
-	 cpl
-	 add a,CYCLES_PER_SCANLINE + 1
+	 ; Add in the cycles and check for overflow
 	 add a,iyl
 	 ld iyl,a
-	 jr nc,_
-	 inc iyh
-	 jr z,++_
+	 jr c,_
+	 dec iyh
 _
+	 inc iyh
+	 jr z,_
 	 ld ix,(ix)
 	pop hl
 	ex af,af'
 	jp (ix)
 _
+	 ; If the count has already expired, do an event immediately
 	 add a,(ix+2)
-	 jr c,handle_waitloop_main
+	 jr c,handle_waitloop_noskip
 	 
+	 ; Wipe the previous event trigger
 	 ld hl,(event_address)
 	 ld a,(event_value)
 	 ld (hl),a
+	 ; Schedule an event using our precomputed lookup
 	 ld hl,(ix)
 	ex (sp),hl
 	push hl
@@ -897,7 +923,7 @@ _
 	   add.l ix,de
 	   ld de,(ix)
 	   ld a,(ix+2)
-	   ld.l ix,(ix+3)
+	   ld.l ix,(ix+4)
 	   di
 	   jp.lil schedule_event_helper_post_lookup
 	
@@ -948,7 +974,7 @@ trigger_event_pushed:
 	    ld c,a
 	   pop af
 	   push de
-	    jr c,++_
+	    jr c,event_fast_forward
 	    ld a,c
 	    call get_cycle_offset
 	    ld hl,(div_cycle_count)
@@ -956,12 +982,18 @@ trigger_event_pushed:
 	    ld (div_cycle_count),hl
 	    ld hl,(frame_cycle_target)
 	    add hl,de
-	    jr c,_
+	    jr c,++_
+	    inc d
+	    dec d
 	    ld de,CYCLES_PER_FRAME
+	    jr nz,_
+	    sbc hl,de	; Carry is reset
+	    jr nc,++_
+_
 	    add hl,de
 _
 	    ld (frame_cycle_target),hl
-_
+event_fast_forward:
 	   pop hl
 	   xor a
 	   ld iyh,a
@@ -1882,6 +1914,7 @@ mem_cycle_lookup_found_fast:
 ; Inputs: IY = (negative) cycles until target
 ;         A = (negative) number of cycles to subtract
 ; Outputs: DE = (negative) cycle offset
+;          May be positive if target lies within an instruction
 get_cycle_offset:
 	ld (get_cycle_offset_smc),a
 get_last_cycle_offset:
@@ -1942,6 +1975,7 @@ get_scanline_from_write:
 	di
 	
 ; Inputs: DE = (negative) cycles until target
+;         May be positive if target falls within an instruction
 ; Outputs: A = cycle count within scanline
 ;          E = scanline index (0-153)
 ; Destroys: D, HL
@@ -1950,7 +1984,13 @@ frame_cycle_target = $+1
 	ld hl,0
 	add hl,de
 	jr c,get_scanline_from_cycle_count
+	inc d
+	dec d
 	ld de,CYCLES_PER_FRAME
+	jr nz,_
+	sbc hl,de	; Carry is reset
+	jr nc,get_scanline_from_cycle_count
+_
 	add hl,de
 	
 ; Inputs: HL = cycle count within frame

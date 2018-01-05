@@ -14,7 +14,7 @@
 ;
 ; Inputs:  IX = branch target recompiled code
 ;          HL = branch target GB literal 24-bit address
-;          (SPS) = branch recompiled code address (plus 1)
+;          (SPS) = branch recompiled code address (plus 9)
 ;          (SPL+4) = number of cycles to block end from target
 ;          BC',DE',HL' = Game Boy BC,DE,HL registers
 ; Outputs: IX = filtered branch target
@@ -221,7 +221,7 @@ waitloop_identified:
 	ret z
 	
 	ld hl,(z80codebase+memroutine_next)
-	ld de,-9
+	ld de,-7
 	add hl,de	;Sets C flag
 	
 	; Bail if not enough room for trampoline
@@ -232,46 +232,61 @@ waitloop_identified:
 	ret nc
 	ex de,hl
 	ld (z80codebase+memroutine_next),hl
-	
-	; Generate call based on variable accessed
 	inc hl
-	push hl
-	 ld (hl),$CD
-	 inc hl
-	 inc b
-	 jr nz,waitloop_variable
-	 ld a,c
-	 cp STAT & $FF
-	 jr z,waitloop_stat
-	 cp LY & $FF
-	 jr nz,waitloop_variable
-	 ld (hl),handle_waitloop_ly & $FF
-	 inc hl
-	 ld (hl),handle_waitloop_ly >> 8
-	 jr waitloop_finish
+	
+	; Choose handler based on variable accessed
+	inc b
+	jr nz,waitloop_variable
+	ld a,c
+	cp STAT & $FF
+	jr z,waitloop_stat
+	cp LY & $FF
+	jr nz,waitloop_variable
+	ld bc,handle_waitloop_ly
+	jr waitloop_finish
 waitloop_stat:
-	 ld (hl),handle_waitloop_stat & $FF
-	 inc hl
-	 ld (hl),handle_waitloop_stat >> 8
-	 jr waitloop_finish
+	ld bc,handle_waitloop_stat
+	jr waitloop_finish
 waitloop_variable:
-	 ld (hl),handle_waitloop_variable & $FF
-	 inc hl
-	 ld (hl),handle_waitloop_variable >> 8
+	ld bc,handle_waitloop_variable
 waitloop_finish:
-	 inc hl
-	 ld (hl),ix
-	 inc hl
-	 inc hl
-	 ex de,hl
-	 ld hl,7
-	 add hl,sp
-	 xor a
-	 sub (hl)
-	 ld (de),a
-	 inc de
-	 ld hl,(waitloop_jr_smc)
-	 ex de,hl
-	 ld (hl),de
-	pop ix
-	ret
+	ld (hl),ix
+	inc hl
+	inc hl
+	pop de	; Pop the return address
+	pop de  ; Pop the target cycle count into D
+	; Store the negative target cycle count
+	xor a
+	sub d
+	ld (hl),a
+	inc hl
+	ld a,d
+	; Get the end of the recompiled code to overwrite
+	pop.s de
+	ex de,hl
+	; Compute the length of the loop in cycles
+	add.s a,(hl)
+	dec hl
+	dec hl
+	ld.s (hl),bc
+	dec hl
+	ld.s (hl),$C3	;JP handler
+	ex de,hl
+	ld (hl),a
+	inc hl
+	ld bc,(waitloop_jr_smc)
+	ld (hl),bc
+	dec hl
+	dec hl
+	dec hl
+	dec hl
+	ex de,hl
+	dec hl
+	dec hl
+	ld.s (hl),de
+	dec hl
+	ld.s (hl),$21
+	dec hl
+	ld.s (hl),$DD	;LD IX,ptr
+	ei
+	jp.sis decode_jump_waitloop_return

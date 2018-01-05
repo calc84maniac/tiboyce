@@ -17,7 +17,7 @@ decode_jump_helper:
 	pop af
 	
 	ei
-	ret.l
+	jp.sis decode_jump_return
 	
 decode_rst_helper:
 	push de
