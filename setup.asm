@@ -736,7 +736,8 @@ _
 _
 	
 	call prepare_next_frame
-	call update_palettes
+	ld hl,(curr_palettes)
+	call update_palettes_always
 	
 	call flush_code_reset_padding
 
