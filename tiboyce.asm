@@ -559,7 +559,6 @@ PutCharPixelLoop:
 	 cpl
 PutChar_ColorSMC1 = $+1
 	 and WHITE << 4
-	 ld (hl),a
 	 sla c
 	 jr c,_
 PutChar_ColorSMC2 = $+1
