@@ -430,6 +430,12 @@ _
 	lea ix,ix+9
 	djnz -_
 	
+	ld hl,convert_palette_LUT
+_
+	ld (hl),l
+	inc l
+	jr nz,-_
+	
 	ld hl,vram_start
 	ld de,vram_pixels_start
 	ld c,$0C

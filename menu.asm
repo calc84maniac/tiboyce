@@ -59,8 +59,6 @@ _
 	 push bc
 	  ld a,(hl)
 	  ACALL(LoadPalettes)
-	  ld hl,(curr_palettes)
-	  call update_palettes_always
 	 pop bc
 	pop hl
 	
@@ -143,8 +141,15 @@ LoadPalettes:
 	; Load BG
 	ld a,e
 	ld de,palette_bg_colors
-	ld c,(ix+2)
-	ACALL(LoadSinglePalette)
+	push de
+	 ld c,(ix+2)
+	 ACALL(LoadSinglePalette)
+	pop hl
+	push de
+	 ld de,mpLcdPalette + (BG_COLOR_0 * 2)
+	 ld c,8
+	 ldir
+	pop de
 	
 	; Load OBJ0
 	ld c,(ix)
@@ -247,54 +252,54 @@ CmdRestartGame:
 	jr menu_loop
 	
 emulator_menu:
-	push bc
-	 xor a
-	 ld (current_menu),a
-	 ld a,(main_menu_selection)
-	 ld (current_menu_selection),a
+	call setup_menu_palette
 	 
-	 ACALL(redraw_current_menu)
+	xor a
+	ld (current_menu),a
+	ld a,(main_menu_selection)
+	ld (current_menu_selection),a
+	 
+	ACALL(redraw_current_menu)
 	
-	 ld hl,(mpLcdBase)
-	 push hl
-	  ld hl,(current_buffer)
-	  ld (mpLcdBase),hl
+	ld hl,(mpLcdBase)
+	push hl
+	 ld hl,(current_buffer)
+	 ld (mpLcdBase),hl
 	  
 menu_loop:
-	  ACALL(WaitForKey)
-	  or a
-	  jp.sis z,on_interrupt
-	  call get_current_menu_selection
-	  dec a
-	  jr z,menu_down
-	  cp 3
-	  jr c,menu_left_right
-	  jr z,menu_up
-	  cp 9-1
-	  jr z,menu_select
-	  cp 54-1
-	  jr z,menu_select
-	  cp 15-1
-	  jr nz,menu_loop
+	 ACALL(WaitForKey)
+	 or a
+	 jp.sis z,on_interrupt
+	 call get_current_menu_selection
+	 dec a
+	 jr z,menu_down
+	 cp 3
+	 jr c,menu_left_right
+	 jr z,menu_up
+	 cp 9-1
+	 jr z,menu_select
+	 cp 54-1
+	 jr z,menu_select
+	 cp 15-1
+	 jr nz,menu_loop
 	  
 menu_exit:
-	  ld a,(current_menu)
-	  or a
-	  jr nz,BackToMainMenu
+	 ld a,(current_menu)
+	 or a
+	 jr nz,BackToMainMenu
 	  
 CmdReturnToGame:
-	  ld a,(current_menu_selection)
-	  ld (main_menu_selection),a
+	 ld a,(current_menu_selection)
+	 ld (main_menu_selection),a
 
-	  ACALL(ApplyConfiguration)
+	 ACALL(ApplyConfiguration)
 
 _
-	  ACALL(GetKeyCode)
-	  or a
-	  jr nz,-_
-	 pop hl
-	 ld (mpLcdBase),hl
-	pop bc
+	 ACALL(GetKeyCode)
+	 or a
+	 jr nz,-_
+	pop hl
+	ld (mpLcdBase),hl
 	ret
 	
 menu_up:

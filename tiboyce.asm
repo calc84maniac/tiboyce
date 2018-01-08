@@ -78,11 +78,15 @@ STATE_RAM_BANK = 18
 STATE_MBC_MODE = 19
 
 ; Constant color palette entries
-MAGENTA = 10
-OLIVE = 11
-WHITE = 12
+BLUE = 0
+MAGENTA = 1
+OLIVE = 2
+BG_COLOR_0 = 9
+BG_COLOR_1 = 10
+BG_COLOR_2 = 11
+BG_COLOR_3 = 12
 BLACK = 13
-BLUE = 14
+WHITE = 14
 
 ; Paletted colors doubled into two pixels
 WHITE_BYTE = WHITE*$11
@@ -313,6 +317,9 @@ digits = rombankLUT_end
 scanlineLUT_1 = digits + 400
 scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
+; A lookup table for converting BG palettes to raw colors
+convert_palette_LUT = $D0DB00
+
 ; A fake tile filled with Game Boy color 0. 64 bytes in size.
 ; Used when BG tilemap is disabled.
 fake_tile = $D0F900
@@ -496,9 +503,12 @@ current_menu_selection = $+1
 	
 ; Sets the current string color.
 SetStringColor:
-	inc a
-	ld (PutChar_ColorSMC1),a
 	ld (PutChar_ColorSMC2),a
+	rlca
+	rlca
+	rlca
+	rlca
+	ld (PutChar_ColorSMC1),a
 	ret
 	
 ; Renders the character in A on the current buffer at (cursorRow), (cursorCol).
@@ -546,16 +556,16 @@ PutCharPixelLoop:
 	 ; Render 2 pixels to the framebuffer per iteration.
 	 sla c
 	 sbc a,a
+	 cpl
 PutChar_ColorSMC1 = $+1
-	 or WHITE+1
-	 dec a
+	 and WHITE << 4
 	 ld (hl),a
 	 sla c
-	 sbc a,a
+	 jr c,_
 PutChar_ColorSMC2 = $+1
-	 or WHITE+1
-	 dec a
-	 rld
+	 or WHITE
+_
+	 ld (hl),a
 	 inc hl
 	 djnz PutCharPixelLoop
 	 ; Advance output pointer to the next row.

@@ -35,6 +35,14 @@ flush_code:
 	; Store first available block address to the first unused entry
 	ld de,z80codebase+z80codesize
 	ld (hl),de
+#ifdef DEBUG
+	push de
+	pop hl
+	inc de
+	ld bc,memroutine_end - z80codesize
+	ld (hl),$FF
+	ldir
+#endif
 	; Set the next memory access routine output below the Z80 stack
 	ld hl,z80codebase+memroutine_end
 	ld (z80codebase+memroutine_next),hl
@@ -1690,7 +1698,7 @@ _
 	jp m,opgenHRAMwrite
 	jr nz,_
 	ld bc,writeIEhandler
-	jr opgenHMEMwriteroutine
+	jr opgenHMEMwriteroutine_trampoline
 _
 	sub (SC & $FF)+1
 	jr nz,_
@@ -1720,6 +1728,7 @@ _
 	sub LCDC - IF
 	jr nz,_
 	ld bc,writeLCDChandler
+opgenHMEMwriteroutine_trampoline:
 	jr opgenHMEMwriteroutine
 _
 	dec a
@@ -1753,8 +1762,13 @@ _
 	jr opgenHMEMwriteroutine
 _
 	dec a
-	jr nz,opgenHRAMwrite
+	jr nz,_
 	ld bc,writeDMAhandler
+	jr opgenHMEMwriteroutine
+_
+	dec a
+	jr nz,opgenHRAMwrite
+	ld bc,writeBGPhandler
 opgenHMEMwriteroutine:
 	ld (hl),$CD ;CALL addr
 	inc hl

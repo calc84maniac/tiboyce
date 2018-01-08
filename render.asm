@@ -403,8 +403,8 @@ palettecode:
 	.org mpLcdPalette
 
 	.dw 0,0,0,0,0,0,0,0,0
-	.dw 0
-	.dw $EA56,$CA8B,$FFFF,$0000,$2882
+	.dw 0,0,0,0
+	.dw $0000,$FFFF
 	.dw 0
 	
 render_scanline_off:

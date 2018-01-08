@@ -169,7 +169,7 @@ _
 	pop bc
 	ret
 	
-; Writes to an LCD scroll register (SCX,SCY,WX,WY).
+; Writes to an LCD scroll register (SCX,SCY,WX,WY). Also BGP.
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
 ; Catches up the renderer before writing, and then applies SMC to renderer.
@@ -191,18 +191,56 @@ render_this_frame = $+1
 	 call nz,render_catchup
 	 ld a,l
 	 sub SCY - ioregs
-	 jr nz,_
-	 ex af,af'
-	 ld (SCY_smc),a
-	 jr scroll_write_done
-_
-	 sub WY - SCY
-	 jr c,scroll_write_SCX
+	 jr z,scroll_write_SCY
+	 dec a
+	 jr z,scroll_write_SCX
+	 sub WY - SCX
+	 jr c,scroll_write_BGP
 	 jr nz,scroll_write_WX
 	 ex af,af'
 	 ld (WY_smc),a
 	 jr scroll_write_done
+	 
+scroll_write_SCY:
+	 ex af,af'
+	 ld (SCY_smc),a
+	 jr scroll_write_done
 	
+scroll_write_BGP:
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ; Only do things if BGP is changing
+	 ld.s a,(hl)
+	 cp c
+	 jr z,scroll_write_done_swap
+	 ld a,(render_this_frame)
+	 or a
+	 jr z,scroll_write_done_swap
+	 ld a,(hram_base+LCDC)
+	 bit 1,a
+	 push bc
+	  push hl
+	   push iy
+	    call nz,draw_sprites
+	   pop iy
+	   
+	   ld a,(myLY)
+	   ld (myspriteLY),a
+	   ld hl,(scanlineLUT_ptr)
+	   ld (scanlineLUT_sprite_ptr),hl
+mypaletteLY = $+1
+	   ld c,0
+	   ld (mypaletteLY),a
+	   sub c
+scanlineLUT_palette_ptr = $+2
+	   ld ix,0
+	   call nz,convert_palette
+	  ld (scanlineLUT_palette_ptr),ix
+	  pop hl
+	 pop bc
+	 jr scroll_write_done_swap
+	 
 scroll_write_WX:
 	 ex af,af'
 	 ld c,a
@@ -242,6 +280,7 @@ scroll_write_done:
 	ei
 	jp.s (ix)
 	
+	
 ; Writes to the LCD control register (LCDC).
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
@@ -278,19 +317,18 @@ lcdc_write_helper:
 	 ld (LCDC_0_smc),a
 _
 	 bit 1,c
-	 jr z,++_
-	 bit 1,(hl)
-	 jr nz,_
+	 jr z,_
 	 ld a,(render_this_frame)
 	 or a
+	 jr z,_
+	 bit 1,(hl)
 	 push bc
 	  push de
 	   push iy
-	    call nz,draw_sprites
+	    call z,draw_sprites
 	   pop iy
 	  pop de
 	 pop bc
-_
 	 ld a,(myLY)
 	 ld (myspriteLY),a
 	 ld hl,(scanlineLUT_ptr)

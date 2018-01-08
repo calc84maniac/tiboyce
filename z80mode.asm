@@ -55,29 +55,27 @@ r_event:
 	.block $38-$
 rst38h:
 	push af
+	 ld a,i
+	 jp pe,$
 	 ld a,pLcdMis >> 8
 	 in a,(pLcdMis & $FF)
 	 or a
-	 jr z,_
-	 ld.lil (mpLcdIcr),a
-frame_excess_count = $+1
-	 ld a,0
+	 jp.lil nz,frame_interrupt
+	 ;ld a,pIntMaskedStatus >> 8
+	 ;in a,(pIntMaskedStatus & $FF)
+	 ;rra
+	 ;jr nc,$
+	
+on_interrupt:
 	 inc a
-	 ld (frame_excess_count),a
-_
-	 ld a,pIntMaskedStatus >> 8
-	 in a,(pIntMaskedStatus & $FF)
-	 rra
-	 jr c,on_interrupt
+	 ld.lil (mpIntAcknowledge),a
+CmdExitSMC = $+2
+	 jp.lil 0
+	 
+frame_interrupt_return:
 	pop af
 	ei
 	ret
-	
-on_interrupt:
-	ld a,1
-	ld.lil (mpIntAcknowledge),a
-CmdExitSMC = $+2
-	jp.lil 0
 	
 do_push_and_return:
 	ex (sp),ix
@@ -977,30 +975,29 @@ trigger_event_pushed:
 	    jr c,event_fast_forward
 	    ld a,c
 	    call get_cycle_offset
+	    ; If the end of this instruction is already past the target, don't rewind
+	    ld a,d
+	    or a
+	    jr z,trigger_event_already_triggered
 	    ld hl,(div_cycle_count)
 	    add hl,de
 	    ld (div_cycle_count),hl
 	    ld hl,(frame_cycle_target)
 	    add hl,de
-	    jr c,++_
-	    inc d
-	    dec d
+	    jr c,_
 	    ld de,CYCLES_PER_FRAME
-	    jr nz,_
-	    sbc hl,de	; Carry is reset
-	    jr nc,++_
-_
 	    add hl,de
 _
 	    ld (frame_cycle_target),hl
 event_fast_forward:
+	    xor a
+	    ld iyh,a
+	    sub c
+	    ld iyl,a
+trigger_event_already_triggered:
 	   pop hl
-	   xor a
-	   ld iyh,a
-	   sub c
-	   ld iyl,a
 	   ld a,c
-	
+	   
 schedule_event_enable:
 	   ld.lil (event_gb_address),ix
 	   ld (event_cycle_count),a
@@ -1277,6 +1274,10 @@ writeWXhandler:
 writeDMAhandler:
 	ex af,af'
 	jp writeDMA
+	
+writeBGPhandler:
+	ld ix,BGP
+	jp write_scroll_swap
 	
 writeIFhandler:
 	ld (IF),a
@@ -1615,12 +1616,9 @@ mem_write_ports_swap:
 	jr z,writeSC
 	sub LYC - SC
 	jr z,writeLYC
-	dec a
+	sub BGP - LYC
+	jr c,writeDMA
 	jr nz,mem_write_oam_swap
-writeDMA:
-	di
-	jp.lil oam_transfer_helper
-	
 write_scroll_swap:
 	ex af,af'
 write_scroll:
@@ -1628,6 +1626,10 @@ write_scroll:
 	 call get_scanline_from_write
 	pop hl
 	jp.lil scroll_write_helper
+	
+writeDMA:
+	di
+	jp.lil oam_transfer_helper
 	
 writeLYChandler:
 	ex af,af'
