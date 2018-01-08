@@ -218,7 +218,7 @@ vblank_handler_ret:
 	   ex de,hl
 	   
 current_lyc_target_count = $+1
-	   ld hl,CYCLES_PER_SCANLINE * 0
+	   ld hl,CYCLES_PER_SCANLINE * 153 + 2
 	   sbc hl,bc
 	   call z,LYCmatch
 	   
@@ -867,7 +867,17 @@ handle_waitloop_ly:
 	  push de
 	   ; Get the (negative) number of cycles until the next scanline
 	   call get_scanline_from_cycle_offset
+	   ld d,a
+	   ld a,e
+	   cp 153
+	   ld a,d
+	   jr nz,_
+	   sub 1
+	   jr c,++_
+	   sub CYCLES_PER_SCANLINE - 1
+_
 	   sub CYCLES_PER_SCANLINE
+_
 	  pop de
 	  ; Choose the smaller absolute value
 	  inc d
@@ -1341,19 +1351,26 @@ readSTAT_mode0:
 readLY:
 	ld a,(LCDC)
 	add a,a
-	sbc a,a
-	jr z,_
+	jr nc,readLY_force0
 	exx
 	push.l hl
 	 call get_read_cycle_offset
 	 call get_scanline_from_cycle_offset
-	 ld a,e
 	pop.l hl
+	or a
+	ld a,e
 	exx
+	jr z,_
+	cp 153
+	jr z,readLY_force0
 _
 	ld ixl,a
 	ex af,af'
 	ret
+	
+readLY_force0:
+	xor a
+	jr -_
 	
 	;IX=GB address, reads into IXL
 mem_read_ports:

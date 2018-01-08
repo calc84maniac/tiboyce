@@ -398,12 +398,21 @@ _
 ; Triggers a GB interrupt if LY already matches the new LYC value.
 ;
 ; Inputs:  A' = value being written
+;          A = cycles into scanline
 ;          E = current scanline
 ;          (SPS) = Z80 return address
 ;          (SPL) = saved HL'
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
+	 ; Scanline 153 changes to scanline 0 after 2 cycles for LYC purposes
+	 cp 2
+	 jr c,_
+	 ld a,e
+	 sub 153
+	 jr nz,_
+	 ld e,a
+_
 	 ex af,af'
 	 ld d,a
 	 ex af,af'
@@ -419,15 +428,18 @@ lyc_write_helper:
 _
 	 
 	 ; Set new target
+	 xor e
 	 ld e,CYCLES_PER_SCANLINE
 	 mlt de
+	 jr nz,_
+	 ld de,CYCLES_PER_SCANLINE * 153 + 2
+_
 	 ld.sis (current_lyc_target_count),de
 	pop hl
 	exx
 	ei
 	; Carry is reset
 	jp.sis trigger_event
-	
 	
 ; Writes to the GB timer control (TAC).
 ; Does not use a traditional call/return, must be jumped to directly.

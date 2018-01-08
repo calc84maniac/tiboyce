@@ -717,9 +717,14 @@ _
 	inc a
 	ld (SCX_smc_2),a
 	
-	ld hl,(iy-ioregs+LYC)
+	ld a,(iy-ioregs+LYC)
+	or a
+	ld hl,CYCLES_PER_SCANLINE * 153 + 2
+	jr z,_
+	ld l,a
 	ld h,CYCLES_PER_SCANLINE
 	mlt hl
+_
 	ld.sis (current_lyc_target_count),hl
 	
 	ld hl,(iy-ioregs+WY)
