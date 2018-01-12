@@ -23,6 +23,7 @@ debug_printf:
 	pop hl
 	push ix
 	
+debug_print:
 #ifdef CEMU
 	; HL points to string
 _
@@ -38,8 +39,8 @@ _
 	 push af
 	  xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	  ld (current_buffer+1),a
-	  ld hl,(cursorCol)
-	  push hl
+	  ld de,(cursorCol)
+	  push de
 	   ld a,WHITE
 	   ACALL(PutStringColor)
 	  pop hl
@@ -112,25 +113,18 @@ PutNewLine:
 ScrollUp:
 	 push bc
 	  push de
-	   ld hl,text_frame_1 + (160*10)
-	   ld de,text_frame_1
+	   ld hl,(current_buffer)
+	   ld de,text_frame_1 - gb_frame_buffer_1
+	   add hl,de
+	   ex de,hl
+	   ld hl,160*10
+	   add hl,de
 	   ld bc,160*(90-10)
 	   ldir
 	   push de
 	   pop hl
 	   inc de
-	   ld (hl),BLUE_BYTE
-	   ld bc,160*10-1
-	   ldir
-	   
-	   ld hl,text_frame_2 + (160*10)
-	   ld de,text_frame_2
-	   ld bc,160*(90-10)
-	   ldir
-	   push de
-	   pop hl
-	   inc de
-	   ld (hl),BLUE_BYTE
+	   ld (hl),BLACK_BYTE
 	   ld bc,160*10-1
 	   ldir
 	  pop de

@@ -218,11 +218,6 @@ _opgenRETI:
 	ret
 	
 _opgenINVALID:
-	ex de,hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),ophandlerINVALID & $FF
-	inc hl
-	ld (hl),ophandlerINVALID >> 8
-	ex de,hl
+	ld a,RST_ERROR
+	ld (de),a
 	ret

@@ -5,6 +5,7 @@
 #define RST_POP $C7+r_pop
 #define RST_CALL $C7+r_call
 #define RST_EVENT $C7+r_event
+#define RST_ERROR $C7+r_error
 
 #define RAM_PREFIX_SIZE 5
 #define MAX_CYCLES_PER_BLOCK 64
@@ -190,6 +191,20 @@ lookup_code_block_lower:
 	pop ix
 	jr lookup_code_block_loop
 	
+Z80Error_helper:
+	ld hl,(recompile_struct_end)
+	ld hl,(hl)
+	pop.s af
+	pop.s de
+	or a
+	sbc.s hl,de
+	ld a,ERROR_INVALID_OPCODE << 2
+	jr nc,_
+runtime_error:
+	ld a,ERROR_RUNTIME << 2
+_
+	AJUMP(CmdExit)
+	
 ; Gets the Game Boy opcode address from a recompiled code pointer.
 ;
 ; The pointer must point either to the start of a recompiled instruction
@@ -212,11 +227,11 @@ lookup_gb_code_address:
 	call lookup_code_block
 	ld a,b
 	or c
-	jr z,$
+	jr z,runtime_error
 	ld hl,(ix-8)
 	xor a
 	sub (ix-1)	; Should set carry flag
-	jr nc,$
+	ASSERT_C
 	ld ix,(ix-6)
 	inc.s hl
 	sbc hl,de

@@ -53,10 +53,11 @@ r_event:
 	jp do_event
 	
 	.block $38-$
+r_error:
 rst38h:
 	push af
 	 ld a,i
-	 jp pe,$
+	 jp pe,Z80Error
 	 ld a,pLcdMis >> 8
 	 in a,(pLcdMis & $FF)
 	 or a
@@ -72,6 +73,10 @@ on_interrupt:
 CmdExitSMC = $+2
 	 jp.lil 0
 	 
+Z80Error:
+	di
+	jp.lil Z80Error_helper
+	
 frame_interrupt_return:
 	pop af
 	ei
@@ -1176,10 +1181,6 @@ ophandlerRET:
 	 ei
 	pop bc
 	jp dispatch_cycles_exx
-	
-ophandlerINVALID:
-	ei
-	jr ophandlerINVALID
 	
 write_vram_handler:
 	pop ix

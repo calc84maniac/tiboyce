@@ -116,7 +116,7 @@ RepopulateMenuTop:
 	ld (menuSelection),bc
 	
 RedrawMenuClear:
-	call _ClrLCDFull
+	ACALL(RestoreHomeScreen)
 	ld a,32
 	ld (penRow),a
 	ld hl,91
@@ -291,7 +291,47 @@ _
 	ld (de),a
 	
 	ACALL_SAFERET(StartROM)
-	jr c,SaveConfigAndQuit
+	jr nc,RepopulateMenuTrampoline
+	or a
+	jr z,SaveConfigAndQuit
+	push af
+	 ld a,32
+	 ld (penRow),a
+	 sbc hl,hl
+	 ld (penCol),hl
+	 push hl
+	  call _ClrLCDFull
+	  APTR(error_text)
+	  call _VPutS
+	 pop bc
+	pop de
+	
+	dec hl
+	xor a
+_
+	cpir
+	dec d
+	jr nz,-_
+	
+	ex de,hl
+	ld hl,(errorArg)
+	push hl
+	 push de
+	  ld hl,text_buffer
+	  push hl
+	   call _sprintf
+	  pop hl
+	  call _VPutS
+	 pop de
+	pop hl
+	
+_
+	halt
+	call _GetCSC
+	or a
+	jr z,-_
+	
+RepopulateMenuTrampoline:
 	AJUMP(RepopulateMenu)
 	
 StartROM:
@@ -351,22 +391,29 @@ StartFromHere:
 	ld (mpLcdCtrl),hl
 	ld hl,gb_frame_buffer_1
 	ld (mpLcdBase),hl
+	ld (current_buffer),hl
 	push hl
 	pop de
 	inc de
 #ifdef DBGNOSCALE
+	ld a,BLACK_BYTE
+	call SetStringBgColor
 	ld bc,160*144
 	ld (hl),WHITE_BYTE
 	ldir
 	ld bc,160*96
-	ld (hl),BLUE_BYTE
+	ld (hl),a
 	ldir
 	ld bc,160*144
 	ld (hl),WHITE_BYTE
 	ldir
 	ld bc,160*96-1
-	ld (hl),BLUE_BYTE
+	ld (hl),a
 	ldir
+	ld hl,230*256
+	ld (cursorCol),hl
+	ld a,WHITE
+	call SetStringColor
 #else
 	ld bc,320*240-1
 	ld (hl),WHITE_BYTE
@@ -419,16 +466,33 @@ StartFromHere:
 	ld (scanlineLUT_ptr),ix
 	ld hl,gb_frame_buffer_1
 	ld de,160
+#ifdef DBGNOSCALE
+	ld c,2
+_
+	ld b,144/3
+#else
 	ld b,144/3*2
+#endif
 _
 	ld (ix),hl
-	add hl,de \ add hl,de
+	add hl,de
+#ifndef DBGNOSCALE
+	add hl,de
+#endif
 	ld (ix+3),hl
 	add hl,de
 	ld (ix+6),hl
-	add hl,de \ add hl,de
+	add hl,de
+#ifndef DBGNOSCALE
+	add hl,de
+#endif
 	lea ix,ix+9
 	djnz -_
+#ifdef DBGNOSCALE
+	ld hl,gb_frame_buffer_2
+	dec c
+	jr nz,--_
+#endif
 	
 	ld hl,convert_palette_LUT
 _
@@ -940,9 +1004,13 @@ _
 	pop hl
 	ld (hl),a
 	pop iy
-	srl b
+	ld a,b
+	srl a
 	jr z,+++_
 	jr c,_
+	rra
+	ccf
+	jr c,+++_
 	AJUMP(RestartFromHere)
 _
 	ld a,(main_menu_selection)
@@ -1036,11 +1104,11 @@ _
 SaveStateFile:
 	ld hl,ROMName
 	push hl
+_
 	 inc hl
-	 ld bc,9
-	 xor a
-	 cpir
-	 dec hl
+	 ld a,(hl)
+	 or a
+	 jr nz,-_
 	 dec hl
 	 ld a,(current_state)
 	 add a,'0'
@@ -1073,6 +1141,8 @@ SaveStateFile:
 	; Reindex the ROM in case a Garbage Collect occurred, and reinsert the RAM.
 
 LoadROMAndRAM:
+	ld hl,ROMName+1
+	ld (errorArg),hl
 	ACALL_SAFERET(LoadROM)
 	ret c
 	
@@ -1083,7 +1153,9 @@ LoadROMAndRAM:
 	ld bc,$0147
 	add hl,bc
 	ld a,(hl)
-	ld b,0
+	ld c,a
+	dec b
+	ld (errorArg),bc
 	or a
 	jr z,mbc_valid_no_carry
 	inc b	;MBC1
@@ -1108,6 +1180,7 @@ LoadROMAndRAM:
 mbc_valid:
 	ccf
 mbc_valid_no_carry:
+	ld a,ERROR_UNSUPPORTED_MBC
 	ret c
 	ld a,b
 	ld (mbc),a
@@ -1117,7 +1190,9 @@ mbc_valid_no_carry:
 	ld hl,rombankLUT_end
 	sbc hl,de
 	jr z,_
+	ld a,ERROR_INVALID_ROM
 	ret c
+	ld a,b
 	push hl
 	pop bc
 	ld hl,rombankLUT
@@ -1160,8 +1235,9 @@ _
 	 pop de
 	 jr nc,_
 	pop hl
-	call _DelMem
-	scf
+	push af
+	 call _DelMem
+	pop af
 	ret
 _
 	 ld hl,(ram_size)
@@ -1174,6 +1250,7 @@ _
 LoadROM:
 	ld hl,ROMName
 	ACALL(LookUpAppvar)
+	ld a,ERROR_FILE_MISSING
 	ret c
 	ld a,c
 	sub 9
@@ -1181,6 +1258,7 @@ LoadROM:
 	jr nc,_
 	ld a,b
 	or a
+	ld a,ERROR_FILE_INVALID
 	ret z
 	dec b
 _
@@ -1189,6 +1267,7 @@ _
 	 ld bc,8
 	 call memcmp
 	pop bc
+	ld a,ERROR_FILE_INVALID
 	ret nz
 	ld d,(hl)
 	inc hl
@@ -1202,6 +1281,7 @@ _
 	jr nz,-_
 	ld (hl),'R'
 	inc hl
+LoadROMRestartLoop:
 	ld (hl),'0'
 	inc hl
 	ld (hl),'0'
@@ -1213,12 +1293,34 @@ _
 LoadROMLoop:
 	push de
 	 ld hl,ROMName
-	 ACALL_SAFERET(LookUpAppvarForceARC)
+	 ACALL_SAFERET(LookUpAppvar)
 	pop de
+	ld a,ERROR_FILE_MISSING
 	ret c
+	ex de,hl
+	call _ChkInRAM
+	jr nz,++_
+	push de
+	 call Arc_Unarc_Safe
+	pop de
+	ld a,d
+	add a,e
+	ld d,a
+	ld hl,ROMName
+_
+	inc hl
+	ld a,(hl)
+	or a
+	jr nz,-_
+	dec hl
+	dec hl
+	jr LoadROMRestartLoop
+_
+	ex de,hl
 	ld a,(hl)
 	cp e
 	scf
+	ld a,ERROR_FILE_INVALID
 	ret nz
 	inc hl
 	dec bc
@@ -1251,11 +1353,12 @@ _
 	dec d
 	ret z
 	inc e
-	ld hl,ROMName+1
-	xor a
-	ld bc,9
-	cpir
-	dec hl
+	ld hl,ROMName
+_
+	inc hl
+	ld a,(hl)
+	or a
+	jr nz,-_
 	dec hl
 	inc (hl)
 	ld a,(hl)
@@ -1275,11 +1378,12 @@ _
 	jr LoadROMLoop
 	
 LoadRAM:
-	ld hl,ROMName+1
-	ld bc,9
-	xor a
-	cpir
-	dec hl
+	ld hl,ROMName
+_
+	inc hl
+	ld a,(hl)
+	or a
+	jr nz,-_
 	dec hl
 	ld (hl),'V'
 	dec hl
@@ -1356,7 +1460,10 @@ LoadRAMNoVar:
 	 inc hl
 	 inc hl
 	 call _EnoughMem
-	 ret c
+	pop hl
+	ld a,ERROR_NOT_ENOUGH_MEMORY
+	ret c
+	push hl
 	 ex de,hl
 	 ld de,ram_size
 	 call _InsertMem
@@ -1393,11 +1500,11 @@ SaveRAM:
 	
 	ld hl,ROMName
 	push hl
+_
 	 inc hl
-	 ld bc,9
-	 xor a
-	 cpir
-	 dec hl
+	 ld a,(hl)
+	 or a
+	 jr nz,-_
 	 dec hl
 	 ld (hl),'V'
 	 dec hl
@@ -1456,11 +1563,11 @@ SaveRAMDeleteMemLoaded:
 LoadStateFile:
 	ld hl,ROMName
 	push hl
+_
 	 inc hl
-	 ld bc,9
-	 xor a
-	 cpir
-	 dec hl
+	 ld a,(hl)
+	 or a
+	 jr nz,-_
 	 dec hl
 	 ld a,(current_state)
 	 add a,'0'
@@ -1517,46 +1624,6 @@ _
 	or a
 	ret
 	
-	
-LookUpAppvarForceARC:
-	call _Mov9ToOP1
-_
-	call _chkFindSym
-	ret c
-	call _ChkInRAM
-	jr nz,_
-	call Arc_Unarc_Safe
-	jr -_
-_
-	ex de,hl
-	ld de,9
-	add hl,de
-	ld e,(hl)
-	add hl,de
-	inc hl
-	ld c,(hl)
-	inc hl
-	ld b,(hl)
-	inc hl
-	ret
-	
-LookUpAppvarForceRAM:
-	call _Mov9ToOP1
-_
-	call _chkFindSym
-	ret c
-	call _ChkInRAM
-	jr z,_
-	call Arc_Unarc_Safe
-	jr -_
-_
-	ex de,hl
-	ld c,(hl)
-	inc hl
-	ld b,(hl)
-	inc hl
-	or a
-	ret
 	
 ROMSearch:
 	xor a
@@ -1828,3 +1895,23 @@ DefaultPaletteIndexTable:
 	.db $A8,$6A,$6E,$13,$A0,$2D,$A8,$2B,$AC,$64,$AC,$6D,$87
 	.db $BC,$60,$B4,$13,$72,$7C,$B5,$AE,$AE,$7C,$7C,$65,$A2
 	.db $6C,$64,$85
+	
+#macro DEFINE_ERROR(name, text)
+	#define NUM_ERRORS eval(NUM_ERRORS+1)
+	clr()
+	wr(name,"=NUM_ERRORS")
+	run()
+	.db text,0
+#endmacro
+
+#define NUM_ERRORS 0
+error_text:
+	.db "Error: ",0
+	DEFINE_ERROR("ERROR_FILE_MISSING", "Missing AppVar %s")
+	DEFINE_ERROR("ERROR_FILE_INVALID", "Invalid AppVar %s")
+	DEFINE_ERROR("ERROR_UNSUPPORTED_MBC", "Unsupported cartridge type %02X")
+	DEFINE_ERROR("ERROR_INVALID_ROM", "ROM is invalid")
+	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Not enough RAM free")
+	DEFINE_ERROR("ERROR_RUNTIME", "Encountered a runtime error!")
+	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Encountered an invalid opcode!")
+	

@@ -256,6 +256,7 @@ emulator_menu:
 	 
 	xor a
 	ld (current_menu),a
+	call SetStringBgColor
 	ld a,(main_menu_selection)
 	ld (current_menu_selection),a
 	 
@@ -299,7 +300,16 @@ _
 	 or a
 	 jr nz,-_
 	pop hl
+	ld de,(mpLcdBase)
 	ld (mpLcdBase),hl
+	ld bc,160*240
+	ldir
+#ifdef DBGNOSCALE
+	ld hl,230*256
+	ld (cursorCol),hl
+	ld a,BLACK_BYTE
+	call SetStringBgColor
+#endif
 	ret
 	
 menu_up:
@@ -310,6 +320,7 @@ menu_up:
 _
 	ld (current_menu_selection),a
 	ACALL(draw_current_menu)
+menu_loop_trampoline:
 	jr menu_loop
 	
 menu_down:
@@ -321,7 +332,7 @@ _
 	inc a
 	ld (current_menu_selection),a
 	ACALL(draw_current_menu)
-	jr menu_loop
+	jr menu_loop_trampoline
 	
 menu_left_right:
 	dec a
@@ -329,7 +340,7 @@ menu_left_right:
 	dec a
 	ld de,ItemChangeCallbacks
 	ACALL(DoCurrentItemCallback)
-	jr menu_loop
+	jr menu_loop_trampoline
 	
 menu_select:
 	ld de,ItemSelectCallbacks
@@ -516,6 +527,7 @@ draw_mini_screen_pixel_loop:
 	 ld a,c
 	 ld c,80
 	 add hl,bc
+#ifndef DBGNOSCALE
 	 dec a
 	 jr nz,_
 	 ld a,3
@@ -526,6 +538,7 @@ _
 	 add hl,bc
 	 ex de,hl
 _
+#endif
 	pop bc
 	dec c
 	jr nz,draw_mini_screen_row_loop

@@ -501,8 +501,17 @@ current_menu_selection = $+1
 	ld c,0
 	ret
 	
+; Sets the current string BG color. Must be called before SetStringColor.
+SetStringBgColor:
+	ld (PutChar_BgColorSMC1),a
+	ld (PutChar_BgColorSMC2),a
+	ret
+	
 ; Sets the current string color.
 SetStringColor:
+PutChar_BgColorSMC1 = $+1
+	xor BLUE_BYTE
+	and $0F
 	ld (PutChar_ColorSMC2),a
 	rlca
 	rlca
@@ -558,12 +567,14 @@ PutCharPixelLoop:
 	 sbc a,a
 	 cpl
 PutChar_ColorSMC1 = $+1
-	 and WHITE << 4
+	 and (WHITE ^ BLUE) << 4
 	 sla c
 	 jr c,_
 PutChar_ColorSMC2 = $+1
-	 or WHITE
+	 or WHITE ^ BLUE
 _
+PutChar_BgColorSMC2 = $+1
+	 xor BLUE_BYTE
 	 ld (hl),a
 	 inc hl
 	 djnz PutCharPixelLoop
@@ -615,6 +626,9 @@ menuLastSelection:
 	.dl 0
 ; The end of the list of discovered ROMs.
 ROMListEnd:
+	.dl 0
+; The argument to pass to sprintf for error messages
+errorArg:
 	.dl 0
 ; A list of the number of days before each month
 monthLUT:
