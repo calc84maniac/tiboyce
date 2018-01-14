@@ -1146,7 +1146,12 @@ LoadROMAndRAM:
 	ACALL_SAFERET(LoadROM)
 	ret c
 	
-	ld hl,(rombankLUT)
+	ld ix,rombankLUT
+	ld hl,(ix)
+	ld e,3
+	mlt de
+	add ix,de
+	
 	ld de,$4000
 	add hl,de
 	ld (rom_start),hl
@@ -1268,8 +1273,12 @@ _
 	 call memcmp
 	pop bc
 	ld a,ERROR_FILE_INVALID
+	scf
 	ret nz
 	ld d,(hl)
+	dec d
+	ret m
+	inc d
 	inc hl
 	ld (current_description),hl
 	
@@ -1288,8 +1297,16 @@ LoadROMRestartLoop:
 	inc hl
 	ld (hl),a
 	
+	ld a,d
+	ld hl,rombankLUT
+	push hl
+	pop de
+	inc de
+	ld bc,128*3 - 1
+	ld (hl),$FF
+	ldir
+	ld d,a
 	ld e,a
-	ld ix,rombankLUT
 LoadROMLoop:
 	push de
 	 ld hl,ROMName
@@ -1299,13 +1316,11 @@ LoadROMLoop:
 	ret c
 	ex de,hl
 	call _ChkInRAM
-	jr nz,++_
+	ex de,hl
+	jr nz,LoadROMPageLoop
 	push de
 	 call Arc_Unarc_Safe
 	pop de
-	ld a,d
-	add a,e
-	ld d,a
 	ld hl,ROMName
 _
 	inc hl
@@ -1315,17 +1330,24 @@ _
 	dec hl
 	dec hl
 	jr LoadROMRestartLoop
-_
-	ex de,hl
-	ld a,(hl)
-	cp e
-	scf
-	ld a,ERROR_FILE_INVALID
-	ret nz
-	inc hl
-	dec bc
+
 LoadROMPageLoop:
+	ld a,(hl)
+	cp d
+	ccf
+	ld a,ERROR_FILE_INVALID
+	ret c
 	push de
+	 ld e,(hl)
+	 ld d,3
+	 mlt de
+	 ld ix,rombankLUT
+	 add ix,de
+	 bit 7,(ix+2)
+	 scf
+	 jr z,_
+	 inc hl
+	 dec bc
 	 push bc
 	  ld c,(hl)
 	  inc hl
@@ -1334,7 +1356,6 @@ LoadROMPageLoop:
 	  ld de,-$4000
 	  add hl,de
 	  ld (ix),hl
-	  lea ix,ix+3
 	  add hl,bc
 	  sbc hl,de
 	  ex (sp),hl
@@ -1342,17 +1363,17 @@ LoadROMPageLoop:
 	  sbc hl,bc
 	  ex (sp),hl
 	 pop bc
+_
 	pop de
 	ret c
 	jr z,_
-	dec d
-	ret z
-	inc e
-	jr LoadROMPageLoop
+	dec e
+	jr nz,LoadROMPageLoop
+	scf
+	ret
 _
-	dec d
+	dec e
 	ret z
-	inc e
 	ld hl,ROMName
 _
 	inc hl
@@ -1364,17 +1385,9 @@ _
 	ld a,(hl)
 	cp '9'+1
 	jr c,LoadROMLoop
-	jr z,_
-	cp 'F'+1
-	jr nz,LoadROMLoop
 	ld (hl),'0'
 	dec hl
 	inc (hl)
-	ld a,(hl)
-	cp '9'+1
-	jr nz,LoadROMLoop
-_
-	ld (hl),'A'
 	jr LoadROMLoop
 	
 LoadRAM:
