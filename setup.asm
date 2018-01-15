@@ -136,6 +136,9 @@ RedrawMenu:
 RedrawMenuLoop:
 	add a,12
 	ld (penRow),a
+	; Carry is clear
+	sbc hl,hl
+	ld (penCol),hl
 	ld hl,(ROMListEnd)
 	sbc hl,de
 	jr z,RedrawMenuLoopEnd
@@ -149,12 +152,18 @@ RedrawMenuLoop:
 	or c
 	jr z,RedrawMenuItem
 	jr RedrawMenuSkipItem
+NoROMsFound:
+	APTR(ErrorNoROMsFound)
+	call _VPutS
+_
+	halt
+	call _GetCSC
+	or a
+	jr z,-_
+	AJUMP(SaveConfigAndQuit)
 RedrawMenuSelectedItem:
 	set textInverse,(iy+textFlags)
 RedrawMenuItem:
-	; Carry is clear
-	sbc hl,hl
-	ld (penCol),hl
 	push bc
 	 push de
 	  ex de,hl
@@ -171,6 +180,9 @@ RedrawMenuSkipItem:
 	djnz RedrawMenuLoop
 	
 RedrawMenuLoopEnd:
+	ld a,b
+	cp MENU_ITEM_COUNT
+	jr z,NoROMsFound
 	ld hl,(menuSelection)
 	ld (menuLastSelection),hl
 	
@@ -1314,10 +1326,10 @@ LoadROMLoop:
 	pop de
 	ld a,ERROR_FILE_MISSING
 	ret c
-	ex de,hl
-	call _ChkInRAM
-	ex de,hl
-	jr nz,LoadROMPageLoop
+	push hl
+	 add hl,hl
+	pop hl
+	jr nc,LoadROMPageLoop
 	push de
 	 call Arc_Unarc_Safe
 	pop de
@@ -1928,3 +1940,5 @@ error_text:
 	DEFINE_ERROR("ERROR_RUNTIME", "Encountered a runtime error!")
 	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Encountered an invalid opcode!")
 	
+ErrorNoROMsFound:
+	.db "No ROMs found!",0

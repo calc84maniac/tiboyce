@@ -36,28 +36,16 @@ flush_code:
 	; Store first available block address to the first unused entry
 	ld de,z80codebase+z80codesize
 	ld (hl),de
-#ifdef DEBUG
-	push de
-	pop hl
-	inc de
-	ld bc,memroutine_end - z80codesize
-	ld (hl),$FF
-	ldir
-#endif
 	; Set the next memory access routine output below the Z80 stack
 	ld hl,z80codebase+memroutine_end
 	ld (z80codebase+memroutine_next),hl
 	; Empty the recompiled code mapping cache
 	ld hl,recompile_cache_end
 	ld (recompile_cache),hl
+	; Fill unused memory with RST_ERROR to catch bad execution
+	MEMSET_FAST(z80codebase+z80codesize, memroutine_end + 1 - z80codesize, RST_ERROR)
 	; Invalidate the memory routines
-	ld hl,memroutineLUT
-	push hl
-	pop de
-	inc de
-	ld (hl),l
-	ld bc,$01FF
-	ldir
+	MEMSET_FAST(memroutineLUT, $0200, 0)
 	; Invalidate both the read and write cycle LUTs
 	ld hl,z80codebase+read_cycle_LUT
 	ld (hl),e

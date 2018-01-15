@@ -484,6 +484,46 @@ memcmp:
 	ret po
 	jr memcmp
 	
+	; Returns BC=0, DE=byte|byte|byte
+#macro MEMSET_FAST(start, length, byte)
+	ld hl,start + length
+	ld de,byte * $010101
+	ld bc,(((length / 24) + 1) % 256 * 256) | (((length / 24) / 256) + 1)
+	ld a,((8 - (length / 3 % 8)) * 4) | ((3 - (length % 3)) % 2 * 2) | ((3 - (length % 3)) / 2 % 2)
+	call memset_fast
+#endmacro
+	
+memset_fast:
+	ld (memset_fast_save_sp),sp
+	ld sp,hl
+	or a
+	sbc hl,hl
+	rra
+	adc hl,hl
+	rra
+	ld (memset_fast_smc),a
+	adc hl,hl
+memset_fast_smc = $+1
+	jr $+2
+memset_fast_loop:
+	push de
+	push de
+	push de
+	push de
+	push de
+	push de
+	push de
+	push de
+	djnz memset_fast_loop
+	dec c
+	jr nz,memset_fast_loop
+	add hl,sp
+	ld sp,hl
+	push de
+memset_fast_save_sp = $+1
+	ld sp,0
+	ret
+	
 ; Gets a pointer to the current menu in HL, and the current selection in C.
 get_current_menu_selection:
 	ld hl,MenuList
