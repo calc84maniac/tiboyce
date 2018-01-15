@@ -191,6 +191,24 @@ Z80Error_helper:
 runtime_error:
 	ld a,ERROR_RUNTIME << 2
 _
+#ifdef DEBUG
+	push af
+	 push de
+	  cp ERROR_INVALID_OPCODE << 2
+	  jr nz,_
+	  APRINTF(InvalidOpcodeErrorMessage)
+	  jr ++_
+_
+	  APRINTF(RuntimeErrorMessage)
+_
+	 pop de
+_
+	 ld a,(mpIntMaskedStatus)
+	 and 1
+	 jr z,-_
+	 ld (mpIntAcknowledge),a
+	pop af
+#endif
 	AJUMP(CmdExit)
 	
 ; Gets the Game Boy opcode address from a recompiled code pointer.

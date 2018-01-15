@@ -201,4 +201,10 @@ CoherencyFailedMessage:
 	
 PaddingUpdateMessage:
 	.db "RAM block padding increased to %06X\n",0
+	
+RuntimeErrorMessage:
+	.db "Runtime error occurred at %04X\n",0
+	
+InvalidOpcodeErrorMessage:
+	.db "Encountered invalid opcode at %04X\n",0
 #endif
