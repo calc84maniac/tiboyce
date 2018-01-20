@@ -298,13 +298,22 @@ CmdReturnToGame:
 _
 	 ACALL(GetKeyCode)
 	 or a
-	 jr nz,-_
-	pop hl
-	ld de,(mpLcdBase)
-	ld (mpLcdBase),hl
-	ld bc,160*240
-	ldir
+	 jr nz,-_ 
+	 ld hl,(mpLcdBase)
+	 push hl
+	 pop de
+	 inc de
+	 ld bc,160*240-1
+	 ld (hl),BLACK_BYTE
+	 push hl
+	  ldir
 #ifdef DBGNOSCALE
+	  ACALL(Set8BitWindow)
+#endif
+	 pop de
+	pop hl
+	ld (mpLcdBase),hl
+#if 0
 	ld hl,230*256
 	ld (cursorCol),hl
 	ld a,BLACK_BYTE

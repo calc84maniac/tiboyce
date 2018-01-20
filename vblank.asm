@@ -411,8 +411,7 @@ update_palettes_loop:
 	djnz _
 	dec c
 	jr nz,update_palettes_next_loop
-	inc de
-	ld e,16*2-1
+	ld de,mpLcdPalette + (256*2)-1
 	scf
 _
 	ld (update_palettes_smc),a
@@ -423,6 +422,11 @@ update_palettes_smc = $+2
 	 ldd
 	pop hl
 	jr nc,update_palettes_loop
+	ex de,hl
+	inc hl
+	ld de,mpLcdPalette + (16*2)-2
+	ldi
+	ldi
 	ret
 	
 convert_palette:
@@ -456,7 +460,11 @@ convert_palette_pixel_loop:
 	ret
 	
 convert_palette_setup:
+#ifdef DBGNOSCALE
+	ld hl,convert_palette_LUT + 3
+#else
 	ld hl,convert_palette_LUT + $23
+#endif
 	ld a,(hram_base+BGP)
 	ld b,4
 _
@@ -467,13 +475,17 @@ _
 	add a,BG_COLOR_0
 	ld e,a
 	ld a,d
+#ifndef DBGNOSCALE
 	ld d,$11
 	mlt de
+#endif
 	dec l
 	ld (hl),e
+#ifndef DBGNOSCALE
 	jr z,_
 	ld de,-$10
 	add hl,de
+#endif
 _
 	djnz --_
 	ex de,hl
@@ -496,4 +508,4 @@ _
 	; OLIVE | MAG(ENTA)
 	ld hl,($CA8B << 8) | ($EA56 >> 8)
 	ld (mpLcdPalette+3),hl
-	ret
+	AJUMP(Set4BitWindow)

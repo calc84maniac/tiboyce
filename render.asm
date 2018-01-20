@@ -107,7 +107,11 @@ draw_sprite_clip_done:
 	 ld iyh,b
 	 
 	 bit 4,d
+#ifdef DBGNOSCALE
+	 ld c,$03
+#else
 	 ld c,$33
+#endif
 	 jr z,_
 	 sla c
 _
@@ -295,7 +299,11 @@ write_vram_pixels:
 	  add hl,hl
 	  ld bc,vram_pixels_start-($8000*4)
 	  add hl,bc
+#ifdef DBGNOSCALE
+	  ld bc,$0001
+#else
 	  ld bc,$0011
+#endif
 	  ld a,d \ cpl \ add a,a \ ld d,a
 	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
 	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
@@ -412,7 +420,11 @@ render_scanline_off:
 	pop hl
 	inc de
 	ld bc,159
+#ifdef DBGNOSCALE
+	ld (hl),WHITE
+#else
 	ld (hl),WHITE_BYTE
+#endif
 	ldir
 	jp render_scanline_next
 	

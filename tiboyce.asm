@@ -201,6 +201,10 @@ mpKeypadGrp5 = $F5001A
 mpKeypadGrp6 = $F5001C
 mpKeypadGrp7 = $F5001E
 
+mpSpiTransfer = $F80008
+mpSpiStatus = $F8000C
+mpSpiFifo = $F80018
+
 #ifdef CEMU
 mpCEmuDbg = $FB0000
 #endif
@@ -281,7 +285,7 @@ read_cycle_LUT = flags_lut+256+1
 write_cycle_LUT = read_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
 
 ; The bottom of the ADL stack. Grows down from the end of palette memory.
-myADLstack = mpLcdPalette + $0200
+myADLstack = mpLcdPalette + $01FE
 
 ; Preprocessed Game Boy tilemap entries. 16KB in size.
 ; Each tile entry is a 2-byte offset of the pixel data from vram_pixels_start.
@@ -653,6 +657,34 @@ MulHLIXBy24:
 	lea bc,ix
 	push hl \ pop de
 	add ix,ix \ adc hl,hl
+	ret
+	
+spiParam:
+	scf
+	.db $30	;JR NC,?
+spiCmd:
+	or a
+	ld hl,mpSpiFifo
+	ld b,3
+_
+	rla
+	rla
+	rla
+	ld (hl),a
+	djnz -_
+	ld l,mpSpiTransfer & $FF
+	ld (hl),$01
+	ld l,(mpSpiStatus + 1) & $FF
+_
+	ld a,(hl)
+	and $F0
+	jr nz,-_
+	dec l
+_
+	bit 2,(hl)
+	jr nz,-_
+	ld l,mpSpiTransfer & $FF
+	ld (hl),a
 	ret
 	
 ; The first ROM in the current list frame.

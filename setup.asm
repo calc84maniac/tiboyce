@@ -390,24 +390,34 @@ StartFromHere:
 	push hl
 	ld hl,(mpLcdCtrl)
 	push hl
-	ld hl,$463B01
-	ACALL(GetAndSetLCDTiming)
-	push de
+	ACALL(GetLCDTiming)
+	
+	ld hl,vRam
+	push hl
+	pop de
+	inc de
+	ld bc,320*240*2-1
+	ld (hl),0
+	ldir
 	
 	APTR(palettecode)
 	ld de,mpLcdPalette
 	ld bc,palettecodesize
 	ldir
 	
-	ld hl,$0C25
-	ld (mpLcdCtrl),hl
+#ifdef DBGNOSCALE
+	ACALL(Set8BitWindow)
+#else
+	ACALL(Set4BitWindow)
+#endif
+	
 	ld hl,gb_frame_buffer_1
 	ld (mpLcdBase),hl
 	ld (current_buffer),hl
 	push hl
 	pop de
 	inc de
-#ifdef DBGNOSCALE
+#if 0
 	ld a,BLACK_BYTE
 	call SetStringBgColor
 	ld bc,160*144
@@ -428,7 +438,11 @@ StartFromHere:
 	call SetStringColor
 #else
 	ld bc,320*240-1
+#ifdef DBGNOSCALE
+	ld (hl),WHITE
+#else
 	ld (hl),WHITE_BYTE
+#endif
 	ldir
 #endif
 	
@@ -524,7 +538,11 @@ _
 	  sla h
 	  ccf
 	  sbc a,a
+#ifdef DBGNOSCALE
+	  or $01
+#else
 	  or $11
+#endif
 	  sla l
 	  jr nc,$+5 \ rlca \ adc a,0
 	  ld (de),a
@@ -995,15 +1013,14 @@ _
 	ld bc,320*240*2-1
 	ld (hl),$FF
 	ldir
-	ld b,a
+	ld c,a
 	ld a,$D0
 	ld mb,a
 	ld a,2
 	ld (mpKeypadScanMode),a
 	xor a
 	ld (mpLcdImsc),a
-	pop hl
-	ACALL(SetLCDTiming)
+	ACALL(SetDefaultLCDWindowAndTiming)
 	pop hl
 	ld (mpLcdCtrl),hl
 	pop hl
@@ -1016,7 +1033,7 @@ _
 	pop hl
 	ld (hl),a
 	pop iy
-	ld a,b
+	ld a,c
 	srl a
 	jr z,+++_
 	jr c,_
@@ -1791,22 +1808,104 @@ _
 	pop bc
 	ret
 	
-	; In: HLU = HFP, H = VFP, L = LcdTiming2
-	; Out: DEU = old HFP, D = old VFP, E = old LcdTiming2 
-GetAndSetLCDTiming:
-	ld ix,mpLcdTiming0
-	ld de,(ix)
-	ld d,(ix+6)
-	ld e,(ix+8)
+	; Out: 12 bytes of timing on the stack
+GetLCDTiming:
+	pop ix
+	ld hl,(mpLcdTiming0+9)
+	push hl
+	ld hl,(mpLcdTiming0+6)
+	push hl
+	ld hl,(mpLcdTiming0+3)
+	push hl
+	ld hl,(mpLcdTiming0)
+	push hl
+	jp (ix)
 	
-	; In: HLU = HFP, H = VFP, L = LcdTiming2
+SetDefaultLCDWindowAndTiming:
+	xor a
+	ld de,319
+	ld hl,239
+SetLCDWindowAndTiming:
+	push hl
+	 ld b,3
+_
+	 ld hl,mpLcdIcr
+	 ld (hl),4
+	 ld l,mpLcdRis & $FF
+_
+	 bit 2,(hl)
+	 jr z,-_
+	 djnz --_
+	 ld l,mpLcdCtrl & $FF
+	 res 0,(hl)
+	 push af
+	  ld a,$2A
+	  call spiCmd
+	  call spiParam
+	 pop af
+	 call spiParam
+	 ld a,d
+	 call spiParam
+	 ld a,e
+	 call spiParam
+	pop de
+	ld a,$2B
+	call spiCmd
+	call spiParam
+	ld a,d
+	call spiParam
+	call spiParam
+	ld a,e
+	call spiParam
+	ld a,$2C
+	call spiCmd
+	ld hl,mpLcdCtrl
+	set 0,(hl)
+	
+	; In: 12 bytes of timing on the stack
 SetLCDTiming:
-	ld ix,mpLcdTiming0
-	ld (ix+8),l
-	ld (ix+6),h
-	ld l,(ix)
-	ld h,(ix+1)
-	ld (ix),hl
+	pop ix
+	pop hl
+	ld (mpLcdTiming0),hl
+	pop hl
+	ld (mpLcdTiming0+3),hl
+	pop hl
+	ld (mpLcdTiming0+6),hl
+	pop hl
+	ld (mpLcdTiming0+9),hl
+	jp (ix)
+	
+Set8BitWindow:
+	ld hl,$011F78
+	push hl
+	ld hl,$0200F0
+	push hl
+	ld hl,$084F0D
+	push hl
+	ld hl,$040344
+	push hl
+	ld a,80
+	ld de,239
+	ld hl,48*256 + 191
+	ACALL(SetLCDWindowAndTiming)
+	
+	ld hl,$0C27
+	ld (mpLcdCtrl),hl
+	ret
+	
+Set4BitWindow:
+	ld hl,$00EF78
+	push hl
+	ld hl,$01043B
+	push hl
+	ld hl,$093F1F
+	push hl
+	ld hl,$460338
+	push hl
+	ACALL(SetDefaultLCDWindowAndTiming)
+	
+	ld hl,$0C25
+	ld (mpLcdCtrl),hl
 	ret
 	
 IdentifyDefaultPalette:
