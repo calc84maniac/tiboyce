@@ -1,12 +1,6 @@
 #define CALL_STACK_DEPTH 32
 #define MEM_CYCLE_LUT_SIZE 8*3
 
-#ifdef DEBUG
-#ifndef CEMU
-#define DBGNOSCALE
-#endif
-#endif
-
 #macro ASSERT_NC
 #ifdef DEBUG
 	jr c,$
@@ -806,8 +800,8 @@ palette_obj1_colors:
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	
-	; Pad to an even number of bytes
-	.block (-$) & 1
+	; Pad to an odd number of bytes
+	.block (~$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -841,6 +835,8 @@ TimeZone:
 ; Daylight saving time (0=Off, 1=On)
 DaylightSavingTime:
 	.db 0
+ScalingMode:
+	.db 1
 	
 ; Number of key bytes
 	.db key_config_count

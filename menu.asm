@@ -89,6 +89,9 @@ _
 	 ld (timeZoneOffset),hl
 	pop hl
 	
+	; Scaling mode
+	inc hl
+	
 	; Key configuration
 	ld ix,key_smc_turbo
 	push hl
@@ -307,9 +310,7 @@ _
 	 ld (hl),BLACK_BYTE
 	 push hl
 	  ldir
-#ifdef DBGNOSCALE
-	  ACALL(Set8BitWindow)
-#endif
+	  ACALL(SetScalingMode)
 	 pop de
 	pop hl
 	ld (mpLcdBase),hl
@@ -516,14 +517,17 @@ draw_mini_screen:
 	ld hl,160*(120-72) + 80 - 4
 	ld de,(current_buffer)
 	add hl,de
+	ld ix,scanlineLUT_1
 	ld a,d
-	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
-	ld d,a
+	cp (gb_frame_buffer_1 >> 8) & $FF
+	jr nz,_
+	ld ix,scanlineLUT_2
+_
 	ld bc,80*256 + 144
-	ld a,2
 draw_mini_screen_row_loop:
+	ld de,(ix)
+	lea ix,ix+3
 	push bc
-	 ld c,a
 draw_mini_screen_pixel_loop:
 	 ld a,(de)
 	 ld (hl),a
@@ -533,21 +537,8 @@ draw_mini_screen_pixel_loop:
 	 inc de
 	 inc hl
 	 djnz draw_mini_screen_pixel_loop
-	 ld a,c
 	 ld c,80
 	 add hl,bc
-#ifndef DBGNOSCALE
-	 dec a
-	 jr nz,_
-	 ld a,3
-	 jr ++_
-_
-	 ex de,hl
-	 add hl,bc
-	 add hl,bc
-	 ex de,hl
-_
-#endif
 	pop bc
 	dec c
 	jr nz,draw_mini_screen_row_loop
@@ -679,6 +670,7 @@ OptionList:
 	.dw OptionPaletteSelection+1
 	.dw OptionTimeZone+1
 	.dw OptionDST+1
+	.dw OptionScalingMode+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -732,16 +724,18 @@ EmulatorTitle:
 	.db ITEM_CMD,1, 180,1,"Exit TI-Boy CE",0
 	
 GraphicsMenu:
-	.db 5
+	.db 6
 	.db 5,12,"Graphics Options",0
+	.db "",0
+	.db ITEM_OPTION,6, 70,1,"Scaling mode: %-10s",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,0, 70,1,"Frameskip type: %-6s",0
+	.db ITEM_OPTION,0, 90,1,"Frameskip type: %-6s",0
 	.db "",0
-	.db ITEM_DIGIT,2, 80,1,"Frameskip value: %u",0
+	.db ITEM_DIGIT,2, 100,1,"Frameskip value: %u",0
 	.db "",0
-	.db ITEM_OPTION,1, 100,1,"FPS display: %-3s",0
+	.db ITEM_OPTION,1, 120,1,"FPS display: %-3s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
-	.db ITEM_OPTION,3, 120,1,"Palette selection: %-10s",0
+	.db ITEM_OPTION,3, 140,1,"Palette selection: %-10s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -788,6 +782,11 @@ OptionFrameskipType:
 	.db "manual",0
 	.db "auto",0
 	.db "off",0
+	
+OptionScalingMode:
+	.db 2
+	.db "no scaling",0
+	.db "fullscreen",0
 	
 OptionFPSDisplay:
 OptionAutoArchive:

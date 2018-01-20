@@ -38,7 +38,9 @@ vfps = $+1
 	   ; Swap buffers
 	   call prepare_next_frame
 	   
-#ifndef DBGNOSCALE
+	   ld a,(ScalingMode)
+	   or a
+	   jr z,++_
 	   ; EXPAND DONG
 	   ld a,144/3
 	   ex de,hl
@@ -60,9 +62,7 @@ _
 	   ldir
 	   dec a
 	   jr nz,-_
-#else
-	   xor a
-#endif
+_
 	   
 fps_display_smc:
 	   jr z,NoFPSDisplay
@@ -460,13 +460,12 @@ convert_palette_pixel_loop:
 	ret
 	
 convert_palette_setup:
-#ifdef DBGNOSCALE
-	ld hl,convert_palette_LUT + 3
-#else
+	ld a,(ScalingMode)
+	or a
 	ld hl,convert_palette_LUT + $23
-#endif
-	ld a,(hram_base+BGP)
 	ld b,4
+	ld a,(hram_base+BGP)
+	jr z,convert_palette_setup_noscale
 _
 	rlca
 	rlca
@@ -475,19 +474,30 @@ _
 	add a,BG_COLOR_0
 	ld e,a
 	ld a,d
-#ifndef DBGNOSCALE
 	ld d,$11
 	mlt de
-#endif
 	dec l
 	ld (hl),e
-#ifndef DBGNOSCALE
 	jr z,_
 	ld de,-$10
 	add hl,de
-#endif
 _
 	djnz --_
+	ex de,hl
+	ret
+	
+convert_palette_setup_noscale:
+	ld l,3
+_
+	rlca
+	rlca
+	ld d,a
+	and 3
+	add a,BG_COLOR_0
+	dec l
+	ld (hl),a
+	ld a,d
+	djnz -_
 	ex de,hl
 	ret
 	

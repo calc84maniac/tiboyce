@@ -392,24 +392,16 @@ StartFromHere:
 	push hl
 	ACALL(GetLCDTiming)
 	
-	ld hl,vRam
-	push hl
-	pop de
-	inc de
-	ld bc,320*240*2-1
-	ld (hl),0
-	ldir
-	
 	APTR(palettecode)
 	ld de,mpLcdPalette
 	ld bc,palettecodesize
 	ldir
 	
-#ifdef DBGNOSCALE
-	ACALL(Set8BitWindow)
-#else
-	ACALL(Set4BitWindow)
-#endif
+	ld hl,$0C25
+	ld (mpLcdCtrl),hl
+	
+	ld hl,scanlineLUT_1
+	ld (scanlineLUT_ptr),hl
 	
 	ld hl,gb_frame_buffer_1
 	ld (mpLcdBase),hl
@@ -438,11 +430,7 @@ StartFromHere:
 	call SetStringColor
 #else
 	ld bc,320*240-1
-#ifdef DBGNOSCALE
-	ld (hl),WHITE
-#else
-	ld (hl),WHITE_BYTE
-#endif
+	ld (hl),BLACK_BYTE
 	ldir
 #endif
 	
@@ -488,38 +476,6 @@ StartFromHere:
 	APTR(CmdExit)
 	ld (z80codebase+CmdExitSMC),hl
 	
-	ld ix,scanlineLUT_1
-	ld (scanlineLUT_ptr),ix
-	ld hl,gb_frame_buffer_1
-	ld de,160
-#ifdef DBGNOSCALE
-	ld c,2
-_
-	ld b,144/3
-#else
-	ld b,144/3*2
-#endif
-_
-	ld (ix),hl
-	add hl,de
-#ifndef DBGNOSCALE
-	add hl,de
-#endif
-	ld (ix+3),hl
-	add hl,de
-	ld (ix+6),hl
-	add hl,de
-#ifndef DBGNOSCALE
-	add hl,de
-#endif
-	lea ix,ix+9
-	djnz -_
-#ifdef DBGNOSCALE
-	ld hl,gb_frame_buffer_2
-	dec c
-	jr nz,--_
-#endif
-	
 	ld hl,convert_palette_LUT
 _
 	ld (hl),l
@@ -538,11 +494,7 @@ _
 	  sla h
 	  ccf
 	  sbc a,a
-#ifdef DBGNOSCALE
-	  or $01
-#else
-	  or $11
-#endif
+	  or $01	; The VRAM will be converted later to double scale if needed
 	  sla l
 	  jr nc,$+5 \ rlca \ adc a,0
 	  ld (de),a
@@ -837,6 +789,8 @@ _
 	call prepare_next_frame
 	ld hl,(curr_palettes)
 	call update_palettes_always
+	
+	ACALL(SetScalingMode)
 	
 	call flush_code_reset_padding
 
@@ -1875,6 +1829,52 @@ SetLCDTiming:
 	ld (mpLcdTiming0+9),hl
 	jp (ix)
 	
+SetScalingMode:
+	ld a,(ScalingMode)
+	or a
+	ld a,$33
+	jr nz,_
+	ld a,$3
+_	
+	ld (scaling_mode_smc_1),a
+	and $11
+	ld (scaling_mode_smc_2),a
+	ld c,a
+	dec a
+	ld b,WHITE
+	mlt bc
+	ld a,c
+	ld (scaling_mode_smc_3),a
+	
+	ld ix,scanlineLUT_1
+	ld hl,gb_frame_buffer_1
+	ld de,160
+	jr nz,SetDoubleScalingMode
+	ld c,2
+_
+	ld b,144
+_
+	ld (ix),hl
+	add hl,de
+	lea ix,ix+3
+	djnz -_
+	ld hl,gb_frame_buffer_2
+	dec c
+	jr nz,--_
+	
+	ld hl,vram_pixels_start
+	ld c,$6000 >> 8
+_
+	ld a,(hl)
+	inc a
+	and $0F
+	dec a
+	ld (hl),a
+	inc hl
+	djnz -_
+	dec c
+	jr nz,-_
+	
 Set8BitWindow:
 	ld hl,$011F78
 	push hl
@@ -1892,6 +1892,30 @@ Set8BitWindow:
 	ld hl,$0C27
 	ld (mpLcdCtrl),hl
 	ret
+	
+SetDoubleScalingMode:
+	ld b,144/3*2
+_
+	ld (ix),hl
+	add hl,de
+	add hl,de
+	ld (ix+3),hl
+	add hl,de
+	ld (ix+6),hl
+	add hl,de
+	add hl,de
+	lea ix,ix+9
+	djnz -_
+	
+	ld hl,vram_pixels_start
+	ld c,$6000 >> 8
+_
+	ld a,(hl)
+	rld
+	inc hl
+	djnz -_
+	dec c
+	jr nz,-_
 	
 Set4BitWindow:
 	ld hl,$00EF78
