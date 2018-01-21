@@ -1923,11 +1923,14 @@ _
 	dec c
 	jr nz,-_
 	
+	ld a,(SkinDisplay)
+	rra
+	jr nc,_
 	ld hl,(skin_file_ptr)
 	ex de,hl
-	scf
 	sbc hl,hl
 	add hl,de
+_
 	ld hl,(mpLcdBase)
 	push hl
 	 jr nc,no_skin

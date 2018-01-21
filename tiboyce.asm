@@ -818,8 +818,8 @@ palette_obj1_colors:
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	
-	; Pad to an odd number of bytes
-	.block (~$) & 1
+	; Pad to an even number of bytes
+	.block (-$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -853,7 +853,11 @@ TimeZone:
 ; Daylight saving time (0=Off, 1=On)
 DaylightSavingTime:
 	.db 0
+; Scaling mode (0=No scaling, 1=Fullscreen)
 ScalingMode:
+	.db 1
+; Skin display (0=Off, 1=On)
+SkinDisplay:
 	.db 1
 	
 ; Number of key bytes

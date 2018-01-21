@@ -91,6 +91,8 @@ _
 	
 	; Scaling mode
 	inc hl
+	; Skin display
+	inc hl
 	
 	; Key configuration
 	ld ix,key_smc_turbo
@@ -663,6 +665,7 @@ OptionList:
 	.dw OptionTimeZone+1
 	.dw OptionDST+1
 	.dw OptionScalingMode+1
+	.dw OptionSkinDisplay+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -716,20 +719,22 @@ EmulatorTitle:
 	.db ITEM_CMD,1, 180,1,"Exit TI-Boy CE",0
 	
 GraphicsMenu:
-	.db 6
+	.db 7
 	.db 5,12,"Graphics Options",0
 	.db "",0
 	.db ITEM_OPTION,6, 70,1,"Scaling mode: %-10s",0
+	.db "Display a skin in \"no scaling\" mode.\n Requires the TIBoySkn.8xv AppVar.",0
+	.db ITEM_OPTION,7, 80,1,"Skin display: %-3s",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,0, 90,1,"Frameskip type: %-6s",0
+	.db ITEM_OPTION,0, 100,1,"Frameskip type: %-6s",0
 	.db "",0
-	.db ITEM_DIGIT,2, 100,1,"Frameskip value: %u",0
+	.db ITEM_DIGIT,2, 110,1,"Frameskip value: %u",0
 	.db "",0
-	.db ITEM_OPTION,1, 120,1,"FPS display: %-3s",0
+	.db ITEM_OPTION,1, 130,1,"FPS display: %-3s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
-	.db ITEM_OPTION,3, 140,1,"Palette selection: %-10s",0
+	.db ITEM_OPTION,3, 150,1,"Palette selection: %-10s",0
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 160,1,"Back",0
+	.db ITEM_LINK,0, 170,1,"Back",0
 	
 ControlsMenu:
 	.db 11
@@ -783,6 +788,7 @@ OptionScalingMode:
 OptionFPSDisplay:
 OptionAutoArchive:
 OptionDST:
+OptionSkinDisplay:
 	.db 2
 	.db "off",0
 	.db "on",0
