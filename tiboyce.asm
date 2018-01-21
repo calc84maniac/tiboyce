@@ -681,6 +681,18 @@ _
 	ld (hl),a
 	ret
 	
+rle_done:
+	ACALL(Set8BitWindow)
+	ld hl,convert_palette_LUT
+	ld de,mpLcdPalette
+	ld bc,32
+	ldir
+_
+	dec l
+	ld (hl),l
+	jr nz,-_
+	ret
+	
 ; The first ROM in the current list frame.
 menuFrame:
 	.dl 0
@@ -719,9 +731,15 @@ SelfName:
 ; The name of the config file.
 ConfigFileName:
 	.db appVarObj,"TIBoyCfg"
+; The name of the skin file.
+SkinFileName:
+	.db appVarObj,"TIBoySkn"
 	
 ; The backup of SP before beginning emulation.
 saveSP:
+	.dl 0
+; The pointer to the skin file data (or 0 if it doesn't exist)
+skin_file_ptr:
 	.dl 0
 ; The start address of Game Boy ROM page 0.
 rom_start:

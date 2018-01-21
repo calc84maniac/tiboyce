@@ -370,6 +370,14 @@ RestartFromHere:
 	ldir
 	
 StartFromHere:
+	ld hl,SkinFileName
+	ACALL(LookUpAppvar)
+	jr nc,_
+	or a
+	sbc hl,hl
+_
+	ld (skin_file_ptr),hl
+	
 	di
 	push iy
 	ld hl,mpFlashWaitStates
@@ -1849,51 +1857,8 @@ _
 	ld ix,scanlineLUT_1
 	ld hl,gb_frame_buffer_1
 	ld de,160
-	jr nz,SetDoubleScalingMode
-	ld c,2
-_
-	ld b,144
-_
-	ld (ix),hl
-	add hl,de
-	lea ix,ix+3
-	djnz -_
-	ld hl,gb_frame_buffer_2
-	dec c
-	jr nz,--_
+	jr z,SetNoScalingMode
 	
-	ld hl,vram_pixels_start
-	ld c,$6000 >> 8
-_
-	ld a,(hl)
-	inc a
-	and $0F
-	dec a
-	ld (hl),a
-	inc hl
-	djnz -_
-	dec c
-	jr nz,-_
-	
-Set8BitWindow:
-	ld hl,$011F78
-	push hl
-	ld hl,$0200F0
-	push hl
-	ld hl,$084F0D
-	push hl
-	ld hl,$040344
-	push hl
-	ld a,80
-	ld de,239
-	ld hl,48*256 + 191
-	ACALL(SetLCDWindowAndTiming)
-	
-	ld hl,$0C27
-	ld (mpLcdCtrl),hl
-	ret
-	
-SetDoubleScalingMode:
 	ld b,144/3*2
 _
 	ld (ix),hl
@@ -1929,6 +1894,116 @@ Set4BitWindow:
 	ACALL(SetDefaultLCDWindowAndTiming)
 	
 	ld hl,$0C25
+	ld (mpLcdCtrl),hl
+	ret
+	
+SetNoScalingMode:
+	ld c,2
+_
+	ld b,144
+_
+	ld (ix),hl
+	add hl,de
+	lea ix,ix+3
+	djnz -_
+	ld hl,gb_frame_buffer_2
+	dec c
+	jr nz,--_
+	
+	ld hl,vram_pixels_start
+	ld c,$6000 >> 8
+_
+	ld a,(hl)
+	inc a
+	and $0F
+	dec a
+	ld (hl),a
+	inc hl
+	djnz -_
+	dec c
+	jr nz,-_
+	
+	ld hl,(skin_file_ptr)
+	ex de,hl
+	scf
+	sbc hl,hl
+	add hl,de
+	ld hl,(mpLcdBase)
+	push hl
+	 jr nc,no_skin
+	 push de
+	  ld hl,mpLcdPalette
+	  ld de,convert_palette_LUT
+	  ld bc,32
+	  push hl
+	   ldir
+	  pop de
+	 pop hl
+	 ld c,32
+	 ldir
+	pop de
+	ld b,160*240/256
+	
+rle_decode:
+	ld a,(hl)
+	cp $10
+	jr c,rle_literal
+	 
+	rlca
+	rlca
+	rlca
+	rlca
+	ld ixh,a
+	and $0F
+	inc a
+	ld ixl,a
+	ld a,ixh
+	xor (hl)
+	and $F0
+	xor (hl)
+	ex de,hl
+_
+	ld (hl),a
+	cpi
+	jp po,rle_done
+	dec ixl
+	jr nz,-_
+	ex de,hl
+	inc hl
+	jr rle_decode
+	
+rle_literal:
+	inc a
+	inc hl
+_
+	ldi
+	jp po,rle_done
+	dec a
+	jr nz,-_
+	jr rle_decode
+	
+no_skin:
+	pop de
+	inc de
+	ld (hl),BLACK_BYTE
+	ld bc,160*240-1
+	ldir
+	
+Set8BitWindow:
+	ld hl,$011F78
+	push hl
+	ld hl,$0200F0
+	push hl
+	ld hl,$084F0D
+	push hl
+	ld hl,$040344
+	push hl
+	ld a,80
+	ld de,239
+	ld hl,48*256 + 191
+	ACALL(SetLCDWindowAndTiming)
+	
+	ld hl,$0C27
 	ld (mpLcdCtrl),hl
 	ret
 	

@@ -302,16 +302,8 @@ _
 	 ACALL(GetKeyCode)
 	 or a
 	 jr nz,-_ 
-	 ld hl,(mpLcdBase)
-	 push hl
-	 pop de
-	 inc de
-	 ld bc,160*240-1
-	 ld (hl),BLACK_BYTE
-	 push hl
-	  ldir
-	  ACALL(SetScalingMode)
-	 pop de
+	 
+	 ACALL(SetScalingMode)
 	pop hl
 	ld (mpLcdBase),hl
 #if 0
