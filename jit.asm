@@ -56,6 +56,8 @@ flush_code:
 	ldir
 	; Set the cached interrupt return address to NULL
 	ld (int_cached_return),bc
+	; Set the cached lookup address to NULL
+	ld (lookup_gb_cache_jit_address),bc
 	; Reset the event address
 	ld hl,event_value
 	ld.sis (event_address),hl
@@ -225,6 +227,12 @@ _
 ;          A = NEGATIVE number of cycles until block end, or 0 if at start of RAM block
 ; Destroys F,BC,HL
 lookup_gb_code_address:
+	or a
+lookup_gb_cache_jit_address = $+1
+	ld hl,0
+	sbc hl,de
+	jr z,lookup_gb_cache_found
+	ld (lookup_gb_cache_jit_address),de
 #ifdef 0
 	push de
 	 APRINTF(LookupGBMessage)
@@ -262,10 +270,9 @@ lookup_gb_found_loop:
 lookup_gb_add:
 	 add iy,bc
 	 jr nc,lookup_gb_found_loop
-	 lea bc,iy
-	 sbc hl,hl
-	 adc hl,bc
-	 jr nz,$
+	 dec iy
+	 add iy,iy
+	 jr nc,runtime_error
 	pop iy
 #ifdef 0
 	push af
@@ -276,17 +283,26 @@ lookup_gb_add:
 	 pop ix
 	pop af
 #endif
+	ld (lookup_gb_cache_gb_address),ix
+	ld (lookup_gb_cache_cycles),a
+	ret.l
+	
+lookup_gb_cache_found:
+lookup_gb_cache_gb_address = $+2
+	ld ix,0
+lookup_gb_cache_cycles = $+1
+	ld a,0
 	ret.l
 	
 lookup_gb_found_start:
 	lea hl,ix
+	ld (lookup_gb_cache_gb_address),hl
 	add hl,hl
+_
+	ld (lookup_gb_cache_cycles),a
 	ret.l nc
 	xor a
-	;ld hl,RAM_PREFIX_SIZE
-	;add hl,de
-	;ex de,hl
-	ret.l
+	jr -_
 	
 	; If a cached code lookup misses, resolve it and insert into the cache
 lookup_code_cached_miss:
@@ -864,6 +880,11 @@ rerecompile_found_base:
 	inc de
 	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 - 1
 	ldir
+	
+	; Set the cached interrupt return address to NULL
+	ld (int_cached_return),bc
+	; Set the cached lookup address to NULL
+	ld (lookup_gb_cache_jit_address),bc
 	
 	ei
 	jp.sis coherency_return
