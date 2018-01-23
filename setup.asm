@@ -481,9 +481,6 @@ _
 	inc b
 	ldir
 	
-	APTR(CmdExit)
-	ld (z80codebase+CmdExitSMC),hl
-	
 	ld hl,convert_palette_LUT
 _
 	ld (hl),l
@@ -587,6 +584,7 @@ _
 	ld (z80codebase+ram_size_smc),a
 	
 	xor a
+	ld (exitReason),a
 	ld (memroutine_rtc_smc_1),a
 	ld a,$18	;JR
 	ld (memroutine_rtc_smc_2),a
@@ -825,7 +823,7 @@ _
 	 ld ix,trigger_event_startup
 	 jp set_gb_stack
 	
-CmdLoadSaveState:
+ExitEmulation:
 	call.il get_event_gb_address
 	ld ix,state_start+state_size
 	ld (ix-state_size+STATE_REG_PC),hl
@@ -927,46 +925,42 @@ _
 	ld bc,$0200
 	ldir
 	
-	ld a,3
-	
-CmdExit:
-	push af
-	 ld a,(ram_size)
-	 or a
-	 jr z,++_
-	 call update_rtc
-	 ld ix,ram_size-47
-	 ld bc,(ix+47)
-	 inc.s bc
-	 add ix,bc
-	 sbc hl,hl
-	 ld de,z80codebase+rtc_latched
-	 ld b,10
+	; Handle RTC saving
+	ld a,(ram_size)
+	or a
+	jr z,++_
+	call update_rtc
+	ld ix,ram_size-47
+	ld bc,(ix+47)
+	inc.s bc
+	add ix,bc
+	sbc hl,hl
+	ld de,z80codebase+rtc_latched
+	ld b,10
 _
-	 ld a,(de)
-	 ld (ix),a
-	 ld (ix+1),hl
-	 inc de
-	 lea ix,ix+4
-	 djnz -_
-	 push ix
-	  ACALL(GetUnixTimeStamp)
-	  ex de,hl
-	 pop hl
-	 ld (hl),ix
-	 inc hl
-	 inc hl
-	 inc hl
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	 inc hl
-	 xor a
-	 ld (hl),a
-	 inc hl
-	 ld (hl),a
+	ld a,(de)
+	ld (ix),a
+	ld (ix+1),hl
+	inc de
+	lea ix,ix+4
+	djnz -_
+	push ix
+	 ACALL(GetUnixTimeStamp)
+	 ex de,hl
+	pop hl
+	ld (hl),ix
+	inc hl
+	inc hl
+	inc hl
+	ld (hl),de
+	inc hl
+	inc hl
+	inc hl
+	xor a
+	ld (hl),a
+	inc hl
+	ld (hl),a
 _
-	pop af
 	ld sp,(saveSP)
 	ld hl,vRam
 	push hl
@@ -975,7 +969,6 @@ _
 	ld bc,320*240*2-1
 	ld (hl),$FF
 	ldir
-	ld c,a
 	ld a,$D0
 	ld mb,a
 	ld a,2
@@ -995,7 +988,8 @@ _
 	pop hl
 	ld (hl),a
 	pop iy
-	ld a,c
+	ld a,(exitReason)
+	dec a
 	srl a
 	jr z,+++_
 	jr c,_

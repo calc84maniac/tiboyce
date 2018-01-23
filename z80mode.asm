@@ -70,17 +70,17 @@ rst38h:
 on_interrupt:
 	 inc a
 	 ld.lil (mpIntAcknowledge),a
-CmdExitSMC = $+2
-	 jp.lil 0
+	 inc a
+	 ld.lil (exitReason),a
+frame_interrupt_return:
+	pop af
+	ei
+	ret
 	 
 Z80Error:
 	di
 	jp.lil Z80Error_helper
 	
-frame_interrupt_return:
-	pop af
-	ei
-	ret
 	
 do_push_and_return:
 	ex (sp),ix

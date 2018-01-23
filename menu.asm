@@ -228,13 +228,9 @@ _
 ItemSelectDigit:
 	cp 2
 	jr z,menu_loop
-	APTR(CmdLoadSaveState)
-	ex de,hl
-	ld hl,z80codebase+not_expired
-	; Emit DI
-	ld (hl),$F3 \ inc hl
-	; Emit JP.LIL CmdLoadSaveState
-	ld (hl),$5B \ inc hl \ ld (hl),$C3 \ inc hl \ ld (hl),de
+	ld a,4
+CmdExit:
+	ld (exitReason),a
 	jr CmdReturnToGame
 	
 BackToMainMenu:
@@ -671,7 +667,7 @@ CmdList:
 	.dw CmdExit+1
 	.dw CmdExit+1
 	.dw CmdExit+1
-	.dw CmdReturnToGame+1
+	.dw CmdExit+1
 	
 ItemDisplayCallbacks:
 	.dw ItemDisplayLink+1
@@ -710,13 +706,13 @@ EmulatorTitle:
 	.db "Select to manage miscellaneous options.",0
 	.db ITEM_LINK,3, 120,1,"Emulation Options",0
 	.db "Select to load a new game\n (will exit a currently playing game).",0
-	.db ITEM_CMD,0, 140,1,"Load new game",0
+	.db ITEM_CMD,1, 140,1,"Load new game",0
 	.db "Select to reset the Game Boy\n with the current game loaded.",0
-	.db ITEM_CMD,2, 150,1,"Restart game",0
+	.db ITEM_CMD,3, 150,1,"Restart game",0
 	.db "Select to exit this menu and\n resume gameplay.",0
-	.db ITEM_CMD,3, 160,1,"Return to game",0
+	.db ITEM_CMD,0, 160,1,"Return to game",0
 	.db "Select to exit the emulator and\n return to TI-OS.",0
-	.db ITEM_CMD,1, 180,1,"Exit TI-Boy CE",0
+	.db ITEM_CMD,2, 180,1,"Exit TI-Boy CE",0
 	
 GraphicsMenu:
 	.db 7

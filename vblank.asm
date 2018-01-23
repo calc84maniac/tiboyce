@@ -209,6 +209,18 @@ key_smc_menu:
 	   ld hl,(curr_palettes)
 	   call update_palettes_always
 _
+exitReason = $+1
+	   ld a,0
+	   or a
+	   jr z,_
+	   APTR(ExitEmulation)
+	   ex de,hl
+	   ld hl,z80codebase+not_expired
+	   ; Emit DI
+	   ld (hl),$F3 \ inc hl
+	   ; Emit JP.LIL CmdLoadSaveState
+	   ld (hl),$5B \ inc hl \ ld (hl),$C3 \ inc hl \ ld (hl),de
+_
 	  pop bc
 	 pop ix
 	pop de
