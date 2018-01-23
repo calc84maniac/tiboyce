@@ -551,22 +551,28 @@ schedule_event_helper_post_lookup:
 schedule_event_cycle_loop:
 	dec h
 	ld l,(ix)
+	ld c,(hl)
+	add ix,bc
 	dec h
 	ld c,(hl)
 	ex de,hl
 	add hl,bc
 	ex de,hl
 	inc h
-	ld c,(hl)
-	add ix,bc
 	inc h
 	add a,(hl)	; If this is a block-ender, -1 is added and the loop exits.
-	jr nc,schedule_event_cycle_loop
+	jr c,schedule_event_now
+	inc c
+	bit 3,c
+	jr z,schedule_event_cycle_loop
+	sub iyl
+	jr schedule_event_anyway
 	
 schedule_event_now:
 	sub iyl
 	jr nc,schedule_event_never
 	
+schedule_event_anyway:
 	ex de,hl
 	ei
 	jp.sis schedule_event_enable
