@@ -656,7 +656,7 @@ MenuList:
 OptionList:
 	.dw OptionFrameskipType+1
 	.dw OptionFPSDisplay+1
-	.dw OptionAutoArchive+1
+	.dw OptionAutoSaveState+1
 	.dw OptionPaletteSelection+1
 	.dw OptionTimeZone+1
 	.dw OptionDST+1
@@ -761,8 +761,8 @@ ControlsMenu:
 EmulationMenu:
 	.db 4
 	.db 5,11,"Emulation Options",0
-	.db "Enable to automatically archive saves.",0
-	.db ITEM_OPTION,2, 50,1,"Auto-Archive: %-3s",0
+	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
+	.db ITEM_OPTION,2, 50,1,"Auto Save State: %-3s",0
 	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
 	.db ITEM_OPTION,4, 70,1,"Time Zone: UTC%-6s",0
 	.db "Set to on if DST is currently active.",0
@@ -782,7 +782,7 @@ OptionScalingMode:
 	.db "fullscreen",0
 	
 OptionFPSDisplay:
-OptionAutoArchive:
+OptionAutoSaveState:
 OptionDST:
 OptionSkinDisplay:
 	.db 2

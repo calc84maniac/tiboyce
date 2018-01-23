@@ -70,6 +70,7 @@ STATE_INTERRUPTS = 16
 STATE_ROM_BANK = 17
 STATE_RAM_BANK = 18
 STATE_MBC_MODE = 19
+STATE_END = 20
 
 ; Constant color palette entries
 BLUE = 0
@@ -842,7 +843,7 @@ FrameskipType:
 FPSDisplay:
 	.db 0
 ; Auto archive (0=Off, 1=On)
-AutoArchive:
+AutoSaveState:
 	.db 1
 ; Palette selection (0=Default, 1...=Manual)
 PaletteSelection:

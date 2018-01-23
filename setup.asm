@@ -349,7 +349,14 @@ RepopulateMenuTrampoline:
 StartROM:
 	ACALL_SAFERET(LoadROMAndRAM)
 	ret c
-
+	
+	ld a,'A' - '0'
+	ld (current_state),a
+	ACALL(LoadStateFile)
+	ld a,0
+	ld (current_state),a
+	jr nc,StartFromHere
+	
 RestartFromHere:
 	ld hl,vram_start
 	push hl
@@ -920,9 +927,17 @@ _
 _
 	ld (ix-state_size+STATE_RAM_BANK),a
 	
-	ld hl,hram_start
+	; Zero-fill the rest
+	lea hl,ix-state_size+STATE_END
+	lea de,ix-state_size+STATE_END+1
+	ld bc,state_size-STATE_END-1
+	ld (hl),b
+	ldir
+	
+	; Copy into the state file
+	ld l,c
 	ld de,hram_saved
-	ld bc,$0200
+	ld b,$0200 >> 8
 	ldir
 	
 	; Handle RTC saving
@@ -1079,9 +1094,6 @@ _
 	 ld hl,config_start - userMem
 	 ld (asm_prgm_size),hl
 	pop hl
-	ld a,(AutoArchive)
-	or a
-	ret z
 	call _Mov9ToOP1
 	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
 	ret
@@ -1116,7 +1128,7 @@ _
 	  call _CreatePVar4
 	  push hl
 	  pop ix
-	  ld hl,(program_end << 16) | (program_end & $00FF00) | (program_end >> 16)
+	  ld hl,(save_state_size << 16) | (save_state_size & $00FF00) | (save_state_size >> 16)
 	  ld (ix-5),hl
 	 pop hl
 	 call _Mov9ToOP1
@@ -1206,7 +1218,7 @@ _
 	call _EnoughMem
 	ret c
 	ex de,hl
-	ld de,program_end
+	ld de,save_state_size
 	push de
 	 push hl
 	  call _InsertMem
@@ -1486,15 +1498,10 @@ _
 	
 
 SaveRAM:
-	ld hl,program_end
-	push hl
-	 ld de,save_state_prefix_size + 2
-	 call _DelMem
-	pop hl
-	ld de,(hl)
-	ld a,d
-	or e
-	jr z,SaveRAMDeleteMemLoaded
+	ld hl,(ram_size)
+	ld a,h
+	or l
+	jr z,SaveRAMDeleteMem
 	
 	ld hl,ROMName
 	push hl
@@ -1518,7 +1525,7 @@ _
 	 dec hl
 	 inc bc
 	 inc bc
-	 ld de,program_end
+	 ld de,ram_size
 	 call memcmp
 	pop hl
 	jr z,SaveRAMDeleteMem
@@ -1539,24 +1546,87 @@ SaveRAMRecreate:
 	call _CreatePVar4
 	push hl
 	pop ix
-	ld hl,(program_end << 16) | (program_end & $00FF00) | (program_end >> 16)
+	ld hl,(ram_size << 16) | (ram_size & $00FF00) | (ram_size >> 16)
 	ld (ix-5),hl
 	
-	ld a,(AutoArchive)
+	scf
+	jr SaveAutoState
+	
+SaveRAMDeleteMem:
+	ld hl,ram_size
+	ld de,(hl)
+	inc de
+	inc.s de
+	call _DelMem
 	or a
-	ret z
+	
+SaveAutoState:
+	push af
+	 ld hl,ROMName
+	 push hl
+_
+	  inc hl
+	  ld a,(hl)
+	  or a
+	  jr nz,-_
+	  dec hl
+	  ld (hl),'A'
+	  dec hl
+	  ld (hl),'t'
+	 pop hl
+	 call _Mov9ToOP1
+	 call _chkFindSym
+	 call nc,_DelVarArc
+	
+	 ld a,(AutoSaveState)
+	 or a
+	 ld hl,save_state_size
+	 ld de,save_state_prefix_size
+	 jr z,SaveAutoStateDeleteMem
+	 
+	 ld (hl),e
+	 inc hl
+	 ld (hl),d
+	 
+	 ld hl,ROMName
+	 call _Mov9ToOP1
+	 call _CmpPrgNamLen
+	 ld bc,0
+	 call _CreatePVar4
+	 push hl
+	 pop ix
+	 ld hl,(save_state_size << 16) | (save_state_size & $00FF00) | (save_state_size >> 16)
+	 ld (ix-5),hl
+	
+	 ld hl,ROMName
+	 call _Mov9ToOP1
+	 call Arc_Unarc_Safe	; Must be CALL due to special return address handling
+	 jr ArchiveSaveRAM
+	
+SaveAutoStateDeleteMem:
+	 inc de
+	 inc de
+	 call _DelMem
+
+ArchiveSaveRAM:
+	pop af
+	ret nc
+
 	ld hl,ROMName
+	push hl
+_
+	 inc hl
+	 ld a,(hl)
+	 or a
+	 jr nz,-_
+	 dec hl
+	 ld (hl),'V'
+	 dec hl
+	 ld (hl),'A'
+	pop hl
 	call _Mov9ToOP1
 	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
 	ret
-	
-SaveRAMDeleteMem:
-	ld hl,program_end
-	ld de,(hl)
-SaveRAMDeleteMemLoaded:
-	inc de
-	inc.s de
-	jp _DelMem
 	
 LoadStateFile:
 	ld hl,ROMName
@@ -1580,6 +1650,10 @@ _
 	ret c
 	
 	ex de,hl
+	ld a,(current_state)
+	add a,-10
+	jr c,LoadStateFileWithoutRAM
+	
 	ld hl,(save_state_size)
 	sbc.s hl,bc
 	scf
@@ -1593,6 +1667,7 @@ _
 	 or a
 	 sbc.s hl,de
 	pop hl
+_
 	scf
 	ret nz
 	
@@ -1600,6 +1675,13 @@ _
 	ldir
 	or a
 	ret
+	
+LoadStateFileWithoutRAM:
+	; Carry is set
+	ld hl,save_state_prefix_size + 1
+	sbc hl,bc
+	ex de,hl
+	jr -_
 	
 LookUpAppvar:
 	call _Mov9ToOP1
