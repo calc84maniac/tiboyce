@@ -271,7 +271,10 @@ emulator_menu:
 menu_loop:
 	 ACALL(WaitForKey)
 	 or a
-	 jp.sis z,on_interrupt
+	 jr nz,_
+	 ld a,2
+	 jr CmdExit
+_
 	 call get_current_menu_selection
 	 dec a
 	 jr z,menu_down
