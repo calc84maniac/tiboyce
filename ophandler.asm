@@ -385,7 +385,12 @@ _
 	 ; Forcibly skip to scanline 0
 	 sbc hl,hl
 	 ld.sis (frame_cycle_target),hl
+	 ld.sis hl,(div_cycle_count)
 	 ld.sis (div_cycle_count),de
+	 sbc hl,de
+	 ld.sis de,(serial_cycle_count)
+	 add hl,de
+	 ld.sis (serial_cycle_count),hl
 	pop hl
 	exx
 	ei

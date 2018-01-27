@@ -720,6 +720,16 @@ _
 	ld.sis (timer_cycle_target),hl
 _
 	
+	ld a,(iy-ioregs+SC)
+	cpl
+	and $81
+	jr nz,_
+	ld hl,(iy-state_size+STATE_SERIAL_COUNTER)
+	ld.sis (serial_cycle_count),hl
+	ld a,$38 ;JR C (overriding JR NC)
+	ld (z80codebase+serial_enable_smc),a
+_
+	
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
 	jr c,_
@@ -872,6 +882,11 @@ ExitEmulation:
 	add hl,bc
 _
 	ld (ix-state_size+STATE_FRAME_COUNTER),hl
+	
+	ld.sis hl,(serial_cycle_count)
+	or a
+	sbc hl,de
+	ld (ix-state_size+STATE_SERIAL_COUNTER),hl
 	
 	ld.sis hl,(div_cycle_count)
 	add hl,de

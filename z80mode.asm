@@ -192,6 +192,10 @@ event_address = $+1
 	
 	   di
 	   jp.lil schedule_event_helper
+	   
+vblank_handler:
+	   di
+	   jp.lil vblank_helper
 	
 do_event:
 event_value = $+3
@@ -245,10 +249,14 @@ _
 	   or a
 	   sbc hl,de
 	   jr c,_
-	   ld de,-CYCLES_PER_FRAME
-	   add hl,de
+	   ; Make sure carry gets set
+	   ld de,CYCLES_PER_FRAME
+	   sbc hl,de
 _
 	   ex de,hl
+serial_enable_smc = $
+	   jr nc,serial_cycle_handler
+serial_cycle_continue:
 	   add iy,de
 div_cycle_count = $+1
 	   ld hl,0
@@ -281,10 +289,6 @@ _
 event_cycle_loop_shortcut:
 	   jr event_cycle_loop
 	   
-vblank_handler:
-	   di
-	   jp.lil vblank_helper
-	   
 not_expired:
 	   ld hl,IE
 	   ld a,(hl)
@@ -297,20 +301,32 @@ intstate = $+1
 	 pop de
 	pop hl
 	cp iyh
-	jr z,_
+	jr z,event_reschedule
 	ex af,af'
 	jp (ix)
 	
+serial_cycle_handler:
+serial_cycle_count = $+1
+	   ld hl,0
+	   add hl,de
+	   ld (serial_cycle_count),hl
+	   jr c,serial_cycle_continue
+	   ex de,hl
+	   sbc hl,de
+	   jr z,serial_transmit_complete
+	   ex de,hl
+	   ld bc,(frame_cycle_target)
+	   add hl,bc
+	   jr c,_
+	   ld bc,CYCLES_PER_FRAME
+	   add hl,bc
 _
-	push ix
-	push hl
-	 push de
-	  push bc
-	   lea de,ix
-	   ld.lil ix,(event_gb_address)
-	   ld a,(event_cycle_count)
-	   di
-	   jp.lil schedule_event_helper_post_lookup
+	   ld (frame_cycle_target),hl
+	   or a
+	   sbc hl,hl
+	   ld (serial_cycle_count),hl
+serial_cycle_continue_shortcut:
+	   jr serial_cycle_continue
 	
 timer_cycles_reset:
 	   ld hl,IF
@@ -330,6 +346,28 @@ _
 	   ld hl,(div_cycle_count)
 	   jr nz,timer_cycles_reset_loop
 	   jr event_cycle_loop_shortcut
+	   
+event_reschedule:
+	push ix
+	push hl
+	 push de
+	  push bc
+	   lea de,ix
+	   ld.lil ix,(event_gb_address)
+	   ld a,(event_cycle_count)
+	   di
+	   jp.lil schedule_event_helper_post_lookup
+	   
+serial_transmit_complete:
+	   ld hl,SC
+	   res 7,(hl)
+	   dec hl
+	   ld (hl),h
+	   ld l,IF & $FF
+	   set 3,(hl)
+	   ld a,$30	;JR NC
+	   ld (serial_enable_smc),a
+	   jr serial_cycle_continue_shortcut
 	
 trigger_interrupt:
 	   rrca
@@ -994,6 +1032,9 @@ trigger_event_pushed:
 	    ld a,d
 	    or a
 	    jr z,trigger_event_already_triggered
+	    ld hl,(serial_cycle_count)
+	    sbc hl,de
+	    ld (serial_cycle_count),hl
 	    ld hl,(div_cycle_count)
 	    add hl,de
 	    ld (div_cycle_count),hl
@@ -1673,15 +1714,19 @@ writeSChandler:
 	 ld a,(hl)
 	 cpl
 	 and $81
+	 ld a,$30	;JR NC
 	 jr nz,_
-	 res 7,(hl)
-	 dec hl
-	 ld (hl),h
-	 ld l,IF & $FF
-	 set 3,(hl)
+	 call trigger_event
+	 ex af,af'
+	 ; Set this cycle count after setting up the trigger
+	 ld hl,1024
+	 ld (serial_cycle_count),hl
+	 ld a,$38	;JR C
 _
+	 ld (serial_enable_smc),a
 	pop hl
-	jr checkIntPostUpdate
+	ex af,af'
+	ret
 	
 writeINT:
 	ex af,af'
