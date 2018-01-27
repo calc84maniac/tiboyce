@@ -75,6 +75,8 @@ set_gb_stack_done:
 flush_normal:
 	ex af,af'
 	push hl
+	 ld hl,$E5E5DD	;PUSH IX \ PUSH HL
+	 ld (z80codebase+cycle_overflow_flush_smc),hl
 flush_mem_finish:
 	 call lookup_code
 	pop hl

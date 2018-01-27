@@ -179,6 +179,7 @@ cycle_overflow_for_jump:
 	pop ix
 	ld ix,(ix+2)
 cycle_overflow:
+cycle_overflow_flush_smc = $
 	push ix
 	push hl
 	 push de

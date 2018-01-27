@@ -13,7 +13,8 @@ decode_jump_helper:
 	pop hl
 	
 	push af
-	 call identify_waitloop
+	 or a
+	 call nz,identify_waitloop
 	pop af
 	
 	ei

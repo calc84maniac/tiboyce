@@ -955,6 +955,7 @@ _
 	ld b,$0200 >> 8
 	ldir
 	
+ExitEmulationWithoutState:
 	; Handle RTC saving
 	ld a,(ram_size)
 	or a
@@ -1593,11 +1594,13 @@ _
 	 call _chkFindSym
 	 call nc,_DelVarArc
 	
-	 ld a,(AutoSaveState)
-	 or a
+	 ld hl,AutoSaveState
+	 ld a,(hl)
+	 res 1,(hl)
+	 dec a
 	 ld hl,save_state_size
 	 ld de,save_state_prefix_size
-	 jr z,SaveAutoStateDeleteMem
+	 jr nz,SaveAutoStateDeleteMem
 	 
 	 ld (hl),e
 	 inc hl

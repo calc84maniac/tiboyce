@@ -188,10 +188,10 @@ Z80Error_helper:
 	pop.s de
 	or a
 	sbc.s hl,de
-	ld a,ERROR_INVALID_OPCODE << 2
+	ld a,(ERROR_INVALID_OPCODE << 2) + 1
 	jr nc,_
 runtime_error:
-	ld a,ERROR_RUNTIME << 2
+	ld a,(ERROR_RUNTIME << 2) + 1
 _
 #ifdef DEBUG
 	push af
@@ -211,7 +211,15 @@ _
 	 ld (mpIntAcknowledge),a
 	pop af
 #endif
-	AJUMP(CmdExit)
+	ld (exitReason),a
+	; Temporarily prevent auto state saving because state is unrecoverable
+	ld hl,AutoSaveState
+	set 1,(hl)
+	; Open debugger on CEmu
+	scf
+	sbc hl,hl
+	ld (hl),2
+	AJUMP(ExitEmulationWithoutState)
 	
 ; Gets the Game Boy opcode address from a recompiled code pointer.
 ;
@@ -661,7 +669,6 @@ flush_and_recompile:
 ; Recompiles a new code block starting from a direct GB address.
 ;
 ; Inputs:  DE = direct 24-bit GB address to recompile
-;          A = 0
 ;          IY saved on stack
 ;          (base_address) = base address of pointer in DE
 ; Outputs: IX = recompiled code pointer
@@ -729,6 +736,8 @@ _
 	xor a
 	sbc hl,de
 	ld.sis (flush_address),hl
+	ld hl,$E9DD08	;EX AF,AF' \ JP (IX)
+	ld (z80codebase+cycle_overflow_flush_smc),hl
 	ld ix,flush_handler
 flush_cache:
 	ld hl,recompile_cache_end
