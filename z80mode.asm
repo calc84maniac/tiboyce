@@ -372,34 +372,44 @@ serial_transmit_complete:
 	
 trigger_interrupt:
 	   rrca
-	   jr nc,_
-	   res 0,(hl)
-	   ld hl,$0040
-	   jr dispatch_int
-_
+	   jr c,dispatch_vblank
 	   rrca
-	   jr nc,_
-	   res 1,(hl)
-	   ld hl,$0048
-	   jr dispatch_int
-_
+	   jr c,dispatch_stat
 	   rrca
-	   jr nc,_
-	   res 2,(hl)
-	   ld hl,$0050
+	   jr c,dispatch_timer
+	   rrca
+	   jr c,dispatch_serial
+dispatch_joypad:
+	   res 4,(hl)
+	   ld c,$60
+	   call decode_intcache
 	   jr dispatch_int
-_
+dispatch_serial:
 	   res 3,(hl)
-	   ld hl,$0058
+	   ld c,$58
+	   call decode_intcache
+	   jr dispatch_int
+dispatch_timer:
+	   res 2,(hl)
+	   ld c,$50
+	   call decode_intcache
+	   jr dispatch_int
+dispatch_stat:
+	   res 1,(hl)
+	   ld c,$48
+	   call decode_intcache
+	   jr dispatch_int
+dispatch_vblank:
+	   res 0,(hl)
+	   ld c,$40
+	   call decode_intcache
 dispatch_int:
-	
-	   xor a
-	   ld (intstate),a
 	
 	   push hl
 	    push ix
 	     di
 	     call.il get_event_gb_address
+	     ei
 	    pop de
 	 
 	    ; If we're on a HALT, exit it
@@ -417,23 +427,44 @@ _
 	    ld.lil (int_cached_return),ix
 	    ld.lil (int_cached_code),de
 	    ld.lil (int_cached_cycles),a
-	    ; Subtract cycles from block end (but spend 5 for dispatch)
-	    add a,5
-	    ld (_+2),a
-_
-	    lea iy,iy+0
-	
-	   pop de
-	   call.il lookup_code_cached
-	   ei
+	    add a,c
+	   pop ix
 	  pop bc
 	 pop de
 	 ex (sp),hl
 	 exx
 	pop de
 	call do_push_and_return
+	ld (_+2),a
+_
+	lea iy,iy+0
+	xor a
+	ld (intstate),a
+	cp iyh
+	jr z,_
+	ex af,af'
+	ret
+	
+_
 	pop ix
-	jp dispatch_cycles
+	jp cycle_overflow
+	
+decode_intcache:
+	push ix
+	 di
+	 call.il decode_intcache_helper
+	pop hl
+	ex (sp),hl
+	dec hl
+	dec hl
+	ld (hl),ix
+	dec hl
+	ld (hl),$21	;LD HL,addr
+	dec hl
+	ld (hl),a
+	dec hl
+	pop ix
+	jp (hl)
 	
 LYCmatch:
 	ld hl,LCDC

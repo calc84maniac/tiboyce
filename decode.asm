@@ -73,6 +73,15 @@ decode_ret_cond_helper:
 	ei
 	ret.l
 	
+decode_intcache_helper:
+	ld e,c
+	ld d,0
+	call lookup_code
+	; Spend 5 cycles for interrupt dispatch overhead
+	add a,5
+	ei
+	ret.l
+	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
 ; followed inline by the opcode byte in question (and one padding byte).
 ;

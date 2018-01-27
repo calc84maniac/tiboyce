@@ -61,6 +61,17 @@ flush_code:
 	; Reset the event address
 	ld hl,event_value
 	ld.sis (event_address),hl
+	; Reset the interrupt target caches
+	ld ix,z80codebase+dispatch_joypad
+	ld hl,(decode_intcache << 8) | $CD	;CALL decode_intcache
+	ld a,$60
+	ld b,5
+_
+	ld (ix+3),a
+	ld (ix+4),hl
+	lea ix,ix+9
+	sub 8
+	djnz -_
 	ret
 	
 ; Gets the 24-bit base pointer for a given Game Boy address.
