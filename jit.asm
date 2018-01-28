@@ -32,6 +32,8 @@ flush_code:
 #endif
 	; Empty recompiled code information struct
 	ld hl,recompile_struct
+	ld (hl),hl
+	ld l,8
 	ld (recompile_struct_end),hl
 	; Store first available block address to the first unused entry
 	ld de,z80codebase+z80codesize
@@ -44,8 +46,8 @@ flush_code:
 	ld (recompile_cache),hl
 	; Fill unused memory with RST_ERROR to catch bad execution
 	MEMSET_FAST(z80codebase+z80codesize, memroutine_end + 1 - z80codesize, RST_ERROR)
-	; Invalidate the memory routines
-	MEMSET_FAST(memroutineLUT, $0200, 0)
+	; Invalidate the memory routines and recompile index LUT
+	MEMSET_FAST(memroutineLUT, $0400, 0)
 	; Invalidate both the read and write cycle LUTs
 	ld hl,z80codebase+read_cycle_LUT
 	ld (hl),e
@@ -159,38 +161,51 @@ _
 	
 ; Gets the recompile struct entry for a given code pointer.
 ;
-; Locating the code block is O(log N) in number of blocks.
-;
 ; Inputs: DE = 16-bit Z80 code pointer
-; Outputs: IX = BC = following struct entry
-; Destroys F,BC,HL
+; Outputs: IX = struct entry or $xx0000 if not found
+; Destroys AF,BC,HL
 lookup_code_block:
 #ifdef 0
 	push de
 	 APRINTF(LookupGBMessage)
 	pop de
 #endif
-	ld bc,recompile_struct
-	ld ix,(recompile_struct_end)
+	ld ix,recompile_struct
+	ld hl,recompile_index_LUT
+	ld l,d
+	ld a,(hl)
+	ld ixl,a
+	inc h
+	ld a,(hl)
+	ld ixh,a
+	ld a,e
+	cpl
+	ld c,a
+	ld a,d
+	cpl
+	ld b,a
 lookup_code_block_loop:
-	lea hl,ix
-	or a
-	sbc hl,bc
-	ret z
-	srl h
-	rr l
-	res 2,l
-	add hl,bc
-	push hl
-	 ld hl,(hl)
-	 scf
-	 sbc.s hl,de
-	 jr nc,lookup_code_block_lower
-	 ex (sp),ix
-	 lea bc,ix+8
-lookup_code_block_lower:
-	pop ix
-	jr lookup_code_block_loop
+	ld hl,(ix)
+	add.s hl,bc
+	ret nc
+	ld hl,(ix-8)
+	add.s hl,bc
+	jr nc,_
+	ld hl,(ix-16)
+	add.s hl,bc
+	jr nc,++_
+	ld hl,(ix-24)
+	add.s hl,bc
+	lea ix,ix-32
+	jr c,lookup_code_block_loop
+	lea ix,ix+8
+	ret
+_
+	lea ix,ix-8
+	ret
+_
+	lea ix,ix-16
+	ret
 	
 Z80Error_helper:
 	ld hl,(recompile_struct_end)
@@ -258,14 +273,14 @@ lookup_gb_cache_jit_address = $+1
 	pop de
 #endif
 	call lookup_code_block
-	ld a,b
-	or c
+	ld a,ixh
+	or ixl
 	jr z,runtime_error
-	ld hl,(ix-8)
+	ld hl,(ix)
 	xor a
-	sub (ix-1)	; Should set carry flag
+	sub (ix+7)	; Should set carry flag
 	ASSERT_C
-	ld ix,(ix-6)
+	ld ix,(ix+2)
 	inc.s hl
 	sbc hl,de
 	jr z,lookup_gb_found_start
@@ -604,10 +619,10 @@ lookup_code_by_pointer:
 lookuploop_restore:
 	 pop ix
 lookuploop:
+	 lea ix,ix-8
 	 ld a,ixh
 	 or ixl
 	 jr z,recompile
-	 lea ix,ix-8
 	 ld hl,(ix+2)
 	 sbc hl,de
 	 jr z,lookupfoundstart
@@ -732,6 +747,14 @@ recompile:
 recompile_end_common:
 	pop iy
 	ld (ix+8),de
+	; Update the index LUT
+	ld hl,recompile_index_LUT
+	ld l,d
+	lea bc,ix+8
+	ld (hl),c
+	inc h
+	ld (hl),b
+	
 	ld hl,(z80codebase+memroutine_next)
 	sbc hl,de
 	jr c,_

@@ -25,8 +25,7 @@ decode_rst_helper:
 	 ex de,hl
 	 call lookup_code_block
 	 ex de,hl
-	 dec bc
-	 ld a,(bc)
+	 ld a,(ix+7)
 	 sub.s (hl)
 	 ld.s (hl),a
 	pop de
@@ -44,8 +43,7 @@ decode_call_helper:
 	 ex de,hl
 	 call lookup_code_block
 	 ex de,hl
-	 dec bc
-	 ld a,(bc)
+	 ld a,(ix+7)
 	 sub.s (hl)
 	 ld.s (hl),a
 	pop de
@@ -69,7 +67,7 @@ decode_ret_cond_helper:
 	call lookup_code_block
 	ex de,hl
 	ld.s a,(hl)
-	sub (ix-1)
+	sub (ix+7)
 	ei
 	ret.l
 	

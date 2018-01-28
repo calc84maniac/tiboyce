@@ -303,11 +303,17 @@ vram_pixels_start = vram_tiles_start + $4000
 ; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
 memroutineLUT = vram_pixels_start + $6000
 
+; Start of recompiler struct index lookup table. 512 bytes in size.
+; The first 256 bytes are the LSBs and the next 256 are the MSBs.
+; The lookup table is indexed by the high byte of a JIT address,
+; and each pointer gives the last struct entry touching that range.
+recompile_index_LUT = memroutineLUT + $0200
+
 ; Start of the ROM bank lookup table. 128 pointers in size.
 ; Stores the base address of each ROM bank (or mirror), minus $4000.
 ; The pre-subtracted $4000 means that the memory can be indexed by GB address.
 ; This buffer is also used to cache the pointers to appvars in the ROM list.
-rombankLUT = memroutineLUT + $0200
+rombankLUT = recompile_index_LUT + $0200
 rombankLUT_end = rombankLUT + (128*3)
 
 ; Preconverted digit pixels for displaying FPS quickly. 400 bytes in size.
@@ -317,8 +323,8 @@ digits = rombankLUT_end
 scanlineLUT_1 = digits + 400
 scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
-; A lookup table for converting BG palettes to raw colors
-convert_palette_LUT = $D0DB00
+; A lookup table for converting BG palettes to raw colors. 256 bytes in size.
+convert_palette_LUT = $D0DD00
 
 ; A fake tile filled with Game Boy color 0. 64 bytes in size.
 ; Used when BG tilemap is disabled.
