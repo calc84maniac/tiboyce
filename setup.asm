@@ -1877,10 +1877,17 @@ GetLCDTiming:
 	push hl
 	jp (ix)
 	
+	; In: 12 bytes of timing on the stack
 SetDefaultLCDWindowAndTiming:
 	xor a
 	ld de,319
 	ld hl,239
+	
+	; In: 12 bytes on timing on the stack
+	;     A = left side of window
+	;     DE = right side of window
+	;     H = top side of window
+	;     L = bottom side of window
 SetLCDWindowAndTiming:
 	push hl
 	 ld b,3
@@ -1915,11 +1922,7 @@ _
 	call spiParam
 	ld a,$2C
 	call spiCmd
-	ld hl,mpLcdCtrl
-	set 0,(hl)
 	
-	; In: 12 bytes of timing on the stack
-SetLCDTiming:
 	pop ix
 	pop hl
 	ld (mpLcdTiming0),hl
@@ -1929,6 +1932,9 @@ SetLCDTiming:
 	ld (mpLcdTiming0+6),hl
 	pop hl
 	ld (mpLcdTiming0+9),hl
+	
+	ld hl,mpLcdCtrl
+	set 0,(hl)
 	jp (ix)
 	
 SetScalingMode:
