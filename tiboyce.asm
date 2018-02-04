@@ -316,15 +316,19 @@ recompile_index_LUT = memroutineLUT + $0200
 rombankLUT = recompile_index_LUT + $0200
 rombankLUT_end = rombankLUT + (128*3)
 
-; Preconverted digit pixels for displaying FPS quickly. 400 bytes in size.
-digits = rombankLUT_end
-
 ; A list of scanline start addresses. 144*2 pointers in size.
-scanlineLUT_1 = digits + 400
+scanlineLUT_1 = rombankLUT_end
 scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
+; Temporary backup for 16 palette entries. 32 bytes in size.
+palette_backup = scanlineLUT_2 + (144*3)
+
 ; A lookup table for converting BG palettes to raw colors. 256 bytes in size.
-convert_palette_LUT = $D0DD00
+; Must be 256-byte aligned.
+convert_palette_LUT = palette_backup + 32
+
+; Preconverted digit pixels for displaying FPS quickly. 24 bytes per character, 264 bytes total.
+digits = convert_palette_LUT + 256
 
 ; A fake tile filled with Game Boy color 0. 64 bytes in size.
 ; Used when BG tilemap is disabled.
@@ -691,14 +695,10 @@ _
 	
 rle_done:
 	ACALL(Set8BitWindow)
-	ld hl,convert_palette_LUT
+	ld hl,palette_backup
 	ld de,mpLcdPalette
 	ld bc,32
 	ldir
-_
-	dec l
-	ld (hl),l
-	jr nz,-_
 	ret
 	
 ; The first ROM in the current list frame.
@@ -776,6 +776,9 @@ current_buffer:
 ; The default palette.
 default_palette:
 	.db 0
+; The digits for performance display.
+perf_digits:
+	.db 0,0,0,0
 	
 ; The current text output column, in characters (0-39).
 cursorCol:
@@ -826,8 +829,8 @@ palette_obj1_colors:
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	
-	; Pad to an even number of bytes
-	.block (-$) & 1
+	; Pad to an odd number of bytes
+	.block (~$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -846,9 +849,9 @@ OptionConfig:
 ; Frameskip type (0=Manual, 1=Auto, 2=Off)
 FrameskipType:
 	.db 1
-; FPS display (0=Off, 1=On)
-FPSDisplay:
-	.db 0
+; Speed display (0=Never, 1=Turbo, 2=Slowdown, 3=Always)
+SpeedDisplay:
+	.db 1
 ; Auto archive (0=Off, 1=On)
 AutoSaveState:
 	.db 1
@@ -867,6 +870,9 @@ ScalingMode:
 ; Skin display (0=Off, 1=On)
 SkinDisplay:
 	.db 1
+; Turbo mode (0=Toggle, 1=Hold)
+TurboMode:
+	.db 0
 	
 ; Number of key bytes
 	.db key_config_count

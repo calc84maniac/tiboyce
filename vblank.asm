@@ -8,12 +8,17 @@
 ; Outputs: None
 ; Destroys AF,HL
 vblank_helper:
-	; Update VFPS counter
-vfps = $+1
-	ld a,0
+	; Update emulated frame counter
+frame_emulated_count = $+1
+	ld hl,0
+	ld a,l
 	add a,1
 	daa
-	ld (vfps),a
+	ld l,a
+	ld a,h
+	adc a,0
+	ld h,a
+	ld (frame_emulated_count),hl
 	
 	; Finish rendering, if applicable
 	push de
@@ -64,48 +69,62 @@ _
 	   jr nz,-_
 _
 	   
-fps_display_smc:
-	   jr z,NoFPSDisplay
+speed_display_smc_1 = $
+	   jr z,NoSpeedDisplay
 	   
-fps = $+1
+	   ld a,(turbo_active)
+	   or a
+speed_display_smc_2 = $
+	   jr z,_
+speed_display_smc_0 = $+1
 	   ld a,0
-	   add a,1
+low_perf_digits_smc = $+1
+	   add a,0
 	   daa
-	   ld (fps),a
+high_perf_digits_smc = $+1
+	   ld a,0
+speed_display_smc_3 = $
+	   adc a,$FF
+	   sbc a,a
+	   inc a
+	   jr z,skip_this_frame	;Carry is set
+_
 	   
-	   ld a,(mpRtcSecondCount)
-last_second = $+1
-	   cp -1
-	   call nz,update_fps
-	   
-	   ld de,0
-vfps_display_tens = $+1
-	   ld c,0
+	   xor a
+	   ld c,a
+	   ld hl,perf_digits
+	   ld b,4
+_
+	   or (hl)
+	   jr nz,_
+	   inc hl
+	   djnz -_
+	   dec hl
+	   inc b
+_
+	   push hl
+	    push bc
+	     ld b,(hl)
+	     call display_digit
+	    pop bc
+	   pop hl
+	   inc hl
+	   inc c
+	   djnz -_
+	   ld b,10
 	   call display_digit
-	   ld de,4
-vfps_display_ones = $+1
-	   ld c,0
-	   call display_digit
-	   ld de,12
-fps_display_tens = $+1
-	   ld c,0
-	   call display_digit
-	   ld de,16
-fps_display_ones = $+1
-	   ld c,0
-	   call display_digit
-NoFPSDisplay:
+NoSpeedDisplay:
 	  
 	   ; Signify frame was rendered
 	   scf
 skip_this_frame:
 
-	   ld ix,mpKeypadGrp0
-key_smc_turbo:
-	   bit 2,(ix+1*2)	;ZOOM
 	   ld hl,frame_excess_count
+turbo_active = $+1
+	   ld b,1
+	   dec b	; We want this to affect Z flag
 	   jr nz,no_frame_sync
-	  
+	   
 	   ; Handle frame synchronization
 	   dec (hl)
 	   jp p,no_frame_sync
@@ -118,6 +137,7 @@ frame_sync_loop:
 	    call update_palettes
 	    ld hl,mpLcdIcr
 	    ld (hl),4
+	    call inc_real_frame_count
 	   pop hl
 	   inc (hl)
 	   jr nz,frame_sync_loop
@@ -131,7 +151,7 @@ no_frame_sync:
 	   ex de,hl
 	   ld hl,skippable_frames
 frameskip_type_smc:
-	   jr z,no_frameskip	;JR no_frameskip when off, JR $+2 when manual
+	   jr z,no_frameskip	;JR no_frameskip when off, JR Z,$+2 when manual
 	   dec (hl)
 	   jr nz,frameskip_end
 no_frameskip:
@@ -154,6 +174,22 @@ frameskip_end:
 	   sbc hl,hl
 	   ld ix,mpKeypadGrp0
 
+key_smc_turbo:
+	   bit 2,(ix+1*2)	;ZOOM
+turbo_keypress_smc = $
+	   jr z,_
+turbo_toggle_smc = $+1
+	   jr z,turbo_skip_toggle
+turbo_active_no_toggle = $+1
+	   ld a,(turbo_active)
+	   xor 1
+	   ld (turbo_active),a
+turbo_skip_toggle:
+	   ld a,(turbo_keypress_smc)
+	   xor 8
+	   ld (turbo_keypress_smc),a
+_
+	   
 key_smc_right:
 	   bit 2,(ix+7*2)	;Right
 	   jr z,_
@@ -277,6 +313,7 @@ frame_interrupt:
 	  push bc
 	   push ix
 	    call update_palettes
+	    call inc_real_frame_count
 	   pop ix
 	  pop bc
 	 pop de
@@ -323,45 +360,48 @@ _
 	ld (mpLcdBase),hl
 	ret
 	
-; Updates the FPS digits for the last second and prepares the next second.
-;
-; Inputs:  A = current RTC second
-; Outputs: None
-update_fps:
-	ld (last_second),a
-	
-	ld a,(vfps)
-	ld e,a
+inc_real_frame_count:
+frame_real_count = $+1
+	ld a,0
+	add a,1
+	daa
+	ld (frame_real_count),a
+	ret nc
+	ld hl,(frame_emulated_count)
+	ld de,perf_digits+3
+	ld a,l
+	ld (low_perf_digits_smc),a
 	and $0F
-	ld (vfps_display_ones),a
-	xor e
+	ld (de),a
+	dec de
+	xor l
 	rrca
 	rrca
 	rrca
 	rrca
-	ld (vfps_display_tens),a
-	
-	ld a,(fps)
-	ld e,a
+	ld (de),a
+	dec de
+	ld a,h
+	ld (high_perf_digits_smc),a
 	and $0F
-	ld (fps_display_ones),a
-	xor e
+	ld (de),a
+	dec de
+	xor h
 	rrca
 	rrca
 	rrca
 	rrca
-	ld (fps_display_tens),a
-	
-	xor a
-	ld (vfps),a
-	ld (fps),a
+	ld (de),a
+	sbc hl,hl
+	ld (frame_emulated_count),hl
 	ret
+
 	
 ; Displays a digit onscreen at the given framebuffer offset in bytes.
 ; Draws to the old buffer.
 ;
-; Inputs:  C = digit (0-9)
-;          DE = offset
+; Inputs:  B = digit (0-9)
+;          C = offset
 ; Outputs: A = 0
 ; Destroys AF,BC,DE,HL
 display_digit:
@@ -369,20 +409,25 @@ display_digit:
 	ld a,h
 	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
 	ld h,a
+display_digit_smc_1 = $+1
+	ld d,2
+	ld e,c
+	mlt de
 	add hl,de
 	ex de,hl
 	ld hl,digits
-	ld b,40
+	ld c,24
 	mlt bc
 	add hl,bc
-	ld a,10
+	ld b,0
+	ld a,6
 _
-	ld bc,160
-	ldi
-	ldi
-	ldi
-	ldi
+display_digit_smc_2 = $+1
+	ld c,2
+	ldir
 	ex de,hl
+display_digit_smc_3 = $+1
+	ld c,160 - 2
 	add hl,bc
 	ex de,hl
 	dec a

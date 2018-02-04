@@ -135,11 +135,62 @@ ScrollUp:
 font:
 	#import "font.bin"
 	
+digits_encoded:
+	.db %11101010,%10101010,%11100000
+	.db %01001100,%01000100,%11100000
+	.db %11000010,%01001000,%11100000
+	.db %11000010,%01000010,%11000000
+	.db %10101010,%11100010,%00100000
+	.db %11101000,%11000010,%11000000
+	.db %01101000,%11101010,%11100000
+	.db %11100010,%01001000,%10000000
+	.db %11101010,%11101010,%11100000
+	.db %11101010,%11100010,%11000000
+	.db %10100010,%01001000,%10100000
+	
 generate_digits:
-	APTR(font + (('0'-' ')*10))
+	APTR(digits_encoded)
 	ex de,hl
 	ld hl,digits
-	ld b,10*10
+	ld (display_digit_smc_1),a
+	ld (display_digit_smc_2),a
+	cpl
+	add a,161
+	ld (display_digit_smc_3),a
+	cp 160-4
+	jr z,generate_digits_8bit
+	ld b,11
+_
+	push bc
+	 ld b,3
+_
+	 ld a,(de)
+	 inc de
+	 ld c,a
+_
+	 sla c
+	 sbc a,a
+	 or BLACK+(15-WHITE)
+	 sub 15-WHITE
+	 ld (hl),a
+	 sla c
+	 sbc a,a
+	 or BLACK+(15-WHITE)
+	 sub 15-WHITE
+	 rld
+	 inc hl
+	 ld a,l
+	 and 3
+	 jr nz,-_
+	 djnz --_
+	 ld c,12
+	 add hl,bc
+	pop bc
+	djnz ---_
+	ret
+	
+generate_digits_8bit:
+	ld b,3*11
 _
 	ld a,(de)
 	inc de
@@ -147,17 +198,12 @@ _
 _
 	sla c
 	sbc a,a
-	or WHITE+(15-BLACK)
-	sub 15-BLACK
+	or BLACK-(1+WHITE)
+	add a,1+WHITE
 	ld (hl),a
-	sla c
-	sbc a,a
-	or WHITE+(15-BLACK)
-	sub 15-BLACK
-	rld
 	inc hl
 	ld a,l
-	and 3
+	and 7
 	jr nz,-_
 	djnz --_
 	ret

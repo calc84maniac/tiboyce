@@ -561,8 +561,6 @@ _
 	ld c,40
 	ldir
 	
-	ACALL(generate_digits)
-	
 	ACALL(IdentifyDefaultPalette)
 	ACALL(ApplyConfiguration)
 	
@@ -1982,6 +1980,9 @@ _
 	dec c
 	jr nz,-_
 	
+	ld a,2
+	ACALL(generate_digits)
+	
 Set4BitWindow:
 	ld hl,$00EF78
 	push hl
@@ -2023,6 +2024,9 @@ _
 	dec c
 	jr nz,-_
 	
+	ld a,4
+	ACALL(generate_digits)
+	
 	ld a,(SkinDisplay)
 	rra
 	jr nc,_
@@ -2036,7 +2040,7 @@ _
 	 jr nc,no_skin
 	 push de
 	  ld hl,mpLcdPalette
-	  ld de,convert_palette_LUT
+	  ld de,palette_backup
 	  ld bc,32
 	  push hl
 	   ldir

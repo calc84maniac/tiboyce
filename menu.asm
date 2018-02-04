@@ -12,6 +12,7 @@ ApplyConfiguration:
 	; Frameskip value
 	ld hl,FrameskipValue
 	ld a,(hl)
+	ld (speed_display_smc_0),a
 	inc a
 	ld (frameskip_value_smc),a
 	ld (skippable_frames),a
@@ -19,11 +20,12 @@ ApplyConfiguration:
 	
 	; Frameskip type
 	ld a,(hl)
-	dec a
-	ld a,$18	;JR
+	sub 2
 	jr nz,_
-	ld a,$28	;JR Z
+	ld (speed_display_smc_0),a
 _
+	and $10
+	add a,$18
 	ld (frameskip_type_smc),a
 	ld a,(hl)
 	or a
@@ -33,12 +35,22 @@ _
 	ld (frameskip_type_smc+1),a
 	inc hl
 	
-	; FPS display
+	; Speed display
 	ld a,(hl)
 	dec a
 	and $08
-	or $20
-	ld (fps_display_smc),a
+	add a,$20
+	ld (speed_display_smc_1),a
+	ld a,(hl)
+	sub 2
+	and $10
+	add a,$CE
+	ld (speed_display_smc_3),a
+	ld a,(hl)
+	sub 3
+	and $10
+	add a,$18
+	ld (speed_display_smc_2),a
 	inc hl
 	
 	; Auto-Archive
@@ -93,6 +105,19 @@ _
 	inc hl
 	; Skin display
 	inc hl
+	
+	; Turbo toggle
+	ld a,(hl)
+	inc hl
+	dec a
+	and turbo_skip_toggle - (turbo_toggle_smc+1)
+	ld (turbo_toggle_smc),a
+	ld a,(turbo_active)
+	add a,a
+	add a,a
+	add a,a
+	add a,$20
+	ld (turbo_keypress_smc),a
 	
 	; Key configuration
 	ld ix,key_smc_turbo
@@ -658,13 +683,14 @@ MenuList:
 	
 OptionList:
 	.dw OptionFrameskipType+1
-	.dw OptionFPSDisplay+1
+	.dw OptionSpeedDisplay+1
 	.dw OptionAutoSaveState+1
 	.dw OptionPaletteSelection+1
 	.dw OptionTimeZone+1
 	.dw OptionDST+1
 	.dw OptionScalingMode+1
 	.dw OptionSkinDisplay+1
+	.dw OptionTurboMode+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -728,8 +754,8 @@ GraphicsMenu:
 	.db ITEM_OPTION,0, 100,1,"Frameskip type: %-6s",0
 	.db "",0
 	.db ITEM_DIGIT,2, 110,1,"Frameskip value: %u",0
-	.db "",0
-	.db ITEM_OPTION,1, 130,1,"FPS display: %-3s",0
+	.db "Show percentage of real GB performance.\n Turbo: Display when turbo is activated.\n Slowdown: Display when below fullspeed.",0
+	.db ITEM_OPTION,1, 130,1,"Speed display: %-8s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
 	.db ITEM_OPTION,3, 150,1,"Palette selection: %-10s",0
 	.db "Return to the main menu.",0
@@ -762,14 +788,16 @@ ControlsMenu:
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
 EmulationMenu:
-	.db 4
+	.db 5
 	.db 5,11,"Emulation Options",0
 	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
-	.db ITEM_OPTION,2, 50,1,"Auto Save State: %-3s",0
+	.db ITEM_OPTION,2, 50,1,"Auto save state: %-3s",0
+	.db "",0
+	.db ITEM_OPTION,8, 60,1,"Turbo mode: %-6s",0
 	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
-	.db ITEM_OPTION,4, 70,1,"Time Zone: UTC%-6s",0
+	.db ITEM_OPTION,4, 80,1,"Time zone: UTC%-6s",0
 	.db "Set to on if DST is currently active.",0
-	.db ITEM_OPTION,5, 80,1,"Daylight Saving Time: %-3s",0
+	.db ITEM_OPTION,5, 90,1,"Daylight Saving Time: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -784,13 +812,24 @@ OptionScalingMode:
 	.db "no scaling",0
 	.db "fullscreen",0
 	
-OptionFPSDisplay:
 OptionAutoSaveState:
 OptionDST:
 OptionSkinDisplay:
 	.db 2
 	.db "off",0
 	.db "on",0
+	
+OptionTurboMode:
+	.db 2
+	.db "toggle",0
+	.db "hold",0
+	
+OptionSpeedDisplay:
+	.db 4
+	.db "never",0
+	.db "turbo",0
+	.db "slowdown",0
+	.db "always",0
 	
 OptionPaletteSelection:
 	.db 13
