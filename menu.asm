@@ -71,6 +71,9 @@ _
 	 push bc
 	  ld a,(hl)
 	  ACALL(LoadPalettes)
+	  ld hl,(curr_palettes)
+	  ld c,(6*2)+2
+	  call update_palettes_partial
 	 pop bc
 	pop hl
 	

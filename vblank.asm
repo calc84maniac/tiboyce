@@ -452,9 +452,10 @@ old_palettes = $+1
 	ld (old_palettes),hl
 	; Input: Palettes in HL
 update_palettes_always:
+	ld c,(9*2) + 3
+update_palettes_partial:
 	ld de,mpLcdPalette + (9*2)-1
 	ld ix,palette_obj1_colors+1+8
-	ld c,(9*2) + 3
 update_palettes_next_loop:
 	lea ix,ix-8
 	ld b,4
@@ -468,6 +469,9 @@ update_palettes_loop:
 	djnz _
 	dec c
 	jr nz,update_palettes_next_loop
+	; Early out for partial update
+	inc e
+	ret nz
 	ld de,mpLcdPalette + (256*2)-1
 	scf
 _
