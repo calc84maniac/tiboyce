@@ -1,5 +1,6 @@
 #define CALL_STACK_DEPTH 32
 #define MEM_CYCLE_LUT_SIZE 8*3
+#define INT_RETURN_STACK_SIZE 5*6
 
 #macro ASSERT_NC
 #ifdef DEBUG
@@ -279,6 +280,7 @@ flags_lut = myz80stack - 512
 memroutine_end = flags_lut - 1
 read_cycle_LUT = flags_lut+256+1
 write_cycle_LUT = read_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
+int_return_stack = write_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
 
 ; The bottom of the ADL stack. Grows down from the end of palette memory.
 myADLstack = mpLcdPalette + $01FE

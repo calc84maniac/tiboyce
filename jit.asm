@@ -54,8 +54,11 @@ flush_code:
 	push hl
 	pop de
 	inc de
-	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 - 1
+	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 + INT_RETURN_STACK_SIZE
 	ldir
+	inc (hl)
+	ld l,(z80codebase+int_return_stack) & $FF
+	ld (z80codebase+int_return_sp),hl
 	; Set the cached interrupt return address to NULL
 	ld (int_cached_return),bc
 	; Set the cached lookup address to NULL
@@ -424,11 +427,19 @@ lookup_code_cached_found:
 	
 	 ; Fast return to the last interrupted code address
 int_cache_hit:
-int_cached_code = $+2
-	 ld ix,0
-	 xor a
-int_cached_cycles = $+1
-	 sub 0
+	 ld hl,(z80codebase+int_return_sp)
+	 dec hl
+	 dec hl
+	 ld ix,(hl)
+	 dec hl
+	 dec hl
+	 dec hl
+	 dec hl
+	 sub (hl)
+	 ld (z80codebase+int_return_sp),hl
+	 inc hl
+	 ld hl,(hl)
+	 ld (int_cached_return),hl
 	pop hl
 	ret.l
 	
@@ -929,8 +940,10 @@ rerecompile_found_base:
 	push hl
 	pop de
 	inc de
-	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 - 1
+	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2
 	ldir
+	; Empty the interrupt return stack
+	ld (z80codebase+int_return_sp),hl
 	
 	; Set the cached interrupt return address to NULL
 	ld (int_cached_return),bc

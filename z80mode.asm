@@ -414,7 +414,7 @@ dispatch_int:
 	 
 	    ; If we're on a HALT, exit it
 	    ld.l a,(ix)
-	    cp $76
+	    xor $76
 	    ld a,(event_cycle_count)
 	    jr nz,_
 	    inc.l ix
@@ -424,10 +424,29 @@ dispatch_int:
 	    inc de
 	    inc a
 _
-	    ld.lil (int_cached_return),ix
-	    ld.lil (int_cached_code),de
-	    ld.lil (int_cached_cycles),a
-	    add a,c
+	    push hl
+int_return_sp = $+2
+	     ld.lil hl,0
+	     ld b,(hl)
+	     djnz _
+	     sbc hl,hl
+	     ld.lil (int_cached_return),hl
+	     ld.lil hl,z80codebase+int_return_stack
+_
+	     ld (hl),a
+	     add a,c
+	     ld.lil bc,(int_cached_return)
+	     ld.lil (int_cached_return),ix
+	     inc.l hl
+	     ld.l (hl),bc
+	     inc hl
+	     inc hl
+	     inc hl
+	     ld (hl),de
+	     inc hl
+	     inc hl
+	     ld (int_return_sp),hl
+	    pop hl
 	   pop ix
 	  pop bc
 	 pop de
