@@ -1708,8 +1708,12 @@ mem_write_ports_swap:
 	sub LYC - SC
 	jr z,writeLYC
 	sub BGP - LYC
-	jr c,writeDMA
-	jr nz,mem_write_oam_swap
+	jr z,write_scroll
+	jr nc,mem_write_oam_swap
+writeDMA:
+	di
+	jp.lil oam_transfer_helper
+	
 write_scroll_swap:
 	ex af,af'
 write_scroll:
@@ -1717,10 +1721,6 @@ write_scroll:
 	 call get_scanline_from_write
 	pop hl
 	jp.lil scroll_write_helper
-	
-writeDMA:
-	di
-	jp.lil oam_transfer_helper
 	
 writeLYChandler:
 	ex af,af'

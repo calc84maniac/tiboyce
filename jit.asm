@@ -306,7 +306,11 @@ lookup_gb_add:
 	 jr nc,lookup_gb_found_loop
 	 dec iy
 	 add iy,iy
+#ifdef DEBUG
+	 jp nc,runtime_error
+#else
 	 jr nc,runtime_error
+#endif
 	pop iy
 #ifdef 0
 	push af
@@ -714,7 +718,11 @@ recompile:
 	 ld hl,(ix)
 	 ld (ix+2),de
 	 bit 7,(ix+4)
+#ifdef DEBUG
+	 jp nz,recompile_ram
+#else
 	 jr nz,recompile_ram
+#endif
 	
 #ifdef DEBUG
 	 push ix
