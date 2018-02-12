@@ -110,6 +110,7 @@ do_call:
 	ld de,(ix+2)
 	ld a,(ix+5)
 	ld ix,(ix)
+do_call_common:
 	dec.l hl
 do_push_smc_3 = $+1
 	ld.l (hl),d
@@ -174,6 +175,31 @@ ophandlerRETnomatch:
 	 ei
 	pop bc
 	jr dispatch_cycles_exx
+	
+do_rom_bank_call:
+	ex af,af'
+	pop ix
+rom_bank_check_smc = $+1
+	ld a,0
+	cp (ix)
+	jr nz,banked_call_mismatch
+	ld ix,(ix+1)
+	exx
+	ex (sp),ix
+	ld a,(ix+3)
+banked_call_mismatch_continue:
+	ld de,(ix)
+	lea ix,ix+4
+	ex (sp),ix
+	djnz do_call_common
+	ld b,CALL_STACK_DEPTH
+	ld.lil sp,myADLstack
+	ld sp,myz80stack-2
+	jp do_call_common
+	
+banked_call_mismatch:
+	di
+	jp.lil banked_call_mismatch_helper
 	
 cycle_overflow_for_jump:
 	pop ix
@@ -648,7 +674,7 @@ _
 	  add hl,de
 	  ld (hl),ix
 	  dec hl
-	  ld (hl),RST_CALL
+	  ld (hl),b
 	 pop de
 	pop bc
 	ex (sp),hl
@@ -1928,6 +1954,7 @@ curr_rom_bank = $+1
 	 xor c
 	 ld c,a
 	 ld (curr_rom_bank),a
+	 ld (rom_bank_check_smc),a
 	 ld b,3
 	 mlt bc
 	 ld.lil ix,rombankLUT

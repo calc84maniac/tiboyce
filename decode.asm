@@ -36,7 +36,7 @@ decode_rst_helper:
 	sub $C7
 	ld e,a
 	ld d,0
-	jr _
+	jr decode_call_common
 	
 decode_call_helper:
 	push de
@@ -48,17 +48,70 @@ decode_call_helper:
 	 ld.s (hl),a
 	pop de
 	call get_base_address
+	ld a,d
 	add hl,de
 	dec hl
 	ld d,(hl)
 	dec hl
 	ld e,(hl)
-_
+	xor d
+	and $C0
+	jr nz,decode_call_bank_switch
+decode_call_common:
 	call get_base_address
 	ld (base_address),hl
 	add hl,de
 	call lookup_code_link_internal
+_
 	add a,3	; Taken call eats 3 cycles
+	ld b,RST_CALL
+	ei
+	ret.l
+	
+decode_call_flush:
+	ex de,hl
+	call prepare_flush
+	xor a
+	jr -_
+	
+decode_call_bank_switch:
+	ld a,d
+	sub $40
+	cp $40
+	jr nc,decode_call_common
+	
+	; These will be the arguments to the trampoline
+	ld bc,do_rom_bank_call
+	ld a,(z80codebase+curr_rom_bank)
+	
+	push de
+	 ld hl,(z80codebase+memroutine_next)
+	 ld de,-6
+	 add hl,de	;Sets C flag
+	
+	 ; Bail if not enough room for trampoline
+	 ex de,hl
+	 ld hl,(recompile_struct_end)
+	 ld hl,(hl)
+	 sbc hl,de	;Carry is set
+	 ex de,hl
+	 ld (z80codebase+memroutine_next),hl
+	pop de
+	jr nc,decode_call_flush
+	inc hl
+	push hl
+	 ld (hl),$CD
+	 inc hl
+	 ld (hl),bc
+	 inc hl
+	 inc hl
+	 ld (hl),a
+	 call lookup_code
+	 add a,3	; Taken call eats 3 cycles
+	 ex (sp),ix
+	pop hl
+	ld.s (ix+4),hl
+	ld b,$CD
 	ei
 	ret.l
 	
@@ -79,6 +132,34 @@ decode_intcache_helper:
 	add a,5
 	ei
 	ret.l
+	
+banked_call_mismatch_helper:
+	ld.s (ix),a
+	exx
+	push bc
+	 push hl
+	  pop.s hl
+	  push.s hl
+	  ld.s de,(hl)
+	  call get_base_address
+	  add hl,de
+	  dec hl
+	  ld d,(hl)
+	  dec hl
+	  ld e,(hl)
+	  push ix
+	   call lookup_code
+	   add a,3	; Taken call eats 3 cycles
+	  pop hl
+	  inc hl
+	  ld.s (hl),ix
+	  ex.s (sp),ix
+	  sub.s (ix+2)
+	  ld.s (ix+3),a
+	 pop hl
+	pop bc
+	ei
+	jp.sis banked_call_mismatch_continue
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
 ; followed inline by the opcode byte in question (and one padding byte).

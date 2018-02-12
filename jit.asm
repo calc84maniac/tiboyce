@@ -788,6 +788,7 @@ _
 	ld de,(base_address)
 	xor a
 	sbc hl,de
+prepare_flush:
 	ld.sis (flush_address),hl
 	ld hl,$E9DD08	;EX AF,AF' \ JP (IX)
 	ld (z80codebase+cycle_overflow_flush_smc),hl

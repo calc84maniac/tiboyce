@@ -575,6 +575,7 @@ _
 	
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
+	ld (z80codebase+rom_bank_check_smc),a
 	ld c,a
 	ld b,3
 	mlt bc
@@ -1994,7 +1995,7 @@ Set4BitWindow:
 	push hl
 	ACALL(SetDefaultLCDWindowAndTiming)
 	
-	ld hl,$0C25
+	ld hl,$010C25
 	ld (mpLcdCtrl),hl
 	ret
 	
@@ -2110,7 +2111,7 @@ Set8BitWindow:
 	ld hl,48*256 + 191
 	ACALL(SetLCDWindowAndTiming)
 	
-	ld hl,$0C27
+	ld hl,$010C27
 	ld (mpLcdCtrl),hl
 	ret
 	
