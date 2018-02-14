@@ -179,7 +179,7 @@ ophandlerRETnomatch:
 do_rom_bank_call:
 	ex af,af'
 	pop ix
-rom_bank_check_smc = $+1
+rom_bank_check_smc_1 = $+1
 	ld a,0
 	cp (ix)
 	jr nz,banked_call_mismatch
@@ -201,6 +201,8 @@ banked_call_mismatch:
 	di
 	jp.lil banked_call_mismatch_helper
 	
+cycle_overflow_for_jump_alt:
+	pea ix-1
 cycle_overflow_for_jump:
 	pop ix
 	ld ix,(ix+2)
@@ -220,6 +222,26 @@ event_address = $+1
 	   di
 	   jp.lil schedule_event_helper
 	   
+do_rom_bank_jump:
+	ex af,af'
+	pop ix
+	ld a,(ix+4)
+	ld (_+2),a
+rom_bank_check_smc_2 = $+1
+	ld a,0
+	xor (ix+3)
+	jr nz,banked_jump_mismatch
+_
+	lea iy,iy+0
+	cp iyh
+	jr z,cycle_overflow_for_jump_alt
+	ex af,af'
+	jp (ix)
+	
+banked_jump_mismatch:
+	di
+	jp.lil banked_jump_mismatch_helper
+	
 vblank_handler:
 	   di
 	   jp.lil vblank_helper
@@ -1954,7 +1976,8 @@ curr_rom_bank = $+1
 	 xor c
 	 ld c,a
 	 ld (curr_rom_bank),a
-	 ld (rom_bank_check_smc),a
+	 ld (rom_bank_check_smc_1),a
+	 ld (rom_bank_check_smc_2),a
 	 ld b,3
 	 mlt bc
 	 ld.lil ix,rombankLUT

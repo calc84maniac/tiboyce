@@ -1,15 +1,22 @@
 decode_jump_helper:
-	ld bc,recompile_struct+8
+	ld bc,recompile_struct
 	add ix,bc
-	sub (ix-1)
+	sub (ix+7)
 	ld.s (hl),a
 	
+	ld bc,-$4000
+	ld a,d
+	add a,b
+	add a,b
+	jr nc,decode_jump_bank_switch
+	
 	call get_base_address
+decode_jump_common:
 	ld (base_address),hl
 	add hl,de
 	
 	push hl
-	 call lookup_code_link_internal
+	 call lookup_code_link_internal_by_pointer
 	pop hl
 	
 	push af
@@ -19,6 +26,38 @@ decode_jump_helper:
 	
 	ei
 	jp.sis decode_jump_return
+	
+decode_jump_bank_switch:
+	push de
+	 ld hl,(ix+2)
+	 ld de,(rom_bank_base)
+	 sbc hl,de
+	 add hl,bc
+	 add hl,bc
+	 ex de,hl
+	pop de
+	jr nc,decode_jump_common
+	
+	call lookup_code_link_internal_with_base
+	pop.s hl
+	add.s a,(hl)
+	ld.s (hl),a	;cycle count
+	dec hl
+	ld a,(z80codebase+curr_rom_bank)
+	ld.s (hl),a	;rom bank
+	dec hl
+	dec hl
+	ld.s (hl),ix
+	dec hl
+	ld.s (hl),$C3	;JP target
+	dec hl
+	ld.s (hl),do_rom_bank_jump >> 8
+	dec hl
+	ld.s (hl),do_rom_bank_jump & $FF
+	dec hl
+	ld.s (hl),$CD	;CALL do_rom_bank_jump
+	ei
+	jp.sis decode_jump_waitloop_return
 	
 decode_rst_helper:
 	push de
@@ -58,9 +97,6 @@ decode_call_helper:
 	and $C0
 	jr nz,decode_call_bank_switch
 decode_call_common:
-	call get_base_address
-	ld (base_address),hl
-	add hl,de
 	call lookup_code_link_internal
 _
 	add a,3	; Taken call eats 3 cycles
@@ -100,18 +136,18 @@ decode_call_bank_switch:
 	jr nc,decode_call_flush
 	inc hl
 	push hl
-	 ld (hl),$CD
+	 ld (hl),$CD	;CALL routine
 	 inc hl
 	 ld (hl),bc
 	 inc hl
 	 inc hl
-	 ld (hl),a
-	 call lookup_code
+	 ld (hl),a	;current bank
+	 call lookup_code_link_internal
 	 add a,3	; Taken call eats 3 cycles
 	 ex (sp),ix
 	pop hl
-	ld.s (ix+4),hl
-	ld b,$CD
+	ld.s (ix+4),hl	;JIT target
+	ld b,$CD	;CALL
 	ei
 	ret.l
 	
@@ -133,6 +169,41 @@ decode_intcache_helper:
 	ei
 	ret.l
 	
+banked_jump_mismatch_helper:
+	exx
+	push bc
+	 push hl
+	  ; Look up the old target
+	  ld.s de,(ix+1)
+	  push ix
+	   call.il lookup_gb_code_address
+	   ex (sp),ix
+	   ld.s hl,(ix+3)
+	   add a,h
+	   ld h,3
+	   mlt hl
+	   ld de,rombankLUT
+	   add hl,de
+	   ld de,(hl)
+	  pop hl
+	  sbc hl,de
+	  ex de,hl
+	  push ix
+	   ld h,a
+	   call.il lookup_code_cached
+	   add a,h
+	   ld.sis hl,(curr_rom_bank)
+	   ld h,a
+	   ex (sp),ix
+	   ld.s (ix+3),hl
+	  pop hl
+	  ld.s (ix+1),hl
+	  ex (sp),hl
+	 pop ix
+	pop bc
+	ei
+	jp.sis dispatch_cycles_exx
+	
 banked_call_mismatch_helper:
 	ld.s (ix),a
 	exx
@@ -147,11 +218,9 @@ banked_call_mismatch_helper:
 	  ld d,(hl)
 	  dec hl
 	  ld e,(hl)
-	  push ix
-	   call lookup_code
-	   add a,3	; Taken call eats 3 cycles
-	  pop hl
-	  inc hl
+	  lea hl,ix+1
+	  call.il lookup_code_cached
+	  add a,3	; Taken call eats 3 cycles
 	  ld.s (hl),ix
 	  ex.s (sp),ix
 	  sub.s (ix+2)

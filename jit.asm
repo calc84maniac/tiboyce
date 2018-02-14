@@ -520,34 +520,40 @@ _
 	push hl
 	 jr lookup_code_cached_by_pointer_pushed
 	
+lookup_code_link_internal:
+	call get_base_address
+lookup_code_link_internal_with_base:
+	ld (base_address),hl
+	add hl,de
+	
 ; Looks up a recompiled code pointer from a direct GB address,
 ; allowing a direct link within the currently executing RAM block.
 ; Normally, only the start of a RAM block is allowed for direct links.
 ; If executing from ROM or target is not the same block, proceed as normal.
 ;
 ; Inputs:  HL = direct 24-bit GB address to look up
-;          IX = struct pointer following the currently executing block
+;          IX = struct pointer of the currently executing block
 ;          (base_address) = base address of pointer in HL
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
-lookup_code_link_internal:
+lookup_code_link_internal_by_pointer:
 	ex de,hl
-	bit 7,(ix-4)
+	bit 7,(ix+4)
 	jr z,lookup_code_by_pointer
 	; We're running from RAM, check if destination is in running block
-	ld hl,(ix-6)
+	ld hl,(ix+2)
 	or a
 	sbc hl,de
 	jr z,internal_found_start
 	jr nc,lookup_code_cached_by_pointer
-	ld bc,(ix-3)
+	ld bc,(ix+5)
 	dec.s bc
 	add hl,bc
 	jr nc,lookup_code_cached_by_pointer
 internal_found_start:
-	ld a,(ix-1)
-	ld ix,(ix-8)
+	ld a,(ix+7)
+	ld ix,(ix)
 	lea ix,ix+RAM_PREFIX_SIZE
 	ret z
 	or a
@@ -768,11 +774,19 @@ recompile_end_common:
 	ld (ix+8),de
 	; Update the index LUT
 	ld hl,recompile_index_LUT
-	ld l,d
+	ld l,(ix+1)
 	lea bc,ix+8
-	ld (hl),c
-	inc h
-	ld (hl),b
+	push af
+	 ld a,d
+_
+	 ld (hl),c
+	 inc h
+	 ld (hl),b
+	 dec h
+	 inc l
+	 cp l
+	 jr nc,-_
+	pop af
 	
 	ld hl,(z80codebase+memroutine_next)
 	sbc hl,de

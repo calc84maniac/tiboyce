@@ -575,7 +575,8 @@ _
 	
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
-	ld (z80codebase+rom_bank_check_smc),a
+	ld (z80codebase+rom_bank_check_smc_1),a
+	ld (z80codebase+rom_bank_check_smc_2),a
 	ld c,a
 	ld b,3
 	mlt bc
