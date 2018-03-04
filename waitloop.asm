@@ -47,6 +47,10 @@ identify_waitloop:
 	jr z,waitloop_found_read_1
 	cp $FA		;LD A,(nnnn)
 	jr z,waitloop_found_read_2
+	cp $18		;JR
+	jr z,waitloop_found_uncond_jump
+	cp $C3
+	jr z,waitloop_found_uncond_jump
 	exx
 	push bc
 	 cp $0A		;LD A,(BC)
@@ -61,6 +65,20 @@ identify_waitloop:
 	jr z,waitloop_found_read_hl
 	exx
 	ret
+	
+waitloop_found_uncond_jump:
+	; See if we reached the loop end
+	inc de
+	inc de
+	inc de
+	inc de
+	pop.s hl
+	push.s hl
+	sbc.s hl,de	;Carry is reset
+	ret nz
+	ld b,h
+	ld c,l
+	jr waitloop_identified_trampoline
 	
 waitloop_found_read_1:
 	; Use 8-bit immediate as read address
@@ -142,6 +160,7 @@ waitloop_found_data_op:
 	push.s hl
 	 sbc.s hl,de	;Carry is reset
 	pop hl
+waitloop_identified_trampoline:
 	jr z,waitloop_identified
 	
 	ld a,(hl)
