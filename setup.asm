@@ -1966,8 +1966,8 @@ _
 	add hl,de
 	ld (ix+3),hl
 	add hl,de
-	ld (ix+6),hl
 	add hl,de
+	ld (ix+6),hl
 	add hl,de
 	lea ix,ix+9
 	djnz -_

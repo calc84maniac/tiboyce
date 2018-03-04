@@ -831,8 +831,8 @@ palette_obj1_colors:
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	
-	; Pad to an odd number of bytes
-	.block (~$) & 1
+	; Pad to an even number of bytes
+	.block (-$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -874,6 +874,9 @@ SkinDisplay:
 	.db 1
 ; Turbo mode (0=Toggle, 1=Hold)
 TurboMode:
+	.db 0
+; Scaling type (0=static, 1=scrolling)
+ScalingType:
 	.db 0
 	
 ; Number of key bytes

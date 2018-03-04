@@ -122,6 +122,9 @@ _
 	add a,$20
 	ld (turbo_keypress_smc),a
 	
+	; Scaling type
+	inc hl
+	
 	; Key configuration
 	ld ix,key_smc_turbo
 	push hl
@@ -694,6 +697,7 @@ OptionList:
 	.dw OptionScalingMode+1
 	.dw OptionSkinDisplay+1
 	.dw OptionTurboMode+1
+	.dw OptionScalingType+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -747,22 +751,24 @@ EmulatorTitle:
 	.db ITEM_CMD,2, 180,1,"Exit TI-Boy CE",0
 	
 GraphicsMenu:
-	.db 7
+	.db 8
 	.db 5,12,"Graphics Options",0
 	.db "",0
 	.db ITEM_OPTION,6, 70,1,"Scaling mode: %-10s",0
+	.db "Static: Scale absolutely.\n Scrolling: Scale relative to tilemap.",0
+	.db ITEM_OPTION,9, 80,1,"Scaling type: %-9s",0
 	.db "Display a skin in \"no scaling\" mode.\n Requires the TIBoySkn.8xv AppVar.",0
-	.db ITEM_OPTION,7, 80,1,"Skin display: %-3s",0
+	.db ITEM_OPTION,7, 90,1,"Skin display: %-3s",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,0, 100,1,"Frameskip type: %-6s",0
+	.db ITEM_OPTION,0, 110,1,"Frameskip type: %-6s",0
 	.db "",0
-	.db ITEM_DIGIT,2, 110,1,"Frameskip value: %u",0
+	.db ITEM_DIGIT,2, 120,1,"Frameskip value: %u",0
 	.db "Show percentage of real GB performance.\n Turbo: Display when turbo is activated.\n Slowdown: Display when below fullspeed.",0
-	.db ITEM_OPTION,1, 130,1,"Speed display: %-8s",0
+	.db ITEM_OPTION,1, 140,1,"Speed display: %-8s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
-	.db ITEM_OPTION,3, 150,1,"Palette selection: %-10s",0
+	.db ITEM_OPTION,3, 160,1,"Palette selection: %-10s",0
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 170,1,"Back",0
+	.db ITEM_LINK,0, 180,1,"Back",0
 	
 ControlsMenu:
 	.db 11
@@ -833,6 +839,11 @@ OptionSpeedDisplay:
 	.db "turbo",0
 	.db "slowdown",0
 	.db "always",0
+	
+OptionScalingType:
+	.db 2
+	.db "static",0
+	.db "scrolling",0
 	
 OptionPaletteSelection:
 	.db 13

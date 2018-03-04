@@ -42,32 +42,9 @@ frame_emulated_count = $+1
 	
 	   ; Swap buffers
 	   call prepare_next_frame
-	   
 	   ld a,(ScalingMode)
 	   or a
-	   jr z,++_
-	   ; EXPAND DONG
-	   ld a,144/3
-	   ex de,hl
-	   ld b,e	;B=0
-_
-	   push de
-	   pop hl
-	   ld c,160
-	   add hl,bc
-	   ex de,hl
-	   ldir
-	   ex de,hl
-	   ld c,160
-	   add hl,bc
-	   push hl
-	   pop de
-	   add hl,bc
-	   ex de,hl
-	   ldir
-	   dec a
-	   jr nz,-_
-_
+	   call nz,do_scale_fill
 	   
 speed_display_smc_1 = $
 	   jr z,NoSpeedDisplay
@@ -395,7 +372,106 @@ frame_real_count = $+1
 	sbc hl,hl
 	ld (frame_emulated_count),hl
 	ret
-
+	
+	
+do_scale_fill:
+	ld ix,160
+	ld a,(ScalingType)
+	ld b,a
+	djnz do_scale_full
+	ld a,(hram_base+SCY)
+last_frame_scy = $+1
+	ld b,0
+	ld (last_frame_scy),a
+last_scale_offset = $+1
+	add a,0
+	sub b
+	jp m,++_
+_
+	sub 3
+	jr nc,-_
+_
+	add a,3
+	jr nc,-_
+	ld (last_scale_offset),a
+	ld b,a
+	ld a,(hram_base+LCDC)
+	and $20
+	jr z,do_scale_full
+	ld a,(hram_base+WY)
+	cp 144
+	jr c,_
+do_scale_full:
+	ld a,144
+_
+	push af
+	 cpl
+	 call scale_offset
+	 inc a
+	pop bc
+	ld c,a
+	add a,b
+	sub 144+6
+	ld b,c
+	
+scale_offset:
+	add a,3
+	ret c
+	djnz _
+scale_offset_1_loop:
+	lea de,ix
+	ld c,e
+	add hl,de
+	ex de,hl
+	add hl,de
+	ldir
+	ex de,hl
+	lea hl,ix
+	ld c,l
+	add hl,de
+	ldir
+	add a,3
+	jr nc,scale_offset_1_loop
+	ret
+_
+	djnz _
+	lea de,ix
+scale_offset_2_loop:
+	ld c,e
+	ex de,hl
+	add hl,de
+	ex de,hl
+	ldir
+	lea hl,ix
+	ld c,l
+	add hl,de
+	ex de,hl
+	ldir
+	ex de,hl
+	lea de,ix
+	add hl,de
+	add a,3
+	jr nc,scale_offset_2_loop
+	ret
+_
+	ld b,0
+scale_offset_0_loop:
+	ex de,hl
+	lea hl,ix
+	ld c,l
+	add hl,de
+	ex de,hl
+	ldir
+	lea hl,ix
+	ld c,l
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	add hl,de
+	ldir
+	add a,3
+	jr nc,scale_offset_0_loop
+	ret
 	
 ; Displays a digit onscreen at the given framebuffer offset in bytes.
 ; Draws to the old buffer.
