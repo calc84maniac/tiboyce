@@ -192,9 +192,11 @@ banked_call_mismatch_continue:
 	lea ix,ix+4
 	ex (sp),ix
 	djnz do_call_common
-	ld b,CALL_STACK_DEPTH
 	ld.lil sp,myADLstack
+	pop bc
 	ld sp,myz80stack-2
+	push bc
+	ld b,CALL_STACK_DEPTH
 	jp do_call_common
 	
 banked_call_mismatch:
