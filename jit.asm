@@ -233,11 +233,6 @@ _
 	  APRINTF(RuntimeErrorMessage)
 _
 	 pop de
-_
-	 ld a,(mpIntMaskedStatus)
-	 and 1
-	 jr z,-_
-	 ld (mpIntAcknowledge),a
 	pop af
 #endif
 	ld (exitReason),a
