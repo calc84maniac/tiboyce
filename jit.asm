@@ -430,6 +430,7 @@ int_cache_hit:
 	 dec hl
 	 dec hl
 	 dec hl
+	 xor a
 	 sub (hl)
 	 ld (z80codebase+int_return_sp),hl
 	 inc hl
