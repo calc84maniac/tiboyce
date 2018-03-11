@@ -1442,7 +1442,7 @@ writeIEhandler:
 	
 readP1:
 	ld a,(P1)
-	or $0F
+	or $CF
 	ld ix,(keys)
 	bit 4,a
 	jr nz,_
