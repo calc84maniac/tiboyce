@@ -1084,7 +1084,7 @@ opcoderecsizes:
 	.db 5,1,3,1,1,1,2,1
 	.db 1,3,3,1,1,1,2,1
 	.db 0,1,3,1,1,1,2,1
-	.db 10,3,3,1,1,1,2,1
+	.db 10,3,3,1,1,1,2,3
 	.db 10,1,3,1,1,1,2,1
 	.db 10,5,3,4,3,3,4,1
 	.db 10,3,3,4,1,1,2,1
@@ -1240,7 +1240,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen2byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen27 - opgenroutines
 ;28
 	.db opgenJRcond - opgenroutines
 	.db opgen1byte_2cc - opgenroutines

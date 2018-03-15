@@ -178,6 +178,10 @@ opgenJRcond:
 opgenJPcond:
 	jr _opgenJPcond
 	
+opgen27:
+	call opgenroutinecall_1cc
+	.dw ophandler27
+	
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
 _opgenJRcond:

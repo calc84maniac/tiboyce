@@ -915,6 +915,44 @@ ophandler08:
 	pop af
 	ret
 	
+ophandler27:
+	push af
+	 ex (sp),hl
+	 daa
+	 bit 1,l
+	 jr nz,_
+	 ; If N was 0, behavior is same as Game Boy
+	pop hl
+	; Reset H and N flags, preserve C flag, set Z flag properly
+	rla
+	rr a
+	ret
+	
+	; Emulate N=1 case manually
+_
+	 ld a,h
+	 bit 4,l
+	 jr z,_
+	 sub $06
+_
+	 srl l
+	 jr c,_
+	 sub $00
+	pop hl
+	ret
+_
+	 sub $60
+	 jr c,_
+	 ; Set C flag and don't touch other flags
+	 push af
+	 pop hl
+	 inc l
+	 push hl
+	 pop af
+_
+	pop hl
+	ret
+	
 ophandler31:
 	pop ix
 	exx
