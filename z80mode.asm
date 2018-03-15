@@ -936,21 +936,20 @@ _
 	 sub $06
 _
 	 srl l
-	 jr c,_
+	 jr c,++_
 	 sub $00
+_
 	pop hl
 	ret
 _
 	 sub $60
-	 jr c,_
+	 jr c,--_
 	 ; Set C flag and don't touch other flags
 	 push af
 	 pop hl
 	 inc l
-	 push hl
-	 pop af
-_
-	pop hl
+	 ex (sp),hl
+	pop af
 	ret
 	
 ophandler31:
