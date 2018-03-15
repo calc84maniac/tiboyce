@@ -1217,21 +1217,25 @@ ophandlerE2:
 	jp mem_write_ports_always
 	
 ophandlerE8:
-	ex af,af'
 	exx
-	ex.l de,hl
-	pop hl
-	ld a,(hl)
-	inc hl
-	push hl
-	rlca
-	sbc.l hl,hl
-	rrca
-	ld l,a
-	add.l hl,de
-	exx
-	ex af,af'
-	ret
+	ld c,a
+	pop ix
+	ld a,(ix)
+	inc ix
+	ld de,(sp_base_address)
+	or a
+	sbc hl,de
+	ld e,a
+	rla
+	sbc a,a
+	ld d,a
+	ld a,l
+	add hl,de
+	add a,e
+	call z,reset_z_flag_only
+	ld a,c
+	di
+	jp.lil set_gb_stack
 	
 ophandlerE9:
 	ex af,af'
@@ -1295,7 +1299,7 @@ do_push_smc_6 = $+1
 	ret
 	
 ophandlerF8:
-	ex af,af'
+	ld ixl,a
 	pop hl
 	ld a,(hl)
 	inc hl
@@ -1312,9 +1316,22 @@ ophandlerF8:
 	 rla
 	 sbc a,a
 	 ld d,a
+	 ld a,l
 	 add hl,de
+	 add a,e
+	 call z,reset_z_flag_only
 	pop de
-	ex af,af'
+	ld a,ixl
+	ret
+	
+reset_z_flag_only:
+	push af
+	dec sp
+	pop af
+	res 6,a
+	push af
+	inc sp
+	pop af
 	ret
 	
 ophandlerF9:
