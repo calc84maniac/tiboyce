@@ -1,4 +1,4 @@
-MENU_ITEM_COUNT = 16
+MENU_ITEM_COUNT = 15
 	
 	.org 0
 Startup:
@@ -125,13 +125,19 @@ RedrawMenuClear:
 	ld.sis (drawFGColor-ramStart),hl
 	APTR(EmulatorTitle)
 	call _VPutS
+	ld a,227
+	ld (penRow),a
+	ld hl,18
+	ld (penCol),hl
+	APTR(WebsiteURL)
+	call _VPutS
 	or a
 	sbc hl,hl
 	ld.sis (drawFGColor-ramStart),hl
 	ld c,l
 RedrawMenu:
 	ld de,(menuFrame)
-	ld a,36
+	ld a,34
 	ld b,MENU_ITEM_COUNT
 RedrawMenuLoop:
 	add a,12
@@ -2249,3 +2255,7 @@ error_text:
 	
 ErrorNoROMsFound:
 	.db "No ROMs found!",0
+	
+WebsiteURL:
+	.db "https://calc84maniac.github.io/tiboyce",0
+	
