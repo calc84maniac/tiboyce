@@ -6,3 +6,7 @@
 *.sav
 *.exe
 *.lst
+*.vcxproj.*
+.vs/
+Debug/
+Release/
