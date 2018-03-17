@@ -4,7 +4,7 @@ title: Home
 ---
 
 <center>
-<img alt="Donkey Kong screenshot" src="/assets/images/donkey-kong.png"/>
+<img alt="Donkey Kong screenshot" src="{{ site.baseurl }}/assets/images/donkey-kong.png"/>
 </center>
 
 TI-Boy CE is a Game Boy emulator for the TI-84 Plus CE and the TI-83 Premium CE
