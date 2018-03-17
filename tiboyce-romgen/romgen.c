@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#undef min
+#define min(a,b) (a) < (b) ? (a) : (b)
+
 #define offset_of(STRUCTPTR, MEMBER) ((uint8_t*)(&(STRUCTPTR)->MEMBER) - (uint8_t*)(STRUCTPTR))
 
 #define MAX_VAR_SIZE 65513
