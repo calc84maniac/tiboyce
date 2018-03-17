@@ -370,7 +370,7 @@ int main(int argc, char **argv) {
 	default_title[sizeof(default_title) - 1] = '\0';
 	printf("Opened ROM: %s\n", default_title);
 
-	if (title == NULL) {
+	if (title == NULL || title[0] == '\0') {
 		title = default_title;
 	}
 
