@@ -615,9 +615,8 @@ _
 	; Update rtc_last
 	call update_rtc
 	
-	ld ix,ram_size-47
-	ld bc,(ix+47)
-	inc.s bc
+	ld ix,ram_size-46
+	ld bc,(ix+46)
 	add ix,bc
 	ld b,10
 	ld de,z80codebase+rtc_latched
@@ -921,7 +920,7 @@ _
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
 	ld a,(ram_size)
-	or a
+	dec a
 	ld a,(mbc_rtc_last_latch)
 	jr nz,_
 	ld a,(z80codebase+mbc1_ram_smc)
@@ -964,12 +963,11 @@ _
 ExitEmulationWithoutState:
 	; Handle RTC saving
 	ld a,(ram_size)
-	or a
+	dec a
 	jr z,++_
 	call update_rtc
-	ld ix,ram_size-47
-	ld bc,(ix+47)
-	inc.s bc
+	ld ix,ram_size-46
+	ld bc,(ix+46)
 	add ix,bc
 	sbc hl,hl
 	ld de,z80codebase+rtc_latched
@@ -1468,6 +1466,12 @@ _
 _
 	 push bc
 	  push hl
+	   ; Only load compression type 0
+	   ld a,(hl)
+	   or a
+	   jr nz,_
+	   inc hl
+	   dec bc
 	   ld a,b
 	   or c
 	   jr z,_
@@ -1488,6 +1492,7 @@ _
 	 call _DelMem
 LoadRAMNoVar:
 	pop hl
+	inc hl
 	push hl
 	 inc hl
 	 inc hl
@@ -1500,15 +1505,18 @@ LoadRAMNoVar:
 	 ld de,ram_size
 	 call _InsertMem
 	pop bc
-	ld a,c
-	ld (de),a
-	inc de
+	ex de,hl
+	; Compression type is implicitly set to 0 here
+	ld (hl),bc
+	inc hl
+	inc hl
+	inc hl
+	ld (cram_start),hl
+	dec bc
 	ld a,b
-	ld (de),a
-	inc de
-	ld (cram_start),de
 	or c
 	jr z,_
+	ex de,hl
 	ld hl,vram_tiles_start
 	ldir
 	ret
@@ -1521,6 +1529,7 @@ _
 
 SaveRAM:
 	ld hl,(ram_size)
+	dec hl
 	ld a,h
 	or l
 	jr z,SaveRAMDeleteMem
@@ -1578,7 +1587,7 @@ SaveRAMDeleteMem:
 	ld hl,ram_size
 	ld de,(hl)
 	inc de
-	inc.s de
+	inc de
 	call _DelMem
 	or a
 	
@@ -1689,7 +1698,7 @@ _
 	 ld de,(hl)
 	 ld hl,(ram_size)
 	 or a
-	 sbc.s hl,de
+	 sbc hl,de
 	pop hl
 _
 	scf

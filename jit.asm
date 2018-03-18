@@ -1760,7 +1760,7 @@ opgenVRAMwrite:
 	
 opgenCRAMwrite:
 	 ld a,(ram_size)
-	 or a
+	 dec a
 	 jr nz,_
 	 ld a,(ram_size+1)
 	 add a,a
@@ -1984,7 +1984,7 @@ opgenVRAMread:
 	
 opgenCRAMread:
 	ld a,(ram_size)
-	or a
+	dec a
 	jr nz,_
 	ld a,(ram_size+1)
 	add a,a
