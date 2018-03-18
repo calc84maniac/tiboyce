@@ -40,7 +40,7 @@ body {
   padding: $section-spacing;
 
   .site-title {
-    font-family: "Abril Fatface", serif;
+    font-family: "Liberation Serif", serif;
     font-weight: normal;
     font-size: $large-font-size;
     color: rgba(255,255,255,.75);
@@ -115,7 +115,7 @@ body {
 
   // Bigger title
   .site-title {
-    font-size: 3.0rem;
+    font-size: 2.9rem;
     color: white;
   }
 
@@ -163,7 +163,7 @@ body {
 
   #sidebar {
     .site-title {
-      font-size: 3.0rem;
+      font-size: 2.9rem;
 
       a { color: white; }
       .back-arrow { display: none; }
