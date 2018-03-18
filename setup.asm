@@ -364,17 +364,16 @@ StartROM:
 	jr nc,StartFromHere
 	
 RestartFromHere:
-	ld hl,vram_start
+	ld hl,hram_saved
 	push hl
 	pop de
 	inc de
-	ld bc,regs_saved - vram_start - 1
+	ld bc,ram_size - hram_saved - 1
 	ld (hl),0
 	ldir
 	
-	push de
-	 APTR(regs_init)
-	pop de
+	APTR(regs_init)
+	ld de,regs_saved
 	ld bc,hmem_init - regs_init
 	ldir
 	
@@ -852,7 +851,8 @@ ExitEmulation:
 	
 	exx
 	ld de,(z80codebase+sp_base_address)
-	or a
+	xor a
+	ld (ix-state_size+STATE_SYSTEM_TYPE),a
 	sbc hl,de
 	ld.s (ix-state_size+STATE_REG_SP),hl
 	
@@ -1528,11 +1528,17 @@ _
 	
 
 SaveRAM:
-	ld hl,(ram_size)
-	dec hl
-	ld a,h
-	or l
+	ld hl,ram_size
+	ld bc,(hl)
+	ld a,c
+	dec a
+	or b
 	jr z,SaveRAMDeleteMem
+
+	inc bc
+	inc bc
+	call checksum
+	ld (cart_ram_checksum),ix
 	
 	ld hl,ROMName
 	push hl
@@ -1617,9 +1623,7 @@ _
 	 ld de,save_state_prefix_size
 	 jr nz,SaveAutoStateDeleteMem
 	 
-	 ld (hl),e
-	 inc hl
-	 ld (hl),d
+	 ld (hl),de
 	 
 	 ld hl,ROMName
 	 call _Mov9ToOP1
@@ -1688,7 +1692,7 @@ _
 	jr c,LoadStateFileWithoutRAM
 	
 	ld hl,(save_state_size)
-	sbc.s hl,bc
+	sbc hl,bc
 	scf
 	ret nz
 	
@@ -1697,7 +1701,6 @@ _
 	push de
 	 ld de,(hl)
 	 ld hl,(ram_size)
-	 or a
 	 sbc hl,de
 	pop hl
 _
@@ -1710,11 +1713,33 @@ _
 	ret
 	
 LoadStateFileWithoutRAM:
+	push bc
+	 ld hl,ram_size
+	 ld bc,(hl)
+	 ld a,c
+	 dec a
+	 or b
+	 jr z,_
+	 push de
+	  inc bc
+	  inc bc
+	  call checksum
+	 pop de
+	 ld hl,cart_ram_checksum - (save_state_size + 2)
+	 add hl,de
+	 ld bc,(hl)
+	 lea hl,ix
+	 sbc hl,bc
+_
+	pop bc
+	scf
+	ret nz
+
 	; Carry is set
 	ld hl,save_state_prefix_size + 1
 	sbc hl,bc
 	ex de,hl
-	jr -_
+	jr --_
 	
 LookUpAppvar:
 	call _Mov9ToOP1
@@ -2185,11 +2210,13 @@ default_palette_found:
 	ret
 	
 regs_init:
+	.db $00	; Hardware type
+	.db $00 ; Interrupt enable
 	;     AF,   BC,   DE,   HL,   SP,   PC
 	.dw $01B0,$0013,$00D8,$014D,$FFFE,$0100
 	.dw $0000 ; Frame cycle counter
+	.dw $0000 ; Serial transfer cycle counter
 	.dw $0000 ; Divisor cycle counter
-	.db $00 ; Interrupt enable
 	.db $01 ; Cart ROM bank
 	.db $00 ; Cart RAM bank
 	.db $00 ; MBC mode

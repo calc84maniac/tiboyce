@@ -59,20 +59,21 @@
 #endmacro
 
 ; State variable indices
-STATE_REG_AF = 0
-STATE_REG_BC = 2
-STATE_REG_DE = 4
-STATE_REG_HL = 6
-STATE_REG_SP = 8
-STATE_REG_PC = 10
-STATE_FRAME_COUNTER = 12
-STATE_DIV_COUNTER = 14
-STATE_INTERRUPTS = 16
-STATE_ROM_BANK = 17
-STATE_RAM_BANK = 18
-STATE_MBC_MODE = 19
-STATE_SERIAL_COUNTER = 20
-STATE_END = 22
+STATE_SYSTEM_TYPE = 0
+STATE_INTERRUPTS = 1
+STATE_REG_AF = 2
+STATE_REG_BC = 4
+STATE_REG_DE = 6
+STATE_REG_HL = 8
+STATE_REG_SP = 10
+STATE_REG_PC = 12
+STATE_FRAME_COUNTER = 14
+STATE_SERIAL_COUNTER = 16
+STATE_DIV_COUNTER = 18
+STATE_ROM_BANK = 20
+STATE_RAM_BANK = 21
+STATE_MBC_MODE = 22
+STATE_END = 23
 
 ; Constant color palette entries
 BLUE = 0
@@ -496,6 +497,17 @@ memcmp:
 	ret po
 	jr memcmp
 	
+; Adds up BC bytes at HL. Output in IX.
+checksum:
+	ld ix,0
+	lea de,ix
+_
+	ld e,(hl)
+	add ix,de
+	cpi
+	ret po
+	jr -_
+	
 	; Returns BC=0, DE=byte|byte|byte
 #macro MEMSET_FAST(start, length, byte)
 	ld hl,start + length
@@ -831,8 +843,8 @@ palette_obj1_colors:
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	
-	; Pad to an even number of bytes
-	.block (-$) & 1
+	; Pad to an odd number of bytes
+	.block (~$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -889,7 +901,7 @@ config_end:
 option_config_count = (KeyConfig-1) - FrameskipValue
 key_config_count = config_end - KeyConfig
 	
-; The RAM program ends here. Should be at a multiple of 2 bytes.
+; The RAM program ends here. Should be at an odd address.
 program_end:
 program_size = program_end - userMem
 	.echo "User RAM code size: ", program_size
@@ -897,8 +909,17 @@ program_size = program_end - userMem
 ; The size of the save state is located at the end of the program.
 save_state_size:
 
+; A saved copy of OAM/HRAM, when saving/loading state. 512 bytes in size.
+hram_saved = save_state_size + 3
+
+; The start of saved registers, etc. Between the saved OAM and HRAM. 96 bytes in size.
+regs_saved = hram_saved + $00A0
+
+; The checksum of cart RAM
+cart_ram_checksum = regs_saved + state_size - 3
+
 ; Start of Game Boy VRAM. 8KB in size. Must be 2-byte aligned.
-vram_start = save_state_size + 2
+vram_start = hram_saved + $0200
 ; Start of Game Boy WRAM. 8KB in size.
 wram_start = vram_start + $2000
 
@@ -907,15 +928,9 @@ vram_base = vram_start - $8000
 ; Base address of WRAM, can be indexed directly by Game Boy address.
 wram_base = wram_start - $C000
 
-; A saved copy of OAM/HRAM, when saving/loading state. 512 bytes in size.
-hram_saved = wram_start + $2000
-
-; The start of saved registers, etc. Between the saved OAM and HRAM. 96 bytes in size.
-regs_saved = hram_saved + $00A0
-
 ; The size of the inserted cartridge RAM is located at the end of the main save state.
-ram_size = hram_saved + $0200
-save_state_prefix_size = ram_size - vram_start
+ram_size = wram_start + $2000
+save_state_prefix_size = ram_size - (save_state_size + 2)
 	
 ; These files remain in the archived appvar.
 	#include "setup.asm"
