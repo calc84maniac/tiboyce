@@ -15,7 +15,7 @@
   var disqus_config = function () {
     this.page.url = "{{ page.url | absolute_url }}";
     this.page.identifier = "{{ page.guid or page.id }}" ||
-                           "{{ page.url | absolute_url }}";
+                           "{{ page.url }}";
   }
   function loadDisqusComments() { // DON'T EDIT BELOW THIS LINE
     var d = document, s = d.createElement('script');
