@@ -1466,6 +1466,9 @@ _
 _
 	 push bc
 	  push hl
+	   ld a,b
+	   or c
+	   jr z,_
 	   ; Only load compression type 0
 	   ld a,(hl)
 	   or a
