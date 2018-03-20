@@ -126,6 +126,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="romgen.c" />
+    <ClCompile Include="zip.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="miniz.h" />
+    <ClInclude Include="zip.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
