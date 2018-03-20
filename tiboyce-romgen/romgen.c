@@ -16,17 +16,17 @@
 
 const uint8_t metaheader[8] = "TIBOYCE";
 
-const char b83metadata[] = "bundle_identifier:TI Bundle\r\n"
-                           "bundle_format_version:1\r\n"
-                           "bundle_target_device:83CE\r\n"
-                           "bundle_target_type:CUSTOM\r\n"
-                           "bundle_comments:Created by tiboyce-romgen\r\n";
+const char b83metadata[] = "bundle_identifier:TI Bundle\n"
+                           "bundle_format_version:1\n"
+                           "bundle_target_device:83CE\n"
+                           "bundle_target_type:CUSTOM\n"
+                           "bundle_comments:Created by tiboyce-romgen\n";
 
-const char b84metadata[] = "bundle_identifier:TI Bundle\r\n"
-                           "bundle_format_version:1\r\n"
-                           "bundle_target_device:84CE\r\n"
-                           "bundle_target_type:CUSTOM\r\n"
-                           "bundle_comments:Created by tiboyce-romgen\r\n";
+const char b84metadata[] = "bundle_identifier:TI Bundle\n"
+                           "bundle_format_version:1\n"
+                           "bundle_target_device:84CE\n"
+                           "bundle_target_type:CUSTOM\n"
+                           "bundle_comments:Created by tiboyce-romgen\n";
 
 struct pageinfo {
 	uint16_t length;
@@ -288,7 +288,7 @@ void usage(char *file) {
 	exit(1);
 }
 
-void pause(void) {
+void exit_pause(void) {
 	printf("\nPress Enter to exit ");
 	getchar();
 }
@@ -401,7 +401,7 @@ int main(int argc, char **argv) {
 			pack = (enum PACK_TYPE)(selection-1);
 		}
 
-		atexit(pause);
+		atexit(exit_pause);
 	}
 
 	do {
@@ -537,13 +537,13 @@ int main(int argc, char **argv) {
 		char zipname[10] = {0};
 		strncpy(zipname, outname, sizeof(zipname));
 		if (pack == PACK_B83) {
-			strncat(zipname, ".b83", sizeof(zipname));
+			strncat(zipname, ".b83", sizeof(zipname)-1);
 		}
 		else if (pack == PACK_B84) {
-			strncat(zipname, ".b84", sizeof(zipname));
+			strncat(zipname, ".b84", sizeof(zipname)-1);
 		}
 		else {
-			strncat(zipname, ".zip", sizeof(zipname));
+			strncat(zipname, ".zip", sizeof(zipname)-1);
 		}
 		printf("Opening file %s for output\n", zipname);
 		zip = zip_open(zipname, ZIP_DEFAULT_COMPRESSION_LEVEL, 'w');
