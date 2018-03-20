@@ -129,7 +129,7 @@ void write_error(char *filename, struct zip_t *zip) {
 uint32_t write_tifile(struct tifile *file, const char *extension, struct zip_t *zip) {
 	char filename[13] = {0};
 	strncpy(filename, file->data.name, sizeof(file->data.name));
-	strncat(filename, extension, sizeof(filename)-1);
+	strcat(filename, extension);
 	printf("Writing AppVar %s (var length = %d bytes)\n", filename, file->data.var_length);
 
 	size_t full_length = offset_of(file, data) + file->file_length + 2;
@@ -142,10 +142,12 @@ uint32_t write_tifile(struct tifile *file, const char *extension, struct zip_t *
 
 	file->data.data_length = file->data.data_length_2 = file->data.var_length + 2;
 	uint8_t *var = (uint8_t*)(&file->data);
-	uint16_t *checksum = (uint16_t*)(&file->data.var_data[file->data.var_length]);
-	*checksum = 0;
-	while (var < (uint8_t*)checksum)
-		*checksum += *var++;
+	uint8_t *checksum_ptr = &file->data.var_data[file->data.var_length];
+	uint16_t checksum = 0;
+	while (var < checksum_ptr)
+		checksum += *var++;
+	checksum_ptr[0] = (checksum)      & 0xFF;
+	checksum_ptr[1] = (checksum >> 8) & 0xFF;
 
 	if (zip != NULL) {
 		if (zip_entry_open(zip, filename) < 0) {
@@ -537,13 +539,13 @@ int main(int argc, char **argv) {
 		char zipname[10] = {0};
 		strncpy(zipname, outname, sizeof(zipname));
 		if (pack == PACK_B83) {
-			strncat(zipname, ".b83", sizeof(zipname)-1);
+			strcat(zipname, ".b83");
 		}
 		else if (pack == PACK_B84) {
-			strncat(zipname, ".b84", sizeof(zipname)-1);
+			strcat(zipname, ".b84");
 		}
 		else {
-			strncat(zipname, ".zip", sizeof(zipname)-1);
+			strcat(zipname, ".zip");
 		}
 		printf("Opening file %s for output\n", zipname);
 		zip = zip_open(zipname, ZIP_DEFAULT_COMPRESSION_LEVEL, 'w');
