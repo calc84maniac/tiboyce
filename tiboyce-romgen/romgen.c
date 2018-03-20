@@ -383,12 +383,12 @@ int main(int argc, char **argv) {
 		}
 
 		if (pack == PACK_NONE) {
-			int selection = -1;
-			while (selection < 0 || selection > 3) {
-				printf("\n0 - AppVar files (*.8xv)\n");
-				printf("1 - TI-83 Premium CE bundle (*.b83) - requires TI-Connect CE 5.3\n");
-				printf("2 - TI-84 Plus CE bundle (*.b84) - requires TI-Connect CE 5.3\n");
-				printf("3 - Zip archive (*.zip) - must extract before sending\n");
+			int selection = 0;
+			while (selection < 1 || selection > 4) {
+				printf("\n1: AppVar files (*.8xv)\n");
+				printf("2: TI-83 Premium CE bundle (*.b83) - requires TI-Connect CE 5.3\n");
+				printf("3: TI-84 Plus CE bundle (*.b84) - requires TI-Connect CE 5.3\n");
+				printf("4: Zip archive (*.zip) - must extract before sending\n");
 				printf("Choose an output format by number: ");
 				scanf("%d", &selection);
 				int c;
@@ -398,7 +398,7 @@ int main(int argc, char **argv) {
 						exit(1);
 				} while (c != '\n');
 			}
-			pack = (enum PACK_TYPE)selection;
+			pack = (enum PACK_TYPE)(selection-1);
 		}
 
 		atexit(pause);
