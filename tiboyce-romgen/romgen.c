@@ -115,7 +115,7 @@ bool truncate_tifile(struct tifile *file, uint16_t length) {
 	return true;
 }
 
-void write_error(char *filename, struct zip_t *zip) {
+void write_error(const char *filename, struct zip_t *zip) {
 	if (zip != NULL) {
 		printf("Could not write file %s to archive\n", filename);
 		zip_close(zip);
@@ -183,34 +183,91 @@ uint32_t write_tifile(struct tifile *file, const char *extension, struct zip_t *
 	}
 }
 
-uint8_t *read_rom(char *filename, size_t *length_out) {
-	FILE *file = fopen(filename, "rb");
-	if (file == NULL)
-		return NULL;
-
-	if (fseek(file, 0, SEEK_END) != 0) {
-		fclose(file);
-		return NULL;
+bool has_extension(const char *filename, const char *extension) {
+	size_t name_len = strlen(filename);
+	size_t ext_len = strlen(extension);
+	if (name_len < ext_len) {
+		return false;
 	}
 
-	size_t length = ftell(file);
-	rewind(file);
-	
-	uint8_t *rom = malloc(length);
-	if (rom == NULL) {
-		fclose(file);
+	for (size_t i = name_len - ext_len; i < name_len; i++) {
+		if (tolower(filename[i]) != *extension++)
+			return false;
+	}
+	return true;
+}
+
+uint8_t *read_rom(const char *filename, size_t *length_out) {
+	if (has_extension(filename, ".zip")) {
+		struct zip_t *zip = zip_open(filename, ZIP_DEFAULT_COMPRESSION_LEVEL, 'r');
+		if (zip == NULL)
+			return NULL;
+		
+		int n = zip_total_entries(zip);
+		if (n < 0) {
+			zip_close(zip);
+			return NULL;
+		}
+
+		for (int i = 0; i < n; i++) {
+			if (zip_entry_openbyindex(zip, i) < 0) {
+				zip_close(zip);
+				return NULL;
+			}
+			const char *name = zip_entry_name(zip);
+			if (name == NULL) {
+				zip_entry_close(zip);
+				zip_close(zip);
+			}
+			if (has_extension(name, ".gb") || has_extension(name, ".gbc")) {
+				void *rom = NULL;
+				size_t length = 0;
+				if (zip_entry_read(zip, &rom, &length) < 0) {
+					zip_entry_close(zip);
+					zip_close(zip);
+					return NULL;
+				}
+				*length_out = length;
+				return (uint8_t *)rom;
+			}
+			if (zip_entry_close(zip) < 0) {
+				zip_close(zip);
+				return NULL;
+			}
+		}
+
+		printf("No .gb or .gbc file found in zip archive\n");
 		return NULL;
 	}
+	else {
+		FILE *file = fopen(filename, "rb");
+		if (file == NULL)
+			return NULL;
 
-	if (fread(rom, 1, length, file) != length) {
-		free(rom);
+		if (fseek(file, 0, SEEK_END) != 0) {
+			fclose(file);
+			return NULL;
+		}
+
+		size_t length = ftell(file);
+		rewind(file);
+
+		uint8_t *rom = malloc(length);
+		if (rom == NULL) {
+			fclose(file);
+			return NULL;
+		}
+
+		if (fread(rom, 1, length, file) != length) {
+			free(rom);
+			fclose(file);
+			return NULL;
+		}
+
+		*length_out = length;
 		fclose(file);
-		return NULL;
+		return rom;
 	}
-
-	*length_out = length;
-	fclose(file);
-	return rom;
 }
 
 uint16_t get_page_length(uint8_t *page, size_t remaining) {
@@ -451,7 +508,7 @@ int main(int argc, char **argv) {
 	size_t rom_length;
 	uint8_t *rom = read_rom(romfile, &rom_length);
 	if (rom == NULL) {
-		printf("Could not read rom file %s\n", romfile);
+		printf("Could not read rom from file %s\n", romfile);
 		exit(1);
 	}
 
