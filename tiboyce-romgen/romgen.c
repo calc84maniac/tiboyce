@@ -73,7 +73,7 @@ struct tifile {
 struct tifile *open_tifile(enum VAR_TYPE type, const char *name, enum VAR_FLAG flag) {
 	struct tifile *file = malloc(sizeof(struct tifile));
 	if (file == NULL)
-		return false;
+		return NULL;
 
 	strcpy(file->signature, "**TI83F*\x1A\x0A");
 	memset(file->comment, '\0', sizeof(file->comment));
@@ -115,6 +115,42 @@ bool truncate_tifile(struct tifile *file, uint16_t length) {
 	return true;
 }
 
+void free_tifiles(struct tifile **files, int start, int end) {
+	for (int i = start; i < end; i++) {
+		free(files[i]);
+	}
+}
+
+struct tifile *create_metadata_file(const char *outname, const char *title, uint8_t num_pages, enum VAR_FLAG flag) {
+	struct tifile *file = open_tifile(TYPE_APPVAR, outname, flag);
+	if (file == NULL) {
+		printf("Error allocating memory for AppVar %s\n", outname);
+		return NULL;
+	}
+	if (!append_tifile(&file, metaheader, sizeof(metaheader))) {
+		printf("Error appending header to AppVar %s\n", outname);
+		free(file);
+		return NULL;
+	}
+	if (!append_tifile(&file, &num_pages, sizeof(num_pages))) {
+		printf("Error appending page count to AppVar %s\n", outname);
+		free(file);
+		return NULL;
+	}
+	uint8_t title_length = (uint8_t)strlen(title);
+	if (!append_tifile(&file, &title_length, sizeof(title_length))) {
+		printf("Error appending title length to AppVar %s\n", outname);
+		free(file);
+		return NULL;
+	}
+	if (!append_tifile(&file, &title, title_length)) {
+		printf("Error appending title to AppVar %s\n", outname);
+		free(file);
+		return NULL;
+	}
+	return file;
+}
+
 void write_error(const char *filename, struct zip_t *zip) {
 	if (zip != NULL) {
 		printf("Could not write file %s to archive\n", filename);
@@ -123,20 +159,20 @@ void write_error(const char *filename, struct zip_t *zip) {
 	else {
 		printf("Could not write to file %s\n", filename);
 	}
-	exit(1);
 }
 
-uint32_t write_tifile(struct tifile *file, const char *extension, struct zip_t *zip) {
+bool write_tifile(struct tifile *file, const char *extension, struct zip_t *zip, uint32_t *crc_accumulator) {
 	char filename[13] = {0};
 	strncpy(filename, file->data.name, sizeof(file->data.name));
 	strcat(filename, extension);
-	printf("Writing AppVar %s (var length = %d bytes)\n", filename, file->data.var_length);
+	printf("Writing AppVar %s (var length = %d bytes)\n", filename, (int)file->data.var_length);
 
 	size_t full_length = offset_of(file, data) + file->file_length + 2;
 	struct tifile *newfile = realloc(file, full_length);
 	if (newfile == NULL) {
 		free(file);
 		write_error(filename, zip);
+		return false;
 	}
 	file = newfile;
 
@@ -153,34 +189,40 @@ uint32_t write_tifile(struct tifile *file, const char *extension, struct zip_t *
 		if (zip_entry_open(zip, filename) < 0) {
 			free(file);
 			write_error(filename, zip);
+			return false;
 		}
 		if (zip_entry_write(zip, file, full_length) < 0) {
 			free(file);
 			zip_entry_close(zip);
 			write_error(filename, zip);
+			return false;
 		}
 		free(file);
-		uint32_t crc32 = zip_entry_crc32(zip);
+
+		*crc_accumulator += zip_entry_crc32(zip);
 		if (zip_entry_close(zip) < 0) {
 			write_error(filename, zip);
+			return false;
 		}
-		return crc32;
 	}
 	else {
 		FILE *out = fopen(filename, "wb");
 		if (out == NULL) {
 			free(file);
 			write_error(filename, zip);
+			return false;
 		}
 		if (fwrite(file, full_length, 1, out) != 1) {
 			free(file);
 			fclose(out);
 			write_error(filename, zip);
+			return false;
 		}
 		free(file);
 		fclose(out);
-		return 0;
 	}
+
+	return true;
 }
 
 bool has_extension(const char *filename, const char *extension) {
@@ -346,18 +388,17 @@ void usage(char *file) {
 	printf("  -t: The title to display in the ROM list (defaults to internal ROM name)\n");
 	printf("  romfile: The path to the ROM file to split\n");
 	printf("  outname: The prefix name to use for the output AppVar files\n");
-	exit(1);
 }
 
 void exit_pause(void) {
 	printf("\nPress Enter to exit ");
-	getchar();
+	(void)getchar();
 }
 
 int main(int argc, char **argv) {
 	char outname_prompt[7];
 	char title_prompt[256];
-	char *romfile = NULL;
+	char *romfilename = NULL;
 	char *outname = NULL;
 	char *title = NULL;
 	enum VAR_FLAG flag = VAR_ARCHIVED;
@@ -369,8 +410,10 @@ int main(int argc, char **argv) {
 			switch (option) {
 			case 'b':
 			case 'B':
-				if (pack != PACK_NONE || (*arg)[2] != '8')
+				if (pack != PACK_NONE || (*arg)[2] != '8') {
 					usage(argv[0]);
+					return 1;
+				}
 				if ((*arg)[3] == '3') {
 					pack = PACK_B83;
 				}
@@ -379,12 +422,15 @@ int main(int argc, char **argv) {
 				}
 				else {
 					usage(argv[0]);
+					return 1;
 				}
 				break;
 			case 't':
 			case 'T':
-				if (*++arg == NULL)
+				if (*++arg == NULL) {
 					usage(argv[0]);
+					return 1;
+				}
 				title = *arg;
 				break;
 			case 'u':
@@ -393,26 +439,32 @@ int main(int argc, char **argv) {
 				break;
 			case 'z':
 			case 'Z':
-				if (pack != PACK_NONE)
+				if (pack != PACK_NONE) {
 					usage(argv[0]);
+					return 1;
+				}
 				pack = PACK_ZIP;
 				break;
 			default:
 				usage(argv[0]);
+				return 1;
 			}
 		}
-		else if (romfile == NULL) {
-			romfile = *arg;
+		else if (romfilename == NULL) {
+			romfilename = *arg;
 		}
 		else if (outname == NULL) {
 			outname = *arg;
 		}
 		else {
 			usage(argv[0]);
+			return 1;
 		}
 	}
-	if (romfile == NULL)
+	if (romfilename == NULL) {
 		usage(argv[0]);
+		return 1;
+	}
 
 	if (outname == NULL) {
 		while (title == NULL)
@@ -420,7 +472,7 @@ int main(int argc, char **argv) {
 			printf("Enter game title to display in ROM list: ");
 			title = &title_prompt[0];
 			if (!fgets(title, sizeof(title_prompt), stdin))
-				exit(1);
+				return 1;
 
 			size_t size = strlen(title);
 			if (title[size - 1] == '\n') {
@@ -433,7 +485,7 @@ int main(int argc, char **argv) {
 				do {
 					c = getchar();
 					if (c < 0)
-						exit(1);
+						return 1;
 				} while (c != '\n');
 			}
 		}
@@ -451,12 +503,14 @@ int main(int argc, char **argv) {
 				printf("3: TI-84 Plus CE bundle (*.b84) - requires TI-Connect CE 5.3\n");
 				printf("4: Zip archive (*.zip) - must extract before sending\n");
 				printf("Choose an output format by number: ");
-				scanf("%d", &selection);
+				if (scanf("%d", &selection) != 1) {
+					return 1;
+				}
 				int c;
 				do {
 					c = getchar();
 					if (c < 0)
-						exit(1);
+						return 1;
 				} while (c != '\n');
 			}
 			pack = (enum PACK_TYPE)(selection-1);
@@ -470,7 +524,7 @@ int main(int argc, char **argv) {
 			printf("Enter output prefix name (5 chars max): ");
 			outname = &outname_prompt[0];
 			if (!fgets(outname, sizeof(outname_prompt), stdin))
-				exit(1);
+				return 1;
 
 			size_t size = strlen(outname);
 			if (outname[size - 1] == '\n') {
@@ -481,7 +535,7 @@ int main(int argc, char **argv) {
 				do {
 					c = getchar();
 					if (c < 0)
-						exit(1);
+						return 1;
 				} while (c != '\n');
 			}
 		}
@@ -508,15 +562,16 @@ int main(int argc, char **argv) {
 	} while (outname == NULL);
 
 	size_t rom_length;
-	uint8_t *rom = read_rom(romfile, &rom_length);
+	uint8_t *rom = read_rom(romfilename, &rom_length);
 	if (rom == NULL) {
-		printf("Could not read rom from file %s\n", romfile);
-		exit(1);
+		printf("Could not read rom from file %s\n", romfilename);
+		return 1;
 	}
 
 	if (rom_length < 0x150) {
 		printf("Not a valid GB ROM\n");
-		exit(1);
+		free(rom);
+		return 1;
 	}
 
 	char default_title[16];
@@ -539,7 +594,8 @@ int main(int argc, char **argv) {
 	while (num_pages * 0x4000U < rom_length) {
 		if (num_pages == 128) {
 			printf("ROM is too large!\n");
-			exit(1);
+			free(rom);
+			return 1;
 		}
 
 		uint16_t page_length = get_page_length(&rom[num_pages * 0x4000], rom_length - num_pages * 0x4000);
@@ -548,24 +604,26 @@ int main(int argc, char **argv) {
 		num_pages++;
 	}
 
-	struct tifile *metadatafile = open_tifile(TYPE_APPVAR, outname, flag);
-	append_tifile(&metadatafile, metaheader, sizeof(metaheader));
-	append_tifile(&metadatafile, &num_pages, sizeof(num_pages));
-	uint8_t title_length = (uint8_t)strlen(title);
-	append_tifile(&metadatafile, &title_length, sizeof(title_length));
-	append_tifile(&metadatafile, title, title_length);
-
 	struct tifile *romfiles[256] = { NULL };
 	int romfilecount = 0;
 	while (num_pages > 0) {
 		char appvarname[9];
 		sprintf(appvarname, "%sR%02d", outname, romfilecount);
 		struct tifile *romfile = open_tifile(TYPE_APPVAR, appvarname, flag);
+		if (romfile == NULL) {
+			printf("Error allocating memory for AppVar %s\n", appvarname);
+			free_tifiles(romfiles, 0, romfilecount);
+			free(rom);
+			return 1;
+		}
 		
 		int pages_to_use = best_fit(pages, num_pages);
 		if (pages_to_use <= 0) {
 			printf("Error choosing pages for AppVar %s\n", appvarname);
-			exit(1);
+			free_tifiles(romfiles, 0, romfilecount);
+			free(romfile);
+			free(rom);
+			return 1;
 		}
 
 		while (pages_to_use > 0) {
@@ -576,19 +634,36 @@ int main(int argc, char **argv) {
 
 			if (!append_tifile(&romfile, &page_index, sizeof(page_index))) {
 				printf("Error appending page index to AppVar %s\n", appvarname);
-				exit(1);
+				free_tifiles(romfiles, 0, romfilecount);
+				free(romfile);
+				free(rom);
+				return 1;
 			}
 			if (!append_tifile(&romfile, &page_length, sizeof(page_length))) {
 				printf("Error appending page length to AppVar %s\n", appvarname);
-				exit(1);
+				free_tifiles(romfiles, 0, romfilecount);
+				free(romfile);
+				free(rom);
+				return 1;
 			}
 			if (!append_tifile(&romfile, &rom[page_index * 0x4000], page_length)) {
 				printf("Error appending page data to AppVar %s\n", appvarname);
-				exit(1);
+				free_tifiles(romfiles, 0, romfilecount);
+				free(romfile);
+				free(rom);
+				return 1;
 			}
 		}
 
 		romfiles[romfilecount++] = romfile;
+	}
+
+	free(rom);
+
+	struct tifile *metadatafile = create_metadata_file(outname, title, num_pages, flag);
+	if (metadatafile == NULL) {
+		free_tifiles(romfiles, 0, romfilecount);
+		return 1;
 	}
 
 	printf("ROM AppVar count: %d\n", romfilecount + 1);
@@ -610,13 +685,22 @@ int main(int argc, char **argv) {
 		zip = zip_open(zipname, ZIP_DEFAULT_COMPRESSION_LEVEL, 'w');
 		if (zip == NULL) {
 			printf("Could not open file %s for writing\n", zipname);
-			exit(1);
+			free_tifiles(romfiles, 0, romfilecount);
+			free(metadatafile);
+			return 1;
 		}
 	}
 
-	uint32_t checksum = write_tifile(metadatafile, ".8xv", zip);
+	uint32_t checksum = 0;
+	if (!write_tifile(metadatafile, ".8xv", zip, &checksum)) {
+		free_tifiles(romfiles, 0, romfilecount);
+		return 1;
+	}
 	for (int i = 0; i < romfilecount; i++) {
-		checksum += write_tifile(romfiles[i], ".8xv", zip);
+		if (!write_tifile(romfiles[i], ".8xv", zip, &checksum)) {
+			free_tifiles(romfiles, i + 1, romfilecount);
+			return 1;
+		}
 	}
 
 	switch (pack) {
@@ -625,23 +709,27 @@ int main(int argc, char **argv) {
 		printf("Writing bundle metadata\n");
 		if (zip_entry_open(zip, "METADATA") < 0) {
 			write_error("METADATA", zip);
+			return 1;
 		}
 		if (zip_entry_write(zip,
 				(pack == PACK_B83 ? b83metadata : b84metadata),
 				(pack == PACK_B83 ? sizeof(b83metadata) : sizeof(b84metadata)) - 1) < 0) {
 			zip_entry_close(zip);
 			write_error("METADATA", zip);
+			return 1;
 		}
 		checksum += zip_entry_crc32(zip);
 		if (zip_entry_close(zip) < 0)
 		{
 			write_error("METADATA", zip);
+			return 1;
 		}
 
 		printf("Writing bundle checksum\n");
 		if (zip_entry_open(zip, "_CHECKSUM") < 0)
 		{
 			write_error("_CHECKSUM", zip);
+			return 1;
 		}
 		char checksum_str[11];
 		sprintf(checksum_str, "%08x\r\n", checksum);
@@ -649,10 +737,12 @@ int main(int argc, char **argv) {
 		{
 			zip_entry_close(zip);
 			write_error("_CHECKSUM", zip);
+			return 1;
 		}
 		if (zip_entry_close(zip) < 0)
 		{
 			write_error("_CHECKSUM", zip);
+			return 1;
 		}
 
 		/*FALLTHROUGH*/

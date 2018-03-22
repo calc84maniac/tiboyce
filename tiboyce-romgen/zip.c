@@ -387,7 +387,7 @@ int zip_entry_close(struct zip_t *zip) {
 
     if (!zip) {
         // zip_t handler is not initialized
-        goto cleanup;
+        return -1;
     }
 
     pzip = &(zip->archive);
