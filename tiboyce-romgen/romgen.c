@@ -227,6 +227,8 @@ uint8_t *read_rom(const char *filename, size_t *length_out) {
 					zip_close(zip);
 					return NULL;
 				}
+				zip_entry_close(zip);
+				zip_close(zip);
 				*length_out = length;
 				return (uint8_t *)rom;
 			}
