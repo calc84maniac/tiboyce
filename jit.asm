@@ -1759,10 +1759,10 @@ opgenVRAMwrite:
 	 jr -_
 	
 opgenCRAMwrite:
-	 ld a,(ram_size)
-	 dec a
+	 ld a,(cram_size)
+	 or a
 	 jr nz,_
-	 ld a,(ram_size+1)
+	 ld a,(cram_size+1)
 	 add a,a
 	 jr c,_
 	 push hl
@@ -1983,10 +1983,10 @@ opgenVRAMread:
 	jp opgen_next_swap_skip
 	
 opgenCRAMread:
-	ld a,(ram_size)
-	dec a
+	ld a,(cram_size)
+	or a
 	jr nz,_
-	ld a,(ram_size+1)
+	ld a,(cram_size+1)
 	add a,a
 	jr c,_
 	push hl

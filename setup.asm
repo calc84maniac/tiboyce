@@ -312,6 +312,14 @@ _
 	jr nc,RepopulateMenuTrampoline
 	or a
 	jr z,SaveConfigAndQuit
+	ACALL(DisplayError)
+	
+RepopulateMenuTrampoline:
+	AJUMP(RepopulateMenu)
+	
+	; A = error code
+	; (errorArg) = error argument
+DisplayError:
 	push af
 	 ld a,32
 	 ld (penRow),a
@@ -348,29 +356,89 @@ _
 	call _GetCSC
 	or a
 	jr z,-_
+	ret
 	
-RepopulateMenuTrampoline:
-	AJUMP(RepopulateMenu)
+StartROMAutoStateOutOfMemory:
+	ld hl,(cram_size)
+	ld de,6
+	add hl,de
+	ex de,hl
+	ld hl,save_state_size_bytes
+	call _DelMem
+_
+	ld a,ERROR_NOT_ENOUGH_MEMORY
+	scf
+	ret
+	
+StartROMInitStateOutOfMemory:
+	dec hl
+	dec hl
+	xor a
+	ld (hl),a
+	dec hl
+	ld (hl),1
+	dec a
+	ld (current_state),a
+	; Temporarily prevent auto state saving because state is clean
+	ld hl,AutoSaveState
+	set 1,(hl)
+	ACALL_SAFERET(SaveStateFiles)
+	jr -_
 	
 StartROM:
 	ACALL_SAFERET(LoadROMAndRAM)
 	ret c
 	
-	ld a,'A' - '0'
+	ld a,$FF
 	ld (current_state),a
-	ACALL(LoadStateFile)
-	ld a,0
-	ld (current_state),a
+	ACALL(LoadStateFiles)
+	push af
+	 xor a
+	 ld (current_state),a
+	pop af
 	jr nc,StartFromHere
 	
+	cp ERROR_NOT_ENOUGH_MEMORY
+	jr z,StartROMAutoStateOutOfMemory
+	
 RestartFromHere:
-	ld hl,hram_saved
+	ld hl,save_state_size_bytes
+	ld de,(hl)
+	ld bc,save_state_size + 1
+	ld (hl),bc
+	inc hl
+	inc hl
+	inc hl
+	dec de
+	dec bc
 	push hl
-	pop de
+	 push bc
+	  call _DelMem
+	 pop hl
+	 call _EnoughMem
+	pop hl
+	jr c,StartROMInitStateOutOfMemory
+	push de
+	 ex de,hl
+	 call _InsertMem
+	pop bc
+	push de
+	pop hl
 	inc de
-	ld bc,ram_size - hram_saved - 1
+	dec bc
 	ld (hl),0
 	ldir
+	
+	inc hl
+	ld a,(hl)
+	dec a
+	inc hl
+	or (hl)
+	jr z,_
+	inc hl
+	inc hl
+	ld (cram_start),hl
+_
 	
 	APTR(regs_init)
 	ld de,regs_saved
@@ -590,10 +658,10 @@ _
 	ld hl,(hl)
 	ld (rom_bank_base),hl
 	
-	ld a,(ram_size+1)
+	ld a,(cram_size+1)
 	and $80
 	add a,$B7	; or a / scf
-	ld (z80codebase+ram_size_smc),a
+	ld (z80codebase+cram_size_smc),a
 	
 	xor a
 	ld (exitReason),a
@@ -614,7 +682,9 @@ _
 	; Update rtc_last
 	call update_rtc
 	
-	ld ix,ram_size-46
+	ld ix,save_state_size_bytes - 44
+	ld bc,(ix+44)
+	add ix,bc
 	ld bc,(ix+46)
 	add ix,bc
 	ld b,10
@@ -665,7 +735,7 @@ _
 	jr _
 	
 setup_ram_bank:
-	ld a,(ram_size+1)
+	ld a,(cram_size+1)
 	add a,a
 	sbc a,a
 	and (iy-state_size+STATE_RAM_BANK)
@@ -919,8 +989,8 @@ _
 	ld a,(z80codebase+curr_rom_bank)
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
-	ld a,(ram_size)
-	dec a
+	ld a,(cram_size)
+	or a
 	ld a,(mbc_rtc_last_latch)
 	jr nz,_
 	ld a,(z80codebase+mbc1_ram_smc)
@@ -962,11 +1032,13 @@ _
 	
 ExitEmulationWithoutState:
 	; Handle RTC saving
-	ld a,(ram_size)
-	dec a
+	ld a,(cram_size)
+	or a
 	jr z,++_
 	call update_rtc
-	ld ix,ram_size-46
+	ld ix,save_state_size_bytes - 44
+	ld bc,(ix+44)
+	add ix,bc
 	ld bc,(ix+46)
 	add ix,bc
 	sbc hl,hl
@@ -1026,26 +1098,34 @@ _
 	ld a,(exitReason)
 	dec a
 	srl a
-	jr z,+++_
+	jr z,ExitDone
 	jr c,_
 	rra
 	ccf
-	jr c,+++_
+	jr c,ExitDone
 	AJUMP(RestartFromHere)
 _
 	ld a,(main_menu_selection)
 	cp 3
 	jr nz,_
 	ACALL(RestoreHomeScreen)
-	ACALL_SAFERET(SaveStateFile)
-	jr c,++_
+	ACALL_SAFERET(SaveStateFiles)
+	; Reindex the ROM in case a Garbage Collect occurred, and reinsert the RAM.
+	ACALL_SAFERET(LoadROMAndRAMRestoreName)
+	jr c,ExitDone
 _
-	ACALL(LoadStateFile)
+	ACALL(LoadStateFiles)
+	jr nc,_
+	ACALL(RestoreHomeScreen)
+	ACALL(DisplayError)
+_
 	AJUMP(StartFromHere)
-_
+ExitDone:
 	push af
 	 ACALL(RestoreHomeScreen)
-	 ACALL_SAFERET(SaveRAM)
+	 ld a,$FF
+	 ld (current_state),a
+	 ACALL_SAFERET(SaveStateFiles)
 	pop af
 	ret
 	
@@ -1118,45 +1198,18 @@ _
 	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
 	ret
 	
-SaveStateFile:
+LoadROMAndRAMRestoreName:
 	ld hl,ROMName
-	push hl
+	xor a
 _
-	 inc hl
-	 ld a,(hl)
-	 or a
-	 jr nz,-_
-	 dec hl
-	 ld a,(current_state)
-	 add a,'0'
-	 ld (hl),a
-	 dec hl
-	 ld (hl),'t'
-	 dec hl
-	 ld (hl),'S'
-	 ex (sp),hl
-	 ; Delete the existing variable
-	 push hl
-	  call _Mov9ToOP1
-	  call _chkFindSym
-	  call nc,_DelVarArc
-	 pop hl
-	 push hl
-	  call _Mov9ToOP1
-	  call _CmpPrgNamLen
-	  ld bc,0
-	  call _CreatePVar4
-	  push hl
-	  pop ix
-	  ld hl,(save_state_size << 16) | (save_state_size & $00FF00) | (save_state_size >> 16)
-	  ld (ix-5),hl
-	 pop hl
-	 call _Mov9ToOP1
-	 call Arc_Unarc_Safe
-	pop hl
-	ld (hl),0
-	; Reindex the ROM in case a Garbage Collect occurred, and reinsert the RAM.
-
+	inc hl
+	cp (hl)
+	jr nz,-_
+	dec hl
+	dec hl
+	dec hl
+	ld (hl),a
+	
 LoadROMAndRAM:
 	ld hl,ROMName+1
 	ld (errorArg),hl
@@ -1234,39 +1287,138 @@ _
 	ld (rombankLUT+($60*3)),hl
 _
 	
-	ld hl,save_state_prefix_size + 2
-	call _EnoughMem
-	ret c
+LoadRAM:
+	ld hl,ROMName
+	xor a
+_
+	inc hl
+	cp (hl)
+	jr nz,-_
+	dec hl
+	ld (hl),'V'
+	dec hl
+	ld (hl),'A'
+	dec hl
+	ld (hl),'S'
+	
+	ld de,8*1024
+	ld a,(mbc)
+	cp 2	;MBC2
+	jr z,+++_
+	cp 4	;MBC3+RTC
+	jr nz,_
+	ld e,48
+_
+	ld hl,(rom_start)
+	ld bc,$0149
+	add hl,bc
+	ld a,(hl)
+	or a
+	jr nz,_
+	ld d,a
+_
+	cp 3
+	jr c,_
+	ld d,(32*1024) >> 8
+_
+	
 	ex de,hl
-	ld de,save_state_size
-	push de
-	 push hl
-	  call _InsertMem
-	 pop bc
+	ld (cram_size),hl
+	inc hl
+	push hl
+	 inc hl
+	 inc hl
+	 inc hl
+	 inc hl
+	 inc hl
+	 call _EnoughMem
 	pop hl
+	ld a,ERROR_NOT_ENOUGH_MEMORY
+	ret c
+	push hl
+	 ex de,hl
+	 ld de,save_state_size_bytes
+	 call _InsertMem
+	pop bc
+	ex de,hl
+	; Set save state to uncompressed size 0 initially
+	ld de,1
+	ld (hl),de
+	inc hl
+	inc hl
+	inc hl
+	; Compression type is implicitly set to 0 here
+	ld (hl),bc
+	
+LoadRAMAny:
+	ld bc,(cram_size)
+	ld a,b
+	or c
+	ld hl,mpZeroPage
+	ld (cram_start),hl
+	ret z
+	ld hl,decompress_buffer
+	ld (hl),l
 	push hl
 	pop de
 	inc de
-	push hl
-	 push bc
-	  dec bc
-	  ld (hl),0
-	  ldir
-	
-	  ACALL(LoadRAM)
-	 pop de
-	 jr nc,_
-	pop hl
-	push af
-	 call _DelMem
-	pop af
+	dec bc
+	ldir
+	ld hl,ROMName
+	ACALL(LookUpAppvar)
+	jr c,LoadRAMNoVar
+	ACALL(DecompressFile)
+
+LoadRAMNoVar:
+	ld hl,save_state_size_bytes
+	ld de,(hl)
+	add hl,de
+	inc hl
+	inc hl
+	ld bc,(hl)
+	inc hl
+	inc hl
+	inc hl
+	ld (cram_start),hl
+	dec bc
+	ex de,hl
+	ld hl,decompress_buffer
+	ldir
+	or a
 	ret
-_
-	 ld hl,(ram_size)
-	 add hl,de
-	 ex de,hl
-	pop hl
-	ld (hl),de
+	
+	; Input: HL=compressed data, BC=compressed size
+	; Output: decompress_buffer contains decompressed data, BC=decompressed size
+DecompressFile:
+	ld a,b
+	or c
+	ret z
+	; Only load compression type 0 (uncompressed)
+	xor a
+	cpi
+	jr nz,DecompressFailed
+	ld a,b
+	or c
+	ret z
+	push bc
+	 ld de,decompress_buffer
+	 ldir
+	pop bc
+	ret
+DecompressFailed:
+	ld b,a
+	ld c,a
+	ret
+	
+	; Input: HL=file in user RAM
+	; Output: File potentially resized, but not moved
+CompressFile:
+	ld bc,(hl)
+	inc hl
+	inc hl
+	inc hl
+	dec bc
+	ld de,compress_buffer
 	ret
 	
 LoadROM:
@@ -1300,10 +1452,10 @@ _
 	ld (current_description),hl
 	
 	ld hl,ROMName
+	xor a
 _
 	inc hl
-	ld a,(hl)
-	or a
+	cp (hl)
 	jr nz,-_
 	ld (hl),'R'
 	inc hl
@@ -1327,7 +1479,7 @@ LoadROMRestartLoop:
 LoadROMLoop:
 	push de
 	 ld hl,ROMName
-	 ACALL_SAFERET(LookUpAppvar)
+	 ACALL(LookUpAppvar)
 	pop de
 	ld a,ERROR_FILE_MISSING
 	ret c
@@ -1339,10 +1491,10 @@ LoadROMLoop:
 	 call Arc_Unarc_Safe
 	pop de
 	ld hl,ROMName
+	xor a
 _
 	inc hl
-	ld a,(hl)
-	or a
+	cp (hl)
 	jr nz,-_
 	dec hl
 	dec hl
@@ -1392,10 +1544,10 @@ _
 	dec e
 	ret z
 	ld hl,ROMName
+	xor a
 _
 	inc hl
-	ld a,(hl)
-	or a
+	cp (hl)
 	jr nz,-_
 	dec hl
 	inc (hl)
@@ -1407,210 +1559,119 @@ _
 	inc (hl)
 	jr LoadROMLoop
 	
-LoadRAM:
+GetStateRAMFileName:
 	ld hl,ROMName
+	push hl
+	 xor a
 _
-	inc hl
-	ld a,(hl)
-	or a
-	jr nz,-_
-	dec hl
-	ld (hl),'V'
-	dec hl
-	ld (hl),'A'
-	dec hl
-	ld (hl),'S'
-	
-	ld de,8*1024
-	ld a,(mbc)
-	cp 2	;MBC2
-	jr z,+++_
-	cp 4	;MBC3+RTC
-	jr nz,_
-	ld e,48
-_
-	ld hl,(rom_start)
-	ld bc,$0149
-	add hl,bc
-	ld a,(hl)
-	or a
-	jr nz,_
-	ld d,a
-_
-	cp 3
-	jr c,_
-	ld d,(32*1024) >> 8
-_
-	
-	push de
-	 ld a,d
-	 or e
-	 jr z,LoadRAMNoVar
-	 ld b,d
-	 ld c,e
-	 ld hl,vram_tiles_start
-	 ld (hl),l
-	 push hl
-	 pop de
-	 inc de
-	 dec bc
-	 ldir
-_
-	 ld hl,ROMName
-	 ACALL(LookUpAppvar)
+	 inc hl
+	 cp (hl)
+	 jr nz,-_
+	 dec hl
+	 ld a,(current_state)
+	 add a,'0'
+	 ld b,'v'
 	 jr nc,_
-	 or a
-	 sbc hl,hl
-	 call _createAppVar
-	 jr -_
+	 ld a,'V'
+	 ld b,'A'
 _
-	 push bc
-	  push hl
-	   ld a,b
-	   or c
-	   jr z,_
-	   ; Only load compression type 0
-	   ld a,(hl)
-	   or a
-	   jr nz,_
-	   inc hl
-	   dec bc
-	   ld a,b
-	   or c
-	   jr z,_
-	   ld de,vram_tiles_start
-	   ldir
-_
-	  pop de
-	 pop hl
-	 call _ChkInRAM
-	 jr nz,LoadRAMNoVar
-	 ex de,hl
+	 ld (hl),a
 	 dec hl
 	 ld (hl),b
 	 dec hl
-	 ld (hl),c
-	 inc hl
-	 inc hl
-	 call _DelMem
-LoadRAMNoVar:
-	pop hl
-	inc hl
-	push hl
-	 inc hl
-	 inc hl
-	 call _EnoughMem
-	pop hl
-	ld a,ERROR_NOT_ENOUGH_MEMORY
-	ret c
-	push hl
-	 ex de,hl
-	 ld de,ram_size
-	 call _InsertMem
-	pop bc
-	ex de,hl
-	; Compression type is implicitly set to 0 here
-	ld (hl),bc
-	inc hl
-	inc hl
-	inc hl
-	ld (cram_start),hl
-	dec bc
-	ld a,b
-	or c
-	jr z,_
-	ex de,hl
-	ld hl,vram_tiles_start
-	ldir
-	ret
-_
-	ld hl,mpZeroPage
-	ld (cram_start),hl
-	ret
-	
-	
-
-SaveRAM:
-	ld hl,ram_size
-	ld bc,(hl)
-	ld a,c
-	dec a
-	or b
-	jr z,SaveRAMDeleteMem
-
-	inc bc
-	inc bc
-	call checksum
-	ld (cart_ram_checksum),ix
-	
-	ld hl,ROMName
-	push hl
-_
-	 inc hl
-	 ld a,(hl)
-	 or a
-	 jr nz,-_
-	 dec hl
-	 ld (hl),'V'
-	 dec hl
-	 ld (hl),'A'
-	 dec hl
 	 ld (hl),'S'
 	pop hl
-	ACALL(LookUpAppvar)
-	jr c,SaveRAMRecreate
-	
-	push de
-	 dec hl
-	 dec hl
-	 inc bc
-	 inc bc
-	 ld de,ram_size
-	 call memcmp
-	pop hl
-	jr z,SaveRAMDeleteMem
-	
-	; Delete the existing variable
+	ret
+
+SaveStateFiles:
+	ld hl,save_state_size_bytes
+	ld de,(hl)
+	inc hl
+	inc hl
+	add hl,de
 	push hl
-	pop ix
-	ld de,(ix-7)
-	ld d,(ix-4)
-	ld e,(ix-3)
-	call _DelVarArc
+	 ld bc,(hl)
+	 ld a,c
+	 dec a
+	 or b
+	 jr z,SaveRAMDeleteMem
+
+	 ACALL(CompressFile)
+	pop hl
+	push hl
+	 ld bc,(hl)
+	 inc.s bc
+	 inc bc
+	 call checksum
+	 ld (cart_ram_checksum),ix
+	
+	 ACALL(GetStateRAMFileName)
+	 ACALL(LookUpAppvar) 
+	 jr c,SaveRAMRecreate
+	
+	 ex de,hl
+	 ex (sp),hl
+	 push hl
+	  dec de
+	  dec de
+	  inc bc
+	  inc bc
+	  call memcmp
+	 pop hl
+	 ex (sp),hl
+	 jr z,SaveRAMDeleteMem
+	
+	 ; Delete the existing variable
+	 push hl
+	 pop ix
+	 ld de,(ix-7)
+	 ld d,(ix-4)
+	 ld e,(ix-3)
+	 call _DelVarArc
 	
 SaveRAMRecreate:
-	ld hl,ROMName
-	call _Mov9ToOP1
-	call _CmpPrgNamLen
-	ld bc,0
-	call _CreatePVar4
-	push hl
-	pop ix
-	ld hl,(ram_size << 16) | (ram_size & $00FF00) | (ram_size >> 16)
-	ld (ix-5),hl
+	 ld hl,ROMName
+	 call _Mov9ToOP1
+	 call _CmpPrgNamLen
+	 ld bc,0
+	 call _CreatePVar4
+	 push hl
+	 pop ix
+	 ld hl,2
+	 add hl,sp
+	 ld a,(hl)
+	pop hl
+	ld (ix-5),a
+	ld (ix-4),h
+	ld (ix-3),l
 	
-	scf
-	jr SaveAutoState
+	; Carry is reset
+	jr SaveState
 	
 SaveRAMDeleteMem:
-	ld hl,ram_size
+	pop hl
 	ld de,(hl)
-	inc de
+	inc.s de
 	inc de
 	call _DelMem
-	or a
+	scf
 	
-SaveAutoState:
+SaveState:
 	push af
 	 ld hl,ROMName
 	 push hl
+	  xor a
 _
 	  inc hl
-	  ld a,(hl)
-	  or a
+	  cp (hl)
 	  jr nz,-_
 	  dec hl
-	  ld (hl),'A'
+	  ld a,(current_state)
+	  add a,'0'
+	  jr nc,_
+	  ld a,'A'
+_
+	  ld (hl),a
 	  dec hl
 	  ld (hl),'t'
 	 pop hl
@@ -1618,15 +1679,18 @@ _
 	 call _chkFindSym
 	 call nc,_DelVarArc
 	
+	 ld a,(current_state)
+	 inc a
+	 jr nz,_
 	 ld hl,AutoSaveState
 	 ld a,(hl)
 	 res 1,(hl)
 	 dec a
-	 ld hl,save_state_size
-	 ld de,save_state_prefix_size
 	 jr nz,SaveAutoStateDeleteMem
+_
 	 
-	 ld (hl),de
+	 ld hl,save_state_size_bytes
+	 ACALL(CompressFile)
 	 
 	 ld hl,ROMName
 	 call _Mov9ToOP1
@@ -1635,7 +1699,7 @@ _
 	 call _CreatePVar4
 	 push hl
 	 pop ix
-	 ld hl,(save_state_size << 16) | (save_state_size & $00FF00) | (save_state_size >> 16)
+	 ld hl,(save_state_size_bytes << 16) | (save_state_size_bytes & $00FF00) | (save_state_size_bytes >> 16)
 	 ld (ix-5),hl
 	
 	 ld hl,ROMName
@@ -1644,105 +1708,131 @@ _
 	 jr ArchiveSaveRAM
 	
 SaveAutoStateDeleteMem:
+	 ld hl,save_state_size_bytes
+	 ld de,(hl)
 	 inc de
 	 inc de
 	 call _DelMem
 
 ArchiveSaveRAM:
 	pop af
-	ret nc
+	ret c
 
-	ld hl,ROMName
-	push hl
-_
-	 inc hl
-	 ld a,(hl)
-	 or a
-	 jr nz,-_
-	 dec hl
-	 ld (hl),'V'
-	 dec hl
-	 ld (hl),'A'
-	pop hl
+	ACALL(GetStateRAMFileName)
 	call _Mov9ToOP1
 	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
 	ret
 	
-LoadStateFile:
-	ld hl,ROMName
-	push hl
-_
-	 inc hl
-	 ld a,(hl)
-	 or a
-	 jr nz,-_
-	 dec hl
-	 ld a,(current_state)
-	 add a,'0'
-	 ld (hl),a
-	 dec hl
-	 ld (hl),'t'
-	 dec hl
-	 ld (hl),'S'
-	pop hl
-	
-	ACALL(LookUpAppvar)
-	ret c
-	
-	ex de,hl
-	ld a,(current_state)
-	add a,-10
-	jr c,LoadStateFileWithoutRAM
-	
-	ld hl,(save_state_size)
-	sbc hl,bc
+LoadStateInvalid:
+	ld a,ERROR_FILE_INVALID
 	scf
-	ret nz
-	
-	ld hl,save_state_prefix_size
-	add hl,de
-	push de
-	 ld de,(hl)
-	 ld hl,(ram_size)
-	 sbc hl,de
-	pop hl
-_
-	scf
-	ret nz
-	
-	ld de,save_state_size+2
-	ldir
-	or a
 	ret
 	
-LoadStateFileWithoutRAM:
-	push bc
-	 ld hl,ram_size
-	 ld bc,(hl)
-	 ld a,c
-	 dec a
-	 or b
+LoadStateFiles:
+	ld hl,(cram_size)
+	ld a,h
+	or l
+	push hl
 	 jr z,_
-	 push de
-	  inc bc
-	  inc bc
-	  call checksum
-	 pop de
-	 ld hl,cart_ram_checksum - (save_state_size + 2)
-	 add hl,de
-	 ld bc,(hl)
-	 lea hl,ix
-	 sbc hl,bc
+	pop hl
+	ACALL(GetStateRAMFileName)
+	inc hl
+	ld (errorArg),hl
+	dec hl
+	ACALL(LookUpAppvar)
+	ld a,ERROR_FILE_MISSING
+	ret c
+	dec hl
+	dec hl
+	inc bc
+	inc bc
+	call checksum
+	push ix
 _
-	pop bc
-	scf
-	ret nz
-
-	; Carry is set
-	ld hl,save_state_prefix_size + 1
+	
+	 ld hl,ROMName
+	 push hl
+_
+	  inc hl
+	  ld a,(hl)
+	  or a
+	  jr nz,-_
+	  dec hl
+	  ld a,(current_state)
+	  add a,'0'
+	  jr nc,_
+	  ld a,'A'
+_
+	  ld (hl),a
+	  dec hl
+	  ld (hl),'t'
+	  dec hl
+	  ld (hl),'S'
+	 pop hl
+	
+	 ACALL(LookUpAppvar)
+	pop de
+	ld a,ERROR_FILE_MISSING
+	ret c
+	
+	push de
+	 ACALL(DecompressFile)
+	pop ix
+	; Only load original Game Boy
+	ld a,(decompress_buffer + (regs_saved + STATE_SYSTEM_TYPE - save_state_start))
+	or a
+	jr nz,LoadStateInvalid
+	; Ensure state size is valid
+	ld hl,save_state_size
 	sbc hl,bc
-	ex de,hl
-	jr --_
+	jr nz,LoadStateInvalid
+	
+	; Get the RAM file name (for error messages)
+	push bc
+	 ACALL(GetStateRAMFileName)
+	pop bc
+	; Validate the checksum
+	ld hl,(decompress_buffer + (cart_ram_checksum - save_state_start))
+	lea de,ix
+	or a
+	sbc hl,de
+	jr nz,LoadStateInvalid
+	
+	; The state is valid, so load it
+	inc bc
+	push bc
+	 ld hl,(save_state_size_bytes)
+	 sbc hl,bc
+	 ex de,hl
+	 ld hl,save_state_start
+	 push hl
+	  jr c,_
+	  call _DelMem
+	  jr ++_
+_
+	  or a
+	  sbc hl,hl
+	  sbc hl,de
+	  call _EnoughMem
+	  ex de,hl
+	 pop de
+	pop bc
+	ld a,ERROR_NOT_ENOUGH_MEMORY
+	ret c
+	push bc
+	 push de
+	  call _InsertMem
+_
+	 pop de
+	pop bc
+	ld (save_state_size_bytes),bc
+	dec bc
+	ld hl,decompress_buffer
+	ldir
+	
+	; Load the RAM file (whose name we initialized above)
+	AJUMP(LoadRAMAny)
+	
 	
 LookUpAppvar:
 	call _Mov9ToOP1

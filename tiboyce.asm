@@ -293,6 +293,8 @@ myADLstack = mpLcdPalette + $01FE
 ; So, each GB tilemap row takes a total of 256 bytes here.
 ; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
 vram_tiles_start = (pixelShadow | $FF) + 1
+decompress_buffer = vram_tiles_start
+compress_buffer = vram_tiles_start
 
 ; Preprocessed Game Boy tile pixel entries. 24KB in size.
 ; Each tile is converted into one byte per pixel, for 64 bytes per tile.
@@ -770,6 +772,9 @@ rom_start:
 ; Can be indexed directly by the Game Boy address.
 rom_bank_base:
 	.dl 0
+; The size of Game Boy cartridge RAM (plus 48 for RTC carts)
+cram_size:
+	.dl 0
 ; The start address of Game Boy cartridge RAM.
 cram_start:
 	.dl 0
@@ -907,10 +912,11 @@ program_size = program_end - userMem
 	.echo "User RAM code size: ", program_size
 
 ; The size of the save state is located at the end of the program.
-save_state_size:
+save_state_size_bytes:
 
+save_state_start = save_state_size_bytes + 3
 ; A saved copy of OAM/HRAM, when saving/loading state. 512 bytes in size.
-hram_saved = save_state_size + 3
+hram_saved = save_state_start
 
 ; The start of saved registers, etc. Between the saved OAM and HRAM. 96 bytes in size.
 regs_saved = hram_saved + $00A0
@@ -929,8 +935,8 @@ vram_base = vram_start - $8000
 wram_base = wram_start - $C000
 
 ; The size of the inserted cartridge RAM is located at the end of the main save state.
-ram_size = wram_start + $2000
-save_state_prefix_size = ram_size - (save_state_size + 2)
+save_state_end = wram_start + $2000
+save_state_size = save_state_end - save_state_start
 	
 ; These files remain in the archived appvar.
 	#include "setup.asm"

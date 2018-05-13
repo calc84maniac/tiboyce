@@ -1974,7 +1974,7 @@ _
 	 di
 	 jp.lil mbc_rtc_helper
 mbc_ram:
-ram_size_smc = $
+cram_size_smc = $
 	 or a
 	 sbc a,a
 	 and c
