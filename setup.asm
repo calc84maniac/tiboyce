@@ -450,6 +450,12 @@ _
 	ldir
 	
 StartFromHere:
+	ld hl,(save_state_size_bytes)
+	ld a,l
+	dec a
+	or h
+	jr z,RestartFromHere
+	
 	ld hl,SkinFileName
 	ACALL(LookUpAppvar)
 	jr nc,_
@@ -1387,38 +1393,73 @@ LoadRAMNoVar:
 	or a
 	ret
 	
-	; Input: HL=compressed data, BC=compressed size
-	; Output: decompress_buffer contains decompressed data, BC=decompressed size
+	; Inputs: HL=compressed data
+	;         BC=compressed size
+	; Output: decompress_buffer contains decompressed data
+	;         BC=decompressed size, or 0 on error
 DecompressFile:
 	ld a,b
 	or c
 	ret z
 	; Only load compression type 0 (uncompressed)
-	xor a
+	ld a,(hl)
 	cpi
-	jr nz,DecompressFailed
-	ld a,b
-	or c
+	ret po
+	ld de,decompress_buffer
+	or a
+	jr z,DecompressUncompressed
+	dec a
+	jr nz,_
+	push hl
+	 call lzf_decompress
+	pop hl
+	ld c,(hl)
+	inc hl
+	ld b,(hl)
 	ret z
-	push bc
-	 ld de,decompress_buffer
-	 ldir
-	pop bc
-	ret
-DecompressFailed:
+_
+	xor a
 	ld b,a
 	ld c,a
+	ret
+	
+DecompressUncompressed:
+	push bc
+	 ldir
+	pop bc
 	ret
 	
 	; Input: HL=file in user RAM
 	; Output: File potentially resized, but not moved
 CompressFile:
-	ld bc,(hl)
-	inc hl
-	inc hl
-	inc hl
-	dec bc
-	ld de,compress_buffer
+	push hl
+	 ld bc,(hl)
+	 inc hl
+	 inc hl
+	 inc hl
+	 dec bc
+	 push bc
+	  call lzf_compress
+	  ex (sp),hl
+	 pop bc
+	 or a
+	 sbc hl,bc
+	 ex de,hl
+	pop hl
+	ret c
+	push bc
+	 inc bc
+	 ld (hl),bc
+	 inc hl
+	 inc hl
+	 ld (hl),1
+	 inc hl
+	 push hl
+	  call _DelMem
+	 pop de
+	pop bc
+	ld hl,lzf_compress_buffer
+	ldir
 	ret
 	
 LoadROM:
@@ -1582,6 +1623,28 @@ _
 	 ld (hl),'S'
 	pop hl
 	ret
+	
+GetStateFileName:
+	ld hl,ROMName
+	push hl
+_
+	 inc hl
+	 ld a,(hl)
+	 or a
+	 jr nz,-_
+	 dec hl
+	 ld a,(current_state)
+	 add a,'0'
+	 jr nc,_
+	 ld a,'A'
+_
+	 ld (hl),a
+	 dec hl
+	 ld (hl),'t'
+	 dec hl
+	 ld (hl),'S'
+	pop hl
+	ret
 
 SaveStateFiles:
 	ld hl,save_state_size_bytes
@@ -1658,23 +1721,7 @@ SaveRAMDeleteMem:
 	
 SaveState:
 	push af
-	 ld hl,ROMName
-	 push hl
-	  xor a
-_
-	  inc hl
-	  cp (hl)
-	  jr nz,-_
-	  dec hl
-	  ld a,(current_state)
-	  add a,'0'
-	  jr nc,_
-	  ld a,'A'
-_
-	  ld (hl),a
-	  dec hl
-	  ld (hl),'t'
-	 pop hl
+	 ACALL(GetStateFileName)
 	 call _Mov9ToOP1
 	 call _chkFindSym
 	 call nc,_DelVarArc
@@ -1729,15 +1776,13 @@ LoadStateInvalid:
 	ret
 	
 LoadStateFiles:
-	ld hl,(cram_size)
-	ld a,h
-	or l
-	push hl
-	 jr z,_
-	pop hl
 	ACALL(GetStateRAMFileName)
 	inc hl
 	ld (errorArg),hl
+	ld ix,(cram_size)
+	ld a,ixh
+	or ixl
+	jr z,_
 	dec hl
 	ACALL(LookUpAppvar)
 	ld a,ERROR_FILE_MISSING
@@ -1747,29 +1792,9 @@ LoadStateFiles:
 	inc bc
 	inc bc
 	call checksum
+_
 	push ix
-_
-	
-	 ld hl,ROMName
-	 push hl
-_
-	  inc hl
-	  ld a,(hl)
-	  or a
-	  jr nz,-_
-	  dec hl
-	  ld a,(current_state)
-	  add a,'0'
-	  jr nc,_
-	  ld a,'A'
-_
-	  ld (hl),a
-	  dec hl
-	  ld (hl),'t'
-	  dec hl
-	  ld (hl),'S'
-	 pop hl
-	
+	 ACALL(GetStateFileName)
 	 ACALL(LookUpAppvar)
 	pop de
 	ld a,ERROR_FILE_MISSING

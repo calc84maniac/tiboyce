@@ -294,7 +294,6 @@ myADLstack = mpLcdPalette + $01FE
 ; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
 vram_tiles_start = (pixelShadow | $FF) + 1
 decompress_buffer = vram_tiles_start
-compress_buffer = vram_tiles_start
 
 ; Preprocessed Game Boy tile pixel entries. 24KB in size.
 ; Each tile is converted into one byte per pixel, for 64 bytes per tile.
@@ -513,6 +512,16 @@ _
 	; Returns BC=0, DE=byte|byte|byte
 #macro MEMSET_FAST(start, length, byte)
 	ld hl,start + length
+	ld de,byte * $010101
+	ld bc,(((length / 24) + 1) % 256 * 256) | (((length / 24) / 256) + 1)
+	ld a,((8 - (length / 3 % 8)) * 4) | ((3 - (length % 3)) % 2 * 2) | ((3 - (length % 3)) / 2 % 2)
+	call memset_fast
+#endmacro
+
+	; Also sets SPS to the end of the buffer
+#macro MEMSET_FAST_SPS(start, length, byte)
+	ld hl,start + length
+	ld.s sp,hl
 	ld de,byte * $010101
 	ld bc,(((length / 24) + 1) % 256 * 256) | (((length / 24) / 256) + 1)
 	ld a,((8 - (length / 3 % 8)) * 4) | ((3 - (length % 3)) % 2 * 2) | ((3 - (length % 3)) / 2 % 2)
@@ -847,6 +856,7 @@ palette_obj1_colors:
 	#include "ophandler.asm"
 	#include "vblank.asm"
 	#include "waitloop.asm"
+	#include "lzf.asm"
 	
 	; Pad to an odd number of bytes
 	.block (~$) & 1
