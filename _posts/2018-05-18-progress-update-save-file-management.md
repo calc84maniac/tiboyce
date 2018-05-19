@@ -2,7 +2,7 @@
 layout: post
 title: "Progress Update: Save File Management"
 categories:
-  - Progress Update
+  - Progress
 tags:
   - Progress Update
 ---
