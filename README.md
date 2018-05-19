@@ -19,7 +19,7 @@ Features
 
 * Emulates original Game Boy hardware (except audio and linking)
 * Emulates real-time clock for certain cartridges
-* Save states
+* Save states with compression
 * Fullscreen and 1:1 scaling modes (with optional skin)
 * Automatic and manual frameskip
 * Turbo mode (with speed display)
@@ -29,8 +29,11 @@ Features
 Converting ROM files
 --------------------
 
-A command-line utility (tiboyce-romgen.exe) to convert ROM files to TI AppVars
-is included. There are a couple of ways to do this:
+The easiest method is to use the online converter [here](https://calc84maniac.github.io/tiboyce/converter).
+All conversion is done locally in your browser, so there's no need to worry about uploading copyrighted data.
+
+Alternatively, a command-line utility (tiboyce-romgen.exe) to convert ROM files
+to TI AppVars is included. There are a couple of ways to do this:
 
 1. Open a command prompt and navigate to the directory containing the utility
    using `cd`. Then run the following:
@@ -95,13 +98,16 @@ The various files used by the emulator are as follows
     NameSAV.8xv - The contents of the battery-backed cartridge save data.
     NameStA.8xv - The automatic save state for this game.
     NameSt#.8xv - The manual save state for the given numbered slot.
+    NameSv#.8xv - The cartridge save associated with a numbered save state.
     TIBoyCE.8xp - The executable launcher.
     TIBoyCfg.8xv - The current emulator configuration.
     TIBoyDat.8xv - The core emulator data, loaded by the launcher.
     TIBoySkn.8xv - An optional skin to be displayed in "no scaling" mode.
 
-Note that the auto save state cannot be loaded properly if the cartridge save
-data file is deleted.
+Note that save states cannot be loaded properly if the associated
+cartridge save data file is deleted or replaced. When transferring save states,
+make sure to include both the `St#` and `Sv#` files. However, this doesn't
+apply to games that have no cartridge save data in the first place.
 
 Build Instructions
 ------------------
@@ -116,7 +122,8 @@ For simplicity's sake, I'll call the name of the executable `spasm` below. Run t
 
     spasm -E -A skin.asm TIBoySkn.8xv
 
-To build the rom generation tool, use the provided Visual Studio solution in the [tiboyce-romgen](tiboyce-romgen) directory, or theoretically you can build [romgen.c](tiboyce-romgen/romgen.c) with your C compiler of choice.
+To build the rom generation tool, use the provided Visual Studio solution in the [tiboyce-romgen](tiboyce-romgen) directory,
+or theoretically you can build the source for any platform with your C compiler of choice.
 
 Issues/Bugs
 -----------
