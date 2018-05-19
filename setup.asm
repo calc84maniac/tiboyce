@@ -358,6 +358,36 @@ _
 	jr z,-_
 	ret
 	
+	; Input: HL = insertion point
+	;        DE = insertion size
+	; Output: Carry set and A=error if error occurred
+	;         DE = insertion point
+	;         BC = insertion size
+InsertMemSafe:
+	push hl
+	 push de
+	  ; Check to make sure there's room for at least 2 VAT entries
+	  ld hl,30
+	  add hl,de
+	  push hl
+	   call _MemChk
+	  pop de
+	  ex de,hl
+	  scf
+	  sbc hl,de
+	  ccf
+	  inc hl
+	  ld (errorArg),hl
+	 pop hl
+	pop de
+	ld a,ERROR_NOT_ENOUGH_MEMORY
+	ret c
+	push hl
+	 call _InsertMem
+	pop bc
+	or a
+	ret
+	
 StartROMAutoStateOutOfMemory:
 	ld hl,(cram_size)
 	ld de,6
@@ -371,14 +401,15 @@ _
 	ret
 	
 StartROMInitStateOutOfMemory:
-	dec hl
-	dec hl
-	xor a
-	ld (hl),a
-	dec hl
-	ld (hl),1
-	dec a
+	sbc a,a
 	ld (current_state),a
+	dec de
+	dec de
+	xor a
+	ld (de),a
+	dec de
+	inc a
+	ld (de),a
 	; Temporarily prevent auto state saving because state is clean
 	ld hl,AutoSaveState
 	set 1,(hl)
@@ -414,14 +445,10 @@ RestartFromHere:
 	push hl
 	 push bc
 	  call _DelMem
-	 pop hl
-	 call _EnoughMem
+	 pop de
 	pop hl
+	ACALL(InsertMemSafe)
 	jr c,StartROMInitStateOutOfMemory
-	push de
-	 ex de,hl
-	 call _InsertMem
-	pop bc
 	push de
 	pop hl
 	inc de
@@ -1328,24 +1355,18 @@ _
 	ld d,(32*1024) >> 8
 _
 	
-	ex de,hl
-	ld (cram_size),hl
-	inc hl
-	push hl
-	 inc hl
-	 inc hl
-	 inc hl
-	 inc hl
-	 inc hl
-	 call _EnoughMem
-	pop hl
-	ld a,ERROR_NOT_ENOUGH_MEMORY
-	ret c
-	push hl
-	 ex de,hl
-	 ld de,save_state_size_bytes
-	 call _InsertMem
+	ld (cram_size),de
+	inc de
+	push de
+	 inc de
+	 inc de
+	 inc de
+	 inc de
+	 inc de
+	 ld hl,save_state_size_bytes
+	 ACALL(InsertMemSafe)
 	pop bc
+	ret c
 	ex de,hl
 	; Set save state to uncompressed size 0 initially
 	ld de,1
@@ -1831,25 +1852,21 @@ _
 	 ex de,hl
 	 ld hl,save_state_start
 	 push hl
-	  jr c,_
-	  call _DelMem
-	  jr ++_
-_
+	  jr nc,_
 	  or a
 	  sbc hl,hl
 	  sbc hl,de
-	  call _EnoughMem
 	  ex de,hl
-	 pop de
+	 pop hl
+	 ACALL(InsertMemSafe)
 	pop bc
-	ld a,ERROR_NOT_ENOUGH_MEMORY
-	ret c
-	push bc
-	 push de
-	  call _InsertMem
+	jr nc,++_
+	ret
 _
+	  call _DelMem
 	 pop de
 	pop bc
+_
 	ld (save_state_size_bytes),bc
 	dec bc
 	ld hl,decompress_buffer
@@ -2383,7 +2400,7 @@ error_text:
 	DEFINE_ERROR("ERROR_FILE_INVALID", "Invalid AppVar %s")
 	DEFINE_ERROR("ERROR_UNSUPPORTED_MBC", "Unsupported cartridge type %02X")
 	DEFINE_ERROR("ERROR_INVALID_ROM", "ROM is invalid")
-	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Not enough RAM free")
+	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Need %d more bytes of free RAM")
 	DEFINE_ERROR("ERROR_RUNTIME", "Encountered a runtime error!")
 	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Encountered an invalid opcode!")
 	
