@@ -22,7 +22,7 @@ Features
 
 * Emulates original Game Boy hardware (except audio and linking)
 * Emulates real-time clock for certain cartridges
-* Save states
+* Save states with compression
 * Fullscreen and 1:1 scaling modes (with optional skin)
 * Automatic and manual frameskip
 * Turbo mode (with speed display)
