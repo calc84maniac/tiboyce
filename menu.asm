@@ -728,9 +728,9 @@ ItemSelectCallbacks:
 	
 MainMenu:
 	.db 9
-	.db 5,10
+	.db 5,8
 EmulatorTitle:
-	.db "TI-Boy CE Alpha 0.01",0
+	.db "TI-Boy CE Private Alpha 1",0
 	.db "Select to set appearance and\n frameskip behavior.",0
 	.db ITEM_LINK,1, 50,1,"Graphics Options",0
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0

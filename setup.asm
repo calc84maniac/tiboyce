@@ -119,7 +119,7 @@ RedrawMenuClear:
 	ACALL(RestoreHomeScreen)
 	ld a,32
 	ld (penRow),a
-	ld hl,91
+	ld hl,74
 	ld (penCol),hl
 	ld hl,$0031
 	ld.sis (drawFGColor-ramStart),hl
