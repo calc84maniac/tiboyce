@@ -718,14 +718,6 @@ _
 	ld (hl),a
 	ret
 	
-rle_done:
-	ACALL(Set8BitWindow)
-	ld hl,palette_backup
-	ld de,mpLcdPalette
-	ld bc,32
-	ldir
-	ret
-	
 ; The first ROM in the current list frame.
 menuFrame:
 	.dl 0

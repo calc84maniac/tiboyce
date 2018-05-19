@@ -1882,10 +1882,6 @@ _
 	
 	
 ROMSearch:
-	xor a
-	sbc hl,hl
-	ld (penCol),hl
-	ld (penRow),a
 	ld hl,(progPtr)
 	or a
 ROMSearchLoop:
@@ -1900,6 +1896,9 @@ ROMSearchLoop:
 	ld de,(hl)
 	xor appVarObj
 	jr nz,NoMatch
+	ld a,d
+	cp 6
+	jr nc,NoMatch
 	push hl
 	 inc hl
 	 inc hl
@@ -2208,47 +2207,28 @@ _
 	 pop hl
 	 ld c,32
 	 ldir
+	 ; Make sure decompressed size is 160*240
+	 inc hl
+	 ld a,(hl)
+	 sub (160*240) >> 8
+	 dec hl
+	 or (hl)
+	 jr nz,bad_skin_file
 	pop de
-	ld b,160*240/256
+	call lzf_decompress
 	
-rle_decode:
-	ld a,(hl)
-	cp $10
-	jr c,rle_literal
-	 
-	rlca
-	rlca
-	rlca
-	rlca
-	ld ixh,a
-	and $0F
-	inc a
-	ld ixl,a
-	ld a,ixh
-	xor (hl)
-	and $F0
-	xor (hl)
-	ex de,hl
-_
-	ld (hl),a
-	cpi
-	jp po,rle_done
-	dec ixl
-	jr nz,-_
-	ex de,hl
-	inc hl
-	jr rle_decode
+	ACALL(Set8BitWindow)
 	
-rle_literal:
-	inc a
-	inc hl
-_
-	ldi
-	jp po,rle_done
-	dec a
-	jr nz,-_
-	jr rle_decode
+	xor a
+bad_skin_file:
+	ld hl,palette_backup
+	ld de,mpLcdPalette
+	ld bc,32
+	ldir
+	ret z
 	
+	pop hl
+	push hl
 no_skin:
 	pop de
 	inc de
