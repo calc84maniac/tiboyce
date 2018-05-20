@@ -143,7 +143,7 @@ struct tifile *create_metadata_file(const char *outname, const char *title, uint
 		free(file);
 		return NULL;
 	}
-	if (!append_tifile(&file, &title, title_length)) {
+	if (!append_tifile(&file, title, title_length)) {
 		printf("Error appending title to AppVar %s\n", outname);
 		free(file);
 		return NULL;
@@ -606,7 +606,8 @@ int main(int argc, char **argv) {
 
 	struct tifile *romfiles[256] = { NULL };
 	int romfilecount = 0;
-	while (num_pages > 0) {
+	int pages_remaining = num_pages;
+	while (pages_remaining > 0) {
 		char appvarname[9];
 		sprintf(appvarname, "%sR%02d", outname, romfilecount);
 		struct tifile *romfile = open_tifile(TYPE_APPVAR, appvarname, flag);
@@ -617,7 +618,7 @@ int main(int argc, char **argv) {
 			return 1;
 		}
 		
-		int pages_to_use = best_fit(pages, num_pages);
+		int pages_to_use = best_fit(pages, pages_remaining);
 		if (pages_to_use <= 0) {
 			printf("Error choosing pages for AppVar %s\n", appvarname);
 			free_tifiles(romfiles, 0, romfilecount);
@@ -628,9 +629,9 @@ int main(int argc, char **argv) {
 
 		while (pages_to_use > 0) {
 			pages_to_use--;
-			num_pages--;
-			uint8_t page_index = pages[num_pages].index;
-			uint16_t page_length = pages[num_pages].length - 3;
+			pages_remaining--;
+			uint8_t page_index = pages[pages_remaining].index;
+			uint16_t page_length = pages[pages_remaining].length - 3;
 
 			if (!append_tifile(&romfile, &page_index, sizeof(page_index))) {
 				printf("Error appending page index to AppVar %s\n", appvarname);
