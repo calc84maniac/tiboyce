@@ -2162,11 +2162,11 @@ _
 Set4BitWindow:
 	ld hl,$00EF78
 	push hl
-	ld hl,$01043B
+	ld hl,$000489
 	push hl
 	ld hl,$093F1F
 	push hl
-	ld hl,$460338
+	ld hl,$9C0338
 	push hl
 	ACALL(SetDefaultLCDWindowAndTiming)
 	
