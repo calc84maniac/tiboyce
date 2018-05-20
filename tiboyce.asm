@@ -896,7 +896,7 @@ TurboMode:
 	.db 0
 ; Scaling type (0=static, 1=scrolling)
 ScalingType:
-	.db 0
+	.db 1
 	
 ; Number of key bytes
 	.db key_config_count

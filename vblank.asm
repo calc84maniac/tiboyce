@@ -399,11 +399,13 @@ _
 	and $20
 	jr z,do_scale_full
 	ld a,(hram_base+WY)
-	cp 144
+	dec a
+	cp 143
 	jr c,_
 do_scale_full:
-	ld a,144
+	ld a,143
 _
+	inc a
 	push af
 	 cpl
 	 call scale_offset
