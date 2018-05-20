@@ -559,7 +559,7 @@ memset_fast_save_sp = $+1
 	ld sp,0
 	ret
 	
-; Gets a pointer to the current menu in HL, and the current selection in C.
+; Gets a pointer to the current menu in HL, and to the current selection index in BC.
 get_current_menu_selection:
 	ld hl,MenuList
 current_menu = $+1
@@ -573,7 +573,7 @@ current_menu = $+1
 	dec.s hl
 	add hl,bc
 current_menu_selection = $+1
-	ld c,0
+	ld bc,main_menu_selection
 	ret
 	
 ; Sets the current string BG color. Must be called before SetStringColor.
@@ -819,6 +819,8 @@ current_description:
 ; A backup of the selected main menu option.
 main_menu_selection:
 	.db 1
+; As well as the rest of the menus
+	.db 1,1,1
 ; The currently chosen save state index.
 current_state:
 	.db 0

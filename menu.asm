@@ -269,14 +269,11 @@ BackToMainMenu:
 ItemSelectLink:
 	ld (current_menu),a
 	or a
-	ld hl,current_menu_selection
-	ld a,(main_menu_selection)
-	jr z,_
-	ld a,(hl)
-	ld (main_menu_selection),a
-	ld a,1
-_
-	ld (current_menu_selection),a
+	sbc hl,hl
+	ld l,a
+	ld de,main_menu_selection
+	add hl,de
+	ld (current_menu_selection),hl
 	ACALL(redraw_current_menu)
 ItemSelectOption:
 CmdLoadNewGame:
@@ -289,8 +286,8 @@ emulator_menu:
 	xor a
 	ld (current_menu),a
 	call SetStringBgColor
-	ld a,(main_menu_selection)
-	ld (current_menu_selection),a
+	ld hl,main_menu_selection
+	ld (current_menu_selection),hl
 	 
 	ACALL(redraw_current_menu)
 	
@@ -325,9 +322,6 @@ menu_exit:
 	 jr nz,BackToMainMenu
 	  
 CmdReturnToGame:
-	 ld a,(current_menu_selection)
-	 ld (main_menu_selection),a
-
 	 ACALL(ApplyConfiguration)
 
 _
@@ -347,24 +341,24 @@ _
 	ret
 	
 menu_up:
-	ld a,c
+	ld a,(bc)
 	dec a
 	jr nz,_
 	ld a,(hl)
 _
-	ld (current_menu_selection),a
+	ld (bc),a
 	ACALL(draw_current_menu)
 menu_loop_trampoline:
 	jr menu_loop
 	
 menu_down:
-	ld a,c
+	ld a,(bc)
 	cp (hl)
 	jr nz,_
 	xor a
 _
 	inc a
-	ld (current_menu_selection),a
+	ld (bc),a
 	ACALL(draw_current_menu)
 	jr menu_loop_trampoline
 	
@@ -483,6 +477,8 @@ draw_current_menu:
 	ldir
 	
 	call get_current_menu_selection
+	ld a,(bc)
+	ld c,a
 	
 	; HL = menu structure, C = highlighted item index
 draw_menu:
