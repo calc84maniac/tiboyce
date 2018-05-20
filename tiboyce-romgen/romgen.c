@@ -328,7 +328,12 @@ uint16_t get_page_length(uint8_t *page, size_t remaining) {
 }
 
 int pageinfo_comparator(const void *p1, const void *p2) {
-	return ((struct pageinfo *)p1)->length - ((struct pageinfo *)p2)->length;
+	const struct pageinfo *pageinfo1 = p1;
+	const struct pageinfo *pageinfo2 = p2;
+	int diff = pageinfo1->length - pageinfo2->length;
+	if (diff != 0)
+		return diff;
+	return pageinfo1->index - pageinfo2->index;
 }
 
 int best_fit(struct pageinfo *pages, int num_pages) {
