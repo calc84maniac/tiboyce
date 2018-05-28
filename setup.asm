@@ -1953,8 +1953,18 @@ DrawMenuItem:
 	ld de,9
 	add hl,de
 	ld b,(hl)
+DrawMenuItemLoop:
 	inc hl
-	jp _VPutSN
+	ld a,(hl)
+	; Handle TI-ASCII annoyances
+	cp '['
+	jr nz,_
+	ld a,LlBrack
+_
+	call _VPutMap
+	ret c
+	djnz DrawMenuItemLoop
+	ret
 	
 	; Input: rtc_last
 	; Output: HLIX = 48-bit timestamp based on current time

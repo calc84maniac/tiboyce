@@ -107,8 +107,8 @@ _DelMem = $020590
 _ErrUndefined = $020764
 _ClrLCDFull = $020808
 _HomeUp = $020828
+_VPutMap = $020830
 _VPutS = $020834
-_VPutSN = $020838
 _RunIndicOff = $020848
 _createAppVar = $021330
 _DelVarArc = $021434
@@ -133,10 +133,11 @@ osMonth = $D177DB
 userMem = $D1A881
 vRam = $D40000
 
-; Tokens used
+; Tokens/characters used
 appVarObj = $15
 tExtTok = $EF
 tAsm84CeCmp = $7B
+LlBrack = $C1
 
 ; OS flags used
 graphFlags = $03
