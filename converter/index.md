@@ -21,7 +21,7 @@ File links will appear here (click to download):
 
 -----
 
-*Online version implemented with [Emscripten](http://emscripten.org/) by [Adriweb](https://github.com/adriweb).*
+*Online version implemented by [Adriweb](https://github.com/adriweb) with [Emscripten](http://emscripten.org/).*
 
 *Files are converted in-browser, no copyrighted data will be uploaded.*
 
