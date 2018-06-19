@@ -1,7 +1,7 @@
 ---
 layout: page
 title: ROM Converter
-sidebar_link: false
+sidebar_link: true
 ---
 
 <link rel="stylesheet" href="{{ site.baseurl }}/assets/css/bootstrap.css">
