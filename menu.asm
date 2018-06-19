@@ -727,12 +727,12 @@ MainMenu:
 	.db 5,9
 EmulatorTitle:
 	.db "TI-Boy CE Alpha v0.1.0",0
-	.db "Select to set appearance and\n frameskip behavior.",0
-	.db ITEM_LINK,1, 50,1,"Graphics Options",0
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT,0, 70,1,"Load State Slot %u",0
+	.db ITEM_DIGIT,0, 50,1,"Load State Slot %u",0
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT,1, 80,1,"Save State Slot %u",0
+	.db ITEM_DIGIT,1, 60,1,"Save State Slot %u",0
+	.db "Select to set appearance and\n frameskip behavior.",0
+	.db ITEM_LINK,1, 80,1,"Graphics Options",0
 	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
 	.db ITEM_LINK,2, 100,1,"Control Options",0
 	.db "Select to manage miscellaneous options.",0

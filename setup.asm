@@ -483,6 +483,9 @@ StartFromHere:
 	or h
 	jr z,RestartFromHere
 	
+	ld a,3
+	ld (main_menu_selection),a
+	
 	ld hl,SkinFileName
 	ACALL(LookUpAppvar)
 	jr nc,_
@@ -1139,8 +1142,8 @@ _
 	AJUMP(RestartFromHere)
 _
 	ld a,(main_menu_selection)
-	cp 3
-	jr nz,_
+	dec a
+	jr z,_
 	ACALL(RestoreHomeScreen)
 	ACALL_SAFERET(SaveStateFiles)
 	; Reindex the ROM in case a Garbage Collect occurred, and reinsert the RAM.
