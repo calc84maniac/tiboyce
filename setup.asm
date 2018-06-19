@@ -2135,7 +2135,7 @@ _
 	ld (scaling_mode_smc_2),a
 	ld c,a
 	dec a
-	ld b,WHITE
+	ld b,BG_COLOR_0
 	mlt bc
 	ld a,c
 	ld (scaling_mode_smc_3),a

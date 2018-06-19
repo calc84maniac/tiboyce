@@ -415,7 +415,7 @@ render_scanline_off:
 	inc de
 	ld bc,159
 scaling_mode_smc_3 = $+1
-	ld (hl),WHITE	;WHITE_BYTE in double scaling mode
+	ld (hl),BG_COLOR_0	;*$11 in double scaling mode
 	ldir
 	jp render_scanline_next
 	
