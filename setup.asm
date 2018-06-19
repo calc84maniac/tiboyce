@@ -119,7 +119,7 @@ RedrawMenuClear:
 	ACALL(RestoreHomeScreen)
 	ld a,32
 	ld (penRow),a
-	ld hl,74
+	ld hl,85
 	ld (penCol),hl
 	ld hl,$0031
 	ld.sis (drawFGColor-ramStart),hl
@@ -1953,7 +1953,11 @@ DrawMenuItem:
 	ld de,9
 	add hl,de
 	ld b,(hl)
+	inc b
+	ld a,' '
 DrawMenuItemLoop:
+	call _VPutMap
+	ret c
 	inc hl
 	ld a,(hl)
 	; Handle TI-ASCII annoyances
@@ -1961,8 +1965,6 @@ DrawMenuItemLoop:
 	jr nz,_
 	ld a,LlBrack
 _
-	call _VPutMap
-	ret c
 	djnz DrawMenuItemLoop
 	ret
 	
