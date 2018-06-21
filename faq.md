@@ -27,6 +27,32 @@ sidebar_link: true
   No. Just no.
 </p>
 
+**My game isn't colorized, why not?**
+
+<p class="message">
+  Only games in the Game Boy Color's colorization database will receive an automatic color palette.
+  For the others, you can select a palette manually in the settings.
+</p>
+
+**How does saving work?**
+
+<p class="message">
+  If a game has in-game saves stored on the cartridge, these are always saved when exiting the game (to a file ending in SAV).
+  These will be preserved when restarting the game, and in the unfortunate case of a soft crash the emulator will attempt to save this data.
+  <br/><br/>
+  By default, the emulator will also automatically save the current game state when exiting (to a file ending in StA)
+  and automatically load it when starting again, much like Nintendo's Virtual Console.
+  Note that the StA file will not load without the corresponding SAV file.
+  <br/><br/>
+  In addition, you can save or load the current game state to one of 10 slots through the emulator menu
+  (to a file ending with St#, and potentially one with Sv# if there are in-game saves, where # is the slot number).
+  These will stick around more reliably than auto save states, but keep in mind that a pair of St# and Sv# files can't be mixed and matched.
+  <br/><br/>
+  Currently all these files must be managed through the calculator's Memory menu, but in future releases I may make it possible to delete
+  files directly from the emulator.
+  However, all of this information will still be useful when you need to transfer files to a PC or another calculator.
+</p>
+
 **I tried sending converted ROM files to my calculator, but it tells me I'm out of space even though I clearly have enough! What's going on here?**
 
 <p class="message">
