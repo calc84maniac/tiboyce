@@ -121,7 +121,7 @@ void free_tifiles(struct tifile **files, int start, int end) {
 	}
 }
 
-struct tifile *create_metadata_file(const char *outname, const char *title, uint8_t num_pages, enum VAR_FLAG flag) {
+struct tifile *create_metadata_file(const char *outname, const char *title, uint16_t num_pages, enum VAR_FLAG flag) {
 	struct tifile *file = open_tifile(TYPE_APPVAR, outname, flag);
 	if (file == NULL) {
 		printf("Error allocating memory for AppVar %s\n", outname);
@@ -132,7 +132,8 @@ struct tifile *create_metadata_file(const char *outname, const char *title, uint
 		free(file);
 		return NULL;
 	}
-	if (!append_tifile(&file, &num_pages, sizeof(num_pages))) {
+	uint8_t num_pages_byte = (uint8_t)num_pages;
+	if (num_pages > 256 || !append_tifile(&file, &num_pages_byte, sizeof(num_pages_byte))) {
 		printf("Error appending page count to AppVar %s\n", outname);
 		free(file);
 		return NULL;
