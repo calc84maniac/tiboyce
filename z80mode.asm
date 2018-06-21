@@ -1479,8 +1479,8 @@ writeWXhandler:
 	jp write_scroll_swap
 	
 writeDMAhandler:
-	ex af,af'
-	jp writeDMA
+	ld ix,DMA
+	jp write_scroll_swap
 	
 writeBGPhandler:
 	ld ix,BGP
@@ -1831,12 +1831,9 @@ mem_write_ports_swap:
 	sub LYC - SC
 	jr z,writeLYC
 	sub BGP - LYC
-	jr z,write_scroll
 	jr nc,mem_write_oam_swap
-writeDMA:
-	di
-	jp.lil oam_transfer_helper
-	
+	; Write BGP or DMA
+	ex af,af'
 write_scroll_swap:
 	ex af,af'
 write_scroll:

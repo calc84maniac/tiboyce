@@ -112,37 +112,6 @@ _
 	 ex de,hl
 	 jr flush_mem_finish
 	
-; Handles an OAM transfer operation.
-; Does not use a traditional call/return, must be jumped to directly.
-; 
-; Inputs:  A' = value being written to DMA register
-;          AF' has been swapped
-;          (SPS) = Z80 return address
-; Outputs: OAM written with 160 bytes from source address
-;          AF' has been unswapped
-oam_transfer_helper:
-	exx
-	push hl
-	 or a
-	 sbc hl,hl
-	 ex de,hl
-	 ex af,af'
-	 ld d,a
-	 ex af,af'
-	 call get_base_address
-	 add hl,de
-	 ld a,b
-	 ld bc,$00A0
-	 ld de,hram_start
-	 ldir
-	 ld b,a
-	pop hl
-	exx
-	ex af,af'
-	pop.s ix
-	ei
-	jp.s (ix)
-
 	
 ; Catches up the renderer before changing an LCD register.
 ; Must be called only if the current frame is being rendered.
@@ -171,7 +140,49 @@ _
 	pop bc
 	ret
 	
-; Writes to an LCD scroll register (SCX,SCY,WX,WY). Also BGP.
+; Catches up sprite rendering before changing sprite state.
+; Must be called only if render_catchup has already been called.
+;
+; Outputs: A = current scanline
+; Destroys: AF, BC, DE, HL, IX
+sprite_catchup:
+	ld a,(hram_base+LCDC)
+	bit 1,a
+	push iy
+	 call nz,draw_sprites
+	pop iy
+	
+	ld a,(myLY)
+	ld (myspriteLY),a
+	ld hl,(scanlineLUT_ptr)
+	ld (scanlineLUT_sprite_ptr),hl
+	ret
+	
+scroll_write_DMA:
+	 push bc
+	  ; Render the existing OAM data if applicable
+	  ld a,(render_this_frame)
+	  or a
+	  call nz,sprite_catchup
+	  ; Copy 160 bytes from the specified source address to OAM
+	  ld de,0
+	  ex af,af'
+	  ld d,a
+	  ex af,af'
+	  call get_base_address
+	  add hl,de
+	  ld bc,$00A0
+	  ld de,hram_start
+	  ldir
+	 pop bc
+	pop hl
+	exx
+	ex af,af'
+	pop.s ix
+	ei
+	jp.s (ix)
+	
+; Writes to an LCD scroll register (SCX,SCY,WX,WY). Also BGP and DMA.
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
 ; Catches up the renderer before writing, and then applies SMC to renderer.
@@ -192,13 +203,14 @@ render_this_frame = $+1
 	 or a
 	 call nz,render_catchup
 	 ld a,l
-	 sub SCY - ioregs
-	 jr z,scroll_write_SCY
-	 dec a
+	 sub SCX - ioregs
+	 jr c,scroll_write_SCY
 	 jr z,scroll_write_SCX
-	 sub WY - SCX
-	 jr c,scroll_write_BGP
-	 jr nz,scroll_write_WX
+	 sub BGP - SCX
+	 jr c,scroll_write_DMA
+	 jr z,scroll_write_BGP
+	 rra
+	 jr nc,scroll_write_WX
 	 ex af,af'
 	 ld (WY_smc),a
 	 jr scroll_write_done
@@ -219,18 +231,9 @@ scroll_write_BGP:
 	 ld a,(render_this_frame)
 	 or a
 	 jr z,scroll_write_done_swap
-	 ld a,(hram_base+LCDC)
-	 bit 1,a
 	 push bc
 	  push hl
-	   push iy
-	    call nz,draw_sprites
-	   pop iy
-	   
-	   ld a,(myLY)
-	   ld (myspriteLY),a
-	   ld hl,(scanlineLUT_ptr)
-	   ld (scanlineLUT_sprite_ptr),hl
+	   call sprite_catchup
 mypaletteLY = $+1
 	   ld c,0
 	   ld (mypaletteLY),a
@@ -238,7 +241,7 @@ mypaletteLY = $+1
 scanlineLUT_palette_ptr = $+2
 	   ld ix,0
 	   call nz,convert_palette
-	  ld (scanlineLUT_palette_ptr),ix
+	   ld (scanlineLUT_palette_ptr),ix
 	  pop hl
 	 pop bc
 	 jr scroll_write_done_swap
@@ -322,19 +325,11 @@ _
 	 jr z,_
 	 ld a,(render_this_frame)
 	 or a
-	 jr z,_
-	 bit 1,(hl)
 	 push bc
 	  push de
-	   push iy
-	    call z,draw_sprites
-	   pop iy
+	   call nz,sprite_catchup
 	  pop de
 	 pop bc
-	 ld a,(myLY)
-	 ld (myspriteLY),a
-	 ld hl,(scanlineLUT_ptr)
-	 ld (scanlineLUT_sprite_ptr),hl
 _
 	 bit 2,c
 	 jr z,_
