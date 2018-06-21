@@ -1524,9 +1524,6 @@ _
 	scf
 	ret nz
 	ld d,(hl)
-	dec d
-	ret m
-	inc d
 	inc hl
 	ld (current_description),hl
 	
@@ -1550,8 +1547,8 @@ LoadROMRestartLoop:
 	push hl
 	pop de
 	inc de
-	ld bc,128*3 - 1
-	ld (hl),$FF
+	ld bc,256*3 - 1
+	ld (hl),c
 	ldir
 	ld d,a
 	ld e,a
@@ -1580,9 +1577,9 @@ _
 	jr LoadROMRestartLoop
 
 LoadROMPageLoop:
-	ld a,(hl)
-	cp d
-	ccf
+	ld a,d
+	dec a
+	cp (hl)
 	ld a,ERROR_FILE_INVALID
 	ret c
 	push de

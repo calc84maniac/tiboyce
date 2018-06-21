@@ -96,7 +96,7 @@ bool append_tifile(struct tifile **file, const void *data, size_t length) {
 	struct tifile *new_file = realloc(*file, offset_of(*file, data) + new_file_length);
 	if (new_file == NULL)
 		return false;
-	
+
 	size_t var_length = new_file->data.var_length;
 	memcpy(&new_file->data.var_data[var_length], data, length);
 
@@ -244,7 +244,7 @@ uint8_t *read_rom(const char *filename, size_t *length_out) {
 		struct zip_t *zip = zip_open(filename, ZIP_DEFAULT_COMPRESSION_LEVEL, 'r');
 		if (zip == NULL)
 			return NULL;
-		
+
 		int n = zip_total_entries(zip);
 		if (n < 0) {
 			zip_close(zip);
@@ -594,10 +594,10 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	struct pageinfo pages[128];
-	uint8_t num_pages = 0;
+	struct pageinfo pages[256];
+	uint16_t num_pages = 0;
 	while (num_pages * 0x4000U < rom_length) {
-		if (num_pages == 128) {
+		if (num_pages == 256) {
 			printf("ROM is too large!\n");
 			free(rom);
 			return 1;
@@ -622,7 +622,7 @@ int main(int argc, char **argv) {
 			free(rom);
 			return 1;
 		}
-		
+
 		int pages_to_use = best_fit(pages, pages_remaining);
 		if (pages_to_use <= 0) {
 			printf("Error choosing pages for AppVar %s\n", appvarname);

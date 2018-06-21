@@ -2019,7 +2019,7 @@ _
 	 ld b,$0F
 	 jr mbc_2000_finish
 _
-	 ld b,$7F
+	 ld b,$FF
 mbc_2000_finish:
 	 ld a,c
 curr_rom_bank = $+1
