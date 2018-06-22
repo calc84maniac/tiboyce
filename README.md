@@ -1,4 +1,4 @@
-TI-Boy CE [![Build Status](https://travis-ci.com/calc84maniac/tiboyce.svg)](https://travis-ci.com/calc84maniac/tiboyce)
+TI-Boy CE [![Build Status](https://travis-ci.org/calc84maniac/tiboyce.svg)](https://travis-ci.org/calc84maniac/tiboyce)
 =========
 
 TI-Boy CE is a Game Boy emulator for the TI-84 Plus CE and the TI-83 Premium CE
