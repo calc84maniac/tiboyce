@@ -10,7 +10,7 @@ script:
   - ./spasm -E -A tiboyce.asm TIBoyDat.8xv
   - ./spasm -E -A skin.asm TIBoySkn.8xv
   - cd tiboyce-romgen
-  - gcc -O2 -W -Wall -Wextra -Wno-pointer-sign -Wno-unused-parameter -o romgen romgen.c zip.c
+  - gcc -std=c99 -O2 -W -Wall -Wextra -Wno-pointer-sign -Wno-unused-parameter -o romgen romgen.c zip.c
 
 notifications:
   irc:
