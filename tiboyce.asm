@@ -719,6 +719,9 @@ _
 	ld (hl),a
 	ret
 	
+; The calculator type, 0=84+CE, 1=83PCE
+calcType:
+	.db 0
 ; The first ROM in the current list frame.
 menuFrame:
 	.dl 0

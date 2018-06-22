@@ -3,6 +3,20 @@ MENU_ITEM_COUNT = 15
 	.org 0
 Startup:
 	ld (ArcBase),hl
+	
+	; Get the calculator type
+	; Write IN A,(3) \ RET.L to RAM
+	ld hl,$5B03DB
+	ld (pixelShadow),hl
+	ld a,$C9
+	ld (pixelShadow+3),a
+	di
+	xor a
+	call.is pixelShadow - ramStart
+	and 1
+	ld (calcType),a
+	ei
+	
 	call _RunIndicOff
 	ACALL(LoadConfigFile)
 	

@@ -652,7 +652,12 @@ ItemChangeKey:
 	
 ItemDisplayKey:
 	ACALL(GetKeyConfig)
-	ld a,(hl)
+	ld a,(calcType)
+	or a
+	jr z,_
+	ld a,57
+_
+	add a,(hl)
 	push de
 	 APTR(KeyNames)
 	pop de
@@ -770,25 +775,25 @@ ControlsMenu:
 	.db 11
 	.db 5,12,"Control Options",0
 	.db "",0
-	.db ITEM_KEY,1,  50,1,"Right:  %-7s",0
+	.db ITEM_KEY,1,  50,1,"Right:  %-9s",0
 	.db "",0
-	.db ITEM_KEY,2,  60,1,"Left:   %-7s",0
+	.db ITEM_KEY,2,  60,1,"Left:   %-9s",0
 	.db "",0
-	.db ITEM_KEY,3,  70,1,"Up:     %-7s",0
+	.db ITEM_KEY,3,  70,1,"Up:     %-9s",0
 	.db "",0
-	.db ITEM_KEY,4,  80,1,"Down:   %-7s",0
+	.db ITEM_KEY,4,  80,1,"Down:   %-9s",0
 	.db "",0
-	.db ITEM_KEY,5,  90,1,"A:      %-7s",0
+	.db ITEM_KEY,5,  90,1,"A:      %-9s",0
 	.db "",0
-	.db ITEM_KEY,6, 100,1,"B:      %-7s",0
+	.db ITEM_KEY,6, 100,1,"B:      %-9s",0
 	.db "",0
-	.db ITEM_KEY,7, 110,1,"Select: %-7s",0
+	.db ITEM_KEY,7, 110,1,"Select: %-9s",0
 	.db "",0
-	.db ITEM_KEY,8, 120,1,"Start:  %-7s",0
+	.db ITEM_KEY,8, 120,1,"Start:  %-9s",0
 	.db "",0
-	.db ITEM_KEY,9, 140,1,"Menu:   %-7s",0
+	.db ITEM_KEY,9, 140,1,"Menu:   %-9s",0
 	.db "",0
-	.db ITEM_KEY,0, 150,1,"Turbo:  %-7s",0
+	.db ITEM_KEY,0, 150,1,"Turbo:  %-9s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -893,6 +898,7 @@ OptionTimeZone:
 	.db "-1:00",0
 	
 KeyNames:
+	; 84 Plus CE keys
 	.db "(press)",0
 	.db "down",0
 	.db "left",0
@@ -947,6 +953,61 @@ KeyNames:
 	.db "2nd",0
 	.db "mode",0
 	.db "del",0
+	; 83 Premium CE keys
+	.db "(appuyer)",0
+	.db "bas",0
+	.db "gauche",0
+	.db "droite",0
+	.db "haut",0
+	.db 0,0,0,0
+	.db "entrer",0
+	.db "+",0
+	.db "-",0
+	.db "x",0
+	.db "div",0
+	.db "^",0
+	.db "annul",0
+	.db 0
+	.db "(-)",0
+	.db "3",0
+	.db "6",0
+	.db "9",0
+	.db ")",0
+	.db "frac",0
+	.db "var",0
+	.db 0
+	.db ".",0
+	.db "2",0
+	.db "5",0
+	.db "8",0
+	.db "(",0
+	.db "resol",0
+	.db "prgm",0
+	.db "stats",0
+	.db "0",0
+	.db "1",0
+	.db "4",0
+	.db "7",0
+	.db ",",0
+	.db "trig",0
+	.db "matrice",0
+	.db "XT0n",0
+	.db 0
+	.db "sto>",0
+	.db "ln",0
+	.db "log",0
+	.db "x^2",0
+	.db "<>",0
+	.db "math",0
+	.db "alpha",0
+	.db "graphe",0
+	.db "trace",0
+	.db "zoom",0
+	.db "fenetre",0
+	.db "f(x)",0
+	.db "2nde",0
+	.db "mode",0
+	.db "suppr",0
 	
 KeySMCList:
 	.db key_smc_right - key_smc_turbo
