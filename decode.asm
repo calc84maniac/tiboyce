@@ -86,14 +86,16 @@ decode_call_helper:
 	 sub.s (hl)
 	 ld.s (hl),a
 	pop de
-	call get_base_address
-	ld a,d
-	add hl,de
-	dec hl
-	ld d,(hl)
-	dec hl
-	ld e,(hl)
-	xor d
+	push hl
+	 call get_base_address
+	 ld a,d
+	 add hl,de
+	 dec hl
+	 ld d,(hl)
+	 dec hl
+	 ld e,(hl)
+	 xor d
+	pop hl
 	and $C0
 	jr nz,decode_call_bank_switch
 decode_call_common:
@@ -105,7 +107,7 @@ _
 	ret.l
 	
 decode_call_flush:
-	ex de,hl
+	pop hl
 	call prepare_flush
 	xor a
 	jr -_
@@ -116,13 +118,13 @@ decode_call_bank_switch:
 	cp $40
 	jr nc,decode_call_common
 	
-	; These will be the arguments to the trampoline
-	ld bc,do_rom_bank_call
+	dec hl
 	ld a,(z80codebase+curr_rom_bank)
+	ld.s (hl),a
 	
 	push de
 	 ld hl,(z80codebase+memroutine_next)
-	 ld de,-6
+	 ld de,-5
 	 add hl,de	;Sets C flag
 	
 	 ; Bail if not enough room for trampoline
@@ -132,21 +134,21 @@ decode_call_bank_switch:
 	 sbc hl,de	;Carry is set
 	 ex de,hl
 	 ld (z80codebase+memroutine_next),hl
+	 jr nc,decode_call_flush
+	 ld de,ERROR_CATCHER
+	 ld (hl),de
+	 inc hl
+	 inc hl
+	 inc hl
+	 ld de,(do_rom_bank_call << 8) | $CD	; CALL do_rom_bank_call
+	 ld (hl),de
 	pop de
-	jr nc,decode_call_flush
-	inc hl
 	push hl
-	 ld (hl),$CD	;CALL routine
-	 inc hl
-	 ld (hl),bc
-	 inc hl
-	 inc hl
-	 ld (hl),a	;current bank
 	 call lookup_code_link_internal
 	 add a,3	; Taken call eats 3 cycles
 	 ex (sp),ix
 	pop hl
-	ld.s (ix+4),hl	;JIT target
+	ld.s (ix+3),hl	;JIT target
 	ld b,$CD	;CALL
 	ei
 	ret.l
@@ -157,15 +159,6 @@ decode_ret_cond_helper:
 	ex de,hl
 	ld.s a,(hl)
 	sub (ix+7)
-	ei
-	ret.l
-	
-decode_intcache_helper:
-	ld e,c
-	ld d,0
-	call lookup_code
-	; Spend 5 cycles for interrupt dispatch overhead
-	add a,5
 	ei
 	ret.l
 	
@@ -205,30 +198,39 @@ banked_jump_mismatch_helper:
 	jp.sis dispatch_cycles_exx
 	
 banked_call_mismatch_helper:
-	ld.s (ix),a
-	exx
+	ld.s (ix+2),a
 	push bc
 	 push hl
-	  pop.s hl
-	  push.s hl
-	  ld.s de,(hl)
+	  ld.s de,(ix)
 	  call get_base_address
 	  add hl,de
 	  dec hl
 	  ld d,(hl)
 	  dec hl
 	  ld e,(hl)
-	  lea hl,ix+1
-	  call.il lookup_code_cached
-	  add a,3	; Taken call eats 3 cycles
-	  ld.s (hl),ix
-	  ex.s (sp),ix
-	  sub.s (ix+2)
-	  ld.s (ix+3),a
+	  push ix
+	   call.il lookup_code_cached
+	   add a,3	; Taken call eats 3 cycles
+	   pop.s hl
+	   ld.s (hl),ix
+	   push.s hl
+	  pop ix
+	  sub.s (ix+3)
+	  ld.s (ix+4),a
 	 pop hl
 	pop bc
 	ei
 	jp.sis banked_call_mismatch_continue
+	
+decode_intcache_helper:
+	ld e,c
+	ld d,0
+	call lookup_code
+	; Spend 5 cycles for interrupt dispatch overhead
+	add a,5
+memroutine_gen_ret:
+	ei
+	ret.l
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
 ; followed inline by the opcode byte in question (and one padding byte).
@@ -341,6 +343,8 @@ _
 	 
 	 ; Emit RET and possible post-increment/decrement
 	 ld hl,(z80codebase+memroutine_next)
+	 inc hl
+	 inc hl
 	 ld (hl),$C9	;RET
 	 ld a,e
 	 and $1C
@@ -408,6 +412,10 @@ memroutine_gen_end:
 	  dec hl
 	  ld (hl),RST_MEM
 	  dec hl
+	  dec hl
+	  dec hl
+	  ld de,ERROR_CATCHER
+	  ld (hl),de
 	  ld (z80codebase+memroutine_next),hl
 	  ex de,hl
 	  ld hl,(recompile_struct_end)
@@ -422,7 +430,6 @@ _
 	ld (hl),d
 	dec h
 	ld (hl),e
-memroutine_gen_ret:
 	ei
 	ret.l
 	

@@ -1,6 +1,9 @@
 #define CALL_STACK_DEPTH 32
+#define CALL_STACK_ENTRY_SIZE 4
 #define MEM_CYCLE_LUT_SIZE 8*3
 #define INT_RETURN_STACK_SIZE 5*6
+
+#define ERROR_CATCHER (Z80Error << 8) | $C3
 
 #macro ASSERT_NC
 #ifdef DEBUG
@@ -279,7 +282,7 @@ myz80stack = $FE00
 ; The flags translation LUT
 flags_lut = myz80stack - 512
 ; The end of the memory routines.
-memroutine_end = flags_lut - 1
+memroutine_end = flags_lut - 3
 read_cycle_LUT = flags_lut+256+1
 write_cycle_LUT = read_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
 int_return_stack = write_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
@@ -364,8 +367,8 @@ text_frame_2 = gb_frame_buffer_2 + (160*150)
 ; Each entry is 8 bytes in size, and contains the following members:
 ;   +0: A 16-bit pointer to the start of the recompiled Z80 code block.
 ;   +2: A 24-bit pointer to the first GB source opcode.
-;   +5: A 16-bit size of the GB opcode block.
-;   +7: Currently unused.
+;   +5: The 16-bit size of the GB opcode block.
+;   +7: The 8-bit total cycle count of the block.
 ; The address of the first unused entry is stored in (recompile_struct_end).
 ; The blocks are sorted in ascending order by Z80 block start address.
 ; Note: The first unused entry always contains a *24-bit* pointer to the next
@@ -383,6 +386,8 @@ recompile_struct = z80codebase + $010000
 ; The array is sorted in ascending order by Game Boy opcode address.
 ; Lookup is O(log n) on number of entries, and insertion is O(n) plus mapping.
 ; Only addresses reached via RET (when callstack fails) or JP HL use the cache.
+; Additionally, jumps from RAM-based GB code use the cache to speed up SMC,
+; and jumps/calls to banked regions use the cache upon a bank mismatch.
 ; Buffer end must be 256-byte aligned.
 recompile_cache_end = gb_frame_buffer_1
 	

@@ -5,7 +5,7 @@
 #define RST_POP $C7+r_pop
 #define RST_CALL $C7+r_call
 #define RST_EVENT $C7+r_event
-#define RST_ERROR $C7+r_error
+#define RST_INVALID_OPCODE $C7+r_invalid_opcode
 
 #define RAM_PREFIX_SIZE 5
 #define MAX_CYCLES_PER_BLOCK 64
@@ -41,11 +41,13 @@ flush_code:
 	; Set the next memory access routine output below the Z80 stack
 	ld hl,z80codebase+memroutine_end
 	ld (z80codebase+memroutine_next),hl
+	ld de,ERROR_CATCHER
+	ld (hl),de
 	; Empty the recompiled code mapping cache
 	ld hl,recompile_cache_end
 	ld (recompile_cache),hl
-	; Fill unused memory with RST_ERROR to catch bad execution
-	MEMSET_FAST(z80codebase+z80codesize, memroutine_end + 1 - z80codesize, RST_ERROR)
+	; Fill unused memory with DI to catch bad execution
+	MEMSET_FAST(z80codebase+z80codesize, memroutine_end + 1 - z80codesize, $F3)
 	; Invalidate the memory routines and recompile index LUT
 	MEMSET_FAST(memroutineLUT, $0400, 0)
 	; Invalidate both the read and write cycle LUTs
@@ -210,39 +212,40 @@ _
 	lea ix,ix-16
 	ret
 	
-Z80Error_helper:
-	ld hl,(recompile_struct_end)
-	ld hl,(hl)
+Z80InvalidOpcode_helper:
 	pop.s af
+	exx
 	pop.s de
-	or a
-	sbc.s hl,de
+#ifdef DEBUG
+	; Open debugger on CEmu
+	ld (exitReason),a
+	ld a,2
+	ld ($FFFFFF),a
+	push de
+	 APRINTF(InvalidOpcodeErrorMessage)
+	pop de
+#endif
+	call.il lookup_gb_code_address
+	call.il get_gb_address
+	ld (errorArg),hl
+	ld a,(z80codebase+curr_rom_bank)
+	ld (errorArg+2),a
 	ld a,(ERROR_INVALID_OPCODE << 2) + 1
-	jr nc,_
+	jr _
 runtime_error:
+#ifdef DEBUG
+	; Open debugger on CEmu
+	ld (exitReason),a
+	ld a,2
+	ld ($FFFFFF),a
+	APRINTF(RuntimeErrorMessage)
+#endif
 	ld a,(ERROR_RUNTIME << 2) + 1
 _
-#ifdef DEBUG
-	push af
-	 push de
-	  cp ERROR_INVALID_OPCODE << 2
-	  jr nz,_
-	  APRINTF(InvalidOpcodeErrorMessage)
-	  jr ++_
-_
-	  APRINTF(RuntimeErrorMessage)
-_
-	 pop de
-	pop af
-#endif
 	ld (exitReason),a
 	; Temporarily prevent auto state saving because state is unrecoverable
 	ld hl,AutoSaveState
 	set 1,(hl)
-	; Open debugger on CEmu
-	scf
-	sbc hl,hl
-	ld (hl),2
 	AJUMP(ExitEmulationWithoutState)
 	
 ; Gets the Game Boy opcode address from a recompiled code pointer.
@@ -1107,14 +1110,14 @@ opcoderecsizes:
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
 	
-	.db 6,2,10,0,9,2,2,7
-	.db 6,0,10,2,9,7,2,7
-	.db 6,2,10,0,9,2,2,7
-	.db 6,0,10,0,9,0,2,7
-	.db 3,2,3,0,0,2,2,7
-	.db 4,0,5,0,0,0,2,7
-	.db 3,3,3,3,0,3,2,7
-	.db 4,3,5,3,0,0,2,7
+	.db 6,2,10,0,10,2,2,8
+	.db 6,0,10,2,10,8,2,8
+	.db 6,2,10,0,10,2,2,8
+	.db 6,0,10,0,10,0,2,8
+	.db 3,2,3,0,0,2,2,8
+	.db 4,0,5,0,0,0,2,8
+	.db 3,3,3,3,0,3,2,8
+	.db 4,3,5,3,0,0,2,8
 	
 ; A table of Game Boy opcode sizes.
 opcodesizes:
@@ -1514,7 +1517,7 @@ _opgenCALLcond:
 	xor $C4 ^ $28
 	ld (de),a
 	inc de
-	ld a,7
+	ld a,8
 	ld (de),a
 	inc de
 	ld a,b
@@ -1543,6 +1546,15 @@ opgen_emit_call:
 	ld a,(base_address+1)
 	cpl
 	adc a,d
+	ld (hl),a
+	inc hl
+	; Store the current ROM bank if in the correct range, else 0
+	sub $40
+	cp $40
+	sbc a,a
+	jr z,_
+	ld a,(z80codebase+curr_rom_bank)
+_
 	ld (hl),a
 	inc hl
 	ld (hl),b

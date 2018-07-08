@@ -53,11 +53,11 @@ r_event:
 	jp do_event
 	
 	.block $38-$
-r_error:
+r_invalid_opcode:
 rst38h:
 	push af
 	 ld a,i
-	 jp pe,Z80Error
+	 jp pe,Z80InvalidOpcode
 	 ld a,pLcdMis >> 8
 	 in a,(pLcdMis & $FF)
 	 or a
@@ -77,10 +77,13 @@ frame_interrupt_return:
 	ei
 	ret
 	 
+Z80InvalidOpcode:
+	di
+	jp.lil Z80InvalidOpcode_helper
+	
 Z80Error:
 	di
-	jp.lil Z80Error_helper
-	
+	jp.lil runtime_error
 	
 do_push_and_return:
 	ex (sp),ix
@@ -100,44 +103,16 @@ do_pop:
 	exx
 	jp (ix)
 	
-do_call_reset_callstack:
-	ld b,CALL_STACK_DEPTH
-	ld.lil sp,myADLstack
-	ld sp,myz80stack-2
-do_call:
-	pea ix+6
-	ex af,af'
-	ld de,(ix+2)
-	ld a,(ix+5)
-	ld ix,(ix)
-do_call_common:
-	dec.l hl
-do_push_smc_3 = $+1
-	ld.l (hl),d
-	dec.l hl
-do_push_smc_4 = $+1
-	ld.l (hl),e
-	push.l hl
-	call dispatch_cycles_exx
-call_stack_ret:
-	ex af,af'
-	exx
-	pop.l de
-	or a
-	sbc.l hl,de
-	add.l hl,de
-	jr nz,ophandlerRETskip
-	pop ix
-	inc b
+ophandlerRETnobank:
 	ld c,b	;C is now at least 2
-	ld a,(ix-4)
-	cpi.l
-	jr nz,ophandlerRETnomatch_dec
-	ld de,(ix-3)
+	ld de,(ix-5)
 	ld a,e
 	cpi.l
-	jr nz,ophandlerRETnomatch_dec2
+	jr nz,ophandlerRETnomatch_dec
 	ld a,d
+	cpi.l
+	jr nz,ophandlerRETnomatch_dec2
+	ld a,(ix-2)
 dispatch_cycles_exx:
 	exx
 dispatch_cycles:
@@ -150,10 +125,45 @@ _
 	ex af,af'
 	jp (ix)
 	
+do_call_reset_callstack:
+	ld b,CALL_STACK_DEPTH
+	ld.lil sp,myADLstack
+	ld sp,myz80stack-2
+do_call:
+	pea ix+7
+	ex af,af'
+	ld de,(ix+2)
+	ld a,(ix+6)
+do_call_common:
+	ld ix,(ix)
+	dec.l hl
+do_push_smc_3 = $+1
+	ld.l (hl),d
+	dec.l hl
+do_push_smc_4 = $+1
+	ld.l (hl),e
+	push.l hl
+	call dispatch_cycles_exx
+call_stack_ret:
+	ex af,af'
+	exx
+	pop.l de
+	inc b
+	xor a
+	sbc.l hl,de
+	add.l hl,de
+	jr nz,ophandlerRETskip
+	pop ix
+	or (ix-3)
+	jr z,ophandlerRETnobank
+rom_bank_check_smc_3 = $+1
+	xor 0
+	jr z,ophandlerRETnobank
+	jr ophandlerRETnomatch
+	
 ophandlerRETskip:
 	jr c,ophandlerRETsave
 	pop de
-	inc b
 	exx
 	ex af,af'
 	ret
@@ -162,7 +172,7 @@ ophandlerRETsave:
 	push.l de
 	ld de,call_stack_ret
 	push de
-	jr ophandlerRETnomatch
+	djnz ophandlerRETnomatch	; B > 1 so always taken
 	
 ophandlerRETnomatch_dec2:
 	dec.l hl
@@ -175,33 +185,6 @@ ophandlerRETnomatch:
 	 ei
 	pop bc
 	jr dispatch_cycles_exx
-	
-do_rom_bank_call:
-	ex af,af'
-	pop ix
-rom_bank_check_smc_1 = $+1
-	ld a,0
-	cp (ix)
-	jr nz,banked_call_mismatch
-	ld ix,(ix+1)
-	exx
-	ex (sp),ix
-	ld a,(ix+3)
-banked_call_mismatch_continue:
-	ld de,(ix)
-	lea ix,ix+4
-	ex (sp),ix
-	djnz do_call_common
-	ld.lil sp,myADLstack
-	pop bc
-	ld sp,myz80stack-2
-	push bc
-	ld b,CALL_STACK_DEPTH
-	jp do_call_common
-	
-banked_call_mismatch:
-	di
-	jp.lil banked_call_mismatch_helper
 	
 cycle_overflow_for_jump_alt:
 	pea ix-1
@@ -223,6 +206,32 @@ event_address = $+1
 	
 	   di
 	   jp.lil schedule_event_helper
+	   
+do_rom_bank_call:
+	ex af,af'
+	exx
+	pop ix
+	ex (sp),ix
+rom_bank_check_smc_1 = $+1
+	ld a,0
+	cp (ix+2)
+	jr nz,banked_call_mismatch
+	ld a,(ix+4)
+banked_call_mismatch_continue:
+	ld de,(ix)
+	lea ix,ix+5
+	ex (sp),ix
+	djnz do_call_common
+	ld.lil sp,myADLstack
+	pop bc
+	ld sp,myz80stack-2
+	push bc
+	ld b,CALL_STACK_DEPTH
+	jp do_call_common
+	   
+banked_call_mismatch:
+	di
+	jp.lil banked_call_mismatch_helper
 	   
 do_rom_bank_jump:
 	ex af,af'
@@ -686,6 +695,7 @@ decode_call:
 	  ld de,(hl)
 	  inc hl
 	  inc hl
+	  inc hl
 	  push hl
 	   di
 	   call.il decode_call_helper
@@ -694,7 +704,7 @@ _
 	  sub (hl)
 	  inc hl
 	  ld (hl),a
-	  ld de,-5
+	  ld de,-6
 	  add hl,de
 	  ld (hl),ix
 	  dec hl
@@ -711,6 +721,7 @@ decode_rst:
 	push bc
 	 push de
 	  ld de,(hl)
+	  inc hl
 	  inc hl
 	  inc hl
 	  push hl
@@ -1147,12 +1158,12 @@ trigger_event_pushed:
 	    ld (hl),a
 	   
 	    ; Get the address of the recompiled code: the bottom stack entry
-	    ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * 4) - 2
+	    ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
 	    exx
 	    ld a,b
 	    exx
 	    ld d,a
-	    ld e,4
+	    ld e,CALL_STACK_ENTRY_SIZE
 	    mlt de
 	    add hl,de
 	    ld de,(hl)
@@ -2031,6 +2042,7 @@ curr_rom_bank = $+1
 	 ld (curr_rom_bank),a
 	 ld (rom_bank_check_smc_1),a
 	 ld (rom_bank_check_smc_2),a
+	 ld (rom_bank_check_smc_3),a
 	 ld b,3
 	 mlt bc
 	 ld.lil ix,rombankLUT
@@ -2072,8 +2084,8 @@ get_read_cycle_offset:
 get_mem_cycle_offset:
 	push bc
 	 ; Get the address of the recompiled code: the bottom stack entry
-	 ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * 4) - 2
-	 ld c,4
+	 ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
+	 ld c,CALL_STACK_ENTRY_SIZE
 	 mlt bc
 	 add hl,bc
 	 ld bc,(hl)

@@ -222,6 +222,6 @@ _opgenRETI:
 	ret
 	
 _opgenINVALID:
-	ld a,RST_ERROR
+	ld a,RST_INVALID_OPCODE
 	ld (de),a
 	ret

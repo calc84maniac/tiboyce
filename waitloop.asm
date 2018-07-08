@@ -251,6 +251,10 @@ waitloop_identified:
 	ret nc
 	ex de,hl
 	ld (z80codebase+memroutine_next),hl
+	ld de,ERROR_CATCHER
+	ld (hl),de
+	inc hl
+	inc hl
 	inc hl
 	
 	; Choose handler based on variable accessed

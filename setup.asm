@@ -700,6 +700,7 @@ _
 	ld (z80codebase+curr_rom_bank),a
 	ld (z80codebase+rom_bank_check_smc_1),a
 	ld (z80codebase+rom_bank_check_smc_2),a
+	ld (z80codebase+rom_bank_check_smc_3),a
 	ld c,a
 	ld b,3
 	mlt bc
@@ -2428,7 +2429,7 @@ error_text:
 	DEFINE_ERROR("ERROR_INVALID_ROM", "ROM is invalid")
 	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Need %d more bytes of free RAM")
 	DEFINE_ERROR("ERROR_RUNTIME", "Encountered a runtime error!")
-	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Encountered an invalid opcode!")
+	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Ran an invalid GB opcode at %06X")
 	
 ErrorNoROMsFound:
 	.db "No ROMs found!",0
