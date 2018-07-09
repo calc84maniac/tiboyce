@@ -34,10 +34,9 @@ frame_emulated_count = $+1
 	  
 	   ; Display sprites
 	   ld a,(hram_base+LCDC)
-	   cpl
-	   and $82
+	   rla
 	   push iy
-	    call z,draw_sprites
+	    call c,draw_sprites
 	   pop iy
 	
 	   ; Swap buffers

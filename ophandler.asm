@@ -146,10 +146,8 @@ _
 ; Outputs: A = current scanline
 ; Destroys: AF, BC, DE, HL, IX
 sprite_catchup:
-	ld a,(hram_base+LCDC)
-	bit 1,a
 	push iy
-	 call nz,draw_sprites
+	 call draw_sprites
 	pop iy
 	
 	ld a,(myLY)
@@ -330,6 +328,9 @@ _
 	   call nz,sprite_catchup
 	  pop de
 	 pop bc
+	 ld a,(LCDC_1_smc)
+	 xor $0E ^ $C9	;LD C,myspriteLY vs RET
+	 ld (LCDC_1_smc),a
 _
 	 bit 2,c
 	 jr z,_

@@ -891,6 +891,10 @@ _
 	ld (LCDC_2_smc_5),a
 _
 	add hl,hl
+	jr c,_
+	ld a,$C9 ;RET (overriding LD C,myspriteLY)
+	ld (LCDC_1_smc),a
+_
 	add hl,hl
 	jr c,_
 	ld a,$31 ;LD SP (overriding ADD HL,SP)

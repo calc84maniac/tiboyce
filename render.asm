@@ -8,8 +8,9 @@ draw_sprites_save_sp = $+1
 	ret
 	
 draw_sprites:
+LCDC_1_smc = $
 myspriteLY = $+1
-	ld c,0
+	ld c,0			;ret when sprites disabled
 	ld a,(myLY)
 	sub c
 	ret z
