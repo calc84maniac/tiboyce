@@ -42,16 +42,16 @@
             var savedOutputPrefix = outputPrefix;
             var cond = '(5 alphanumerical characters max, 1st must be uppercase letter)';
             do {
-                if (outputPrefix.length === 0 || (! /[A-Z][a-zA-Z0-9]{0,4}/.test(outputPrefix))) {
+                if (!outputPrefix || outputPrefix.length === 0 || (! /^[A-Z][a-zA-Z0-9]{0,4}$/.test(outputPrefix))) {
                     alert(cond);
                 }
                 outputPrefix = prompt("Enter the output filename prefix - " + cond, savedOutputPrefix);
-            } while (! /[A-Z][a-zA-Z0-9]{0,4}/.test(outputPrefix));
+            } while (!outputPrefix || ! /^[A-Z][a-zA-Z0-9]{0,4}$/.test(outputPrefix));
 
             var romTitle = fnameNoExt;
             do {
                 romTitle = prompt("Enter the ROM title to display in TI-Boy CE (ASCII characters)", fnameNoExt);
-            } while (romTitle.length && (! /^[\x20-\x7F]{0,255}$/.test(romTitle)));
+            } while (!romTitle || romTitle.length == 0 || (! /^[\x20-\x7F]{0,255}$/.test(romTitle)));
 
             FS.writeFile(inputFileName, new Uint8Array(event.target.result), {encoding: 'binary'});
 
