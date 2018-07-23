@@ -124,28 +124,28 @@ void free_tifiles(struct tifile **files, int start, int end) {
 struct tifile *create_metadata_file(const char *outname, const char *title, uint16_t num_pages, enum VAR_FLAG flag) {
 	struct tifile *file = open_tifile(TYPE_APPVAR, outname, flag);
 	if (file == NULL) {
-		printf("Error allocating memory for AppVar %s\n", outname);
+		fprintf(stderr, "Error allocating memory for AppVar %s\n", outname);
 		return NULL;
 	}
 	if (!append_tifile(&file, metaheader, sizeof(metaheader))) {
-		printf("Error appending header to AppVar %s\n", outname);
+		fprintf(stderr, "Error appending header to AppVar %s\n", outname);
 		free(file);
 		return NULL;
 	}
 	uint8_t num_pages_byte = (uint8_t)num_pages;
 	if (num_pages > 256 || !append_tifile(&file, &num_pages_byte, sizeof(num_pages_byte))) {
-		printf("Error appending page count to AppVar %s\n", outname);
+		fprintf(stderr, "Error appending page count to AppVar %s\n", outname);
 		free(file);
 		return NULL;
 	}
 	uint8_t title_length = (uint8_t)strlen(title);
 	if (!append_tifile(&file, &title_length, sizeof(title_length))) {
-		printf("Error appending title length to AppVar %s\n", outname);
+		fprintf(stderr, "Error appending title length to AppVar %s\n", outname);
 		free(file);
 		return NULL;
 	}
 	if (!append_tifile(&file, title, title_length)) {
-		printf("Error appending title to AppVar %s\n", outname);
+		fprintf(stderr, "Error appending title to AppVar %s\n", outname);
 		free(file);
 		return NULL;
 	}
@@ -154,11 +154,11 @@ struct tifile *create_metadata_file(const char *outname, const char *title, uint
 
 void write_error(const char *filename, struct zip_t *zip) {
 	if (zip != NULL) {
-		printf("Could not write file %s to archive\n", filename);
+		fprintf(stderr, "Could not write file %s to archive\n", filename);
 		zip_close(zip);
 	}
 	else {
-		printf("Could not write to file %s\n", filename);
+		fprintf(stderr, "Could not write to file %s\n", filename);
 	}
 }
 
@@ -281,7 +281,7 @@ uint8_t *read_rom(const char *filename, size_t *length_out) {
 			}
 		}
 
-		printf("No .gb or .gbc file found in zip archive\n");
+		fprintf(stderr, "No .gb or .gbc file found in zip archive\n");
 		return NULL;
 	}
 	else {
@@ -386,14 +386,14 @@ int best_fit(struct pageinfo *pages, int num_pages) {
 }
 
 void usage(char *file) {
-	printf("Usage: %s [-b83 | -b84 | -z] [-t \"Game Title\"] romfile outname\n", file);
-	printf("  -b83: Pack in TI-83 Premium CE bundle (requires TI-Connect CE 5.3)\n");
-	printf("  -b84: Pack in TI-84 Plus CE bundle (requires TI-Connect CE 5.3)\n");
-	printf("  -z: Pack in zip archive (must unzip before transferring)\n");
-	//printf("  -u: Set output files to send as Unarchived\n");
-	printf("  -t: The title to display in the ROM list (defaults to internal ROM name)\n");
-	printf("  romfile: The path to the ROM file to split\n");
-	printf("  outname: The prefix name to use for the output AppVar files\n");
+	fprintf(stderr, "Usage: %s [-b83 | -b84 | -z] [-t \"Game Title\"] romfile outname\n", file);
+	fprintf(stderr, "  -b83: Pack in TI-83 Premium CE bundle (requires TI-Connect CE 5.3)\n");
+	fprintf(stderr, "  -b84: Pack in TI-84 Plus CE bundle (requires TI-Connect CE 5.3)\n");
+	fprintf(stderr, "  -z: Pack in zip archive (must unzip before transferring)\n");
+	//fprintf(stderr, "  -u: Set output files to send as Unarchived\n");
+	fprintf(stderr, "  -t: The title to display in the ROM list (defaults to internal ROM name)\n");
+	fprintf(stderr, "  romfile: The path to the ROM file to split\n");
+	fprintf(stderr, "  outname: The prefix name to use for the output AppVar files\n");
 }
 
 void exit_pause(void) {
@@ -485,7 +485,7 @@ int main(int argc, char **argv) {
 				title[size - 1] = '\0';
 			}
 			else {
-				printf("Title is too long\n");
+				fprintf(stderr, "Title is too long\n");
 				title = NULL;
 				int c;
 				do {
@@ -547,20 +547,20 @@ int main(int argc, char **argv) {
 		}
 
 		if (strlen(outname) > 5) {
-			printf("Output name must be at most 5 characters long\n");
+			fprintf(stderr, "Output name must be at most 5 characters long\n");
 			outname = NULL;
 			continue;
 		}
 
 		if (outname[0] < 'A' || outname[0] > 'Z') {
-			printf("Output name must begin with a capital letter\n");
+			fprintf(stderr, "Output name must begin with a capital letter\n");
 			outname = NULL;
 			continue;
 		}
 
 		for (size_t i = 1; outname[i] != '\0'; ++i) {
 			if (!isalnum(outname[i])) {
-				printf("Output name must be alphanumeric\n");
+				fprintf(stderr, "Output name must be alphanumeric\n");
 				outname = NULL;
 				break;
 			}
@@ -570,12 +570,12 @@ int main(int argc, char **argv) {
 	size_t rom_length;
 	uint8_t *rom = read_rom(romfilename, &rom_length);
 	if (rom == NULL) {
-		printf("Could not read rom from file %s\n", romfilename);
+		fprintf(stderr, "Could not read rom from file %s\n", romfilename);
 		return 1;
 	}
 
 	if (rom_length < 0x150) {
-		printf("Not a valid GB ROM\n");
+		fprintf(stderr, "Not a valid GB ROM\n");
 		free(rom);
 		return 1;
 	}
@@ -599,7 +599,7 @@ int main(int argc, char **argv) {
 	uint16_t num_pages = 0;
 	while (num_pages * 0x4000U < rom_length) {
 		if (num_pages == 256) {
-			printf("ROM is too large!\n");
+			fprintf(stderr, "ROM is too large!\n");
 			free(rom);
 			return 1;
 		}
@@ -618,7 +618,7 @@ int main(int argc, char **argv) {
 		sprintf(appvarname, "%sR%02d", outname, romfilecount);
 		struct tifile *romfile = open_tifile(TYPE_APPVAR, appvarname, flag);
 		if (romfile == NULL) {
-			printf("Error allocating memory for AppVar %s\n", appvarname);
+			fprintf(stderr, "Error allocating memory for AppVar %s\n", appvarname);
 			free_tifiles(romfiles, 0, romfilecount);
 			free(rom);
 			return 1;
@@ -626,7 +626,7 @@ int main(int argc, char **argv) {
 
 		int pages_to_use = best_fit(pages, pages_remaining);
 		if (pages_to_use <= 0) {
-			printf("Error choosing pages for AppVar %s\n", appvarname);
+			fprintf(stderr, "Error choosing pages for AppVar %s\n", appvarname);
 			free_tifiles(romfiles, 0, romfilecount);
 			free(romfile);
 			free(rom);
@@ -640,21 +640,21 @@ int main(int argc, char **argv) {
 			uint16_t page_length = pages[pages_remaining].length - 3;
 
 			if (!append_tifile(&romfile, &page_index, sizeof(page_index))) {
-				printf("Error appending page index to AppVar %s\n", appvarname);
+				fprintf(stderr, "Error appending page index to AppVar %s\n", appvarname);
 				free_tifiles(romfiles, 0, romfilecount);
 				free(romfile);
 				free(rom);
 				return 1;
 			}
 			if (!append_tifile(&romfile, &page_length, sizeof(page_length))) {
-				printf("Error appending page length to AppVar %s\n", appvarname);
+				fprintf(stderr, "Error appending page length to AppVar %s\n", appvarname);
 				free_tifiles(romfiles, 0, romfilecount);
 				free(romfile);
 				free(rom);
 				return 1;
 			}
 			if (!append_tifile(&romfile, &rom[page_index * 0x4000], page_length)) {
-				printf("Error appending page data to AppVar %s\n", appvarname);
+				fprintf(stderr, "Error appending page data to AppVar %s\n", appvarname);
 				free_tifiles(romfiles, 0, romfilecount);
 				free(romfile);
 				free(rom);
@@ -691,7 +691,7 @@ int main(int argc, char **argv) {
 		printf("Opening file %s for output\n", zipname);
 		zip = zip_open(zipname, ZIP_DEFAULT_COMPRESSION_LEVEL, 'w');
 		if (zip == NULL) {
-			printf("Could not open file %s for writing\n", zipname);
+			fprintf(stderr, "Could not open file %s for writing\n", zipname);
 			free_tifiles(romfiles, 0, romfilecount);
 			free(metadatafile);
 			return 1;
