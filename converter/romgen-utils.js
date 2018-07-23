@@ -46,11 +46,13 @@
                     alert(cond);
                 }
                 outputPrefix = prompt("Enter the output filename prefix - " + cond, savedOutputPrefix);
+                if (outputPrefix === null) { return; } // early exit if the dialog was cancelled
             } while (!outputPrefix || ! /^[A-Z][a-zA-Z0-9]{0,4}$/.test(outputPrefix));
 
             var romTitle = fnameNoExt;
             do {
                 romTitle = prompt("Enter the ROM title to display in TI-Boy CE (ASCII characters)", fnameNoExt);
+                if (romTitle === null) { return; } // early exit if the dialog was cancelled
             } while (!romTitle || romTitle.length == 0 || (! /^[\x20-\x7F]{0,255}$/.test(romTitle)));
 
             FS.writeFile(inputFileName, new Uint8Array(event.target.result), {encoding: 'binary'});
