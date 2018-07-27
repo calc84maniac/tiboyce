@@ -36,7 +36,7 @@ flush_code:
 	ld l,8
 	ld (recompile_struct_end),hl
 	; Store first available block address to the first unused entry
-	ld de,z80codebase+z80codesize
+	ld de,z80codebase+jit_start
 	ld (hl),de
 	; Set the next memory access routine output below the Z80 stack
 	ld hl,z80codebase+memroutine_end
@@ -47,7 +47,7 @@ flush_code:
 	ld hl,recompile_cache_end
 	ld (recompile_cache),hl
 	; Fill unused memory with DI to catch bad execution
-	MEMSET_FAST(z80codebase+z80codesize, memroutine_end + 1 - z80codesize, $F3)
+	MEMSET_FAST(z80codebase+jit_start, memroutine_end - jit_start, $F3)
 	; Invalidate the memory routines and recompile index LUT
 	MEMSET_FAST(memroutineLUT, $0400, 0)
 	; Invalidate both the read and write cycle LUTs
@@ -703,6 +703,13 @@ lookupfoundstart:
 	ret
 	
 flush_and_recompile_pop:
+#ifdef DEBUG
+	  xor a
+ready_to_flush = $+1
+	  cp 0
+	  ASSERT_C
+	  ld (ready_to_flush),a
+#endif
 	 pop hl
 	pop iy
 flush_and_recompile:

@@ -2332,3 +2332,5 @@ z80codesize = $-0
 	.org z80code+z80codesize
 	
 	.echo "Z80 mode code size: ", z80codesize
+	
+jit_start = z80codesize

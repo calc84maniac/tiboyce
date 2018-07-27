@@ -140,16 +140,17 @@ decode_call_bank_switch:
 	 inc hl
 	 inc hl
 	 inc hl
-	 ld de,(do_rom_bank_call << 8) | $CD	; CALL do_rom_bank_call
-	 ld (hl),de
 	pop de
+	; Code lookup may overwrite the trampoline area, so wait to write it out
 	push hl
 	 call lookup_code_link_internal
 	 add a,3	; Taken call eats 3 cycles
 	 ex (sp),ix
 	pop hl
 	ld.s (ix+3),hl	;JIT target
-	ld b,$CD	;CALL
+	ld hl,(do_rom_bank_call << 8) | $CD	; CALL do_rom_bank_call
+	ld (ix),hl
+	ld b,l	;CALL
 	ei
 	ret.l
 	
