@@ -569,9 +569,12 @@ schedule_event_cycle_loop:
 	inc h
 	add a,(hl)	; If this is a block-ender, -1 is added and the loop exits.
 	jr c,schedule_event_now
-	inc c
 	bit 3,c
 	jr z,schedule_event_cycle_loop
+	; If the JIT instruction size is 8 or more, it's some kind of branch.
+	; The branch may be taken, so don't waste time continuing to loop.
+	; Schedule the event immediately after this instruction, and it will
+	; be rescheduled at its time of execution if necessary.
 	sub iyl
 	jr schedule_event_anyway
 	
