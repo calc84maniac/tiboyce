@@ -731,7 +731,7 @@ MainMenu:
 	.db 9
 	.db 5,9
 EmulatorTitle:
-	.db "TI-Boy CE Alpha v0.1.0",0
+	.db "TI-Boy CE Alpha v0.1.1",0
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
 	.db ITEM_DIGIT,0, 50,1,"Load State Slot %u",0
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
