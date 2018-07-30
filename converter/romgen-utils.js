@@ -1,5 +1,9 @@
 /* TI-Boy CE online ROM converter - helper script - Adriweb */
 
+Module = {
+  'printErr': function(text) { alert(text); }
+};
+
 (function() {
 
     var buttonsContainer = document.getElementById("buttonsContainer");
