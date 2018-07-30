@@ -35,14 +35,14 @@ struct tivar {
 	uint16_t header_length;
 	uint16_t data_length;
 	uint8_t type;
-	uint8_t name[8];
+	char name[8];
 	uint8_t version;
 	uint8_t flag;
 	struct tidata data;
 };
 
 struct tifile {
-	uint8_t signature[11];
+	char signature[11];
 	uint8_t comment[42];
 	uint16_t file_length;
 	struct tivar var;
@@ -195,7 +195,7 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 		return NULL;
 	}
 
-	if (length != offset_of(tifile, var) + tifile->file_length + 2) {
+	if (length != offset_of(tifile, var) + tifile->file_length + 2U) {
 		free(filedata);
 		fprintf(stderr, "File length invalid for AppVar %s\n", filename);
 		return NULL;
@@ -219,8 +219,7 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 	}
 
 	struct tidata *tidata = (struct tidata *)((char *)&tifile->var.data_length + tifile->var.header_length);
-	size_t var_length = tidata->var_length;
-	if (var_length != tidata->data_length - 2 || var_length != tifile->var.data_length - 2) {
+	if (tidata->var_length != tidata->data_length - 2 || tidata->var_length != tifile->var.data_length - 2) {
 		free(filedata);
 		fprintf(stderr, "Variable length invalid for AppVar %s\n", filename);
 		return NULL;
@@ -268,7 +267,7 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 
 bool write_save_data(const char *filename, enum FILE_TYPE filetype, char appvarname[8], enum VAR_FLAG varflag, void *savedata, size_t savedatalength) {
 	if (filetype == FILE_SAV) {
-		printf("Writing save file %s (length = %d bytes)\n", filename, savedatalength);
+		printf("Writing save file %s (length = %d bytes)\n", filename, (int)savedatalength);
 		FILE *out = fopen(filename, "wb");
 		if (out == NULL) {
 			write_error(filename);
@@ -413,6 +412,8 @@ int main(int argc, char **argv) {
 	char output_appvarname[8];
 	void *savedata;
 	size_t savedatalength;
+
+	(void)argc;
 
 	for (char **arg = &argv[1]; *arg != NULL; arg++) {
 		if ((*arg)[0] == '-') {
