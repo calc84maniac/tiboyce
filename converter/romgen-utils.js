@@ -1,13 +1,15 @@
 /* TI-Boy CE online ROM converter - helper script - Adriweb */
 
 Module = {
-  'printErr': function(text) { alert(text); }
+  'collectedErrors': [],
+  'printErr': function(text) { Module.collectedErrors.push(text); }
 };
 
 (function() {
 
     var buttonsContainer = document.getElementById("buttonsContainer");
     var dlList = document.getElementById("dlList");
+    var cleanupFiles = function() {}
 
     var addBlobFileLink = function(file, name) {
         var li = document.createElement("li");
@@ -21,15 +23,21 @@ Module = {
 
     var makeCompressedAndDownload = function(buttonLink, mode, fileName, romTitle, inputFileName, outputPrefix)
     {
+        Module.collectedErrors = [];
         Module.callMain([ mode, '-t', romTitle, inputFileName, outputPrefix ]);
-        var file = FS.readFile(fileName, {encoding: 'binary'});
-        if (file) {
+        if (Module.collectedErrors.length > 0) {
+            alert(Module.collectedErrors.join("\n"));
+            return;
+        }
+
+        try {
+            var file = FS.readFile(fileName, {encoding: 'binary'});
             buttonLink.onclick = null;
             buttonLink.href = window.URL.createObjectURL((new Blob([file], {type: 'application/octet-stream'})));
             buttonLink.download = fileName;
             buttonLink.click();
-        } else {
-            alert('Oops, something went wrong converting the ROM (see console)');
+        } catch (e) {
+            alert('Oops, something went wrong converting the ROM: ' + e.message);
             return;
         }
     };
@@ -37,6 +45,8 @@ Module = {
     fileLoaded = function(event, inputFileName)
     {
         dlList.innerHTML = buttonsContainer.innerHTML = "";
+        cleanupFiles();
+        cleanupFiles = function() {};
 
         if (event.target.readyState === FileReader.DONE)
         {
@@ -46,11 +56,11 @@ Module = {
             var savedOutputPrefix = outputPrefix;
             var cond = '(5 alphanumerical characters max, 1st must be uppercase letter)';
             do {
-                if (!outputPrefix || outputPrefix.length === 0 || (! /^[A-Z][a-zA-Z0-9]{0,4}$/.test(outputPrefix))) {
-                    alert(cond);
-                }
                 outputPrefix = prompt("Enter the output filename prefix - " + cond, savedOutputPrefix);
                 if (outputPrefix === null) { return; } // early exit if the dialog was cancelled
+                if (!outputPrefix || (! /^[A-Z][a-zA-Z0-9]{0,4}$/.test(outputPrefix))) {
+                    alert(cond);
+                }
             } while (!outputPrefix || ! /^[A-Z][a-zA-Z0-9]{0,4}$/.test(outputPrefix));
 
             var romTitle = fnameNoExt;
@@ -61,36 +71,40 @@ Module = {
 
             FS.writeFile(inputFileName, new Uint8Array(event.target.result), {encoding: 'binary'});
 
-            var cleanupFiles = function()
-            {
+            cleanupFiles = function() {
+                try { FS.unlink(inputFileName); } catch (e){}
                 try { FS.unlink(outputPrefix + ".8xv"); } catch (e){}
-                for (var i=0; i<50; i++) {
+                for (var i=0; i<99; i++) {
                     try { FS.unlink(outputPrefix + "R" + ('00'+i).slice(-2) + ".8xv"); } catch (e){}
                 }
+                try { FS.unlink(outputPrefix + ".zip"); } catch (e){}
+                try { FS.unlink(outputPrefix + ".b83"); } catch (e){}
+                try { FS.unlink(outputPrefix + ".b84"); } catch (e){}
             }
 
+            Module.collectedErrors = [];
             Module.callMain([ '-t', romTitle, inputFileName, outputPrefix ]);
+            if (Module.collectedErrors.length > 0) {
+                alert(Module.collectedErrors.join("\n"));
+                return;
+            }
 
             // Display meta file
-            var fileName = outputPrefix + ".8xv";
-            var file = FS.readFile(fileName, {encoding: 'binary'});
-            if (file) {
+            try {
+                var fileName = outputPrefix + ".8xv";
+                var file = FS.readFile(fileName, {encoding: 'binary'});
                 addBlobFileLink(file, fileName);
-            } else {
-                alert('Oops, something went wrong converting the ROM (see console)');
+            } catch (e) {
+                alert('Oops, something went wrong converting the ROM: ' + e.message);
                 return;
             }
 
             // Display part files
-            for (var i=0; i<50; i++) {
+            for (var i=0; i<99; i++) {
                 try {
                     fileName = outputPrefix + "R" + ('00'+i).slice(-2) + ".8xv";
                     file = FS.readFile(fileName, {encoding: 'binary'});
-                    if (file) {
-                        addBlobFileLink(file, fileName);
-                    } else {
-                        break;
-                    }
+                    addBlobFileLink(file, fileName);
                 } catch (e) {
                     console.log('[Error] Oops, probably reached the end of the files ' + e.message, fileName);
                     break;
@@ -104,7 +118,6 @@ Module = {
             btn.innerHTML = "<span class='glyphicon glyphicon-compressed' aria-hidden='true'></span> Download TI-84 Plus CE bundle";
             btn.onclick = (function(btn) {
                 return function(event) {
-                    cleanupFiles();
                     makeCompressedAndDownload(btn, '-b84', outputPrefix+".b84", romTitle, inputFileName, outputPrefix);
                     event.stopPropagation();
                     return false;
@@ -119,7 +132,6 @@ Module = {
             btn.innerHTML = "<span class='glyphicon glyphicon-compressed' aria-hidden='true'></span> Download TI-83 Premium CE bundle";
             btn.onclick = (function(btn) {
                 return function(event) {
-                    cleanupFiles();
                     makeCompressedAndDownload(btn, '-b83', outputPrefix+".b83", romTitle, inputFileName, outputPrefix);
                     event.stopPropagation();
                     return false;
@@ -150,7 +162,6 @@ Module = {
             btn.innerHTML = "<span class='glyphicon glyphicon-compressed' aria-hidden='true'></span> Download all files in a .zip";
             btn.onclick = (function(btn) {
                 return function(event) {
-                    cleanupFiles();
                     makeCompressedAndDownload(btn, '-z', outputPrefix+".zip", romTitle, inputFileName, outputPrefix);
                     event.stopPropagation();
                     return false;
