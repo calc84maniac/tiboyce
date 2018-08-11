@@ -406,7 +406,6 @@ _
 	   ld (timer_cycle_target),hl
 	   ld hl,(div_cycle_count)
 	   jr nz,timer_cycles_reset_loop
-	   xor a
 	   jr event_cycle_loop_shortcut
 	   
 event_reschedule:
