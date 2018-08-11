@@ -266,19 +266,17 @@ do_event_pushed:
 	  push bc
 	   ld hl,event_value
 	   ld (event_address),hl
+	   xor a
 event_cycle_loop:
-	   ld a,iyh
-	   or a
+event_cycle_count = $+2
+	   lea hl,iy+0
+	   or h
 	   jr nz,not_expired
-	   ld a,iyl
-event_cycle_count = $+1
-	   add a,0
-	   jr nc,not_expired
-	   
+
 	   ; Event expired
 	   ld bc,(frame_cycle_target)
-	   ld hl,CYCLES_PER_SCANLINE * 144 + 1
-	   sbc hl,bc	; Carry is set
+	   ld hl,CYCLES_PER_SCANLINE * 144
+	   sbc hl,bc	; Carry is reset
 	   jr z,vblank_handler
 vblank_handler_ret:
 
@@ -323,8 +321,8 @@ div_cycle_count = $+1
 	   or a
 	   sbc hl,de
 	   ld (div_cycle_count),hl
-	   ld a,(TAC)
-	   and 4
+	   xor a
+timer_enable_smc = $
 	   jr z,event_cycle_loop
 timer_cycles_reset_loop:
 	   add hl,de
@@ -345,6 +343,10 @@ timer_cycle_target = $+1
 	   add hl,bc
 _
 	   ld (frame_cycle_target),hl
+serial_cycle_count = $+1
+	   ld hl,0
+	   add hl,de
+	   ld (serial_cycle_count),hl
 	   add iy,de
 event_cycle_loop_shortcut:
 	   jr event_cycle_loop
@@ -366,8 +368,7 @@ intstate = $+1
 	jp (ix)
 	
 serial_cycle_handler:
-serial_cycle_count = $+1
-	   ld hl,0
+	   ld hl,(serial_cycle_count)
 	   add hl,de
 	   ld (serial_cycle_count),hl
 	   jr c,serial_cycle_continue
@@ -405,6 +406,7 @@ _
 	   ld (timer_cycle_target),hl
 	   ld hl,(div_cycle_count)
 	   jr nz,timer_cycles_reset_loop
+	   xor a
 	   jr event_cycle_loop_shortcut
 	   
 event_reschedule:

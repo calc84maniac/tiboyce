@@ -843,6 +843,8 @@ _
 	ld l,a
 	inc hl
 	ld.sis (timer_cycle_target),hl
+	ld a,$20 ;JR NZ (overriding JR Z)
+	ld (z80codebase+timer_enable_smc),a
 _
 	
 	ld a,(iy-ioregs+SC)

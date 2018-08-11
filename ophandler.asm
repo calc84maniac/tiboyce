@@ -294,7 +294,7 @@ scroll_write_done:
 ; Catches up the renderer before writing, and then applies SMC to renderer.
 ;
 ; Inputs:  A' = value being written
-;          DE = current div cycle count
+;          DE = current cycle offset (negative)
 ;          L = current scanline
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
@@ -387,12 +387,12 @@ _
 	 ; Forcibly skip to scanline 0
 	 sbc hl,hl
 	 ld.sis (frame_cycle_target),hl
-	 ld.sis hl,(div_cycle_count)
-	 ld.sis (div_cycle_count),de
+	 ld.sis hl,(serial_cycle_count)
 	 sbc hl,de
-	 ld.sis de,(serial_cycle_count)
-	 add hl,de
 	 ld.sis (serial_cycle_count),hl
+	 ld.sis hl,(div_cycle_count)
+	 add hl,de
+	 ld.sis (div_cycle_count),hl
 	pop hl
 	exx
 	ei
@@ -468,6 +468,8 @@ tac_write_helper:
 	 ex af,af'
 	 bit 2,c
 	 jr nz,_
+	 ld a,$28	;JR Z
+	 ld (z80codebase + timer_enable_smc),a
 return_from_write_helper:
 	pop hl
 	exx
@@ -493,6 +495,9 @@ _
 	 ld a,(hl)
 	 ld (z80codebase + timer_cycles_reset_factor_smc),a
 	 ld (writeTIMA_smc),a
+
+	 ld a,$20	;JR NZ
+	 ld (z80codebase + timer_enable_smc),a
 	
 ; Writes to the GB timer count (TIMA).
 ; Does not use a traditional call/return, must be jumped to directly.
