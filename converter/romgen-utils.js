@@ -9,7 +9,7 @@ Module = {
 
     var buttonsContainer = document.getElementById("buttonsContainer");
     var dlList = document.getElementById("dlList");
-    var cleanupFiles = function() {}
+    var cleanupFiles = function() {};
 
     var addBlobFileLink = function(file, name) {
         var li = document.createElement("li");
@@ -80,7 +80,7 @@ Module = {
                 try { FS.unlink(outputPrefix + ".zip"); } catch (e){}
                 try { FS.unlink(outputPrefix + ".b83"); } catch (e){}
                 try { FS.unlink(outputPrefix + ".b84"); } catch (e){}
-            }
+            };
 
             Module.collectedErrors = [];
             Module.callMain([ '-t', romTitle, inputFileName, outputPrefix ]);

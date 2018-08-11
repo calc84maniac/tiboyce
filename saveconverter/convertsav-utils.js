@@ -45,7 +45,7 @@ Module = {
             cleanupFiles = function() {
                 try { FS.unlink(inputFileName); } catch (e){}
                 try { FS.unlink(outputFileName); } catch (e){}
-            }
+            };
 
             Module.collectedErrors = [];
             Module.callMain([ inputFileName, outputFileName ]);
