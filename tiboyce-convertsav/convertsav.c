@@ -234,7 +234,7 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 		savedata = malloc(savelength);
 		if (savedata == NULL) {
 			free(filedata);
-			fprintf(stderr, "Failed to allocate memory for AppVar %s", filename);
+			fprintf(stderr, "Failed to allocate memory for AppVar %s\n", filename);
 			return NULL;
 		}
 		memcpy(savedata, &tidata->var_data[1], savelength);
@@ -244,18 +244,18 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 		savedata = malloc(savelength);
 		if (savedata == NULL) {
 			free(filedata);
-			fprintf(stderr, "Failed to allocate memory for AppVar %s", filename);
+			fprintf(stderr, "Failed to allocate memory for AppVar %s\n", filename);
 			return NULL;
 		}
 		if (savelength != lzf_decompress(&tidata->var_data[3], tidata->var_length - 3, savedata, savelength)) {
 			free(filedata);
 			free(savedata);
-			fprintf(stderr, "Failed to decompress save data from AppVar %s", filename);
+			fprintf(stderr, "Failed to decompress save data from AppVar %s\n", filename);
 			return NULL;
 		}
 		break;
 	default:
-		fprintf(stderr, "Invalid compression type %d", tidata->var_data[0]);
+		fprintf(stderr, "Invalid compression type %d\n", tidata->var_data[0]);
 		break;
 	}
 
@@ -285,7 +285,7 @@ bool write_save_data(const char *filename, enum FILE_TYPE filetype, char appvarn
 	
 	void *compressed = malloc(savedatalength - 3);
 	if (compressed == NULL) {
-		fprintf(stderr, "Failed to allocate compression buffer for %s", filename);
+		fprintf(stderr, "Failed to allocate compression buffer for %s\n", filename);
 		return false;
 	}
 
@@ -293,17 +293,17 @@ bool write_save_data(const char *filename, enum FILE_TYPE filetype, char appvarn
 
 	struct tifile *tifile = open_tifile(TYPE_APPVAR, appvarname, varflag);
 	if (tifile == NULL) {
-		fprintf(stderr, "Failed to allocate AppVar for %s", filename);
+		fprintf(stderr, "Failed to allocate AppVar for %s\n", filename);
 	}
 	if (compressedlength == 0) {
 		uint8_t compression_type = 0;
 		free(compressed);
 		if (!append_tifile(&tifile, &compression_type, sizeof(compression_type))) {
-			fprintf(stderr, "Failed to append compression type to AppVar %s", filename);
+			fprintf(stderr, "Failed to append compression type to AppVar %s\n", filename);
 			return false;
 		}
 		if (!append_tifile(&tifile, savedata, savedatalength)) {
-			fprintf(stderr, "Failed to append uncompressed save data to AppVar %s", filename);
+			fprintf(stderr, "Failed to append uncompressed save data to AppVar %s\n", filename);
 			return false;
 		}
 	}
@@ -312,17 +312,17 @@ bool write_save_data(const char *filename, enum FILE_TYPE filetype, char appvarn
 		uint16_t uncompressedlength = (uint16_t)savedatalength;
 		if (!append_tifile(&tifile, &compression_type, sizeof(compression_type))) {
 			free(compressed);
-			fprintf(stderr, "Failed to append compression type to AppVar %s", filename);
+			fprintf(stderr, "Failed to append compression type to AppVar %s\n", filename);
 			return false;
 		}
 		if (!append_tifile(&tifile, &uncompressedlength, sizeof(uncompressedlength))) {
 			free(compressed);
-			fprintf(stderr, "Failed to append uncompressed size to AppVar %s", filename);
+			fprintf(stderr, "Failed to append uncompressed size to AppVar %s\n", filename);
 			return false;
 		}
 		if (!append_tifile(&tifile, compressed, compressedlength)) {
 			free(compressed);
-			fprintf(stderr, "Failed to append compressed save data to AppVar %s", filename);
+			fprintf(stderr, "Failed to append compressed save data to AppVar %s\n", filename);
 			return false;
 		}
 		free(compressed);
@@ -386,7 +386,7 @@ enum FILE_TYPE get_file_type(const char *filename, char appvarname[8]) {
 	}
 	else
 	{
-		fprintf(stderr, "Unsupported file extension");
+		fprintf(stderr, "Unsupported file extension\n");
 		return FILE_INVALID;
 	}
 }
