@@ -39,7 +39,7 @@
 #endmacro
 
 ; Puts the pointer to a label in the archived appvar into HL.
-; Destroys DE and flags.
+; Destroys DE and flags. Clears carry flag.
 #macro APTR(address)
 	call ArcPtr
 	.dw address+1
@@ -108,6 +108,8 @@ _CreatePVar3 = $020528
 _DelVar = $020588
 _DelMem = $020590
 _ErrUndefined = $020764
+_PushErrorHandler = $020798
+_PopErrorHandler = $02079C
 _ClrLCDFull = $020808
 _HomeUp = $020828
 _VPutMap = $020830
@@ -119,6 +121,7 @@ _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
 _DivHLByA = $021D90
 _ChkInRAM = $021F98
+_FindFreeArcSpot = $022078
 
 ; RAM addresses used
 ramStart = $D00000
@@ -469,7 +472,29 @@ ArcPtr:
 	ret
 	
 ; Archives or unarchives a variable. Updates appvar in case of garbage collect.
+; Returns carry set on failure.
 Arc_Unarc_Safe:
+	call _chkFindSym
+	ret c
+	call _ChkInRAM
+	jr nz,++_
+	; If archiving, check if there is a free spot in archive
+	ex de,hl
+	ld hl,(hl)
+	ld a,c
+	add a,12
+	ld c,a
+	ld b,0
+	add.s hl,bc
+	jr c,_
+	push hl
+	pop bc
+	call _FindFreeArcSpot
+	jr nz,++_
+_
+	; No free spot, so prepare for Garbage Collect message
+	ACALL(RestoreHomeScreen)
+_
 	push ix
 	 ld ix,(tSymPtr1)
 	 ld hl,(ix-7)
@@ -477,12 +502,20 @@ Arc_Unarc_Safe:
 	 ld l,(ix-3)
 	pop ix
 	push hl
+	 ld hl,Arc_Unarc_ErrorHandler
+	 call _PushErrorHandler
 	 call _Arc_Unarc
-	 ld hl,SelfName
-	 call _Mov9ToOP1
-	 call _chkFindSym
-	 jp c,_ErrUndefined
-	 ld (tSymPtr1),hl
+	 call _PopErrorHandler
+	 .db $3E	; LD A,$AF
+Arc_Unarc_ErrorHandler:
+	 xor a
+	 push af
+	  ld hl,SelfName
+	  call _Mov9ToOP1
+	  call _chkFindSym
+	  jp c,_ErrUndefined
+	  ld (tSymPtr1),hl
+	 pop af
 	pop hl
 	ex de,hl
 	or a
@@ -493,6 +526,7 @@ Arc_Unarc_Safe:
 	ld (ArcBase),hl
 	pop hl
 	add hl,de
+	cp 1
 	jp (hl)
 	
 ; Compares the buffers at HL and DE, with size BC. Returns Z if equal.

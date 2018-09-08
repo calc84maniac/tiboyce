@@ -331,47 +331,6 @@ _
 RepopulateMenuTrampoline:
 	AJUMP(RepopulateMenu)
 	
-	; A = error code
-	; (errorArg) = error argument
-DisplayError:
-	push af
-	 ld a,32
-	 ld (penRow),a
-	 sbc hl,hl
-	 ld (penCol),hl
-	 push hl
-	  call _ClrLCDFull
-	  APTR(error_text)
-	  call _VPutS
-	 pop bc
-	pop de
-	
-	dec hl
-	xor a
-_
-	cpir
-	dec d
-	jr nz,-_
-	
-	ex de,hl
-	ld hl,(errorArg)
-	push hl
-	 push de
-	  ld hl,text_buffer
-	  push hl
-	   call _sprintf
-	  pop hl
-	  call _VPutS
-	 pop de
-	pop hl
-	
-_
-	halt
-	call _GetCSC
-	or a
-	jr z,-_
-	ret
-	
 	; Input: HL = insertion point
 	;        DE = insertion size
 	; Output: Carry set and A=error if error occurred
@@ -427,7 +386,11 @@ StartROMInitStateOutOfMemory:
 	; Temporarily prevent auto state saving because state is clean
 	ld hl,AutoSaveState
 	set 1,(hl)
-	ACALL_SAFERET(SaveStateFiles)
+	ld hl,(errorArg)
+	push hl
+	 ACALL_SAFERET(SaveStateFiles)
+	pop hl
+	ld (errorArg),hl
 	jr -_
 	
 StartROM:
@@ -1165,21 +1128,27 @@ _
 	ld a,(main_menu_selection)
 	dec a
 	jr z,_
-	ACALL(RestoreHomeScreen)
 	ACALL_SAFERET(SaveStateFiles)
 	; Reindex the ROM in case a Garbage Collect occurred, and reinsert the RAM.
 	ACALL_SAFERET(LoadROMAndRAMRestoreName)
 	jr c,ExitDone
 _
 	ACALL(LoadStateFiles)
-	jr nc,_
-	ACALL(RestoreHomeScreen)
+	jr nc,++_
+	cp ERROR_NOT_ENOUGH_MEMORY
+	jr nz,_
+	ld hl,(save_state_size_bytes)
+	ld a,l
+	dec a
+	or h
+	jr z,++_
+	ld a,ERROR_NOT_ENOUGH_MEMORY
+_
 	ACALL(DisplayError)
 _
 	AJUMP(StartFromHere)
 ExitDone:
 	push af
-	 ACALL(RestoreHomeScreen)
 	 ld a,$FF
 	 ld (current_state),a
 	 ACALL_SAFERET(SaveStateFiles)
@@ -1251,9 +1220,7 @@ _
 	 ld hl,config_start - userMem
 	 ld (asm_prgm_size),hl
 	pop hl
-	call _Mov9ToOP1
-	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
-	ret
+	AJUMP(ArchiveWithWarning)
 	
 LoadROMAndRAMRestoreName:
 	ld hl,ROMName
@@ -1573,6 +1540,8 @@ LoadROMLoop:
 	push de
 	 call Arc_Unarc_Safe
 	pop de
+	ld a,ERROR_NOT_ENOUGH_ARCHIVE
+	ret c
 	ld hl,ROMName
 	xor a
 _
@@ -1790,10 +1759,9 @@ _
 	 pop ix
 	 ld hl,(save_state_size_bytes << 16) | (save_state_size_bytes & $00FF00) | (save_state_size_bytes >> 16)
 	 ld (ix-5),hl
-	
+	 
 	 ld hl,ROMName
-	 call _Mov9ToOP1
-	 call Arc_Unarc_Safe	; Must be CALL due to special return address handling
+	 ACALL(ArchiveWithWarning)
 	 jr ArchiveSaveRAM
 	
 SaveAutoStateDeleteMem:
@@ -1802,14 +1770,70 @@ SaveAutoStateDeleteMem:
 	 inc de
 	 inc de
 	 call _DelMem
-
+	 
 ArchiveSaveRAM:
 	pop af
 	ret c
 
 	ACALL(GetStateRAMFileName)
-	call _Mov9ToOP1
-	call Arc_Unarc_Safe	; Must be CALL due to special return address handling
+ArchiveWithWarning:
+	push hl
+	 call _Mov9ToOP1
+	 call Arc_Unarc_Safe	; Must be CALL due to special return address handling
+	pop hl
+	ret nc
+	inc hl
+	ld (errorArg),hl
+	ld a,ERROR_NOT_ENOUGH_ARCHIVE
+DisplayWarning:
+	push af
+	 APTR(warning_text)
+	 jr _
+
+	; A = error code
+	; (errorArg) = error argument
+DisplayError:
+	push af
+	 ACALL(RestoreHomeScreen)
+	 APTR(error_text)
+_
+	 ld a,32
+	 ld (penRow),a
+	 ex de,hl
+	 sbc hl,hl
+	 ld (penCol),hl
+	 push hl
+	  push de
+	   call _ClrLCDFull
+	  pop hl
+	  call _VPutS
+	  APTR(error_messages)
+	 pop bc
+	pop de
+	
+	xor a
+_
+	cpir
+	dec d
+	jr nz,-_
+	
+	ex de,hl
+	ld hl,(errorArg)
+	push hl
+	 push de
+	  ld hl,text_buffer
+	  push hl
+	   call _sprintf
+	  pop hl
+	  call _VPutS
+	 pop de
+	pop hl
+	
+_
+	halt
+	call _GetCSC
+	or a
+	jr z,-_
 	ret
 	
 LoadStateInvalid:
@@ -2427,10 +2451,15 @@ DefaultPaletteIndexTable:
 #endmacro
 
 #define NUM_ERRORS 0
+warning_text:
+	.db "Warning: ",0
 error_text:
-	.db "Error: ",0
+	.db "Error: "
+error_messages:
+	.db 0
 	DEFINE_ERROR("ERROR_FILE_MISSING", "Missing AppVar %s")
 	DEFINE_ERROR("ERROR_FILE_INVALID", "Invalid AppVar %s")
+	DEFINE_ERROR("ERROR_NOT_ENOUGH_ARCHIVE", "Failed to archive AppVar %s")
 	DEFINE_ERROR("ERROR_UNSUPPORTED_MBC", "Unsupported cartridge type %02X")
 	DEFINE_ERROR("ERROR_INVALID_ROM", "ROM is invalid")
 	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Need %d more bytes of free RAM")
