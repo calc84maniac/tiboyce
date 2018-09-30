@@ -1495,6 +1495,100 @@ opgentable:
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 	
+; A table indexing port write handlers.
+; All entry points live in a 256-byte space.
+#define WRITE_PORT_NO_HANDLER_DIRECT 0
+#define WRITE_PORT_NO_HANDLER_IGNORE 1
+mem_write_port_handler_table:
+	.db writeIEhandler - mem_write_port_handler_base
+;00
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db writeSChandler - mem_write_port_handler_base
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db writeDIVhandler - mem_write_port_handler_base
+	.db writeTIMAhandler - mem_write_port_handler_base
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db writeTAChandler - mem_write_port_handler_base
+;08
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db writeIFhandler - mem_write_port_handler_base
+;10
+	.db writeNR10handler - mem_write_port_handler_base
+	.db writeNR11handler - mem_write_port_handler_base
+	.db writeNR12handler - mem_write_port_handler_base
+	.db writeNR13handler - mem_write_port_handler_base
+	.db writeNR14handler - mem_write_port_handler_base
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db writeNR21handler - mem_write_port_handler_base
+	.db writeNR22handler - mem_write_port_handler_base
+;18
+	.db writeNR23handler - mem_write_port_handler_base
+	.db writeNR24handler - mem_write_port_handler_base
+	.db writeNR30handler - mem_write_port_handler_base
+	.db writeNR31handler - mem_write_port_handler_base
+	.db writeNR32handler - mem_write_port_handler_base
+	.db writeNR33handler - mem_write_port_handler_base
+	.db writeNR34handler - mem_write_port_handler_base
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+;20
+	.db writeNR41handler - mem_write_port_handler_base
+	.db writeNR42handler - mem_write_port_handler_base
+	.db writeNR43handler - mem_write_port_handler_base
+	.db writeNR44handler - mem_write_port_handler_base
+	.db writeNR50handler - mem_write_port_handler_base
+	.db writeNR51handler - mem_write_port_handler_base
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+;28
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+;30
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+;38
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+;40
+	.db writeLCDChandler - mem_write_port_handler_base
+	.db writeSTAThandler - mem_write_port_handler_base
+	.db writeSCYhandler - mem_write_port_handler_base
+	.db writeSCXhandler - mem_write_port_handler_base
+	.db WRITE_PORT_NO_HANDLER_IGNORE
+	.db writeLYChandler - mem_write_port_handler_base
+	.db writeDMAhandler - mem_write_port_handler_base
+	.db writeBGPhandler - mem_write_port_handler_base
+;48
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db writeWYhandler - mem_write_port_handler_base
+	.db writeWXhandler - mem_write_port_handler_base
+mem_write_port_handler_table_end:
+	
 	
 opgen_cycle_overflow:
 	ld a,(base_address)
@@ -1816,9 +1910,8 @@ opgenHMEMwrite:
 	inc de
 	ld (de),a
 	inc de
-	ld a,b
-	inc a
-	jr z,_
+	bit 0,b
+	jr nz,_
 	jr ++_
 	
 opgenFFwrite:
@@ -1828,90 +1921,39 @@ opgenFFwrite:
 	ld b,$FF
 _
 	ld a,c
-	inc a
+	cp $7F
 _
 	ex de,hl
-	jp m,opgenHRAMwrite
-	jr nz,_
-	ld bc,writeIEhandler
-	jr opgenHMEMwriteroutine_trampoline
-_
-	sub (SC & $FF)+1
-	jr nz,_
-	ld bc,writeSChandler
-	jr opgenHMEMwriteroutine
-_
-	sub DIV - SC
-	jr nz,_
-	ld bc,writeDIVhandler
-	jr opgenHMEMwriteroutine
-_
-	dec a
-	jr nz,_
-	ld bc,writeTIMAhandler
-	jr opgenHMEMwriteroutine
-_
-	sub TAC - TIMA
-	jr nz,_
-	ld bc,writeTAChandler
-	jr opgenHMEMwriteroutine
-_
-	sub IF - TAC
-	jr nz,_
-	ld bc,writeIFhandler
-	jr opgenHMEMwriteroutine
-_
-	sub LCDC - IF
-	jr nz,_
-	ld bc,writeLCDChandler
-opgenHMEMwriteroutine_trampoline:
-	jr opgenHMEMwriteroutine
-_
-	dec a
-	jr nz,_
-	ld bc,writeSTAThandler
-	jr opgenHMEMwriteroutine
-_
-	dec a
-	jr nz,_
-	ld bc,writeSCYhandler
-	jr opgenHMEMwriteroutine
-_
-	dec a
-	jr nz,_
-	ld bc,writeSCXhandler
-	jr opgenHMEMwriteroutine
-_
-	sub WY - SCX
-	jr nz,_
-	ld bc,writeWYhandler
-	jr opgenHMEMwriteroutine
-_
-	dec a
-	jr nz,_
-	ld bc,writeWXhandler
-	jr opgenHMEMwriteroutine
-_
-	sub LYC - WX
-	jr nz,_
-	ld bc,writeLYChandler
-	jr opgenHMEMwriteroutine
-_
-	dec a
-	jr nz,_
-	ld bc,writeDMAhandler
-	jr opgenHMEMwriteroutine
-_
-	dec a
-	jr nz,opgenHRAMwrite
-	ld bc,writeBGPhandler
-opgenHMEMwriteroutine:
+	jp pe,opgenHRAMwrite
+	inc a
+	push hl
+	 ld hl,mem_write_port_handler_table_end
+	 cp l
+	 ld l,a
+	 ld a,(hl)
+	pop hl
+	jr nc,opgenHRAMignore
+	add a,b
+	jr nc,opgenHRAMwrite
+	jr z,opgenHRAMignore0
 	ld (hl),$CD ;CALL addr
 	inc hl
-	ld (hl),c
+	add a,(mem_write_port_handler_base + 1) & $FF
+	ld (hl),a
+	ld a,(mem_write_port_handler_base + 257) >> 8
+	adc a,b
+_
 	inc hl
-	ld (hl),b
+	ld (hl),a
 	jp opgen_next_swap_skip
+	
+opgenHRAMignore:
+	xor a
+opgenHRAMignore0:
+	ld (hl),a	;NOP
+	inc hl
+	ld (hl),a
+	jr -_
 	
 opgenHRAMwrite:
 	ld (hl),$32 ;LD (addr),A
@@ -2077,8 +2119,13 @@ _
 	jr opgenHMEMreadroutine
 _
 	cp P1*2 & $FF
-	jr nz,opgenHRAMread
+	jr nz,_
 	ld bc,readP1handler
+	jr opgenHMEMreadroutine
+_
+	cp NR52*2 & $FF
+	jr nz,opgenHRAMread
+	ld bc,readNR52handler
 opgenHMEMreadroutine:
 	ld (hl),$CD
 	inc hl

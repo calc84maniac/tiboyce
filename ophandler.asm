@@ -463,11 +463,13 @@ _
 tac_write_helper:
 	 ; Set new TAC value
 	 ex af,af'
-	 ld (hram_base+TAC),a
 	 ld c,a
 	 ex af,af'
-	 bit 2,c
-	 jr nz,_
+	 ld a,c
+	 or $F8
+	 ld (hram_base+TAC),a
+	 add a,4
+	 jr c,_
 	 ld a,$28	;JR Z
 	 ld (z80codebase + timer_enable_smc),a
 return_from_write_helper:
@@ -479,8 +481,6 @@ return_from_write_helper:
 	jp.s (ix)
 _
 	 ; Get SMC data
-	 ld a,c
-	 and 3
 	 ld c,a
 	 ld a,b
 	 ld b,2

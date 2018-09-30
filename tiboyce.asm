@@ -895,6 +895,8 @@ palette_obj1_colors:
 	#include "waitloop.asm"
 	#include "lzf.asm"
 	
+	.echo "User RAM code size: ", $ - userMem
+	
 	; Pad to an odd number of bytes
 	.block (~$) & 1
 	
@@ -956,7 +958,7 @@ key_config_count = config_end - KeyConfig
 ; The RAM program ends here. Should be at an odd address.
 program_end:
 program_size = program_end - userMem
-	.echo "User RAM code size: ", program_size
+	.echo "User RAM program size: ", program_size
 
 ; The size of the save state is located at the end of the program.
 save_state_size_bytes:

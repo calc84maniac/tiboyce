@@ -355,9 +355,8 @@ not_expired:
 	   ld hl,IE
 	   ld a,(hl)
 	   ld l,IF - ioregs
+intstate_smc:
 	   and (hl)
-intstate = $+1
-	   and $00
 	   jr nz,trigger_interrupt
 	  pop bc
 	 pop de
@@ -517,8 +516,9 @@ _
 	ld (_+2),a
 _
 	lea iy,iy+0
+	ld a,$AF ;XOR A
+	ld (intstate_smc),a
 	xor a
-	ld (intstate),a
 	cp iyh
 	jr z,_
 	ex af,af'
@@ -1286,8 +1286,8 @@ ophandlerF2:
 	
 ophandlerF3:
 	ex af,af'
-	xor a
-	ld (intstate),a
+	ld a,$AF ;XOR A
+	ld (intstate_smc),a
 	ex af,af'
 	ret
 	
@@ -1355,14 +1355,14 @@ ophandlerF9:
 	
 ophandlerEI:
 	ex af,af'
-	ld a,$1F
-	ld (intstate),a
+	ld a,$A6 ;AND (HL)
+	ld (intstate_smc),a
 	jp checkIntPostEnable
 	
 ophandlerRETI:
 	ex af,af'
-	ld a,$1F
-	ld (intstate),a
+	ld a,$A6 ;AND (HL)
+	ld (intstate_smc),a
 	exx
 	push bc
 	 di
@@ -1474,37 +1474,27 @@ readSTAThandler:
 	ld a,ixl
 	ret
 	
-writeSCYhandler:
-	ld ix,SCY
-	jp write_scroll_swap
-	
-writeSCXhandler:
-	ld ix,SCX
-	jp write_scroll_swap
-	
-writeWYhandler:
-	ld ix,WY
-	jp write_scroll_swap
-	
-writeWXhandler:
-	ld ix,WX
-	jp write_scroll_swap
-	
-writeDMAhandler:
-	ld ix,DMA
-	jp write_scroll_swap
-	
-writeBGPhandler:
-	ld ix,BGP
-	jp write_scroll_swap
-	
-writeIFhandler:
-	ld (IF),a
-	jp writeINTswap
-	
-writeIEhandler:
-	ld (IE),a
-	jp writeINTswap
+readNR52handler:
+	ex af,af'
+readNR52:
+	ld a,(NR52)
+	add a,a
+	ld a,$70
+	jr nc,readNR52_finish
+	ld ix,audio_port_value_base
+	push hl
+	 sbc hl,hl
+	 ld l,(ix+NR44)
+	 add hl,hl
+	 ld l,(ix+NR34)
+	 add hl,hl
+	 ld l,(ix+NR24)
+	 add hl,hl
+	 ld l,(ix+NR14)
+	 add hl,hl
+	 ld a,h
+	pop hl
+	jr readNR52_finish
 	
 readP1:
 	ld a,(P1)
@@ -1518,6 +1508,7 @@ _
 	jr nz,_
 	and ixh
 _
+readNR52_finish:
 	ld ixl,a
 	ex af,af'
 	ret
@@ -1530,28 +1521,31 @@ readSTAT:
 	 ld d,a
 	pop.l hl
 	ld a,(STAT)
-	and $F8
+	or $87
 	ld c,a
 	ld a,(LCDC)
 	add a,a
 	jr nc,readSTAT_mode0
 	ld a,(LYC)
 	cp e
-	jr nz,_
-	set 2,c
+	jr z,_
+	res 2,c
 _
 	ld a,e
 	cp 144
 	jr nc,readSTAT_mode1
 	ld a,d
-	cp MODE_2_CYCLES + MODE_3_CYCLES
-	jr nc,readSTAT_mode0
-	set 1,c
-	cp MODE_2_CYCLES
-	jr c,readSTAT_mode0
-readSTAT_mode1:
-	inc c
+	sub MODE_2_CYCLES
+	jr c,readSTAT_mode2
+	sub MODE_3_CYCLES
+	jr c,readSTAT_mode3
 readSTAT_mode0:
+	dec c
+readSTAT_mode1:
+	dec c
+readSTAT_mode2:
+	dec c
+readSTAT_mode3:
 	ld ixl,c
 	exx
 	ex af,af'
@@ -1602,6 +1596,8 @@ mem_read_ports_always:
 	jr z,readDIV
 	cp STAT*2 & $FF
 	jr z,readSTAT
+	cp NR52*2 & $FF
+	jp z,readNR52
 mem_read_oam:
 	ld ix,(ix)
 	ex af,af'
@@ -1741,42 +1737,6 @@ mem_write_bail:
 	ex af,af'
 	jp (ix)
 	
-writeLCDChandler:
-	ex af,af'
-writeLCDC:
-	call get_scanline_from_write
-	ex de,hl
-	call get_last_cycle_offset
-	jp.lil lcdc_write_helper
-	
-writeTAChandler:
-	ex af,af'
-writeTAC:
-	call updateTIMA
-	di
-	jp.lil tac_write_helper
-	
-writeTIMAhandler:
-	ex af,af'
-writeTIMA:
-	call updateTIMA
-	ex af,af'
-	ld (TIMA),a
-	ex af,af'
-_
-	di
-	jp.lil tima_write_helper
-	
-writeDIVhandler:
-	ex af,af'
-writeDIV:
-	call updateTIMA
-	or a
-	sbc hl,hl
-	ld (div_cycle_count),hl
-	ex de,hl
-	jr -_
-	
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_vram:
 	ex af,af'
@@ -1817,99 +1777,16 @@ mem_write_ports_always:
 	ex af,af'
 mem_write_ports_swap:
 	ld a,ixl
-	inc a
-	jp m,mem_write_oam_swap
-	jr z,writeINT
-	sub (DIV & $FF) + 1
-	jr z,writeDIV
-	dec a
-	jr z,writeTIMA
-	sub TAC - TIMA
-	jr z,writeTAC
-	sub IF - TAC
-	jr z,writeINT
-	sub LCDC - IF
-	jr z,writeLCDC
-	dec a
-	jr z,writeSTAT
-	dec a
-	cp 2
-	jr c,write_scroll
-	sub WY - SCY
-	cp 2
-	jr c,write_scroll
-	sub SC - WY
-	jr z,writeSC
-	sub LYC - SC
-	jr z,writeLYC
-	sub BGP - LYC
-	jr nc,mem_write_oam_swap
-	; Write BGP or DMA
-	ex af,af'
-write_scroll_swap:
-	ex af,af'
-write_scroll:
-	push ix
-	 call get_scanline_from_write
-	pop hl
-	jp.lil scroll_write_helper
-	
-writeLYChandler:
-	ex af,af'
-writeLYC:
-	call get_scanline_from_write
-	jp.lil lyc_write_helper
-	
-writeSTAT:
-	ex af,af'
-writeSTAThandler:
-	ld (STAT),a
-	ex af,af'
-	or a
-	jp trigger_event
-	
-writeSC:
-	ex af,af'
-writeSChandler:
+	cp $7F
+	jp pe,mem_write_oam_swap
 	push hl
-	 ld hl,SC
-	 ld (hl),a
-	 ex af,af'
-	 ld a,(hl)
-	 cpl
-	 and $81
-	 ld a,$30	;JR NC
-	 jr nz,_
-	 call trigger_event
-	 ex af,af'
-	 ; Set this cycle count after setting up the trigger
-	 ld hl,1024
-	 ld (serial_cycle_count),hl
-	 ld a,$38	;JR C
-_
-	 ld (serial_enable_smc),a
-	pop hl
-	ex af,af'
-	ret
-	
-writeINT:
-	ex af,af'
-	ld (ix),a
-writeINTswap:
-	ex af,af'
-checkIntPostUpdate:
-	ld a,(intstate)
-	or a
-	jr z,checkIntDisabled
-checkIntPostEnable:
-	push hl
-	 ld hl,IF
-	 ld a,(hl)
-	 ld l,h
-	 and (hl)
-	 jp nz,trigger_event_pushed
-	pop hl
-checkIntDisabled:
+	 sub WX+1-ioregs
+	 ld l,a
+	 ld h,mem_write_port_routines >> 8
+	 ld l,(hl)
+	 ex (sp),hl
+	 ret m
+	pop af
 	ex af,af'
 	ret
 	
@@ -2274,6 +2151,8 @@ _
 ;         DE = current DIV counter
 ;         A = current TIMA value
 ;         (TIMA) updated to current value
+updateTIMA_di:
+	di
 updateTIMA:
 	exx
 	push.l hl
@@ -2302,15 +2181,343 @@ updateTIMA_smc = $+1
 	 ld (TIMA),a
 	 ret
 	
-keys:
-	.dw $FFFF
+	.block (-$-153)&$FF
 	
-sp_base_address:
-	.dl 0
-memroutine_next:
-	.dl 0
-render_save_sps:
-	.dw 0
+_writeSC:
+	ex af,af'
+_writeSChandler:
+	push af
+	 or $7E
+	 ld (SC),a
+	 inc a
+	 ld a,$30	;JR NC
+	 jr nz,_
+	 push hl
+	  call trigger_event
+	  ; Set this cycle count after setting up the trigger
+	  ld hl,1024
+	  ld (serial_cycle_count),hl
+	 pop hl
+	 ld a,$38	;JR C
+_
+	 ld (serial_enable_smc),a
+	pop af
+	ret
+	
+mem_write_port_handler_base = $-2
+writeSChandler:
+	jr _writeSChandler
+writeNR10handler:
+	call write_audio_handler
+	.db NR10 - ioregs
+writeNR11handler:
+	call write_audio_handler
+	.db NR11 - ioregs
+writeNR12handler:
+	call write_audio_handler
+	.db NR12 - ioregs
+writeNR13handler:
+	call write_audio_handler
+	.db NR13 - ioregs
+writeNR14handler:
+	call write_audio_handler
+	.db NR14 - ioregs
+writeNR21handler:
+	call write_audio_handler
+	.db NR21 - ioregs
+writeNR22handler:
+	call write_audio_handler
+	.db NR22 - ioregs
+writeNR23handler:
+	call write_audio_handler
+	.db NR23 - ioregs
+writeNR24handler:
+	call write_audio_handler
+	.db NR24 - ioregs
+writeNR30handler:
+	call write_audio_handler
+	.db NR30 - ioregs
+writeNR31handler:
+	call write_audio_handler
+	.db NR31 - ioregs
+writeNR32handler:
+	call write_audio_handler
+	.db NR32 - ioregs
+writeNR33handler:
+	call write_audio_handler
+	.db NR33 - ioregs
+writeNR34handler:
+	call write_audio_handler
+	.db NR34 - ioregs
+writeNR41handler:
+	call write_audio_handler
+	.db NR41 - ioregs
+writeNR42handler:
+	call write_audio_handler
+	.db NR42 - ioregs
+writeNR43handler:
+	call write_audio_handler
+	.db NR43 - ioregs
+writeNR44handler:
+	call write_audio_handler
+	.db NR44 - ioregs
+writeNR50handler:
+	call write_audio_handler
+	.db NR50 - ioregs
+writeNR51handler:
+	call write_audio_handler
+	.db NR51 - ioregs
+	
+writeSCYhandler:
+	ld ix,SCY
+	jr write_scroll_swap
+	
+writeSCXhandler:
+	ld ix,SCX
+	jr write_scroll_swap
+	
+writeWYhandler:
+	ld ix,WY
+	jr write_scroll_swap
+	
+writeWXhandler:
+	ld ix,WX
+	jr write_scroll_swap
+	
+writeDMAhandler:
+	ld ix,DMA
+	jr write_scroll_swap
+	
+writeBGPhandler:
+	ld ix,BGP
+	jr write_scroll_swap
+
+write_audio_handler:
+	ex af,af'
+	ex (sp),hl
+	ld ix,(hl)
+	pop hl
+	
+#if $ & 255
+	.error "mem_write_port_routines must be aligned: ", $ & 255
+#endif
+	
+mem_write_port_routines:
+write_audio:
+	ld ixh,audio_port_value_base >> 8
+	ld a,(ix + audio_port_masks - audio_port_values)
+	cp $BF
+	jr z,write_audio_enable
+	ex af,af'
+	push af
+write_audio_enable_continue:
+	 ld (ix),a
+	 or (ix + audio_port_masks - audio_port_values)
+	 ld ixh,ioregs >> 8
+	 ld (ix),a
+	pop af
+	ret
+	
+write_audio_enable:
+	ex af,af'
+	push af
+	 bit 7,(ix)
+	 jr z,write_audio_enable_continue
+	 or $80
+	 jr write_audio_enable_continue
+	
+write_scroll_swap:
+	ex af,af'
+write_scroll:
+	push ix
+	 call get_scanline_from_write
+	pop hl
+	jp.lil scroll_write_helper
+	
+writeLCDChandler:
+	ex af,af'
+writeLCDC:
+	call get_scanline_from_write
+	ex de,hl
+	call get_last_cycle_offset
+	jp.lil lcdc_write_helper
+	
+writeTAChandler:
+	ex af,af'
+writeTAC:
+	call updateTIMA_di
+	jp.lil tac_write_helper
+	
+writeTIMAhandler:
+	ex af,af'
+writeTIMA:
+	call updateTIMA_di
+	ex af,af'
+	ld (TIMA),a
+	ex af,af'
+_
+	jp.lil tima_write_helper
+	
+writeDIVhandler:
+	ex af,af'
+writeDIV:
+	call updateTIMA_di
+	or a
+	sbc hl,hl
+	ld (div_cycle_count),hl
+	ex de,hl
+	jr -_
+	
+writeSTAT:
+	ex af,af'
+writeSTAThandler:
+	ld (STAT),a
+	ex af,af'
+	or a
+	jp trigger_event
+	
+writeLYChandler:
+	ex af,af'
+writeLYC:
+	call get_scanline_from_write
+	jp.lil lyc_write_helper
+	
+writeIE:
+	ex af,af'
+writeIEhandler:
+	push af
+	 ex af,af'
+	pop af
+	and $1F
+	ld (IE),a
+	jr checkInt
+	
+writeIF:
+	ex af,af'
+writeIFhandler:
+	push af
+	 ex af,af'
+	pop af
+	or $E0
+	ld (IF),a
+checkInt:
+	ld a,(intstate_smc)
+	rra
+	jr c,checkIntDisabled
+checkIntPostEnable:
+	push hl
+	 ld hl,IF
+	 ld a,(hl)
+	 ld l,h
+	 and (hl)
+	 jp nz,trigger_event_pushed
+	pop hl
+checkIntDisabled:
+write_port_ignore:
+	ex af,af'
+	ret
+	
+writeSC:
+	jp _writeSC
+	
+write_port_direct:
+	ex af,af'
+	ld (ix),a
+	ret
+	
+	.echo (mem_write_port_routines+256-(WX+2-ioregs))-$, " bytes remaining for port writes"
+	.block (mem_write_port_routines+256-(WX+2-ioregs))-$
+
+	.db writeIE - mem_write_port_routines
+;00
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db writeSC - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db writeDIV - mem_write_port_routines
+	.db writeTIMA - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db writeTAC - mem_write_port_routines
+;08
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db writeIF - mem_write_port_routines
+;10
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+;18
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+;20
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_audio - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+;28
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+;30
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+;38
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+;40
+	.db writeLCDC - mem_write_port_routines
+	.db writeSTAT - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
+	.db write_port_ignore - mem_write_port_routines
+	.db writeLYC - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
+;48
+	.db write_port_direct - mem_write_port_routines
+	.db write_port_direct - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
+	
+audio_port_value_base:
+	.block 1
 	
 rtc_latched:
 	.db 0	;seconds
@@ -2327,6 +2534,30 @@ rtc_last:
 	.db 0   ;minutes
 	.db 0   ;hours
 	.dw 0   ;days
+	
+audio_port_values:
+	.block NR52 - NR10
+audio_port_masks:
+	;NR10 - NR14
+	.db $80, $3F, $00, $FF, $BF
+	;unused, NR21 - NR24
+	.db $FF, $3F, $00, $FF, $BF
+	;NR30 - NR34
+	.db $7F, $FF, $9F, $FF, $BF
+	;unused, NR41 - NR44
+	.db $FF, $FF, $00, $00, $BF
+	;NR50 - NR51
+	.db $00, $00
+	
+keys:
+	.dw $FFFF
+	
+sp_base_address:
+	.dl 0
+memroutine_next:
+	.dl 0
+render_save_sps:
+	.dw 0
 	
 	.assume adl=1
 z80codesize = $-0

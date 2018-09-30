@@ -450,7 +450,17 @@ _
 	ldir
 	
 	ld de,hram_saved + $0100
-	ld bc,$0100
+	ld c,hmem_init_size
+	ldir
+	
+	push de
+	pop hl
+	dec hl
+	ld c,$80 - hmem_init_size + 1
+	ldir
+	
+	ld (hl),c
+	ld c,$7F
 	ldir
 	
 StartFromHere:
@@ -774,7 +784,12 @@ _
 _
 	
 	ld a,(iy-state_size+STATE_INTERRUPTS)
-	ld (z80codebase+intstate),a
+	rra
+	jr c,_
+	ld a,$AF ;XOR A (overriding AND (HL))
+	ld (z80codebase+intstate_smc),a
+_
+	
 	
 	ld de,(iy-state_size+STATE_DIV_COUNTER)
 	ld.sis (div_cycle_count),de
@@ -819,6 +834,18 @@ _
 	ld a,$38 ;JR C (overriding JR NC)
 	ld (z80codebase+serial_enable_smc),a
 _
+	
+	lea hl,iy-ioregs+NR10
+	ld ix,z80codebase + audio_port_values
+	ld b,audio_port_masks - audio_port_values
+_
+	ld a,(hl)
+	ld (ix),a
+	or (ix + audio_port_masks - audio_port_values)
+	ld (hl),a
+	inc hl
+	inc ix
+	djnz -_
 	
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
@@ -963,6 +990,7 @@ ExitEmulation:
 	ld c,6
 	ldir.s
 	
+	; Calculate the current event cycle offset
 	dec bc
 	ld a,(z80codebase+event_cycle_count)
 	ld c,a
@@ -970,6 +998,7 @@ ExitEmulation:
 	add hl,bc
 	ex de,hl
 	
+	; Save the frame-relative cycle count
 	ld.sis hl,(frame_cycle_target)
 	add.s hl,de
 	jr c,_
@@ -978,15 +1007,18 @@ ExitEmulation:
 _
 	ld (ix-state_size+STATE_FRAME_COUNTER),hl
 	
+	; Save the serial cycle count
 	ld.sis hl,(serial_cycle_count)
 	or a
 	sbc hl,de
 	ld (ix-state_size+STATE_SERIAL_COUNTER),hl
 	
+	; Save the DIV cycle count
 	ld.sis hl,(div_cycle_count)
 	add hl,de
 	ld (ix-state_size+STATE_DIV_COUNTER),hl
 	
+	; Save the actual value of TAC if the timer is running
 	ld a,(ix-ioregs+TAC)
 	and 4
 	jr z,+++_
@@ -1003,12 +1035,16 @@ _
 	ld (ix-ioregs+TIMA),h
 _
 	
-	ld a,(z80codebase+intstate)
+	ld a,(z80codebase+intstate_smc)
+	rra
+	sbc a,a
+	inc a
 	ld (ix-state_size+STATE_INTERRUPTS),a
 	
 	ld a,(z80codebase+curr_rom_bank)
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
+	; Save the current MBC mode
 	ld a,(cram_size)
 	or a
 	ld a,(mbc_rtc_last_latch)
@@ -1020,6 +1056,7 @@ _
 	and 1
 	ld (ix-state_size+STATE_MBC_MODE),a
 	
+	; Save the currently mapped RAM bank
 	ld a,(cram_bank_base+2)
 	cp z80codebase >> 16
 	jr nz,_
@@ -1037,10 +1074,16 @@ _
 _
 	ld (ix-state_size+STATE_RAM_BANK),a
 	
-	; Zero-fill the rest
+	; Save the actual audio port vales in the audio port space
+	ld hl,z80codebase + audio_port_values
+	lea de,ix-ioregs+NR10
+	ld bc,audio_port_masks - audio_port_values
+	ldir
+	
+	; Zero-fill the rest of the state
 	lea hl,ix-state_size+STATE_END
 	lea de,ix-state_size+STATE_END+1
-	ld bc,state_size-STATE_END-1
+	ld c,state_size-STATE_END-1
 	ld (hl),b
 	ldir
 	
@@ -2395,12 +2438,12 @@ regs_init:
 	
 	
 hmem_init:
-	.db 0,0,0,0,0,$00,$00,$00,0,0,0,0,0,0,0,0
-	.db $80,$BF,$F3,0,$BF,0,$3F,$00,0,$BF,$7F,$FF,$9F,0,$BF,0
-	.db $FF,$00,$00,$BF,$77,$F3,$F1,0,0,0,0,0,0,0,0,0
+	.db 0,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
+	.db $80,$BF,$F3,$FF,$BF,$FF,$3F,$00,$FF,$BF,$7F,$FF,$9F,$FF,$BF,$FF
+	.db $FF,$00,$00,$BF,$77,$F3,$F1,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
 	.db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-	.db $91,0,$00,$00,0,$00,0,$FC,$FF,$FF,$00,$00,0,0,0,0
-	.block $b0
+	.db $91,0,$00,$00,0,$00,$FF,$FC,$FF,$FF,$00,$00,$FF
+hmem_init_size = $ - hmem_init
 	
 flags_lut_init:
 	.db $00,$00,$00,$00,$00,$00,$00,$00, $00,$10,$40,$50,$00,$10,$40,$50
