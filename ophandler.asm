@@ -288,6 +288,61 @@ scroll_write_done:
 	jp.s (ix)
 	
 	
+; Writes to the LY compare register (LYC).
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; Sets the new cycle target according to the new value of LYC.
+; Triggers a GB interrupt if LY already matches the new LYC value,
+; but only if LYC is changing.
+;
+; Inputs:  A' = value being written
+;          A = cycles into scanline
+;          E = current scanline
+;          (SPS) = Z80 return address
+;          (SPL) = saved HL'
+;          BCDEHL' are swapped
+; Outputs: LYC and cycle targets updated
+lyc_write_helper:
+	 ; Scanline 153 changes to scanline 0 after 2 cycles for LYC purposes
+	 cp 2
+	 jr c,_
+	 ld a,e
+	 sub 153
+	 jr nz,_
+	 ld e,a
+_
+	 ex af,af'
+	 ld d,a
+	 ex af,af'
+	 ld a,d
+	 ld hl,hram_base + LYC
+	 cp (hl)
+	 jr z,scroll_write_done_swap
+	 ld (hl),a
+	 xor e
+	 jr nz,_
+	 ld l,STAT - ioregs
+	 bit 6,(hl)
+	 jr z,_
+	 ld l,IF - ioregs
+	 set 1,(hl)
+_
+	 
+	 ; Set new target
+	 xor e
+	 ld e,CYCLES_PER_SCANLINE
+	 mlt de
+	 jr nz,_
+	 ld de,CYCLES_PER_SCANLINE * 153 + 2
+_
+	 ld.sis (current_lyc_target_count),de
+	pop hl
+	exx
+	ei
+	; Carry is reset
+	jp.sis trigger_event
+	
+	
 ; Writes to the LCD control register (LCDC).
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
@@ -397,56 +452,6 @@ _
 	exx
 	ei
 	jp.sis trigger_event_fast_forward
-	
-; Post-write operation for the LY compare register (LYC).
-; Does not use a traditional call/return, must be jumped to directly.
-;
-; Sets the new cycle target according to the new value of LYC.
-; Triggers a GB interrupt if LY already matches the new LYC value.
-;
-; Inputs:  A' = value being written
-;          A = cycles into scanline
-;          E = current scanline
-;          (SPS) = Z80 return address
-;          (SPL) = saved HL'
-;          BCDEHL' are swapped
-; Outputs: LYC and cycle targets updated
-lyc_write_helper:
-	 ; Scanline 153 changes to scanline 0 after 2 cycles for LYC purposes
-	 cp 2
-	 jr c,_
-	 ld a,e
-	 sub 153
-	 jr nz,_
-	 ld e,a
-_
-	 ex af,af'
-	 ld d,a
-	 ex af,af'
-	 ld a,d
-	 ld (hram_base + LYC),a
-	 xor e
-	 jr nz,_
-	 ld hl,hram_base + STAT
-	 bit 6,(hl)
-	 jr z,_
-	 ld l,IF - ioregs
-	 set 1,(hl)
-_
-	 
-	 ; Set new target
-	 xor e
-	 ld e,CYCLES_PER_SCANLINE
-	 mlt de
-	 jr nz,_
-	 ld de,CYCLES_PER_SCANLINE * 153 + 2
-_
-	 ld.sis (current_lyc_target_count),de
-	pop hl
-	exx
-	ei
-	; Carry is reset
-	jp.sis trigger_event
 	
 ; Writes to the GB timer control (TAC).
 ; Does not use a traditional call/return, must be jumped to directly.
