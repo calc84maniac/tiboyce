@@ -1552,7 +1552,6 @@ _
 	jr nz,-_
 	ld (hl),'R'
 	inc hl
-LoadROMRestartLoop:
 	ld (hl),'0'
 	inc hl
 	ld (hl),'0'
@@ -1580,9 +1579,7 @@ LoadROMLoop:
 	 add hl,hl
 	pop hl
 	jr nc,LoadROMPageLoop
-	push de
-	 call Arc_Unarc_Safe
-	pop de
+	call Arc_Unarc_Safe
 	ld a,ERROR_NOT_ENOUGH_ARCHIVE
 	ret c
 	ld hl,ROMName
@@ -1593,7 +1590,9 @@ _
 	jr nz,-_
 	dec hl
 	dec hl
-	jr LoadROMRestartLoop
+	dec hl
+	ld (hl),a
+	jr LoadROM
 
 LoadROMPageLoop:
 	ld a,d
