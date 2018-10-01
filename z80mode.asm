@@ -1487,13 +1487,13 @@ readNR52:
 	ld ix,audio_port_value_base
 	push hl
 	 sbc hl,hl
-	 ld l,(ix+NR44)
+	 ld l,(ix+NR44-ioregs)
 	 add hl,hl
-	 ld l,(ix+NR34)
+	 ld l,(ix+NR34-ioregs)
 	 add hl,hl
-	 ld l,(ix+NR24)
+	 ld l,(ix+NR24-ioregs)
 	 add hl,hl
-	 ld l,(ix+NR14)
+	 ld l,(ix+NR14-ioregs)
 	 add hl,hl
 	 ld a,h
 	pop hl
