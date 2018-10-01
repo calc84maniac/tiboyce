@@ -1370,13 +1370,16 @@ ophandlerRETI:
 	 ei
 	pop bc
 	exx
+	; Count cycles before attempting to trigger an interrupt
+	ld (_+2),a
+_
+	lea iy,iy+0
+	ld a,iyh
+	or a
+	jp z,cycle_overflow
+	; Put the destination address on the stack where trigger_event can access it
 	push ix
-	 push af
-	  call checkIntPostEnable
-	  ex af,af'
-	 pop af
-	pop ix
-	jp dispatch_cycles
+	 jp checkIntPostEnable
 	
 ophandlerRET:
 	di
