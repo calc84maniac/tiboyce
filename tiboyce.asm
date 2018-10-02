@@ -125,6 +125,7 @@ _FindFreeArcSpot = $022078
 
 ; RAM addresses used
 ramStart = $D00000
+asm_data_ptr1 = $D0067E
 penCol = $D008D2
 penRow = $D008D5
 asm_prgm_size = $D0118C
@@ -857,8 +858,7 @@ text_buffer:
 current_item_ptr:
 	.dl 0
 ; The pointer to the active ROM description.
-current_description:
-	.dl 0
+current_description = asm_data_ptr1
 ; A backup of the selected main menu option.
 main_menu_selection:
 	.db 1
