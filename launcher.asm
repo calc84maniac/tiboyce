@@ -18,6 +18,36 @@ tAsm84CeCmp = $7B
 	.db tExtTok, tAsm84CeCmp
 	.org userMem
 	
+	jp LookUpAppvar
+	.db 1
+	.db 16,16
+	.db $FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$FF
+	.db $FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$00,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$00,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$00,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$00,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$B5,$00,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$FF,$00,$00
+	.db $FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00
+	.db $FF,$00,$FF,$FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00
+	.db $FF,$00,$FF,$00,$00,$00,$FF,$FF,$FF,$00,$FF,$00,$FF,$FF,$00,$00
+	.db $FF,$00,$FF,$FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00
+	.db $FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00
+	.db $FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+	.db $FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$FF
+	.db "TI-Boy CE",0
+	
+	.db $01,"EXEyoBIT"
+ExeName:
+	.db appVarObj
+ErrorStartText:
+	.db "TIBoyDat"
+	.db " "
+	.db "Invalid",0
+	.db "Missing",0
+	
 LookUpAppvar:
 	ld hl,ExeName
 	push hl
@@ -31,15 +61,6 @@ LookUpAppvar:
 	jr nz,AppvarFound
 	call _Arc_Unarc
 	jr LookUpAppvar
-	
-	.db $01,"EXEyoBIT"
-ExeName:
-	.db appVarObj
-ErrorStartText:
-	.db "TIBoyDat"
-	.db " "
-	.db "Invalid",0
-	.db "Missing",0
 	
 AppvarFound:
 	ex de,hl
@@ -72,6 +93,7 @@ MagicCheckLoop:
 	ld b,(hl)
 	inc hl
 	
+	dec d
 	ld e,userMem & $FF
 	push hl
 	 push de
