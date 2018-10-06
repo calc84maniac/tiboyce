@@ -1169,8 +1169,16 @@ trigger_event_pushed:
 	    add hl,de
 	    ld de,(hl)
 	
+	    ; If the return address is the flush handler (e.g. generated from a RETI),
+	    ; don't do a reverse lookup or write a RST to the return address,
+	    ; but still schedule the event to be executed post-flush.
+	    ld a,d
+	    sub flush_handler >> 8
+	    jr nz,_
+	    ld de,event_address
+_
 	    di
-	    call.il lookup_gb_code_address
+	    call.il nz,lookup_gb_code_address
 	    ei
 	    ld c,a
 	   pop af

@@ -9,11 +9,10 @@
 
 #define RAM_PREFIX_SIZE 5
 #define MAX_CYCLES_PER_BLOCK 64
+#define MAX_CACHE_FLUSHES_ALLOWED 2
 
-recompile_struct_end:
-	.dl 0
-recompile_cache:
-	.dl 0
+cache_flushes_allowed:
+	.db 0
 
 ; Do as in flush_code, but also reset RAM block padding amount.
 ; This is called only at startup, because block padding should 
@@ -26,59 +25,64 @@ flush_code_reset_padding:
 	
 ; Flushes the recompiled code, generated routines, and all caches.
 ; Inputs: None.
+; Destroys: AF, BC, HL, IX
 flush_code:
+	push de
 #ifdef DEBUG
-	APRINTF(FlushMessage)
+	 APRINTF(FlushMessage)
 #endif
-	; Empty recompiled code information struct
-	ld hl,recompile_struct
-	ld (hl),hl
-	ld l,8
-	ld (recompile_struct_end),hl
-	; Store first available block address to the first unused entry
-	ld de,z80codebase+jit_start
-	ld (hl),de
-	; Set the next memory access routine output below the Z80 stack
-	ld hl,z80codebase+memroutine_end
-	ld (z80codebase+memroutine_next),hl
-	ld de,ERROR_CATCHER
-	ld (hl),de
-	; Empty the recompiled code mapping cache
-	ld hl,recompile_cache_end
-	ld (recompile_cache),hl
-	; Fill unused memory with DI to catch bad execution
-	MEMSET_FAST(z80codebase+jit_start, memroutine_end - jit_start, $F3)
-	; Invalidate the memory routines and recompile index LUT
-	MEMSET_FAST(memroutineLUT, $0400, 0)
-	; Invalidate both the read and write cycle LUTs
-	ld hl,z80codebase+read_cycle_LUT
-	ld (hl),e
-	push hl
-	pop de
-	inc de
-	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 + INT_RETURN_STACK_SIZE
-	ldir
-	inc (hl)
-	ld l,(z80codebase+int_return_stack) & $FF
-	ld (z80codebase+int_return_sp),hl
-	; Set the cached interrupt return address to NULL
-	ld (int_cached_return),bc
-	; Set the cached lookup address to NULL
-	ld (lookup_gb_cache_jit_address),bc
-	; Reset the event address
-	ld hl,event_value
-	ld.sis (event_address),hl
-	; Reset the interrupt target caches
-	ld ix,z80codebase+dispatch_joypad
-	ld hl,(decode_intcache << 8) | $CD	;CALL decode_intcache
-	ld a,$60
-	ld b,5
+	 ; Empty recompiled code information struct
+	 ld hl,recompile_struct
+	 ld (hl),hl
+	 ld l,8
+	 ld (recompile_struct_end),hl
+	 ; Store first available block address to the first unused entry
+	 ld de,z80codebase+jit_start
+	 ld (hl),de
+	 ; Set the next memory access routine output below the Z80 stack
+	 ld hl,z80codebase+memroutine_end
+	 ld (z80codebase+memroutine_next),hl
+	 ld de,ERROR_CATCHER
+	 ld (hl),de
+	 ; Empty the recompiled code mapping cache
+	 ld hl,recompile_cache_end
+	 ld (recompile_cache),hl
+	 ; Fill unused memory with DI to catch bad execution
+	 MEMSET_FAST(z80codebase+jit_start, memroutine_end - jit_start, $F3)
+	 ; Invalidate the memory routines and recompile index LUT
+	 MEMSET_FAST(memroutineLUT, $0400, 0)
+	 ; Invalidate both the read and write cycle LUTs
+	 ld hl,z80codebase+read_cycle_LUT
+	 ld (hl),e
+	 push hl
+	 pop de
+	 inc de
+	 ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 + INT_RETURN_STACK_SIZE
+	 ldir
+	 inc (hl)
+	 ld l,(z80codebase+int_return_stack) & $FF
+	 ld (z80codebase+int_return_sp),hl
+	 ; Set the cached interrupt return address to NULL
+	 ld (int_cached_return),bc
+	 ; Set the cached lookup address to NULL
+	 ld (lookup_gb_cache_jit_address),bc
+	 ; Reset the event address
+	 ld hl,event_value
+	 ld.sis (event_address),hl
+	 ; Reset the interrupt target caches
+	 ld ix,z80codebase+dispatch_joypad
+	 ld hl,(decode_intcache << 8) | $CD	;CALL decode_intcache
+	 ld a,$60
+	 ld b,5
 _
-	ld (ix+3),a
-	ld (ix+4),hl
-	lea ix,ix+9
-	sub 8
-	djnz -_
+	 ld (ix+3),a
+	 ld (ix+4),hl
+	 lea ix,ix+9
+	 sub 8
+	 djnz -_
+	 ld a,MAX_CACHE_FLUSHES_ALLOWED
+	 ld (cache_flushes_allowed),a
+	pop de
 	ret
 	
 ; Gets the 24-bit base pointer for a given Game Boy address.
@@ -364,12 +368,24 @@ lookup_code_cached_miss:
 	   pop de
 #endif
 	   call lookup_code_by_pointer
+	   ; Check if the cache needs to be flushed
 	   ld hl,(recompile_struct_end)
 	   ld de,(recompile_cache)
 	   ld bc,3+6
 	   add hl,bc
 	   sbc hl,de
 	   jr c,_
+	   ; Allow a certain number of cache flushes before flushing the entire JIT space
+	   ld hl,cache_flushes_allowed
+	   dec (hl)
+	   ; Get the GB code pointer in HL
+	   pop de
+	   pop hl
+	   push hl
+	   push de
+	   ; If no cache flushes remaining, prepare a JIT flush (replacing IX and A)
+	   call z,prepare_flush_by_pointer
+	   ; Flush the cache
 	   ld de,recompile_cache_end
 _
 	  pop hl
@@ -414,7 +430,11 @@ lookup_code_cached_found:
 	 ; Does the address match?
 	 ld hl,(ix)
 	 sbc hl,de
+#ifdef DEBUG
+	 jp nz,lookup_code_cached_miss
+#else
 	 jr nz,lookup_code_cached_miss
+#endif
 	 ; We found it!
 	 ld a,(ix+5)
 	 ld ix,(ix+3)
@@ -486,7 +506,8 @@ int_cached_return = $+1
 	 jr z,int_cache_hit
 	
 	 ; Binary search the cache for the pointer
-	 ld bc,(recompile_cache)
+recompile_cache = $+1
+	 ld bc,0
 	 ld ix,recompile_cache_end
 lookup_code_cached_loop:
 	 lea hl,ix
@@ -628,14 +649,6 @@ lookup_code_by_pointer:
 #endif
 	 ld hl,(recompile_struct_end)
 	 push hl
-	  ld bc,-(recompile_cache_end-16)
-	  add hl,bc
-	  jr c,flush_and_recompile_pop
-	  sbc hl,bc
-	  ld bc,(hl)
-	  ld hl,(z80codebase+memroutine_next)
-	  sbc hl,bc
-	  jr c,flush_and_recompile_pop
 lookuploop_restore:
 	 pop ix
 lookuploop:
@@ -702,22 +715,6 @@ lookupfoundstart:
 	xor a
 	ret
 	
-flush_and_recompile_pop:
-#ifdef DEBUG
-	  xor a
-ready_to_flush = $+1
-	  cp 0
-	  ASSERT_C
-	  ld (ready_to_flush),a
-#endif
-	 pop hl
-	pop iy
-flush_and_recompile:
-	push iy
-	 push de
-	  call flush_code
-	 pop de
-	
 	
 ; Recompiles a new code block starting from a direct GB address.
 ;
@@ -728,16 +725,9 @@ flush_and_recompile:
 ;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
 recompile:
-	 ld ix,(recompile_struct_end)
-	 lea hl,ix+8
-	 ld (recompile_struct_end),hl
+recompile_struct_end = $+2
+	 ld ix,0
 	 
-	 ; Check for collision with cache
-	 ld hl,(recompile_cache)
-	 lea bc,ix+16
-	 or a
-	 sbc hl,bc
-	 call c,flush_cache
 	 ld hl,(ix)
 	 ld (ix+2),de
 	 bit 7,(ix+4)
@@ -777,11 +767,14 @@ recompile:
 	
 recompile_end_common:
 	pop iy
-	ld (ix+8),de
+	lea hl,ix+8
+	ld (recompile_struct_end),hl
+	ld (hl),de
 	; Update the index LUT
+	ld b,h
+	ld c,l
 	ld hl,recompile_index_LUT
 	ld l,(ix+1)
-	lea bc,ix+8
 	push af
 	 ld a,d
 _
@@ -794,28 +787,36 @@ _
 	 jr nc,-_
 	pop af
 	
+	; Check for collision with memroutines
 	ld hl,(z80codebase+memroutine_next)
 	sbc hl,de
 	jr c,_
-	lea hl,ix
-	ld ix,(hl)
-	ld de,-(recompile_cache_end-24)
-	add hl,de
+	; Check for collision with cache
+	ld hl,(recompile_cache)
+	lea de,ix+(MAX_CACHE_FLUSHES_ALLOWED*8)+3+6
+	sbc hl,de
+	ld ix,(ix)
 	ret nc
+	; Allow a certain number of cache flushes before flushing the entire JIT space
+	ld hl,cache_flushes_allowed
+	dec (hl)
+	jr nz,flush_cache
 _
+	; Calculate the Game Boy start address from the generated code block
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
+prepare_flush_by_pointer:
 	ld de,(base_address)
 	xor a
 	sbc hl,de
 prepare_flush:
+	; Save off the Game Boy start address
 	ld.sis (flush_address),hl
+	; Prevent the cycle overflow code path from being taken
 	ld hl,$E9DD08	;EX AF,AF' \ JP (IX)
 	ld (z80codebase+cycle_overflow_flush_smc),hl
+	; Dispatch to the flush handler instead of the recompiled code
 	ld ix,flush_handler
-flush_cache:
-	ld hl,recompile_cache_end
-	ld (recompile_cache),hl
 	ret
 	
 recompile_ram:
@@ -863,14 +864,18 @@ ram_block_padding = $+1
 	 pop bc
 	 ldir
 	 
-	 ; Report block size of 0
+	 ; Report block cycle length of 0
 	 xor a
-	 
 #ifdef DEBUG
 	 jp recompile_end_common
 #else
 	 jr recompile_end_common
 #endif
+	 
+flush_cache:
+	ld hl,recompile_cache_end
+	ld (recompile_cache),hl
+	ret
 	
 ; Recompiles an existing RAM code block in-place.
 ;
@@ -1000,7 +1005,8 @@ coherency_flush:
 #endif
 	; Start at the very beginning
 	ld de,(ix+2)
-	call flush_and_recompile
+	call flush_code
+	call lookup_code_by_pointer
 	exx
 	ld bc,(CALL_STACK_DEPTH+1)*256
 	exx

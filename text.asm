@@ -24,7 +24,6 @@ debug_printf:
 	push ix
 	
 debug_print:
-#ifdef CEMU
 	; HL points to string
 _
 	ld a,(hl)
@@ -33,23 +32,6 @@ _
 	or a
 	jr nz,-_
 	ret
-#else
-	push hl
-	 ld a,(current_buffer+1)
-	 push af
-	  xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
-	  ld (current_buffer+1),a
-	  ld de,(cursorCol)
-	  push de
-	   ld a,WHITE
-	   ACALL(PutStringColor)
-	  pop hl
-	  ld (cursorCol),hl
-	 pop af
-	 ld (current_buffer+1),a
-	pop hl
-	jr PutString
-#endif
 #endif
 	
 	; Call like printf, A=color

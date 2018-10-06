@@ -211,7 +211,7 @@ mpSpiTransfer = $F80008
 mpSpiStatus = $F8000C
 mpSpiFifo = $F80018
 
-#ifdef CEMU
+#ifdef DEBUG
 mpCEmuDbg = $FB0000
 #endif
 

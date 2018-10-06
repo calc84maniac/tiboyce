@@ -78,10 +78,7 @@ flush_normal:
 	 ld hl,$E5E5DD	;PUSH IX \ PUSH HL
 	 ld (z80codebase+cycle_overflow_flush_smc),hl
 flush_mem_finish:
-#ifdef DEBUG
-	 ld a,1
-	 ld (ready_to_flush),a
-#endif
+	 call flush_code
 	 call lookup_code
 	pop hl
 	ld.sis sp,myz80stack-2

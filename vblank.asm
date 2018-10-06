@@ -297,8 +297,12 @@ frame_interrupt:
 frame_excess_count = $+1
 	ld a,0
 	inc a
+_
 	ld (frame_excess_count),a
-	jp.sis frame_interrupt_return
+	jp.sis po,frame_interrupt_return
+	; Revert $80 to $7F and set parity odd
+	xor $FF
+	jr -_
 	
 ; Prepares to render the next frame.
 ; This swaps the current buffer and resets internal render variables.
