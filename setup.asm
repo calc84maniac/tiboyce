@@ -97,203 +97,69 @@ _
 	sbc hl,bc
 	ld (epochDayCount),hl
 	
-	or a
-	sbc hl,hl
-	ld (menuFrame),hl
-	
-RepopulateMenu:
-	ld ix,rombankLUT
-	push ix
-	 ACALL(ROMSearch)
-	pop bc
-	lea hl,ix
-	ld (ROMListEnd),hl
-	or a
-	sbc hl,bc
+	ACALL(BackupOriginalHardwareSettings)
+	; Backup original LCD settings
+	ld hl,mpLcdTiming0
+	ld de,originalLcdSettings
+	ld bc,12
+	ldir
+	ld hl,(mpLcdCtrl)
 	ex de,hl
+	ld (hl),de
 	
-	ld hl,(menuFrame)
-	sbc hl,bc
-	jr c,RepopulateMenuTop
-	sbc hl,de
-	jr nc,RepopulateMenuTop
+	ld hl,GlobalErrorHandler
+	call _PushErrorHandler
 	
-	ld hl,(menuSelection)
-	or a
-	sbc hl,bc
-	jr c,RepopulateMenuTop
-	sbc hl,de
-	jr c,RedrawMenuClear
+NoRomMenuLoop:
+	; Set custom hardware settings
+	ACALL(SetCustomHardwareSettings)
 	
-RepopulateMenuTop:
-	ld (menuFrame),bc
-	ld (menuSelection),bc
+	; Set current description and main menu selection
+	APTR(NoRomLoadedDescription)
+	ld (current_description),hl
+	ld a,6
+	ld (main_menu_selection),a
 	
-RedrawMenuClear:
-	ACALL(RestoreHomeScreen)
-	ld a,32
-	ld (penRow),a
-	ld hl,85
-	ld (penCol),hl
-	ld hl,$0031
-	ld.sis (drawFGColor-ramStart),hl
-	APTR(EmulatorTitle)
-	call _VPutS
-	ld a,227
-	ld (penRow),a
-	ld hl,18
-	ld (penCol),hl
-	APTR(WebsiteURL)
-	call _VPutS
-	or a
-	sbc hl,hl
-	ld.sis (drawFGColor-ramStart),hl
-	ld c,l
-RedrawMenu:
-	ld de,(menuFrame)
-	ld a,34
-	ld b,MENU_ITEM_COUNT
-RedrawMenuLoop:
-	add a,12
-	ld (penRow),a
-	; Carry is clear
-	sbc hl,hl
-	ld (penCol),hl
-	ld hl,(ROMListEnd)
-	sbc hl,de
-	jr z,RedrawMenuLoopEnd
-	ld hl,(menuSelection)
-	sbc hl,de
-	jr z,RedrawMenuSelectedItem
+	; Reset exit reason, ROM name, and state index
 	xor a
-	ld hl,(menuLastSelection)
-	sbc hl,de
-	jr z,RedrawMenuItem
-	or c
-	jr z,RedrawMenuItem
-	jr RedrawMenuSkipItem
-NoROMsFound:
-	APTR(ErrorNoROMsFound)
-	call _VPutS
-_
-	halt
-	call _GetCSC
+	ld (exitReason),a
+	ld (ROMName+1),a
+	ld (current_state),a
+	; Start with Load ROM menu
+	inc a
+	ACALL(emulator_menu)
+
+	; If not loading a new ROM, exit
+	ld a,(exitReason)
+	dec a
+	jr nz,SaveConfigAndQuit
+	
+	ACALL(RestoreOriginalHardwareSettings)
+	ei
+LoadNewGameLoop:
+	; Copy the name from ROMNameToLoad
+	ld hl,ROMName+1
+	push hl
+	pop de
+	ld bc,9
+	add hl,bc
+	ldir
+	
+	ACALL_SAFERET(StartROM)
+	; If NC is returned, we're loading another game
+	jr nc,LoadNewGameLoop
+	; If an error code of 0 is returned, exit
 	or a
-	jr z,-_
-	AJUMP(SaveConfigAndQuit)
-RedrawMenuSelectedItem:
-	set textInverse,(iy+textFlags)
-RedrawMenuItem:
-	push bc
-	 push de
-	  ex de,hl
-	  ld hl,(hl)
-	  ACALL(DrawMenuItem)
-	 pop de
-	pop bc
-	res textInverse,(iy+textFlags)
-RedrawMenuSkipItem:
-	inc de
-	inc de
-	inc de
-	ld a,(penRow)
-	djnz RedrawMenuLoop
-	
-RedrawMenuLoopEnd:
-	ld a,b
-	cp MENU_ITEM_COUNT
-	jr z,NoROMsFound
-	ld hl,(menuSelection)
-	ld (menuLastSelection),hl
-	
-SelectionLoop:
-	halt
-	call _GetCSC
-	ld hl,(menuSelection)
-	ld de,(ROMListEnd)
-	ld bc,MENU_ITEM_COUNT*3
-	sub 1
-	jr z,MenuDown
-	dec a
-	jr z,MenuLeft
-	dec a
-	jr z,MenuRight
-	dec a
-	jr z,MenuUp
-	cp 9-4
-	jr z,MenuEnterTrampoline
-	cp 54-4
-	jr z,MenuEnterTrampoline
-	cp 15-4
-	jr nz,SelectionLoop
-	jr SaveConfigAndQuit
-	
-MenuEnterTrampoline:
-	AJUMP(MenuEnter)
-	
-MenuDown:
-	inc hl
-	inc hl
-	inc hl
-	sbc hl,de
-	jr z,SelectionLoop
-	add hl,de
-	ld (menuSelection),hl
-	ld a,(menuFrame)
-	sub l
-	add a,c
-	jr z,RedrawMenuClearTrampoline
-RedrawMenuTrampoline:
-	AJUMP(RedrawMenu)
-	
-MenuLeft:
-	ld de,rombankLUT
-	sbc hl,de
-	sbc hl,bc
-	jr nc,_
-	sbc hl,hl
-_
-	adc hl,de
-	ld (menuSelection),hl
-	jr c,RedrawMenuTrampoline
-	ld hl,(menuFrame)
-	sbc hl,bc
-	jr RedrawMenuClearTrampoline
-	
-MenuUp:
-	ld de,rombankLUT
-	sbc hl,de
-	jr z,SelectionLoop
-	add hl,de
-	ld a,(menuFrame)
-	cp l
-	dec hl
-	dec hl
-	dec hl
-	ld (menuSelection),hl
-	ld de,-(MENU_ITEM_COUNT-1)*3
-	add hl,de
-	jr nz,RedrawMenuTrampoline
-RedrawMenuClearTrampoline:
-	ld (menuFrame),hl
-	AJUMP(RedrawMenuClear)
-	
-MenuRight:
-	add hl,bc
-	sbc hl,de
-	jr c,_
-	ld hl,-3
-_
-	add hl,de
-	ld (menuSelection),hl
-	ld hl,(menuFrame)
-	add hl,bc
-	sbc hl,de
-	jr nc,RedrawMenuTrampoline
-	add hl,de
-	jr RedrawMenuClearTrampoline
+	jr z,SaveConfigAndQuit
+	; Display the error, and return to the menu if ON wasn't pressed
+	ACALL(DisplayError)
+	jr nz,NoRomMenuLoop
 	
 SaveConfigAndQuit:
+	call _PopErrorHandler
+SaveConfigAndQuitForError:
+	ACALL(RestoreOriginalHardwareSettings)
+	ei
 	ACALL_SAFERET(SaveConfigFile)
 RestoreHomeScreen:
 	ld hl,pixelShadow
@@ -302,34 +168,10 @@ RestoreHomeScreen:
 	ld (hl),0
 	ldir
 	set graphDraw,(iy+graphFlags)
+	call _ClrLCDFull
 	call _DrawStatusBar
 	call _HomeUp
-	ei
-	jp _ClrLCDFull
-	
-MenuEnter:
-	ld hl,(hl)
-	ld de,-6
-	add hl,de
-	ld b,(hl)
-	ld de,ROMName+1
-_
-	dec hl
-	ld a,(hl)
-	ld (de),a
-	inc de
-	djnz -_
-	xor a
-	ld (de),a
-	
-	ACALL_SAFERET(StartROM)
-	jr nc,RepopulateMenuTrampoline
-	or a
-	jr z,SaveConfigAndQuit
-	ACALL(DisplayError)
-	
-RepopulateMenuTrampoline:
-	AJUMP(RepopulateMenu)
+	AJUMP(RestoreOriginalLcdSettings)
 	
 	; Input: HL = insertion point
 	;        DE = insertion size
@@ -358,7 +200,74 @@ InsertMemSafe:
 	push hl
 	 call _InsertMem
 	pop bc
-	or a
+	; Resets carry
+	ld hl,(asm_prgm_size)
+	add hl,bc
+	ld (asm_prgm_size),hl
+	ret
+	
+	; Input: HL = deletion point, pointing to (fake) size bytes
+	; Output: Memory is deleted according to size bytes, asm_prgm_size is adjusted
+DelMemSafeSizeBytes:
+	ld de,(hl)
+	inc.s de
+	inc de
+	
+	; Input:  HL = deletion point
+	;         DE = deletion size
+	; Output: Memory is deleted, asm_prgm_size is adjusted
+DelMemSafe:
+	push hl
+	 ld hl,(asm_prgm_size)
+	 or a
+	 sbc hl,de
+	 ld (asm_prgm_size),hl
+	pop hl
+	jp _DelMem
+	
+	; Input: HL = filename
+	;        DE = location to convert
+	;        Note: Location must have size bytes initialized and
+	;              the range must end exactly on userMem + (asm_prgm_size),
+	;              and also the filename should not already exist.
+	; Output: Carry set, HL preserved.
+	;         File is created and asm_prgm_size is updated.
+ConvertMemToFile:
+	push hl
+#ifdef DEBUG
+	 ; Assert that location + size bytes == userMem + (asm_prgm_size)
+	 ex de,hl
+	 ld de,(hl)
+	 ex de,hl
+	 inc.s hl
+	 inc hl
+	 add hl,de
+	 ld bc,(asm_prgm_size)
+	 sbc hl,bc
+	 ld bc,userMem
+	 sbc hl,bc
+	 jr nz,$
+	pop hl
+	push hl
+#endif
+	 push de
+	  call _Mov9ToOP1
+	  call _CmpPrgNamLen
+	  ld bc,0
+	  call _CreatePVar4
+	  push hl
+	  pop ix
+	  ld hl,2
+	  add hl,sp
+	  ld a,(hl)
+	 pop hl
+	 ld (ix-5),a
+	 ld (ix-4),h
+	 ld (ix-3),l
+	 ld de,-userMem
+	 add hl,de
+	 ld (asm_prgm_size),hl
+	pop hl
 	ret
 	
 StartROMAutoStateOutOfMemory:
@@ -367,18 +276,17 @@ StartROMAutoStateOutOfMemory:
 	add hl,de
 	ex de,hl
 	ld hl,save_state_size_bytes
-	call _DelMem
+	ACALL(DelMemSafe)
 _
 	ld a,ERROR_NOT_ENOUGH_MEMORY
 	scf
 	ret
 	
 StartROMInitStateOutOfMemory:
-	sbc a,a
+	xor a
 	ld (current_state),a
 	dec de
 	dec de
-	xor a
 	ld (de),a
 	dec de
 	inc a
@@ -397,11 +305,11 @@ StartROM:
 	ACALL_SAFERET(LoadROMAndRAM)
 	ret c
 	
-	ld a,$FF
+	xor a
 	ld (current_state),a
 	ACALL(LoadStateFiles)
 	push af
-	 xor a
+	 ld a,'0'
 	 ld (current_state),a
 	pop af
 	jr nc,StartFromHere
@@ -421,7 +329,7 @@ RestartFromHere:
 	dec bc
 	push hl
 	 push bc
-	  call _DelMem
+	  ACALL(DelMemSafe)
 	 pop de
 	pop hl
 	ACALL(InsertMemSafe)
@@ -481,78 +389,16 @@ StartFromHere:
 _
 	ld (skin_file_ptr),hl
 	
-	di
-	push iy
-	ld hl,mpFlashWaitStates
-	push hl
-	ld a,(hl)
-	push af
-	ld (hl),2
-	ld hl,(mpIntEnable)
-	push hl
-	ld hl,(mpIntLatch)
-	push hl
-	ld hl,$000801
-	ld (mpIntEnable),hl
-	ld hl,$000011
-	ld (mpIntLatch),hl
-	
-	ld hl,(mpLcdBase)
-	push hl
-	ld hl,(mpLcdCtrl)
-	push hl
-	ACALL(GetLCDTiming)
+	ACALL(SetCustomHardwareSettings)
 	
 	APTR(palettecode)
-	ld de,mpLcdPalette
+	ld de,mpLcdPalette + 32
 	ld bc,palettecodesize
 	ldir
-	
-	ld hl,$0C25
-	ld (mpLcdCtrl),hl
-	
-	ld hl,scanlineLUT_1
-	ld (scanlineLUT_ptr),hl
-	
-	ld hl,gb_frame_buffer_1
-	ld (mpLcdBase),hl
-	ld (current_buffer),hl
-	push hl
-	pop de
-	inc de
-#if 0
-	ld a,BLACK_BYTE
-	call SetStringBgColor
-	ld bc,160*144
-	ld (hl),WHITE_BYTE
-	ldir
-	ld bc,160*96
-	ld (hl),a
-	ldir
-	ld bc,160*144
-	ld (hl),WHITE_BYTE
-	ldir
-	ld bc,160*96-1
-	ld (hl),a
-	ldir
-	ld hl,230*256
-	ld (cursorCol),hl
-	ld a,WHITE
-	call SetStringColor
-#else
-	ld bc,320*240-1
-	ld (hl),BLACK_BYTE
-	ldir
-#endif
 	
 #ifdef DEBUG
 	APRINTF(StartText)
 #endif
-	
-	ld a,3
-	ld (mpKeypadScanMode),a
-	inc a
-	ld (mpLcdImsc),a
 	
 	ld (saveSP),sp
 	
@@ -643,6 +489,9 @@ _
 	dec c
 	jr nz,---_
 	
+	ld a,z80codebase >> 16
+	ld mb,a
+	
 	ld hl,fake_tile
 	push hl
 	pop de
@@ -656,12 +505,6 @@ _
 	inc de
 	ld c,40
 	ldir
-	
-	ACALL(IdentifyDefaultPalette)
-	ACALL(ApplyConfiguration)
-	
-	ld a,z80codebase >> 16
-	ld mb,a
 	
 	ld iy,state_start+state_size
 	
@@ -930,11 +773,22 @@ _
 	ld (WX_smc_1),a
 _
 	
+	call swap_buffers
+	; Initialize the scanline LUT pointer to what prepare_next_frame expects
+	ld a,h
+	cp (gb_frame_buffer_1 >> 8) & $FF
+	ld hl,scanlineLUT_2
+	jr nz,_
+	sbc hl,hl
+_
+	ld (scanlineLUT_ptr),hl
 	call prepare_next_frame
+	
+	ACALL(IdentifyDefaultPalette)
+	ACALL(ApplyConfiguration)
+	ACALL(SetScalingMode)
 	ld hl,(curr_palettes)
 	call update_palettes_always
-	
-	ACALL(SetScalingMode)
 	
 	call flush_code_reset_padding
 
@@ -1132,32 +986,8 @@ _
 	ld (hl),a
 _
 	ld sp,(saveSP)
-	ld hl,vRam
-	push hl
-	pop de
-	inc de
-	ld bc,320*240*2-1
-	ld (hl),$FF
-	ldir
-	ld a,$D0
-	ld mb,a
-	ld a,2
-	ld (mpKeypadScanMode),a
-	xor a
-	ld (mpLcdImsc),a
-	ACALL(SetDefaultLCDWindowAndTiming)
-	pop hl
-	ld (mpLcdCtrl),hl
-	pop hl
-	ld (mpLcdBase),hl
-	pop hl
-	ld (mpIntLatch),hl
-	pop hl
-	ld (mpIntEnable),hl
-	pop af
-	pop hl
-	ld (hl),a
-	pop iy
+	ACALL(RestoreOriginalHardwareSettings)
+	ei
 	ld a,(exitReason)
 	dec a
 	srl a
@@ -1188,11 +1018,13 @@ _
 	ld a,ERROR_NOT_ENOUGH_MEMORY
 _
 	ACALL(DisplayError)
+	scf
+	jr z,ExitDone
 _
 	AJUMP(StartFromHere)
 ExitDone:
 	push af
-	 ld a,$FF
+	 xor a
 	 ld (current_state),a
 	 ACALL_SAFERET(SaveStateFiles)
 	pop af
@@ -1250,19 +1082,8 @@ SaveConfigFile:
 	 call nc,_DelVarArc
 _
 	pop hl
-	push hl
-	 call _Mov9ToOP1
-	 call _CmpPrgNamLen
-	 ld bc,0
-	 call _CreatePVar4
-	 push hl
-	 pop ix
-	 ld hl,(config_start << 16) | (config_start & $00FF00) | (config_start >> 16)
-	 ld (ix-5),hl
-	 
-	 ld hl,config_start - userMem
-	 ld (asm_prgm_size),hl
-	pop hl
+	ld de,config_start
+	ACALL(ConvertMemToFile)
 	AJUMP(ArchiveWithWarning)
 	
 LoadROMAndRAMRestoreName:
@@ -1510,7 +1331,7 @@ CompressFile:
 	 ld (hl),1
 	 inc hl
 	 push hl
-	  call _DelMem
+	  ACALL(DelMemSafe)
 	 pop de
 	pop bc
 	ld hl,lzf_compress_buffer
@@ -1663,9 +1484,9 @@ _
 	 jr nz,-_
 	 dec hl
 	 ld a,(current_state)
-	 add a,'0'
 	 ld b,'v'
-	 jr nc,_
+	 or a
+	 jr nz,_
 	 ld a,'V'
 	 ld b,'A'
 _
@@ -1687,8 +1508,8 @@ _
 	 jr nz,-_
 	 dec hl
 	 ld a,(current_state)
-	 add a,'0'
-	 jr nc,_
+	 or a
+	 jr nz,_
 	 ld a,'A'
 _
 	 ld (hl),a
@@ -1746,31 +1567,16 @@ SaveStateFiles:
 	 call _DelVarArc
 	
 SaveRAMRecreate:
-	 ld hl,ROMName
-	 call _Mov9ToOP1
-	 call _CmpPrgNamLen
-	 ld bc,0
-	 call _CreatePVar4
-	 push hl
-	 pop ix
-	 ld hl,2
-	 add hl,sp
-	 ld a,(hl)
-	pop hl
-	ld (ix-5),a
-	ld (ix-4),h
-	ld (ix-3),l
-	
-	; Carry is reset
+	pop de
+	ld hl,ROMName
+	ACALL(ConvertMemToFile)
+	; Carry is set
 	jr SaveState
 	
 SaveRAMDeleteMem:
 	pop hl
-	ld de,(hl)
-	inc.s de
-	inc de
-	call _DelMem
-	scf
+	ACALL(DelMemSafeSizeBytes)
+	or a
 	
 SaveState:
 	push af
@@ -1780,7 +1586,7 @@ SaveState:
 	 call nc,_DelVarArc
 	
 	 ld a,(current_state)
-	 inc a
+	 or a
 	 jr nz,_
 	 ld hl,AutoSaveState
 	 ld a,(hl)
@@ -1790,32 +1596,21 @@ SaveState:
 _
 	 
 	 ld hl,save_state_size_bytes
-	 ACALL(CompressFile)
-	 
-	 ld hl,ROMName
-	 call _Mov9ToOP1
-	 call _CmpPrgNamLen
-	 ld bc,0
-	 call _CreatePVar4
 	 push hl
-	 pop ix
-	 ld hl,(save_state_size_bytes << 16) | (save_state_size_bytes & $00FF00) | (save_state_size_bytes >> 16)
-	 ld (ix-5),hl
-	 
+	  ACALL(CompressFile)
+	 pop de
 	 ld hl,ROMName
-	 ACALL(ArchiveWithWarning)
+	 ACALL(ConvertMemToFile)
+	 ACALL_SAFERET(ArchiveWithWarning)
 	 jr ArchiveSaveRAM
 	
 SaveAutoStateDeleteMem:
 	 ld hl,save_state_size_bytes
-	 ld de,(hl)
-	 inc de
-	 inc de
-	 call _DelMem
+	 ACALL(DelMemSafeSizeBytes)
 	 
 ArchiveSaveRAM:
 	pop af
-	ret c
+	ret nc
 
 	ACALL(GetStateRAMFileName)
 ArchiveWithWarning:
@@ -1828,31 +1623,38 @@ ArchiveWithWarning:
 	ld (errorArg),hl
 	ld a,ERROR_NOT_ENOUGH_ARCHIVE
 DisplayWarning:
-	push af
-	 APTR(warning_text)
-	 jr _
+	APTR(warning_text)
+	jr _
 
 	; A = error code
 	; (errorArg) = error argument
+	; Returns A=0 and Z flag set if ON was pressed
 DisplayError:
-	push af
-	 ACALL(RestoreHomeScreen)
-	 APTR(error_text)
+	APTR(error_text)
 _
-	 ld a,32
-	 ld (penRow),a
-	 ex de,hl
-	 sbc hl,hl
-	 ld (penCol),hl
-	 push hl
-	  push de
-	   call _ClrLCDFull
-	  pop hl
-	  call _VPutS
+	ld de,(current_buffer)
+	push af
+	 push de
+	  ex (sp),hl
+	  inc de
+	  ld bc,160*240-1
+	  ld (hl),BLUE_BYTE
+	  ldir
+	 pop hl
+	 push bc
+	   
+	  ld a,5
+	  ld (cursorRow),a
+	  ld a,1
+	  ld (cursorCol),a
+	   
+	  ld a,WHITE
+	  ACALL(PutStringColor)
+	   
 	  APTR(error_messages)
 	 pop bc
 	pop de
-	
+	 
 	xor a
 _
 	cpir
@@ -1863,19 +1665,17 @@ _
 	ld hl,(errorArg)
 	push hl
 	 push de
-	  ld hl,text_buffer
-	  push hl
-	   call _sprintf
-	  pop hl
-	  call _VPutS
-	 pop de
+	  ACALL(PutStringFormat)
+	 pop hl
 	pop hl
+	call setup_menu_palette
 	
-_
-	halt
-	call _GetCSC
-	or a
-	jr z,-_
+	ACALL(SetCustomHardwareSettings)
+	ACALL(WaitForKey)
+	push af
+	 ACALL(RestoreOriginalHardwareSettings)
+	pop af
+	ei
 	ret
 	
 LoadStateInvalid:
@@ -1950,7 +1750,7 @@ _
 	jr nc,++_
 	ret
 _
-	  call _DelMem
+	  ACALL(DelMemSafe)
 	 pop de
 	pop bc
 _
@@ -1968,10 +1768,13 @@ LookUpAppvar:
 	call _chkFindSym
 	ret c
 GetDataSection:
-	call _ChkInRAM
 	ex de,hl
+	; Check if in RAM
+	push hl
+	 add hl,hl
+	pop hl
 	ld bc,9
-	jr z,_
+	jr c,_
 	add hl,bc
 	ld c,(hl)
 	add hl,bc
@@ -1986,8 +1789,10 @@ _
 	
 	
 ROMSearch:
+	ld ix,romListStart
 	ld hl,(progPtr)
-	or a
+	xor a
+	ld (romTotalCount),a
 ROMSearchLoop:
 	ld (ix),hl
 	ex de,hl
@@ -2016,6 +1821,9 @@ ROMSearchLoop:
 	 call memcmp
 	 jr nz,_
 	 lea ix,ix+3
+	 ld a,(romTotalCount)
+	 inc a
+	 ld (romTotalCount),a
 _
 	pop hl
 	ld de,(hl)
@@ -2025,35 +1833,6 @@ NoMatch:
 	sbc hl,de
 	jr ROMSearchLoop
 	
-	
-DrawMenuItem:
-	ld de,-7
-	add hl,de
-	ld de,(hl)
-	inc hl
-	inc hl
-	inc hl
-	ld d,(hl)
-	inc hl
-	ld e,(hl)
-	ACALL(GetDataSection)
-	ld de,9
-	add hl,de
-	ld b,(hl)
-	inc b
-	ld a,' '
-DrawMenuItemLoop:
-	call _VPutMap
-	ret c
-	inc hl
-	ld a,(hl)
-	; Handle TI-ASCII annoyances
-	cp '['
-	jr nz,_
-	ld a,LlBrack
-_
-	djnz DrawMenuItemLoop
-	ret
 	
 	; Input: rtc_last
 	; Output: HLIX = 48-bit timestamp based on current time
@@ -2137,33 +1916,75 @@ _
 	pop bc
 	ret
 	
-	; Out: 12 bytes of timing on the stack
-GetLCDTiming:
+BackupOriginalHardwareSettings:
+	ld ix,originalHardwareSettings
+BackupHardwareSettings:
+	ld hl,(mpIntEnable)
+	ld (ix+0),hl
+	ld hl,(mpIntLatch)
+	ld (ix+3),hl
+	ld a,(mpFlashWaitStates)
+	ld (ix+6),a
+	ld a,mb
+	ld (ix+7),a
+	ld a,(mpKeypadScanMode)
+	ld (ix+8),a
+	ld a,(mpLcdImsc)
+	ld (ix+9),a
+	ret
+	
+SetCustomHardwareSettings:
+	di
+	ld a,$FB      ; EI
+	ld (z80codebase + wait_for_interrupt_stub),a
+	ld hl,$C94976 ; HALT \ RET.LIS
+	ld (z80codebase + wait_for_interrupt_stub + 1),hl
+	APTR(customHardwareSettings)
+	push hl
 	pop ix
-	ld hl,(mpLcdTiming0+9)
-	push hl
-	ld hl,(mpLcdTiming0+6)
-	push hl
-	ld hl,(mpLcdTiming0+3)
-	push hl
-	ld hl,(mpLcdTiming0)
-	push hl
-	jp (ix)
+	jr RestoreHardwareSettings
 	
-	; In: 12 bytes of timing on the stack
-SetDefaultLCDWindowAndTiming:
-	xor a
-	ld de,319
-	ld hl,239
+RestoreOriginalHardwareSettings:
+	ld iy,flags
+	ld ix,originalHardwareSettings
+RestoreHardwareSettings:
+	ld hl,(ix+0)
+	ld (mpIntEnable),hl
+	ld hl,(ix+3)
+	ld (mpIntLatch),hl
+	ld a,(ix+6)
+	ld (mpFlashWaitStates),a
+	ld a,(ix+7)
+	ld mb,a
+	ld a,(ix+8)
+	ld (mpKeypadScanMode),a
+	ld a,(ix+9)
+	ld (mpLcdImsc),a
+	ret
 	
-	; In: 12 bytes on timing on the stack
-	;     A = left side of window
-	;     DE = right side of window
-	;     H = top side of window
-	;     L = bottom side of window
-SetLCDWindowAndTiming:
+RestoreOriginalLcdSettings:
+	ld hl,vRam
+	ld de,originalLcdSettings
+	
+	; In: (DE) = timing (12 bytes)
+	;     (DE+12) = LCD control (3 bytes)
+	;     (DE+15) = left side of window (1 byte)
+	;     (DE+16) = right side of window (2 bytes)
+	;     (DE+18) = top side of window (1 byte)
+	;     (DE+19) = bottom side of window (1 byte)
+	;     (DE+20) = number of frames to wait (plus 1)
+	;     HL = new LCD base address
+SetLcdSettings:
 	push hl
-	 ld b,3
+	 push de
+	 pop ix
+	 ld hl,(currentLcdSettings)
+	 or a
+	 sbc hl,de
+	 jr z,SetLcdSettingsFast
+	 ld (currentLcdSettings),de
+	 ; Wait for the the number of specified frames
+	 ld b,(ix+20)
 _
 	 ld hl,mpLcdIcr
 	 ld (hl),4
@@ -2172,43 +1993,64 @@ _
 	 bit 2,(hl)
 	 jr z,-_
 	 djnz --_
+	 ; Turn off LCD
 	 ld l,mpLcdCtrl & $FF
 	 res 0,(hl)
-	 push af
-	  ld a,$2A
-	  call spiCmd
-	  call spiParam
-	 pop af
+	 
+	 ; Start SPI transfer
+	 ld hl,mpSpiTransfer
+	 ld (hl),1
+	 ld c,$2A
+	 ; Set left/right window bounds
+	 call spiCmd
+	 ; Left MSB=0
 	 call spiParam
-	 ld a,d
+	 ld a,(ix+15) ; Left LSB
 	 call spiParam
-	 ld a,e
+	 ld de,(ix+16)
+	 ld a,d ; Right MSB
 	 call spiParam
-	pop de
-	ld a,$2B
-	call spiCmd
-	call spiParam
-	ld a,d
-	call spiParam
-	call spiParam
-	ld a,e
-	call spiParam
-	ld a,$2C
-	call spiCmd
+	 ld a,e ; Right LSB
+	 call spiParam
+	 
+	 ; Set top/bottom window bounds
+	 call spiCmd
+	 ; Top MSB=0
+	 call spiParam
+	 ld de,(ix+18)
+	 ld a,e ; Top LSB
+	 call spiParam
+	 call spiParam
+	 ld a,d ; Bottom LSB
+	 call spiParam
+	 
+	 ; Set data mode
+	 call spiCmd
+	 ; End transfer
+	 ld l,mpSpiTransfer & $FF
+	 ld (hl),a
 	
-	pop ix
+	 ; Set timing parameters
+	 lea hl,ix+0
+	 ld de,mpLcdTiming0
+	 ld bc,12
+	 ldir
+SetLcdSettingsFast:
 	pop hl
-	ld (mpLcdTiming0),hl
-	pop hl
-	ld (mpLcdTiming0+3),hl
-	pop hl
-	ld (mpLcdTiming0+6),hl
-	pop hl
-	ld (mpLcdTiming0+9),hl
+	; Set LCD base
+	ld (mpLcdBase),hl
+	; Set LCD control (turning LCD back on)
+	ld hl,(ix+12)
+	ld (mpLcdCtrl),hl
+	ret
 	
-	ld hl,mpLcdCtrl
-	set 0,(hl)
-	jp (ix)
+Set8BitWindow:
+	ld hl,(current_buffer)
+	ACALL(Set4BitWindowAny)
+	APTR(lcdSettings8Bit)
+	ex de,hl
+	ld hl,(current_display)
+	jr SetLcdSettingsTrampoline
 	
 SetScalingMode:
 	ld a,(ScalingMode)
@@ -2259,19 +2101,14 @@ _
 	ACALL(generate_digits)
 	
 Set4BitWindow:
-	ld hl,$00EF78
+	ld hl,(current_display)
+Set4BitWindowAny:
 	push hl
-	ld hl,$000489
-	push hl
-	ld hl,$093F1F
-	push hl
-	ld hl,$9C0338
-	push hl
-	ACALL(SetDefaultLCDWindowAndTiming)
-	
-	ld hl,$010C25
-	ld (mpLcdCtrl),hl
-	ret
+	 APTR(lcdSettings4Bit)
+	 ex de,hl
+	pop hl
+SetLcdSettingsTrampoline:
+	AJUMP(SetLcdSettings)
 	
 SetNoScalingMode:
 	ld c,2
@@ -2310,7 +2147,7 @@ _
 	sbc hl,hl
 	add hl,de
 _
-	ld hl,(mpLcdBase)
+	ld hl,(current_buffer)
 	push hl
 	 jr nc,no_skin
 	 push de
@@ -2351,24 +2188,7 @@ no_skin:
 	ld (hl),BLACK_BYTE
 	ld bc,160*240-1
 	ldir
-	
-Set8BitWindow:
-	ld hl,$011F78
-	push hl
-	ld hl,$0200F0
-	push hl
-	ld hl,$084F0D
-	push hl
-	ld hl,$040344
-	push hl
-	ld a,80
-	ld de,239
-	ld hl,48*256 + 191
-	ACALL(SetLCDWindowAndTiming)
-	
-	ld hl,$010C27
-	ld (mpLcdCtrl),hl
-	ret
+	AJUMP(Set8BitWindow)
 	
 IdentifyDefaultPalette:
 	ld ix,(rom_start)
@@ -2422,6 +2242,60 @@ default_palette_found:
 	ld a,(hl)
 	ld (default_palette),a
 	ret
+	
+customHardwareSettings:
+	;mpIntEnable
+	.dl $000801
+	;mpIntLatch
+	.dl $000011
+	;mpFlashWaitStates
+	.db 2
+	;MBASE
+	.db z80codebase >> 16
+	;mpKeypadScanMode
+	.db 3
+	;mpLcdImsc
+	.db 4
+	
+lcdSettings4Bit:
+	; LcdTiming0
+	.db $38,$03,$9C,$1F
+	; LcdTiming1
+	.db $3F,$09,$89,$04
+	; LcdTiming2
+	.db $00,$78,$EF,$00
+	; LcdCtrl
+	.dl $010C25
+	; Window left
+	.db 0
+	; Window right
+	.dw 319
+	; Window top
+	.db 0
+	; Window bottom
+	.db 239
+	; Number of frames to wait
+	.db 1
+	
+lcdSettings8Bit:
+	; LcdTiming0
+	.db $44,$03,$04,$0D
+	; LcdTiming1
+	.db $4F,$08,$F0,$00
+	; LcdTiming2
+	.db $02,$78,$1F,$01
+	; LcdCtrl
+	.dl $010C27
+	; Window left
+	.db 80
+	; Window right
+	.dw 239
+	; Window top
+	.db 48
+	; Window bottom
+	.db 191
+	; Number of frames to wait
+	.db 2
 	
 regs_init:
 	.db $00	; Hardware type
@@ -2501,16 +2375,13 @@ error_messages:
 	.db 0
 	DEFINE_ERROR("ERROR_FILE_MISSING", "Missing AppVar %s")
 	DEFINE_ERROR("ERROR_FILE_INVALID", "Invalid AppVar %s")
-	DEFINE_ERROR("ERROR_NOT_ENOUGH_ARCHIVE", "Failed to archive AppVar %s")
+	DEFINE_ERROR("ERROR_NOT_ENOUGH_ARCHIVE", "Failed to archive AppVar\n %s")
 	DEFINE_ERROR("ERROR_UNSUPPORTED_MBC", "Unsupported cartridge type %02X")
 	DEFINE_ERROR("ERROR_INVALID_ROM", "ROM is invalid")
-	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Need %d more bytes of free RAM")
+	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Need %d more bytes free RAM")
 	DEFINE_ERROR("ERROR_RUNTIME", "Encountered a runtime error!")
-	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Ran an invalid GB opcode at %06X")
+	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Ran an invalid Game Boy opcode\n at %06X")
 	
 ErrorNoROMsFound:
 	.db "No ROMs found!",0
-	
-WebsiteURL:
-	.db "https://calc84maniac.github.io/tiboyce",0
 	

@@ -41,6 +41,7 @@ frame_emulated_count = $+1
 	
 	   ; Swap buffers
 	   call prepare_next_frame
+	   ld (mpLcdBase),hl
 	   ld a,(ScalingMode)
 	   or a
 	   call nz,do_scale_fill
@@ -217,9 +218,10 @@ _
 key_smc_menu:
 	   bit 6,(ix+6*2)	;CLEAR
 	   jr z,_
-	   ACALL(emulator_menu)
+	   ACALL(emulator_menu_ingame)
 	   ld hl,(curr_palettes)
 	   call update_palettes_always
+	   ACALL(SetScalingMode)
 _
 exitReason = $+1
 	   ld a,0
@@ -322,11 +324,6 @@ _
 	ld (scanlineLUT_palette_ptr),hl
 	ld hl,(hram_base+BGP)
 	ld (curr_palettes),hl
-	ld hl,(mpLcdBase)
-	ld (current_buffer),hl
-	ld a,h
-	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
-	ld h,a
 	ld a,(hram_base+LCDC)
 	rrca
 	and $20
@@ -337,7 +334,11 @@ _
 	ld (myLY),a
 	ld (myspriteLY),a
 	ld (mypaletteLY),a
-	ld (mpLcdBase),hl
+swap_buffers:
+	ld de,(current_display)
+	ld hl,(current_buffer)
+	ld (current_display),hl
+	ld (current_buffer),de
 	ret
 	
 inc_real_frame_count:
@@ -486,10 +487,7 @@ scale_offset_0_loop:
 ; Outputs: A = 0
 ; Destroys AF,BC,DE,HL
 display_digit:
-	ld hl,(current_buffer)
-	ld a,h
-	xor (gb_frame_buffer_1 ^ gb_frame_buffer_2)>>8
-	ld h,a
+	ld hl,(current_display)
 display_digit_smc_1 = $+1
 	ld d,2
 	ld e,c
@@ -643,7 +641,7 @@ _
 	ex de,hl
 	ret
 	
-setup_menu_palette:
+convert_palette_for_menu:
 	call convert_palette_setup
 	
 	ld hl,(mpLcdBase)
@@ -653,11 +651,20 @@ _
 	 call convert_palette_any_row
 	pop bc
 	djnz -_
-	 
+	ret
+	
+setup_menu_palette:
 	; (MAG)ENTA | BLUE
 	ld hl,($EA56 << 16) | $2882
 	ld (mpLcdPalette),hl
 	; OLIVE | MAG(ENTA)
 	ld hl,($CA8B << 8) | ($EA56 >> 8)
 	ld (mpLcdPalette+3),hl
-	AJUMP(Set4BitWindow)
+	; (WH)ITE | BLACK
+	ld hl,($FFFF << 16) | $0000
+	ld (mpLcdPalette+26),hl
+	; GRAY | WH(ITE)
+	ld hl,($4210 << 8) | ($FFFF >> 8)
+	ld (mpLcdPalette+29),hl
+	ld hl,(current_buffer)
+	AJUMP(Set4BitWindowAny)

@@ -87,30 +87,9 @@ PutNewLine:
 	 ld a,(hl)
 	 add a,10
 	 cp 240
-	 jr nc,ScrollUp
+	 jr nc,_
 	 ld (hl),a
-	pop hl
-	ret
-	
-ScrollUp:
-	 push bc
-	  push de
-	   ld hl,(current_buffer)
-	   ld de,text_frame_1 - gb_frame_buffer_1
-	   add hl,de
-	   ex de,hl
-	   ld hl,160*10
-	   add hl,de
-	   ld bc,160*(90-10)
-	   ldir
-	   push de
-	   pop hl
-	   inc de
-	   ld (hl),BLACK_BYTE
-	   ld bc,160*10-1
-	   ldir
-	  pop de
-	 pop bc
+_
 	pop hl
 	ret
 

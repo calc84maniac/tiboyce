@@ -5,7 +5,6 @@ _InsertMem = $020514
 _ErrNotEnoughMem = $02072C
 _ErrCustom1 = $02120C
 _Arc_Unarc = $021448
-_ChkInRAM = $021F98
 OP1 = $D005F8
 tSymPtr1 = $D0257B
 asm_prgm_size = $D0118C
@@ -57,13 +56,16 @@ LookUpAppvar:
 	pop hl
 	ld bc,9
 	jr c,ErrorMissing
-	call _ChkInRAM
-	jr nz,AppvarFound
+	; Check if in RAM
+	ex de,hl
+	push hl
+	 add hl,hl
+	pop hl
+	jr nc,AppvarFound
 	call _Arc_Unarc
 	jr LookUpAppvar
 	
 AppvarFound:
-	ex de,hl
 	add hl,bc
 	ld c,(hl)
 	add hl,bc

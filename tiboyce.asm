@@ -88,6 +88,7 @@ BG_COLOR_2 = 11
 BG_COLOR_3 = 12
 BLACK = 13
 WHITE = 14
+GRAY = 15
 
 ; Paletted colors doubled into two pixels
 WHITE_BYTE = WHITE*$11
@@ -96,35 +97,29 @@ BLUE_BYTE = BLUE*$11
 
 ; System calls used
 _sprintf = $0000BC
-_GetCSC = $02014C
 _Mov9ToOP1 = $020320
 _MemChk = $0204FC
 _CmpPrgNamLen = $020504
 _chkFindSym = $02050C
 _InsertMem = $020514
-_CmpMemNeed = $020520
 _CreatePVar4 = $020524
-_CreatePVar3 = $020528
-_DelVar = $020588
 _DelMem = $020590
 _ErrUndefined = $020764
+_JError = $020790
 _PushErrorHandler = $020798
 _PopErrorHandler = $02079C
 _ClrLCDFull = $020808
 _HomeUp = $020828
-_VPutMap = $020830
-_VPutS = $020834
 _RunIndicOff = $020848
-_createAppVar = $021330
 _DelVarArc = $021434
 _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
 _DivHLByA = $021D90
-_ChkInRAM = $021F98
 _FindFreeArcSpot = $022078
 
 ; RAM addresses used
 ramStart = $D00000
+flags = $D00080
 asm_data_ptr1 = $D0067E
 penCol = $D008D2
 penRow = $D008D5
@@ -342,6 +337,8 @@ palette_backup = scanlineLUT_2 + (144*3)
 ; Preconverted digit pixels for displaying FPS quickly. 24 bytes per character, 264 bytes total.
 digits = palette_backup + 32
 
+romListStart = digits + 264
+
 ; A fake tile filled with Game Boy color 0. 64 bytes in size.
 ; Used when BG tilemap is disabled.
 fake_tile = $D0F900
@@ -359,12 +356,8 @@ hram_base = z80codebase
 
 ; Start of first 4bpp frame buffer. 160*240 bytes in size.
 gb_frame_buffer_1 = vRam + (320*240)
-; Start of first debug text buffer. 160*90 bytes in size.
-text_frame_1 = gb_frame_buffer_1 + (160*150)
 ; Start of second 4bpp frame buffer. 160*240 bytes in size.
 gb_frame_buffer_2 = gb_frame_buffer_1 + (160*240)
-; Start of second debug text buffer. 160*90 bytes in size.
-text_frame_2 = gb_frame_buffer_2 + (160*150)
 
 ; Start of structure array keeping track of recompiled code blocks. 11KB max.
 ; Grows forward into the recompiled code mapping cache (see below).
@@ -477,10 +470,13 @@ ArcPtr:
 Arc_Unarc_Safe:
 	call _chkFindSym
 	ret c
-	call _ChkInRAM
-	jr nz,++_
-	; If archiving, check if there is a free spot in archive
 	ex de,hl
+	; Check if in RAM
+	push hl
+	 add hl,hl
+	pop hl
+	jr nc,++_
+	; If archiving, check if there is a free spot in archive
 	ld hl,(hl)
 	ld a,c
 	add a,12
@@ -514,7 +510,7 @@ Arc_Unarc_ErrorHandler:
 	  ld hl,SelfName
 	  call _Mov9ToOP1
 	  call _chkFindSym
-	  jp c,_ErrUndefined
+	  jr c,EpicFailure
 	  ld (tSymPtr1),hl
 	 pop af
 	pop hl
@@ -528,7 +524,28 @@ Arc_Unarc_ErrorHandler:
 	pop hl
 	add hl,de
 	cp 1
+CallHL:
 	jp (hl)
+	
+	; Set ArcBase to -1 so the error handler won't try to call the appvar
+EpicFailure:
+	sbc hl,hl
+	ld (ArcBase),hl
+	jp _ErrUndefined
+	
+GlobalErrorHandler:
+	push af
+	 ; Only restore the homescreen if ArcBase is valid.
+	 ; This may be invalid if a Garbage Collect caused the
+	 ; executable AppVar to disappear, but in that case the
+	 ; homescreen has already been restored.
+	 ld hl,(ArcBase)
+	 ld de,RestoreHomeScreen
+	 add hl,de
+	 call nc,CallHL
+	pop af
+	res 7,a
+	jp _JError
 	
 ; Compares the buffers at HL and DE, with size BC. Returns Z if equal.
 memcmp:
@@ -600,7 +617,8 @@ memset_fast_save_sp = $+1
 	ld sp,0
 	ret
 	
-; Gets a pointer to the current menu in HL, and to the current selection index in BC.
+; Gets a pointer to the current menu in HL, the current selection index in BC,
+; and sets the Z flag if the Load ROM menu is active.
 get_current_menu_selection:
 	ld hl,MenuList
 current_menu = $+1
@@ -608,6 +626,9 @@ current_menu = $+1
 	ld b,2
 	mlt bc
 	add hl,bc
+	; Check if menu #1 (Load ROM)
+	dec c
+	dec c
 	ld bc,(ArcBase)
 	add hl,bc
 	ld hl,(hl)
@@ -731,12 +752,13 @@ MulHLIXBy24:
 	add ix,ix \ adc hl,hl
 	ret
 	
-spiParam:
-	scf
-	.db $30	;JR NC,?
 spiCmd:
-	or a
-	ld hl,mpSpiFifo
+	ld a,c
+	inc c
+	scf
+spiParam:
+	ccf
+	ld l,mpSpiFifo & $FF
 	ld b,3
 _
 	rla
@@ -744,36 +766,28 @@ _
 	rla
 	ld (hl),a
 	djnz -_
-	ld l,mpSpiTransfer & $FF
-	ld (hl),$01
-	ld l,(mpSpiStatus + 1) & $FF
-_
-	ld a,(hl)
-	and $F0
-	jr nz,-_
-	dec l
+	ld l,mpSpiStatus & $FF
 _
 	bit 2,(hl)
 	jr nz,-_
-	ld l,mpSpiTransfer & $FF
-	ld (hl),a
+	xor a
 	ret
 	
 ; The calculator type, 0=84+CE, 1=83PCE
 calcType:
 	.db 0
+; The total number of ROMs.
+romTotalCount:
+	.db 0
 ; The first ROM in the current list frame.
-menuFrame:
-	.dl 0
-; The currently selected ROM.
-menuSelection:
-	.dl 0
-; The last selected ROM.
-menuLastSelection:
-	.dl 0
-; The end of the list of discovered ROMs.
-ROMListEnd:
-	.dl 0
+romListFrameStart:
+	.db 0
+; The number of ROMs in the current list frame, plus 1.
+romListFrameCount:
+	.db 0
+; The item corresponding to the currently selected ROM.
+romListItem:
+	.db ITEM_ROM,0
 ; The argument to pass to sprintf for error messages
 errorArg:
 	.dl 0
@@ -790,6 +804,9 @@ timeZoneOffset:
 ; The name of the currently loaded ROM.
 ROMName:
 	.db appVarObj
+	.block 9
+; The name of the ROM to be loaded next.
+ROMNameToLoad:
 	.block 9
 ; The ROM appvar magic header.
 MetaHeader:
@@ -834,9 +851,12 @@ mbc:
 ; The number of frames left to skip, plus 1.
 skippable_frames:
 	.db 1
-; The current buffer to render to.
+; The current buffer being displayed (front buffer).
+current_display:
+	.dl gb_frame_buffer_1
+; The current buffer to render to (back buffer).
 current_buffer:
-	.dl 0
+	.dl gb_frame_buffer_2
 ; The default palette.
 default_palette:
 	.db 0
@@ -850,9 +870,9 @@ cursorCol:
 ; The current text output row, in pixels (0-230).
 cursorRow:
 	.db 0
-; The output buffer for printf, large enough for a single row of text.
+; The output buffer for printf, large enough for two rows of text.
 text_buffer:
-	.block 42
+	.block 83
 	
 ; The pointer to the currently selected menu item.
 current_item_ptr:
@@ -863,11 +883,49 @@ current_description = asm_data_ptr1
 main_menu_selection:
 	.db 1
 ; As well as the rest of the menus
-	.db 1,1,1
+	.db 2,1,1,1
+; Index of the previous menu item
+menuPrevItem:
+	.db 0
+; Index of the next menu item
+menuNextItem:
+	.db 0
 ; The currently chosen save state index.
 current_state:
 	.db 0
+; The currently set LCD settings
+currentLcdSettings:
+	.dl originalLcdSettings
 	
+originalHardwareSettings:
+	; IntEnable
+	.dl 0
+	; IntLatch
+	.dl 0
+	; FlashWaitStates
+	.db 0
+	; MBASE
+	.db 0
+	;mpKeypadScanMode
+	.db 0
+	;mpLcdImsc
+	.db 0
+	
+originalLcdSettings:
+	; LcdTiming0
+	.block 12
+	; LcdCtrl
+	.dl 0
+	; Window left
+	.db 0
+	; Window right
+	.dw 319
+	; Window top
+	.db 0
+	; Window bottom
+	.db 239
+	; Number of frames to wait
+	.db 1
 	
 ; Current palette color sources (must be in this order).
 ; Correspond to colors 0-3 in sequence.

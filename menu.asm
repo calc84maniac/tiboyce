@@ -3,6 +3,11 @@
 #define ITEM_DIGIT 2
 #define ITEM_OPTION 3
 #define ITEM_KEY 4
+#define ITEM_ROM 5
+
+#define ITEM_ROMONLY $80
+
+#define ROMS_PER_PAGE 16
 
 ApplyConfiguration:
 	; Display next frame always
@@ -161,6 +166,35 @@ _
 	djnz key_config_loop
 	ret
 	
+RefreshRomListFrame:
+	ld a,(romListFrameStart)
+	ld hl,(romTotalCount)
+	ld h,ROMS_PER_PAGE
+	or a
+	jr z,+++_
+	sub l
+	jr c,++_
+_
+	sub h
+	jr nc,-_
+_
+	add a,l
+_
+	ld (romListFrameStart),a
+	sub l
+	neg
+	cp h
+	jr c,_
+	ld a,h
+_
+	inc a
+	ld (romListFrameCount),a
+	ld hl,main_menu_selection + 1
+	cp (hl)
+	ret nc
+	ld (hl),a
+	ret
+	
 	; Input: A = palette index
 	; Destroys: AF,BC,DE,HL,IX
 LoadPalettes:
@@ -228,6 +262,28 @@ ItemSelectCmd:
 	add hl,bc
 	jp (hl)
 	
+ItemSelectRom:
+	ld l,a
+	ld h,3
+	mlt hl
+	ld de,romListStart
+	add hl,de
+	ld hl,(hl)
+	ld de,-6
+	add hl,de
+	ld b,(hl)
+	ld de,ROMNameToLoad
+_
+	dec hl
+	ld a,(hl)
+	ld (de),a
+	inc de
+	djnz -_
+	xor a
+	ld (de),a
+	inc a
+	jr CmdExit
+	
 ItemSelectKey:
 	ACALL(GetKeyConfig)
 	push bc
@@ -240,7 +296,6 @@ ItemSelectKey:
 	  pop de
 	 pop bc
 	pop hl
-	or a
 	jr nz,_
 	ld a,c
 _
@@ -262,10 +317,16 @@ ItemSelectDigit:
 	ld a,4
 CmdExit:
 	ld (exitReason),a
-	jr CmdReturnToGame
-	
-BackToMainMenu:
+	jr exit_menu
+
+emulator_menu_ingame:
+	call convert_palette_for_menu
 	xor a
+emulator_menu:
+	push af
+	 call setup_menu_palette
+	pop af
+	
 ItemSelectLink:
 	ld (current_menu),a
 	or a
@@ -274,90 +335,53 @@ ItemSelectLink:
 	ld de,main_menu_selection
 	add hl,de
 	ld (current_menu_selection),hl
+	dec a
+	jr nz,_
+	ACALL(ROMSearch)
+_
 	ACALL(redraw_current_menu)
 ItemSelectOption:
-CmdLoadNewGame:
-CmdRestartGame:
-	jr menu_loop
 	
-emulator_menu:
-	call setup_menu_palette
-	 
-	xor a
-	ld (current_menu),a
-	call SetStringBgColor
-	ld hl,main_menu_selection
-	ld (current_menu_selection),hl
-	 
-	ACALL(redraw_current_menu)
-	
-	ld hl,(mpLcdBase)
-	push hl
-	 ld hl,(current_buffer)
-	 ld (mpLcdBase),hl
-	  
 menu_loop:
-	 ACALL(WaitForKey)
-	 or a
-	 jr nz,_
-	 ld a,2
-	 jr CmdExit
+	ACALL(WaitForKey)
+	jr nz,_
+	ld a,2
+	jr CmdExit
 _
-	 call get_current_menu_selection
-	 dec a
-	 jr z,menu_down
-	 cp 3
-	 jr c,menu_left_right
-	 jr z,menu_up
-	 cp 9-1
-	 jr z,menu_select
-	 cp 54-1
-	 jr z,menu_select
-	 cp 15-1
-	 jr nz,menu_loop
-	  
-menu_exit:
-	 ld a,(current_menu)
-	 or a
-	 jr nz,BackToMainMenu
-	  
-CmdReturnToGame:
-	 ACALL(ApplyConfiguration)
-
+	call get_current_menu_selection
+	dec a
+	jr z,menu_down
+	cp 3
+	jr c,menu_left_right
+	jr z,menu_up
+	cp 9-1
+	jr z,menu_select
+	cp 54-1
+	jr z,menu_select
+	cp 15-1
+	jr nz,menu_loop
+	
+	ld hl,current_menu
+	xor a
+	cp (hl)
+	jr nz,ItemSelectLink
+	
+exit_menu:
 _
-	 ACALL(GetKeyCode)
-	 or a
-	 jr nz,-_ 
-	 
-	 ACALL(SetScalingMode)
-	pop hl
-	ld (mpLcdBase),hl
-#if 0
-	ld hl,230*256
-	ld (cursorCol),hl
-	ld a,BLACK_BYTE
-	call SetStringBgColor
-#endif
+	ACALL(GetKeyCode)
+	or a
+	jr nz,-_ 
 	ret
 	
 menu_up:
-	ld a,(bc)
-	dec a
-	jr nz,_
-	ld a,(hl)
-_
+	ld a,(menuPrevItem)
 	ld (bc),a
 	ACALL(draw_current_menu)
 menu_loop_trampoline:
 	jr menu_loop
 	
 menu_down:
-	ld a,(bc)
-	cp (hl)
-	jr nz,_
-	xor a
-_
-	inc a
+	ld a,(menuNextItem)
 	ld (bc),a
 	ACALL(draw_current_menu)
 	jr menu_loop_trampoline
@@ -376,6 +400,7 @@ DoCurrentItemCallback:
 	ld hl,(current_item_ptr)
 DoItemCallback:
 	ld c,(hl)
+	res 7,c
 	inc hl
 	ex de,hl
 	ld b,2
@@ -390,14 +415,27 @@ DoItemCallback:
 	ld a,(de)
 	jp (hl)
 	
-
+ItemChangeRom:
+	ld hl,romListFrameStart
+	ld a,(hl)
+	djnz ++_
+	add a,ROMS_PER_PAGE
+_
+	ld (hl),a
+	jr redraw_current_menu
+_
+	sub ROMS_PER_PAGE
+	jr nc,--_
+	jr redraw_current_menu
+	
 ItemChangeDigit:
 	ld hl,current_state
 	cp 2
 	jr nz,_
 	ld hl,FrameskipValue
 _
-	ld a,(hl)
+	xor a
+	rrd
 	add a,b
 	cp 10
 	jr c,_
@@ -405,8 +443,8 @@ _
 	jr c,_
 	xor a
 _
-	ld (hl),a
-	jr draw_current_menu
+	rld
+	jr draw_current_menu_trampoline
 	
 ItemChangeOption:
 	ld d,b
@@ -420,10 +458,11 @@ ItemChangeOption:
 	xor a
 _
 	ld (bc),a
+draw_current_menu_trampoline:
 	jr draw_current_menu
 	
 redraw_current_menu:
-	ACALL(ApplyConfiguration)
+	ACALL(RefreshRomListFrame)
 	
 	ld hl,(current_buffer)
 	push hl
@@ -433,39 +472,59 @@ redraw_current_menu:
 	ld (hl),BLUE_BYTE
 	ldir
 	
-	ld a,(current_menu)
+	; Skip description display if on ROM list
+	ld hl,(current_menu)
+	dec l
+	jr z,draw_current_menu
+	
+	; Display only description if no ROM is loaded
+	ld a,(ROMName+1)
 	or a
+	ld a,30
+	jr z,draw_current_description
+
+	; Apply configuration if ROM is loaded (updates palette settings)
+	push hl
+	 ACALL(ApplyConfiguration)
+	pop hl
+	
+	; Draw mini screen if on main menu
+	inc l
 	jr nz,_
 	ACALL(draw_mini_screen)
 _
 	
-	ld a,20
-	ld (cursorRow),a
-	ld a,1
-	ld (cursorCol),a
-	ld hl,(current_description)
-	ld a,MAGENTA
-	ACALL(PutNStringColor)
-	 
-	ld a,30
-	ld (cursorRow),a
-	ld a,1
-	ld (cursorCol),a
+	; Draw ROM internal name and checksum
 	ld ix,(rom_start)
 	ld bc,$0134
 	add ix,bc
+	ld a,35
+	ld (cursorRow),a
+	ld a,b
+	ld (cursorCol),a
 	ld b,(ix+$014E-$0134)
 	ld c,(ix+$014F-$0134)
 	push bc
 	 push ix
 	  APTR(TitleChecksumFormat)
 	  push hl
-	   ACALL(PutStringFormat)
+	   ld a,MAGENTA
+	   ACALL(PutStringFormatColor)
 	  pop hl
 	 pop hl
 	pop hl
 	
+	ld a,25
+draw_current_description:
+	ld (cursorRow),a
+	ld a,1
+	ld (cursorCol),a
+	ld hl,(current_description)
+	ld a,MAGENTA
+	ACALL(PutNStringColor)
+	
 draw_current_menu:
+	; Erase the help text
 	ld hl,(current_buffer)
 	ld de,160*205
 	add hl,de
@@ -479,58 +538,182 @@ draw_current_menu:
 	call get_current_menu_selection
 	ld a,(bc)
 	ld c,a
+	push af
 	
-	; HL = menu structure, C = highlighted item index
+	 ; HL = menu structure, C = highlighted item index
 draw_menu:
-	ld b,(hl)
-	inc hl
-	inc b
-	push bc
-	 ld a,WHITE
-	 call SetStringColor
-	 ex de,hl
-	 jr draw_menu_title
+	 ld b,(hl)
+	 inc hl
+	 inc b
+	 push bc
+	  ld a,WHITE
+	  call SetStringColor
+	  ex de,hl
+	  ld hl,$FF00
+	  push hl
+	   jr draw_menu_title
 draw_menu_loop:
-	dec c
-	push bc
-	 jr z,_
-	 xor a
-	 cpir
-	 ld a,OLIVE
-	 jr ++_
+	 dec c
+	 push bc
+	  jr nz,_
+	  ld a,205
+	  ld (cursorRow),a
+	  ld a,1
+	  ld (cursorCol),a
+	  ld a,MAGENTA
+	  push de
+	   ACALL(PutStringColor)
+	   ld (current_item_ptr),hl
+	   ld a,WHITE
+	   jr draw_menu_item
 _
+	  xor a
+	  cpir
+	  ld a,(ROMName+1)
+	  or a
+	  jr nz,_
+	  ld a,GRAY
+	  bit 7,(hl)
+	  jr nz,draw_menu_item_push
+_
+	 pop bc
+	 push bc
+	  ; Update the "next item" offset
+	  ld a,c
+	  cp e
+	  jr c,_
+	  ld e,a
+_
+	  ; Update the "prev item" (minus 1) offset
+	  dec a
+	  cp d
+	  jr nc,_
+	  ld d,a
+_
+	  ld a,OLIVE
+draw_menu_item_push:
+	  push de
+draw_menu_item:
+	   call SetStringColor
+	 
+	   ld de,ItemDisplayCallbacks
+	   ACALL(DoItemCallback)
+	   inc de
+	   
+draw_menu_title:
+	   ld a,(de)
+	   inc de
+	   ld (cursorRow),a
+	   ld a,(de)
+	   inc de
+	   ld (cursorCol),a
+	   push hl
+	    push de
+	     ACALL(PutStringFormat)
+	    pop hl
+	   pop de
+	   xor a
+	   ld c,a
+	   cpir
+	  pop de
+	 pop bc
+	 djnz draw_menu_loop
+	pop af
+	ld c,a
+	jr z,_
+	sub e
+	ld (menuNextItem),a
+	ld a,c
+	scf
+	sbc a,d
+	ld (menuPrevItem),a
+	ret
+_
+	; Draw the ROM list
+	dec c
+	ld a,(romListFrameCount)
+	ld b,a
+	jr z,_
+	push bc
+	 ld hl,romListItem
+	 ld (current_item_ptr),hl
 	 ld a,205
 	 ld (cursorRow),a
 	 ld a,1
 	 ld (cursorCol),a
+	 APTR(LoadRomHelpText)
 	 ld a,MAGENTA
 	 ACALL(PutStringColor)
-	 ld (current_item_ptr),hl
-	 ld a,WHITE
-_
-	 call SetStringColor
-	 
-	 ld de,ItemDisplayCallbacks
-	 ACALL(DoItemCallback)
-	 inc de
-	 
-draw_menu_title:
-	 ld a,(de)
-	 inc de
-	 ld (cursorRow),a
-	 ld a,(de)
-	 inc de
-	 ld (cursorCol),a
-	 push hl
-	  push de
-	   ACALL(PutStringFormat)
-	  pop hl
-	 pop de
-	 xor a
-	 ld c,a
-	 cpir
 	pop bc
-	djnz draw_menu_loop
+	ld a,c
+_
+	ld (menuPrevItem),a
+	
+	ld a,20
+	ld (cursorRow),a
+	ld a,1
+	ld (cursorCol),a
+	add a,c
+	cp b
+	jr nz,_
+	xor a
+_
+	inc a
+	ld (menuNextItem),a
+	
+	ld a,(romListFrameStart)
+	ld l,a
+	add a,c
+	dec a
+	ld (romListItem+1),a
+	ld h,3
+	mlt hl
+	ld de,romListStart
+	add hl,de
+	djnz draw_rom_list_loop
+	APTR(LoadRomNoRomsText)
+	ld a,GRAY
+	AJUMP(PutStringColor)
+	
+draw_rom_list_loop:
+	push hl
+	 dec c
+	 push bc
+	  ld a,OLIVE
+	  jr nz,_
+	  ld a,WHITE
+_
+	  call SetStringColor
+	
+	  ld hl,(hl)
+	  ld de,-7
+	  add hl,de
+	  ld de,(hl)
+	  inc hl
+	  inc hl
+	  inc hl
+	  ld d,(hl)
+	  inc hl
+	  ld e,(hl)
+	  
+	  ACALL(GetDataSection)
+	  ld de,9
+	  add hl,de
+	  ACALL(PutNString)
+	  
+	  ld hl,cursorCol
+	  ld (hl),1
+	  inc hl
+	  ld a,(hl)
+	  add a,10
+	  ld (hl),a
+	  
+	 pop bc
+	pop hl
+	inc hl
+	inc hl
+	inc hl
+	djnz draw_rom_list_loop
 	ret
 	
 draw_mini_screen:
@@ -564,6 +747,8 @@ draw_mini_screen_pixel_loop:
 	jr nz,draw_mini_screen_row_loop
 	ret
 	
+	; Returns key code in A, or 0 if ON is pressed.
+	; Also returns Z flag set if ON is pressed.
 WaitForKey:
 _
 	ld de,$000010
@@ -684,6 +869,7 @@ TitleChecksumFormat:
 	
 MenuList:
 	.dw MainMenu+1
+	.dw LoadGameMenu+1
 	.dw GraphicsMenu+1
 	.dw ControlsMenu+1
 	.dw EmulationMenu+1
@@ -712,6 +898,7 @@ ItemDisplayCallbacks:
 	.dw ItemDisplayDigit+1
 	.dw ItemDisplayOption+1
 	.dw ItemDisplayKey+1
+	; No ROM item display callback
 	
 ItemChangeCallbacks:
 	.dw ItemChangeLink+1
@@ -719,6 +906,7 @@ ItemChangeCallbacks:
 	.dw ItemChangeDigit+1
 	.dw ItemChangeOption+1
 	.dw ItemChangeKey+1
+	.dw ItemChangeRom+1
 	
 ItemSelectCallbacks:
 	.dw ItemSelectLink+1
@@ -726,30 +914,47 @@ ItemSelectCallbacks:
 	.dw ItemSelectDigit+1
 	.dw ItemSelectOption+1
 	.dw ItemSelectKey+1
+	.dw ItemSelectRom+1
 	
 MainMenu:
 	.db 9
-	.db 5,9
-EmulatorTitle:
-	.db "TI-Boy CE Alpha v0.1.1",0
+	.db 0,9
+	.db "TI-Boy CE Alpha v0.1.1\n https://calc84maniac.github.io/tiboyce",0
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT,0, 50,1,"Load State Slot %u",0
+	.db ITEM_DIGIT | ITEM_ROMONLY,0, 50,1,"Load State Slot %c",0
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT,1, 60,1,"Save State Slot %u",0
+	.db ITEM_DIGIT | ITEM_ROMONLY,1, 60,1,"Save State Slot %c",0
 	.db "Select to set appearance and\n frameskip behavior.",0
-	.db ITEM_LINK,1, 80,1,"Graphics Options",0
+	.db ITEM_LINK,2, 80,1,"Graphics Options",0
 	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
-	.db ITEM_LINK,2, 100,1,"Control Options",0
+	.db ITEM_LINK,3, 100,1,"Control Options",0
 	.db "Select to manage miscellaneous options.",0
-	.db ITEM_LINK,3, 120,1,"Emulation Options",0
+	.db ITEM_LINK,4, 120,1,"Emulation Options",0
 	.db "Select to load a new game\n (will exit a currently playing game).",0
-	.db ITEM_CMD,1, 140,1,"Load new game",0
+	.db ITEM_LINK,1, 140,1,"Load new game",0
 	.db "Select to reset the Game Boy\n with the current game loaded.",0
-	.db ITEM_CMD,3, 150,1,"Restart game",0
+	.db ITEM_CMD | ITEM_ROMONLY,3, 150,1,"Restart game",0
 	.db "Select to exit this menu and\n resume gameplay.",0
-	.db ITEM_CMD,0, 160,1,"Return to game",0
+	.db ITEM_CMD | ITEM_ROMONLY,0, 160,1,"Return to game",0
 	.db "Select to exit the emulator and\n return to TI-OS.",0
 	.db ITEM_CMD,2, 180,1,"Exit TI-Boy CE",0
+	
+NoRomLoadedDescription:
+	.db _-$-1,"No ROM currently loaded"
+_
+	
+LoadGameMenu:
+	.db 1
+	.db 5,14
+	.db "Load New ROM",0
+	.db "Return to the main menu.",0
+	.db ITEM_LINK,0, 180,1,"Back",0
+	
+LoadRomHelpText:
+	.db "Press 2nd/Enter to start the game.\n Press left/right to scroll pages.",0
+	
+LoadRomNoRomsText:
+	.db "No ROMs found!",0
 	
 GraphicsMenu:
 	.db 8

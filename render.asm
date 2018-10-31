@@ -403,12 +403,7 @@ cursorcodesize = $-mpLcdCursorImg
 	.echo "Cursor memory code size: ", cursorcodesize
 	
 palettecode:
-	.org mpLcdPalette
-
-	.dw 0,0,0,0,0,0,0,0,0
-	.dw 0,0,0,0
-	.dw $0000,$FFFF
-	.dw 0
+	.org mpLcdPalette + 32
 	
 render_scanline_off:
 	push de
