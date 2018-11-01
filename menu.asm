@@ -269,14 +269,12 @@ ItemSelectRom:
 	ld de,romListStart
 	add hl,de
 	ld hl,(hl)
-	ld de,-6
-	add hl,de
-	ld b,(hl)
+	ld bc,(hl)
 	ld de,ROMNameToLoad
 _
-	dec hl
 	ld a,(hl)
 	ld (de),a
+	dec hl
 	inc de
 	djnz -_
 	xor a
@@ -662,57 +660,38 @@ _
 	ld (menuNextItem),a
 	
 	ld a,(romListFrameStart)
-	ld l,a
+	ld e,a
 	add a,c
 	dec a
 	ld (romListItem+1),a
-	ld h,3
-	mlt hl
-	ld de,romListStart
-	add hl,de
+	ld d,3
+	mlt de
+	ld iy,romListStart
+	add iy,de
 	djnz draw_rom_list_loop
 	APTR(LoadRomNoRomsText)
 	ld a,GRAY
 	AJUMP(PutStringColor)
 	
 draw_rom_list_loop:
-	push hl
-	 dec c
-	 push bc
-	  ld a,OLIVE
-	  jr nz,_
-	  ld a,WHITE
+	dec c
+	push bc
+	 ld a,OLIVE
+	 jr nz,_
+	 ld a,WHITE
 _
-	  call SetStringColor
+	 call GetRomDescription
+	 ACALL(PutNStringColor)
 	
-	  ld hl,(hl)
-	  ld de,-7
-	  add hl,de
-	  ld de,(hl)
-	  inc hl
-	  inc hl
-	  inc hl
-	  ld d,(hl)
-	  inc hl
-	  ld e,(hl)
+	 ld hl,cursorCol
+	 ld (hl),1
+	 inc hl
+	 ld a,(hl)
+	 add a,10
+	 ld (hl),a
 	  
-	  ACALL(GetDataSection)
-	  ld de,9
-	  add hl,de
-	  ACALL(PutNString)
-	  
-	  ld hl,cursorCol
-	  ld (hl),1
-	  inc hl
-	  ld a,(hl)
-	  add a,10
-	  ld (hl),a
-	  
-	 pop bc
-	pop hl
-	inc hl
-	inc hl
-	inc hl
+	pop bc
+	lea iy,iy+3
 	djnz draw_rom_list_loop
 	ret
 	
@@ -948,7 +927,7 @@ LoadGameMenu:
 	.db 5,14
 	.db "Load New ROM",0
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 180,1,"Back",0
+	.db ITEM_LINK,0, 185,1,"Back",0
 	
 LoadRomHelpText:
 	.db "Press 2nd/Enter to start the game.\n Press left/right to scroll pages.",0

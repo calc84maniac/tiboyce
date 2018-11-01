@@ -162,15 +162,29 @@ SaveConfigAndQuitForError:
 	ei
 	ACALL_SAFERET(SaveConfigFile)
 RestoreHomeScreen:
-	ld hl,pixelShadow
-	ld de,pixelShadow+1
-	ld bc,(8400*3) - 1
-	ld (hl),0
+	; Set all palette entries to white to smooth the transition
+	ld hl,mpLcdPalette
+	push hl
+	pop de
+	inc de
+	ld bc,$01FF
+	ld (hl),c
 	ldir
+	; Clear pixelShadow etc.
+	ld hl,pixelShadow
+	push hl
+	pop de
+	inc de
+	ld (hl),c
+	ld bc,(8400*3) - 1
+	ldir
+	; Mark graph dirty
 	set graphDraw,(iy+graphFlags)
+	; Restore the frame buffer
 	call _ClrLCDFull
 	call _DrawStatusBar
 	call _HomeUp
+	; Change the LCD settings to fullscreen 16-bit
 	AJUMP(RestoreOriginalLcdSettings)
 	
 	; Input: HL = insertion point
@@ -1788,52 +1802,150 @@ _
 	ret
 	
 	
+	; Populates and sorts the ROM list, and sets (romTotalCount)
 ROMSearch:
-	ld ix,romListStart
+	ld iy,romListStart
 	ld hl,(progPtr)
 	xor a
-	ld (romTotalCount),a
+	ld c,a
 ROMSearchLoop:
-	ld (ix),hl
 	ex de,hl
 	ld hl,(pTemp)
 	sbc hl,de
-	ret z
+	jr z,ROMSearchSort
 	ld a,(de)
 	ld hl,-7
 	add hl,de
 	ld de,(hl)
 	xor appVarObj
-	jr nz,NoMatch
+	jr nz,ROMSearchNoMatch
 	ld a,d
 	cp 6
-	jr nc,NoMatch
+	jr nc,ROMSearchNoMatch
 	push hl
-	 inc hl
-	 inc hl
-	 inc hl
-	 ld d,(hl)
-	 inc hl
-	 ld e,(hl)
-	 ACALL(GetDataSection)
-	 ld de,MetaHeader
-	 ld bc,8
-	 call memcmp
-	 jr nz,_
-	 lea ix,ix+3
-	 ld a,(romTotalCount)
-	 inc a
-	 ld (romTotalCount),a
-_
+	 push bc
+	  inc hl
+	  inc hl
+	  inc hl
+	  ld d,(hl)
+	  inc hl
+	  ld e,(hl)
+	  ACALL(GetDataSection)
+	  ld de,MetaHeader
+	  ld bc,8
+	  call memcmp
+	  jr z,ROMSearchMatch
+	 pop bc
 	pop hl
+ROMSearchContinue:
 	ld de,(hl)
-NoMatch:
+	or a
+ROMSearchNoMatch:
 	ld e,1
 	mlt de
 	sbc hl,de
 	jr ROMSearchLoop
 	
+ROMSearchMatch:
+	  ex de,hl
+	  inc de
+	 pop bc
+	 ld b,c
+	 pea iy+3
+	  push iy
+ROMSearchHeapInsertLoop:
+	   srl b
+	   jr c,_
+	   jr z,ROMSearchHeapInsertDone
+	   dec b
+_
+	   push bc
+	    call GetRomDescriptionByIndex
+	    push de
+	     call CompareDescriptions
+	    pop de
+	   pop bc
+	   jr c,ROMSearchHeapInsertDone
+	   ex (sp),iy
+	   ld (iy),ix
+	   jr ROMSearchHeapInsertLoop
+ROMSearchHeapInsertDone:
+	  pop hl
+	 pop iy
+	pop de
+	ld (hl),de
+	ex de,hl
+	inc c
+	jr nz,ROMSearchContinue
+	dec c
 	
+	; Finish out the heap sort
+ROMSearchSort:
+	ld a,c
+	ld (romTotalCount),a
+	or a
+	ret z
+ROMSearchHeapSortLoop:
+	dec a
+	ret z
+	ld b,a
+	call GetRomDescriptionByIndex
+	ex de,hl
+	push ix
+	 ld hl,romListStart
+	 push hl
+	  ld ix,(hl)
+	  ld (iy),ix
+	  ld c,a
+ROMSearchHeapBalanceLoop:
+	  sla b
+	  inc b
+	  ld a,b
+	  sub c
+	  jr nc,ROMSearchHeapBalanceDone
+	  push bc
+	   call GetRomDescriptionByIndex
+	   inc a
+	   jr z,ROMSearchHeapBalanceLeft
+	   push de
+	    ex de,hl
+	    lea iy,iy+3
+	    call GetRomDescription
+	    push hl
+	     push de
+	      call CompareDescriptions
+	     pop de
+	    pop hl
+	    jr c,ROMSearchHeapBalanceRight
+	    ex de,hl
+	    lea iy,iy-3
+	    ld ix,(iy)
+	   pop de
+	   jr ROMSearchHeapBalanceLeft
+ROMSearchHeapBalanceRight:
+	   pop de
+	  pop bc
+	  inc b
+	  push bc
+	   ld b,0
+ROMSearchHeapBalanceLeft:
+	   push de
+	    call CompareDescriptions
+	   pop de
+	  pop bc
+	  jr nc,ROMSearchHeapBalanceDone
+	  ex (sp),iy
+	  ld (iy),ix
+	  jr ROMSearchHeapBalanceLoop
+	  
+ROMSearchHeapBalanceDone:
+	 pop hl
+	pop de
+	ld (hl),de
+	ld a,c
+	jr ROMSearchHeapSortLoop
+	
+	  
 	; Input: rtc_last
 	; Output: HLIX = 48-bit timestamp based on current time
 GetUnixTimeStamp:

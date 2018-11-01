@@ -24,217 +24,217 @@ frame_emulated_count = $+1
 	push de
 	 push ix
 	  push bc
-	   ld a,(render_this_frame)
-	   or a
-	   jr z,skip_this_frame
-	
-	   ; Finish rendering the frame
-	   ld a,144
-	   call render_scanlines
-	  
-	   ; Display sprites
-	   ld a,(hram_base+LCDC)
-	   rla
 	   push iy
-	    call c,draw_sprites
-	   pop iy
+	    ld a,(render_this_frame)
+	    or a
+	    jr z,skip_this_frame
 	
-	   ; Swap buffers
-	   call prepare_next_frame
-	   ld (mpLcdBase),hl
-	   ld a,(ScalingMode)
-	   or a
-	   call nz,do_scale_fill
+	    ; Finish rendering the frame
+	    ld a,144
+	    call render_scanlines
+	  
+	    ; Display sprites
+	    ld a,(hram_base+LCDC)
+	    rla
+	    call c,draw_sprites
+	
+	    ; Swap buffers
+	    call prepare_next_frame
+	    ld (mpLcdBase),hl
+	    ld a,(ScalingMode)
+	    or a
+	    call nz,do_scale_fill
 	   
 speed_display_smc_1 = $
-	   jr z,NoSpeedDisplay
+	    jr z,NoSpeedDisplay
 	   
-	   ld a,(turbo_active)
-	   or a
+	    ld a,(turbo_active)
+	    or a
 speed_display_smc_2 = $
-	   jr z,_
+	    jr z,_
 speed_display_smc_0 = $+1
-	   ld a,0
+	    ld a,0
 low_perf_digits_smc = $+1
-	   add a,0
-	   daa
+	    add a,0
+	    daa
 high_perf_digits_smc = $+1
-	   ld a,0
+	    ld a,0
 speed_display_smc_3 = $
-	   adc a,$FF
-	   sbc a,a
-	   inc a
-	   jr z,skip_this_frame	;Carry is set
+	    adc a,$FF
+	    sbc a,a
+	    inc a
+	    jr z,skip_this_frame	;Carry is set
 _
 	   
-	   xor a
-	   ld c,a
-	   ld hl,perf_digits
-	   ld b,4
+	    xor a
+	    ld c,a
+	    ld hl,perf_digits
+	    ld b,4
 _
-	   or (hl)
-	   jr nz,_
-	   inc hl
-	   djnz -_
-	   dec hl
-	   inc b
+	    or (hl)
+	    jr nz,_
+	    inc hl
+	    djnz -_
+	    dec hl
+	    inc b
 _
-	   push hl
-	    push bc
-	     ld b,(hl)
-	     call display_digit
-	    pop bc
-	   pop hl
-	   inc hl
-	   inc c
-	   djnz -_
-	   ld b,10
-	   call display_digit
+	    push hl
+	     push bc
+	      ld b,(hl)
+	      call display_digit
+	     pop bc
+	    pop hl
+	    inc hl
+	    inc c
+	    djnz -_
+	    ld b,10
+	    call display_digit
 NoSpeedDisplay:
 	  
-	   ; Signify frame was rendered
-	   scf
+	    ; Signify frame was rendered
+	    scf
 skip_this_frame:
 
-	   ld hl,frame_excess_count
+	    ld hl,frame_excess_count
 turbo_active = $+1
-	   ld b,1
-	   dec b	; We want this to affect Z flag
-	   jr nz,no_frame_sync
+	    ld b,1
+	    dec b	; We want this to affect Z flag
+	    jr nz,no_frame_sync
 	   
-	   ; Handle frame synchronization
-	   dec (hl)
-	   jp p,no_frame_sync
-	   ; If we didn't render, save for later
-	   jr nc,frame_sync_later
+	    ; Handle frame synchronization
+	    dec (hl)
+	    jp p,no_frame_sync
+	    ; If we didn't render, save for later
+	    jr nc,frame_sync_later
 frame_sync_loop:
-	   push hl
-	    ld de,$000800
-	    call wait_for_interrupt
-	    call update_palettes
-	    ld hl,mpLcdIcr
-	    ld (hl),4
-	    call inc_real_frame_count
-	   pop hl
-	   inc (hl)
-	   jr nz,frame_sync_loop
+	    push hl
+	     ld de,$000800
+	     call wait_for_interrupt
+	     call update_palettes
+	     ld hl,mpLcdIcr
+	     ld (hl),4
+	     call inc_real_frame_count
+	    pop hl
+	    inc (hl)
+	    jr nz,frame_sync_loop
 frame_sync_later:
-	   ; Set Z
-	   xor a
+	    ; Set Z
+	    xor a
 no_frame_sync:
 	  
-	   ; Handle frameskip logic
-	   ; At this point A=0, Z holds auto state
-	   ex de,hl
-	   ld hl,skippable_frames
+	    ; Handle frameskip logic
+	    ; At this point A=0, Z holds auto state
+	    ex de,hl
+	    ld hl,skippable_frames
 frameskip_type_smc:
-	   jr z,no_frameskip	;JR no_frameskip when off, JR Z,$+2 when manual
-	   dec (hl)
-	   jr nz,frameskip_end
+	    jr z,no_frameskip	;JR no_frameskip when off, JR Z,$+2 when manual
+	    dec (hl)
+	    jr nz,frameskip_end
 no_frameskip:
 frameskip_value_smc = $+1
-	   ld a,1
-	   ld (hl),a
-	   ex de,hl
-	   bit 7,(hl)
-	   jr nz,_
-	   cp (hl)
-	   jr nc,_
-	   ld (hl),a
+	    ld a,1
+	    ld (hl),a
+	    ex de,hl
+	    bit 7,(hl)
+	    jr nz,_
+	    cp (hl)
+	    jr nc,_
+	    ld (hl),a
 _
-	   ld a,1
+	    ld a,1
 frameskip_end:
-	   ld (render_this_frame),a
+	    ld (render_this_frame),a
 	  
-	   ; Get keys
-	   scf
-	   sbc hl,hl
-	   ld ix,mpKeypadGrp0
+	    ; Get keys
+	    scf
+	    sbc hl,hl
+	    ld ix,mpKeypadGrp0
 
 key_smc_turbo:
-	   bit 2,(ix+1*2)	;ZOOM
+	    bit 2,(ix+1*2)	;ZOOM
 turbo_keypress_smc = $
-	   jr z,_
+	    jr z,_
 turbo_toggle_smc = $+1
-	   jr z,turbo_skip_toggle
+	    jr z,turbo_skip_toggle
 turbo_active_no_toggle = $+1
-	   ld a,(turbo_active)
-	   xor 1
-	   ld (turbo_active),a
+	    ld a,(turbo_active)
+	    xor 1
+	    ld (turbo_active),a
 turbo_skip_toggle:
-	   ld a,(turbo_keypress_smc)
-	   xor 8
-	   ld (turbo_keypress_smc),a
+	    ld a,(turbo_keypress_smc)
+	    xor 8
+	    ld (turbo_keypress_smc),a
 _
 	   
 key_smc_right:
-	   bit 2,(ix+7*2)	;Right
-	   jr z,_
-	   dec l
+	    bit 2,(ix+7*2)	;Right
+	    jr z,_
+	    dec l
 _
 key_smc_left:
-	   bit 1,(ix+7*2)	;Left
-	   jr z,_
-	   bit 0,l
-	   set 0,l
-	   jr z,_
-	   res 1,l
+	    bit 1,(ix+7*2)	;Left
+	    jr z,_
+	    bit 0,l
+	    set 0,l
+	    jr z,_
+	    res 1,l
 _
 key_smc_up:
-	   bit 3,(ix+7*2)	;Up
-	   jr z,_
-	   res 2,l
+	    bit 3,(ix+7*2)	;Up
+	    jr z,_
+	    res 2,l
 _
 key_smc_down:
-	   bit 0,(ix+7*2)	;Down
-	   jr z,_
-	   bit 2,l
-	   set 2,l
-	   jr z,_
-	   res 3,l
+	    bit 0,(ix+7*2)	;Down
+	    jr z,_
+	    bit 2,l
+	    set 2,l
+	    jr z,_
+	    res 3,l
 _
 key_smc_a:
-	   bit 5,(ix+1*2)	;2ND
-	   jr z,_
-	   dec h
+	    bit 5,(ix+1*2)	;2ND
+	    jr z,_
+	    dec h
 _
 key_smc_b:
-	   bit 7,(ix+2*2)	;ALPHA
-	   jr z,_
-	   res 1,h
+	    bit 7,(ix+2*2)	;ALPHA
+	    jr z,_
+	    res 1,h
 _
 key_smc_select:
-	   bit 7,(ix+3*2)	;X,T,0,n
-	   jr z,_
-	   res 2,h
+	    bit 7,(ix+3*2)	;X,T,0,n
+	    jr z,_
+	    res 2,h
 _
 key_smc_start:
-	   bit 6,(ix+1*2)	;MODE
-	   jr z,_
-	   res 3,h
+	    bit 6,(ix+1*2)	;MODE
+	    jr z,_
+	    res 3,h
 _
-	   ld.sis (keys),hl
+	    ld.sis (keys),hl
 
 key_smc_menu:
-	   bit 6,(ix+6*2)	;CLEAR
-	   jr z,_
-	   ACALL(emulator_menu_ingame)
-	   ld hl,(curr_palettes)
-	   call update_palettes_always
-	   ACALL(SetScalingMode)
+	    bit 6,(ix+6*2)	;CLEAR
+	    jr z,_
+	    ACALL(emulator_menu_ingame)
+	    ld hl,(curr_palettes)
+	    call update_palettes_always
+	    ACALL(SetScalingMode)
 _
 exitReason = $+1
-	   ld a,0
-	   or a
-	   jr z,_
-	   APTR(ExitEmulation)
-	   ex de,hl
-	   ld hl,z80codebase+not_expired
-	   ; Emit DI
-	   ld (hl),$F3 \ inc hl
-	   ; Emit JP.LIL CmdLoadSaveState
-	   ld (hl),$5B \ inc hl \ ld (hl),$C3 \ inc hl \ ld (hl),de
+	    ld a,0
+	    or a
+	    jr z,_
+	    APTR(ExitEmulation)
+	    ex de,hl
+	    ld hl,z80codebase+not_expired
+	    ; Emit DI
+	    ld (hl),$F3 \ inc hl
+	    ; Emit JP.LIL CmdLoadSaveState
+	    ld (hl),$5B \ inc hl \ ld (hl),$C3 \ inc hl \ ld (hl),de
 _
+	   pop iy
 	  pop bc
 	 pop ix
 	pop de

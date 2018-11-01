@@ -547,14 +547,69 @@ GlobalErrorHandler:
 	res 7,a
 	jp _JError
 	
+	; Input: B=index
+GetRomDescriptionByIndex:
+	ld iy,romListStart
+	ld c,3
+	mlt bc
+	add iy,bc
+	
+	; Input: IY=ROM list entry
+	; Output: HL=Description string start
+	;         IX=ROM pointer
+	;         BC=11
+	;         A, DE, IY are preserved
+GetRomDescription:
+	ld ix,(iy)
+	ld hl,(ix)
+	ld h,(ix+3)
+	ld l,(ix+4)
+	
+	; Check if in RAM
+	push hl
+	 add hl,hl
+	pop hl
+	ld bc,9
+	jr c,_
+	add hl,bc
+	ld c,(hl)
+	add hl,bc
+	inc hl
+_
+	ld c,11
+	add hl,bc
+	ret
+	
+	; Return C if (DE) < (HL)
+CompareDescriptions:
+	ld c,(hl)
+	ld a,(de)
+	cp c
+	jr nc,_
+	ld c,a
+_
+	inc hl
+	inc bc
+_
+	inc de
+	ld a,(de)
+	cpi
+	ret po
+	jr z,-_
+	dec hl
+	cp (hl)
+	ret
+	
 ; Compares the buffers at HL and DE, with size BC. Returns Z if equal.
+; HL and DE point after the first non-matching characters
+; (or the end if all characters match)
 memcmp:
 	ld a,(de)
 	inc de
 	cpi
-	ret nz
 	ret po
-	jr memcmp
+	jr z,memcmp
+	ret
 	
 ; Adds up BC bytes at HL. Output in IX.
 checksum:
