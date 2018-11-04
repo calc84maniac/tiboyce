@@ -1804,33 +1804,41 @@ _
 	
 	; Populates and sorts the ROM list, and sets (romTotalCount)
 ROMSearch:
+	; Iterate through the VAT
 	ld iy,romListStart
 	ld hl,(progPtr)
 	xor a
 	ld c,a
 ROMSearchLoop:
+	; Check if we reached the VAT's end
 	ex de,hl
 	ld hl,(pTemp)
 	sbc hl,de
 	jr z,ROMSearchSort
+	; Get the type byte
 	ld a,(de)
 	ld hl,-7
 	add hl,de
+	; Get the name size in D and the data pointer MSB in DEU
 	ld de,(hl)
 	xor appVarObj
 	jr nz,ROMSearchNoMatch
+	; Make sure the name is 5 characters long or less
 	ld a,d
 	cp 6
 	jr nc,ROMSearchNoMatch
 	push hl
 	 push bc
+	  ; Get the data pointer in DE
 	  inc hl
 	  inc hl
 	  inc hl
 	  ld d,(hl)
 	  inc hl
 	  ld e,(hl)
+	  ; Advance to the variable data section
 	  ACALL(GetDataSection)
+	  ; Make sure the magic header is correct
 	  ld de,MetaHeader
 	  ld bc,8
 	  call memcmp
@@ -1838,34 +1846,46 @@ ROMSearchLoop:
 	 pop bc
 	pop hl
 ROMSearchContinue:
+	; Get the name length in D again and reset carry
 	ld de,(hl)
 	or a
 ROMSearchNoMatch:
+	; Subtract the name length to move to the next VAT entry
 	ld e,1
 	mlt de
 	sbc hl,de
 	jr ROMSearchLoop
 	
 ROMSearchMatch:
+	  ; Get the description pointer in DE
 	  ex de,hl
 	  inc de
 	 pop bc
-	 ld b,c
+	 ; Save the next node pointer
 	 pea iy+3
+	  ; Insert the new node into the max heap
+	  ; Start with B=last node index and (SP) = last node pointer
+	  ld b,c
 	  push iy
 ROMSearchHeapInsertLoop:
+	   ; Move B to the parent node, or exit the loop if at the root
 	   srl b
 	   jr c,_
 	   jr z,ROMSearchHeapInsertDone
 	   dec b
 _
 	   push bc
+	    ; Get the parent node pointer in IY and contents in IX,
+	    ; and the description pointer in HL
 	    call GetRomDescriptionByIndex
 	    push de
 	     call CompareDescriptions
 	    pop de
 	   pop bc
+	   ; If the child is less than the parent, exit the loop
 	   jr c,ROMSearchHeapInsertDone
+	   ; Otherwise write the parent's contents to the child,
+	   ; and save the parent node pointer in (SP)
 	   ex (sp),iy
 	   ld (iy),ix
 	   jr ROMSearchHeapInsertLoop
@@ -1873,8 +1893,10 @@ ROMSearchHeapInsertDone:
 	  pop hl
 	 pop iy
 	pop de
+	; Write the new ROM entry to the current node pointer
 	ld (hl),de
 	ex de,hl
+	; Increment the size
 	inc c
 	jr nz,ROMSearchContinue
 	dec c
@@ -1886,29 +1908,46 @@ ROMSearchSort:
 	or a
 	ret z
 ROMSearchHeapSortLoop:
+	; Get the last node in the heap (or exit if it's the only node)
 	dec a
 	ret z
 	ld b,a
 	call GetRomDescriptionByIndex
+	; B=0 after this call, which is the root node index
+	; Update the heap size
+	ld c,a
+	; Hold the description pointer in DE
 	ex de,hl
+	; Save the old contents
 	push ix
+	 ; Put a pointer to the root node in (SP)
 	 ld hl,romListStart
 	 push hl
+	  ; Move the root node contents (current max) to the former last node
 	  ld ix,(hl)
 	  ld (iy),ix
-	  ld c,a
+	  ; Balance the former last node contents starting at the root
+	  scf
 ROMSearchHeapBalanceLoop:
-	  sla b
-	  inc b
+	  ; Carry must be set here, move to the left child node index
+	  rl b
+	  ; If this node doesn't exist, we're done balancing
 	  ld a,b
 	  sub c
 	  jr nc,ROMSearchHeapBalanceDone
 	  push bc
+	   ; Get the left node pointer in IY and contents in IX,
+	   ; and the description pointer in HL
 	   call GetRomDescriptionByIndex
+	   ; If the right node doesn't exist, balance to the left
 	   inc a
 	   jr z,ROMSearchHeapBalanceLeft
+	   ; Check whether the left or right node should be selected for balancing
 	   push de
+	    ; Put the left node's description in DE
 	    ex de,hl
+	    ; Move IY to the right node and get its contents in IX
+	    ; and its description pointer in HL
 	    lea iy,iy+3
 	    call GetRomDescription
 	    push hl
@@ -1916,7 +1955,9 @@ ROMSearchHeapBalanceLoop:
 	      call CompareDescriptions
 	     pop de
 	    pop hl
+	    ; If the left node is less than the right node, balance to the right
 	    jr c,ROMSearchHeapBalanceRight
+	    ; Otherwise, restore IY, IX, and HL to the left node
 	    ex de,hl
 	    lea iy,iy-3
 	    ld ix,(iy)
@@ -1924,23 +1965,28 @@ ROMSearchHeapBalanceLoop:
 	   jr ROMSearchHeapBalanceLeft
 ROMSearchHeapBalanceRight:
 	   pop de
+	   ; Move the node index to the right node
 	  pop bc
 	  inc b
 	  push bc
-	   ld b,0
 ROMSearchHeapBalanceLeft:
 	   push de
 	    call CompareDescriptions
 	   pop de
 	  pop bc
+	  ; If the parent node is greater than the child node, we're done balancing
 	  jr nc,ROMSearchHeapBalanceDone
+	  ; Otherwise write the child's contents to the parent,
+	  ; and save the child node pointer in (SP)
 	  ex (sp),iy
 	  ld (iy),ix
+	  ; Carry is set
 	  jr ROMSearchHeapBalanceLoop
 	  
 ROMSearchHeapBalanceDone:
 	 pop hl
 	pop de
+	; Write the former last node contents to the current node
 	ld (hl),de
 	ld a,c
 	jr ROMSearchHeapSortLoop

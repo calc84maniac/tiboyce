@@ -217,7 +217,11 @@ _
 key_smc_menu:
 	    bit 6,(ix+6*2)	;CLEAR
 	    jr z,_
-	    ACALL(emulator_menu_ingame)
+	    ex af,af'
+	    push af
+	     ACALL(emulator_menu_ingame)
+	    pop af
+	    ex af,af'
 	    ld hl,(curr_palettes)
 	    call update_palettes_always
 	    ACALL(SetScalingMode)

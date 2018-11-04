@@ -581,23 +581,37 @@ _
 	ret
 	
 	; Return C if (DE) < (HL)
+	; Case-insensitive by virtue of ignoring bit 5
+	; Destroys: AF,BC,DE,HL,AF'
 CompareDescriptions:
-	ld c,(hl)
+	; Get the minimum length of the two descriptions
+	ld b,(hl)
 	ld a,(de)
-	cp c
+	cp b
 	jr nc,_
-	ld c,a
+	ld b,a
 _
+	; Save the length comparison result in shadow carry flag
+	ex af,af'
+	ld c,$DF
+	inc b
+_
+	dec b
+	jr z,_
 	inc hl
-	inc bc
-_
 	inc de
+	; Check if the two bytes match, ignoring bit 5
 	ld a,(de)
-	cpi
-	ret po
+	xor (hl)
+	and c
 	jr z,-_
-	dec hl
+	; Copy bit 5 of (HL) into A and lexicographically compare
+	xor (hl)
 	cp (hl)
+	ret
+_
+	; If the strings match entirely, return the length comparison
+	ex af,af'
 	ret
 	
 ; Compares the buffers at HL and DE, with size BC. Returns Z if equal.
