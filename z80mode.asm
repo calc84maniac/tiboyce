@@ -1143,9 +1143,8 @@ ophandler76:
 	dec hl
 	dec hl
 	ex (sp),hl
-	
-trigger_event_startup:
 	ex af,af'
+	
 trigger_event_fast_forward:
 	scf
 trigger_event:

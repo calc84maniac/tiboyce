@@ -235,7 +235,7 @@ exitReason = $+1
 	    ld hl,z80codebase+not_expired
 	    ; Emit DI
 	    ld (hl),$F3 \ inc hl
-	    ; Emit JP.LIL CmdLoadSaveState
+	    ; Emit JP.LIL ExitEmulation
 	    ld (hl),$5B \ inc hl \ ld (hl),$C3 \ inc hl \ ld (hl),de
 _
 	   pop iy

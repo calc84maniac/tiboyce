@@ -647,10 +647,19 @@ _
 	ld (z80codebase+intstate_smc),a
 _
 	
+	; Set the initial frame-relative event to one cycle in the future
+	ld de,(iy-state_size+STATE_FRAME_COUNTER)
+	inc.s de
+	ld hl,-CYCLES_PER_FRAME
+	add hl,de
+	jr c,_
+	ex de,hl
+_
+	ld.sis (frame_cycle_target),hl
 	
+	; Get the current DIV counter
 	ld de,(iy-state_size+STATE_DIV_COUNTER)
-	ld.sis (div_cycle_count),de
-	
+	; Initialize timer values
 	ld a,(iy-ioregs+TAC)
 	bit 2,a
 	jr z,_
@@ -681,12 +690,17 @@ _
 	ld a,$20 ;JR NZ (overriding JR Z)
 	ld (z80codebase+timer_enable_smc),a
 _
+	; Set the initial DIV-relative event to one cycle in the future
+	inc de
+	ld.sis (div_cycle_count),de
 	
 	ld a,(iy-ioregs+SC)
 	cpl
 	and $81
 	jr nz,_
+	; Set the serial counter to one cycle in the future
 	ld hl,(iy-state_size+STATE_SERIAL_COUNTER)
+	dec hl
 	ld.sis (serial_cycle_count),hl
 	ld a,$38 ;JR C (overriding JR NC)
 	ld (z80codebase+serial_enable_smc),a
@@ -806,28 +820,53 @@ _
 	
 	call flush_code_reset_padding
 
+	; Generate the initial code block
 	ld.s de,(iy-state_size+STATE_REG_PC)
 	call lookup_code
-	push.s ix
-
-	 ld.s bc,(iy-state_size+STATE_REG_BC)
-	 ld.s de,(iy-state_size+STATE_REG_DE)
-	 ld.s hl,(iy-state_size+STATE_REG_HL)
-	 exx
-	 ld de,(iy-state_size+STATE_REG_AF)
-	 ld h,flags_lut >> 8
-	 ld l,e
-	 ld.s e,(hl)
-	 push de
-	 pop af
+	; Get the initial GB instruction address from the block info
+	ld hl,(recompile_struct+8+2)
+	ld (event_gb_address),hl
+	add hl,hl
+	jr nc,_
+	; If the GB address was in RAM, skip over the block prefix
+	lea ix,ix+RAM_PREFIX_SIZE
+_
+	; Save the event address and write an event handler call
+	lea hl,ix
+	ld.sis (event_address),hl
+	ld.s a,(hl)
+	ld (z80codebase+event_value),a
+	ld.s (hl),RST_EVENT
 	
-	 ld hl,(iy-state_size+STATE_FRAME_COUNTER)
-	 ld.sis (frame_cycle_target),hl
-	
+	; Get the GB registers in BDEHL'
+	ld.s bc,(iy-state_size+STATE_REG_BC)
+	ld.s de,(iy-state_size+STATE_REG_DE)
+	ld.s hl,(iy-state_size+STATE_REG_HL)
+	exx
+	; Push the (remapped) GB AF to the stack
+	ld de,(iy-state_size+STATE_REG_AF)
+	ld h,flags_lut >> 8
+	ld l,e
+	ld.s e,(hl)
+	push de
+	 ; Get GB SP before we destroy IY
 	 ld.s hl,(iy-state_size+STATE_REG_SP)
+	 
+	 ; Get the block cycle count (need to use this in case of a RAM block)
+	 ld a,(recompile_struct+8+7)
+	 ; Set the cycle count at block end relative to the current event,
+	 ; which has been set to 1 cycle after block start
+	 ld iy,0
+	 dec a
+	 ld iyl,a
+	 ; Set the negative block cycle offset of the current instruction
+	 cpl
+	 ld (z80codebase+event_cycle_count),a
+	 
 	 ld bc,(CALL_STACK_DEPTH+1)*256
-	 ld ix,trigger_event_startup
-	 jp set_gb_stack
+	; Pop GB AF into AF
+	pop af
+	jp set_gb_stack
 	
 ExitEmulation:
 	call.il get_event_gb_address
