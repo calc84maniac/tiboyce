@@ -31,7 +31,7 @@ if last_pixel is not None:
 
 data = palette + compress(data)
 
-print len(data)
+print(len(data))
 
 fout = open('skin.asm', 'w')
 line = '.db '
