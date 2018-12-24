@@ -13,7 +13,7 @@ img = Image.open('gb_skin.png')
 palette = ''
 pal = img.getpalette()
 for (r, g, b) in zip(pal[0:48:3], pal[1:48:3], pal[2:48:3]):
-    color = ((g & 4) << 13) + (b >> 3 << 10) + (g >> 3 << 5) + (r >> 3)
+    color = ((g & 4) << 13) + ((b >> 3) << 10) + ((g >> 3) << 5) + (r >> 3)
     palette += chr(color % 256) + chr(color / 256)
 
 data = ''

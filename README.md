@@ -39,7 +39,7 @@ Alternatively, a command-line utility (tiboyce-romgen.exe) to convert ROM files 
 
 1.  Open a command prompt and navigate to the directory containing the utility using `cd`. Then run the following:
 
-       tiboyce-romgen.exe -t "Game Title Here" path\to\romfile NamePrefix
+        tiboyce-romgen.exe -t "Game Title Here" path\to\romfile NamePrefix
 
 2.  Drag-and-drop a ROM file onto the utility, which will then prompt for a game title and a name prefix.
 
@@ -122,11 +122,4 @@ Report issues/bugs to the issue tracker, found here:
 License
 -------
 
-TI-Boy CE - a Game Boy emulator for the TI-84 Plus CE calculator family.
-Copyright © 2018 Brendan Fletcher
-
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+See [LICENCE.md](https://github.com/calc84maniac/tiboyce/blob/master/LICENSE.md)
