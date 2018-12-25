@@ -10,5 +10,6 @@
 *.lst
 *.vcxproj.*
 .vs/
+.DS_Store
 Debug/
 Release/

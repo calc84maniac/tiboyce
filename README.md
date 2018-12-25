@@ -85,16 +85,16 @@ File Types
 
 The various files used by the emulator are as follows (replace Name with ROM prefix and # with digits):
 
-    Name.8xv - The file specifying the game title and how large the ROM is.
-    NameR##.8xv - Multiple files containing the actual ROM data.
-    NameSAV.8xv - The contents of the battery-backed cartridge save data.
-    NameStA.8xv - The automatic save state for this game.
-    NameSt#.8xv - The manual save state for the given numbered slot.
-    NameSv#.8xv - The cartridge save associated with a numbered save state.
-    TIBoyCE.8xp - The executable launcher.
-    TIBoyCfg.8xv - The current emulator configuration.
-    TIBoyDat.8xv - The core emulator data, loaded by the launcher.
-    TIBoySkn.8xv - An optional skin to be displayed in "no scaling" mode.
+    Name.8xv — The file specifying the game title and how large the ROM is.
+    NameR##.8xv — Multiple files containing the actual ROM data.
+    NameSAV.8xv — The contents of the battery-backed cartridge save data.
+    NameStA.8xv — The automatic save state for this game.
+    NameSt#.8xv — The manual save state for the given numbered slot.
+    NameSv#.8xv — The cartridge save associated with a numbered save state.
+    TIBoyCE.8xp — The executable launcher.
+    TIBoyCfg.8xv — The current emulator configuration.
+    TIBoyDat.8xv — The core emulator data, loaded by the launcher.
+    TIBoySkn.8xv — An optional skin to be displayed in “no scaling” mode.
 
 Note that save states cannot be loaded properly if the associated cartridge save data file is deleted or replaced. When transferring save states, make sure to include both the `St#` and `Sv#` files. However, this doesn't apply to games that have no cartridge save data in the first place.
 
@@ -122,4 +122,5 @@ Report issues/bugs to the issue tracker, found here:
 License
 -------
 
-See [LICENCE.md](https://github.com/calc84maniac/tiboyce/blob/master/LICENSE.md)
+TI-Boy CE — a Game Boy emulator for the TI-84 Plus CE calculator family.
+Copyright © 2018 – 2019 Brendan Fletcher
