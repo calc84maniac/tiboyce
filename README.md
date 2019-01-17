@@ -1,24 +1,17 @@
-TI-Boy CE
-=========
+# TI-Boy CE
 
 [![Build Status](https://travis-ci.org/calc84maniac/tiboyce.svg)](https://travis-ci.org/calc84maniac/tiboyce)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-TI-Boy CE is a Game Boy emulator for the TI-84 Plus CE and the TI-83 Premium CE
-graphing calculators.
+TI-Boy CE is a Game Boy emulator for the TI-84 Plus CE and the TI-83 Premium CE graphing calculators.
 
-Currently only the original Game Boy is supported, no Game Boy Color (and never
-Game Boy Advance).
+Currently only the original Game Boy is supported, no Game Boy Color (and never Game Boy Advance).
 
-This emulator is currently in the alpha state, so while it is intended to be
-stable, it is possible that it could crash and cause data loss. It is advised
-to put any important files in Archive memory before running the emulator.
+This emulator is currently in the alpha state, so while it is intended to be stable, it is possible that it could crash and cause data loss. It is advised to put any important files in Archive memory before running the emulator.
 
-Grab the latest pre-built releases at <https://github.com/calc84maniac/tiboyce/releases>
-or check out the build instructions below to build from source.
+Grab the latest pre-built releases at <https://github.com/calc84maniac/tiboyce/releases> or check out the build instructions below to build from source.
 
-Features
---------
+## Features
 
 *   Emulates original Game Boy hardware (except audio and linking)
 *   Emulates real-time clock for certain cartridges
@@ -29,8 +22,7 @@ Features
 *   GBC-style selectable color palettes for Game Boy games
 *   Customizable controls
 
-Converting ROM files
---------------------
+## Converting ROM files
 
 The easiest method is to use the online converter [here](https://calc84maniac.github.io/tiboyce/converter).
 All conversion is done locally in your browser, so there's no need to worry about uploading copyrighted data.
@@ -47,41 +39,37 @@ Note that the name prefix provided for the ROM must be at most 5 characters long
 
 The utility will generate multiple AppVar (*.8xv) files with the given prefix. Send all of them to the calculator in Archive memory.
 
-Running the emulator
---------------------
+## Running the emulator
 
-Send the `TIBOYCE.8xp` and `TIBoyDat.8xv` files to the calculator.
-Optionally also send the `TIBoySkn.8xv` file which contains a skin image.
+Send the `TIBOYCE.8xp` and `TIBoyDat.8xv` files to the calculator. Optionally also send the `TIBoySkn.8xv` file which contains a skin image.
 
-If your calculator is running OS v5.3 or newer, you can keep all of these files in Archive and run `prgmTIBOYCE` from the `prgm` menu.
+If your calculator is running OS v5.3 or newer, you can keep all of these files in Archive and run `prgmTIBOYCE` from the <kbd>prgm</kbd> menu.
 
 If your calculator is older than OS v5.3, the `TIBOYCE` program must be unarchived. Run it with `Asm(prgmTIBOYCE)`.
 
-You should now see a list of the ROMs on the calculator. Choose one with `up/down` and start it with `2nd/enter`.
+You should now see a list of the ROMs on the calculator. Choose one with <kbd>up</kbd> / <kbd>down</kbd> and start it with <kbd>2nd</kbd> / <kbd>enter</kbd>.
 
-Default controls
-----------------
+## Default controls
 
-Game controls:
-*   D-Pad: `Arrow buttons`
-*   A: `2nd`
-*   B: `alpha`
-*   Start: `mode`
-*   Select: `XTθn`
+### Game controls:
+*   D-Pad: <kbd>Arrow buttons</kbd>
+*   A: <kbd>2nd</kbd>
+*   B: <kbd>alpha</kbd>
+*   Start: <kbd>mode</kbd>
+*   Select: <kbd>XTθn</kbd>
 
-Emulator controls:
-*   Emulator menu: `clear`
-*   Turbo: `zoom`
-*   Quick exit (non-configurable): `on`
+### Emulator controls:
+*   Emulator menu: <kbd>clear</kbd>
+*   Turbo: <kbd>zoom</kbd>
+*   Quick exit (non-configurable): <kbd>on</kbd>
 
-Menu controls (non-configurable):
-*   Choose menu item: `up/down`
-*   Change option: `left/right`
-*   Select item: `2nd/enter`
-*   Close menu: `clear`
+### Menu controls (non-configurable):
+*   Choose menu item: <kbd>up</kbd> / <kbd>down</kbd>
+*   Change option: <kbd>left</kbd> / <kbd>right</kbd>
+*   Select item: <kbd>2nd</kbd> / <kbd>enter</kbd>
+*   Close menu: <kbd>clear</kbd>
 
-File Types
-----------
+## File Types
 
 The various files used by the emulator are as follows (replace Name with ROM prefix and # with digits):
 
@@ -98,8 +86,7 @@ The various files used by the emulator are as follows (replace Name with ROM pre
 
 Note that save states cannot be loaded properly if the associated cartridge save data file is deleted or replaced. When transferring save states, make sure to include both the `St#` and `Sv#` files. However, this doesn't apply to games that have no cartridge save data in the first place.
 
-Build Instructions
-------------------
+## Build Instructions
 
 To build the emulator from source, first grab the latest release of [SPASM-ng](https://github.com/alberthdev/spasm-ng/releases).
 
@@ -113,14 +100,13 @@ For simplicity's sake, I'll call the name of the executable `spasm` below. Run t
 
 To build the rom generation tool, use the provided Visual Studio solution in the [tiboyce-romgen](tiboyce-romgen) directory, or theoretically you can build the source for any platform with your C compiler of choice.
 
-Issues/Bugs
------------
-Report issues/bugs to the issue tracker, found here:
+## Issues / Bugs
+
+Report issues / bugs to the issue tracker, found here:
 
 <https://github.com/calc84maniac/tiboyce/issues>
 
-License
--------
+## License
 
 TI-Boy CE — a Game Boy emulator for the TI-84 Plus CE calculator family.
 Copyright © 2018 – 2019 Brendan Fletcher
