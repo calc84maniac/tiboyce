@@ -34,6 +34,68 @@ _
 	ret
 #endif
 	
+SetEmulatorMessage:
+	ld a,120
+	
+	; Call like printf, DE=format string (offset into appvar), A=duration
+SetEmulatorMessageWithDuration:
+	ld ix,(ArcBase)
+	add ix,de
+	ex (sp),ix
+	ld hl,emulatorMessageDuration
+	ld (hl),a
+	inc hl
+	push hl
+	 ld a,(MessageDisplay)
+	 or a
+	 call nz,_sprintf
+	pop hl
+	ex (sp),ix
+	jp reset_preserved_area
+	
+PutEmulatorMessage:
+	xor a
+	ld (cursorCol),a
+	ld (cursorRow),a
+	ld a,(ScalingMode)
+	or a
+	ld a,BLACK_BYTE
+	jr nz,_
+	; Modify PutChar to use 8-bit pixels
+	ld a,8
+	ld (PutChar_8BitSMC1),a
+	ld (PutChar_8BitSMC2),a
+	ld a,$37	;SCF
+	ld (PutChar_8BitSMC3),a
+	ld (PutChar_8BitSMC3+1),a
+	ld a,160-8
+	ld (PutChar_8BitSMC4),a
+	ld a,BLACK
+_
+	call SetStringBgColor
+	ld a,WHITE
+	ACALL(PutStringColor)
+	; Restore PutChar to 4-bit
+	ld a,4
+	ld (PutChar_8BitSMC1),a
+	ld (PutChar_8BitSMC2),a
+	ld a,$CB	;SLA C
+	ld (PutChar_8BitSMC3),a
+	ld a,$21	;SLA C
+	ld (PutChar_8BitSMC3+1),a
+	ld a,160-4
+	ld (PutChar_8BitSMC4),a
+	
+	ld a,BLUE_BYTE
+	call SetStringBgColor
+
+	ld hl,(cursorCol)
+	add hl,hl
+	add hl,hl
+	ld h,10
+	jp PutEmulatorMessageRet
+	
+	
 	; Call like printf, A=color
 PutStringFormatColor:
 	call SetStringColor

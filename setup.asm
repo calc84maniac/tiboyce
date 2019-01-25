@@ -284,7 +284,9 @@ ConvertMemToFile:
 	pop hl
 	ret
 	
-StartROMAutoStateOutOfMemory:
+StartROMAutoStateError:
+	cp ERROR_NOT_ENOUGH_MEMORY
+	jr nz,RestartFromHere
 	ld hl,(cram_size)
 	ld de,6
 	add hl,de
@@ -320,16 +322,18 @@ StartROM:
 	ret c
 	
 	xor a
+	ld (emulatorMessageText),a
 	ld (current_state),a
 	ACALL(LoadStateFiles)
 	push af
 	 ld a,'0'
 	 ld (current_state),a
 	pop af
-	jr nc,StartFromHere
+	jr c,StartROMAutoStateError
 	
-	cp ERROR_NOT_ENOUGH_MEMORY
-	jr z,StartROMAutoStateOutOfMemory
+	ld de,AutoStateLoadedMessage
+	ACALL(SetEmulatorMessage)
+	jr StartFromHere
 	
 RestartFromHere:
 	ld hl,save_state_size_bytes
@@ -1051,6 +1055,7 @@ _
 	jr c,ExitDone
 	AJUMP(RestartFromHere)
 _
+	ld de,StateLoadedMessage
 	ld a,(main_menu_selection)
 	dec a
 	jr z,_
@@ -1058,7 +1063,15 @@ _
 	; Reindex the ROM in case a Garbage Collect occurred, and reinsert the RAM.
 	ACALL_SAFERET(LoadROMAndRAMRestoreName)
 	jr c,ExitDone
+	ld de,StateSavedMessage
 _
+	or a
+	sbc hl,hl
+	ld a,(current_state)
+	ld l,a
+	push hl
+	 ACALL(SetEmulatorMessage)
+	pop hl
 	ACALL(LoadStateFiles)
 	jr nc,++_
 	cp ERROR_NOT_ENOUGH_MEMORY
@@ -1073,6 +1086,8 @@ _
 	ACALL(DisplayError)
 	scf
 	jr z,ExitDone
+	xor a
+	ld (emulatorMessageText),a
 _
 	AJUMP(StartFromHere)
 ExitDone:
@@ -2581,4 +2596,13 @@ error_messages:
 	
 ErrorNoROMsFound:
 	.db "No ROMs found!",0
+	
+StateLoadedMessage:
+	.db "State %c loaded",0
+	
+AutoStateLoadedMessage:
+	.db "Auto state loaded",0
+	
+StateSavedMessage:
+	.db "State %c saved",0
 	
