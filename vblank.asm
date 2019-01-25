@@ -27,7 +27,7 @@ frame_emulated_count = $+1
 	   push iy
 	    ld a,(render_this_frame)
 	    or a
-	    jr z,skip_this_frame
+	    jp z,skip_this_frame
 	
 	    ; Finish rendering the frame
 	    ld a,144
@@ -38,16 +38,33 @@ frame_emulated_count = $+1
 	    rla
 	    call c,draw_sprites
 	
-	    ; Swap buffers
-	    call prepare_next_frame
-	    ld (mpLcdBase),hl
-	    ld a,(ScalingMode)
+preservedAreaHeight = $+1
+	    ld a,0
 	    or a
-	    call nz,do_scale_fill
-	   
-speed_display_smc_1 = $
-	    jr z,NoSpeedDisplay
-	   
+	    jr z,_
+	    ld hl,(current_display)
+	    ld de,(current_buffer)
+PreservedAreaCopyLoop:
+preservedAreaWidth = $+1
+	    ld bc,0
+	    ldir
+preserve_copy_smc = $+1
+	    ld c,160
+	    add hl,bc
+	    ex de,hl
+	    add hl,bc
+	    ex de,hl
+	    dec a
+	    jr nz,PreservedAreaCopyLoop
+	    jr NoSpeedDisplay
+	
+_
+	    ld hl,emulatorMessageText
+	    or (hl)
+speed_display_smc_1 = $+1
+	    jr z,NoSpeedDisplay ;smc'd to YesSpeedDisplay
+	    AJUMP(PutEmulatorMessage)
+YesSpeedDisplay:
 	    ld a,(turbo_active)
 	    or a
 speed_display_smc_2 = $
@@ -61,11 +78,9 @@ high_perf_digits_smc = $+1
 	    ld a,0
 speed_display_smc_3 = $
 	    adc a,$FF
-	    sbc a,a
-	    inc a
-	    jr z,skip_this_frame	;Carry is set
+	    jr c,NoSpeedDisplay
+	
 _
-	   
 	    xor a
 	    ld c,a
 	    ld hl,perf_digits
@@ -78,6 +93,8 @@ _
 	    dec hl
 	    inc b
 _
+	    inc b
+_
 	    push hl
 	     push bc
 	      ld b,(hl)
@@ -87,10 +104,20 @@ _
 	    inc hl
 	    inc c
 	    djnz -_
-	    ld b,10
-	    call display_digit
+	    ld l,c
+	    add hl,hl
+	    ld h,6
+PutEmulatorMessageRet:
+	    call set_preserved_area
 NoSpeedDisplay:
-	  
+	
+	    ; Swap buffers
+	    call prepare_next_frame
+	    ld (mpLcdBase),hl
+	    ld a,(ScalingMode)
+	    or a
+	    call nz,do_scale_fill
+	
 	    ; Signify frame was rendered
 	    scf
 skip_this_frame:
@@ -225,6 +252,7 @@ key_smc_menu:
 	    ld hl,(curr_palettes)
 	    call update_palettes_always
 	    ACALL(SetScalingMode)
+	    call reset_preserved_area
 _
 exitReason = $+1
 	    ld a,0
@@ -345,7 +373,18 @@ swap_buffers:
 	ld (current_buffer),de
 	ret
 	
+	
 inc_real_frame_count:
+	ld hl,emulatorMessageDuration
+	ld a,(hl)
+	or a
+	jr z,_
+	dec a
+	ld (hl),a
+	jr nz,_
+	ld (emulatorMessageText),a
+	call reset_preserved_area
+_
 frame_real_count = $+1
 	ld a,0
 	add a,1
@@ -379,6 +418,44 @@ frame_real_count = $+1
 	ld (de),a
 	sbc hl,hl
 	ld (frame_emulated_count),hl
+	;FALLTHROUGH
+	
+reset_preserved_area:
+	or a
+	sbc hl,hl
+	
+	; H = height, L = width / 2
+	; Height must be a multiple of 5 plus-or-minus 1, or fullscreen mode will mess up
+set_preserved_area:
+	ld a,h
+	ld (preservedAreaHeight),a
+	or a
+	jr z,set_no_preserved_area
+	ld h,$FF
+	inc a
+_
+	inc h
+	sub 5
+	jr nc,-_
+	ld a,h
+	ld (scale_offset_preserve_smc_1),a
+	ld a,(ScalingMode)
+	or a
+	ld a,l
+	jr nz,_
+	add a,a
+_
+	ld (preservedAreaWidth),a
+	cpl
+	add a,161
+	ld (preserve_copy_smc),a
+	ld (scale_offset_preserve_smc_2),a
+	ld hl,scale_offset_preserve
+	jr _
+set_no_preserved_area:
+	ld hl,scale_offset
+_
+	ld (do_scale_fill_smc),hl
 	ret
 	
 	
@@ -416,6 +493,7 @@ _
 	inc a
 	push af
 	 cpl
+do_scale_fill_smc = $+1
 	 call scale_offset
 	 inc a
 	pop bc
@@ -483,15 +561,86 @@ scale_offset_0_loop:
 	jr nc,scale_offset_0_loop
 	ret
 	
+	
+scale_offset_preserve:
+scale_offset_preserve_smc_1 = $+1
+	ld c,2
+scale_offset_preserve_loop:
+	add a,3
+	jr nc,_
+	; Switch to window offset
+	pop de
+	pop de
+	ld b,a
+	add a,d
+	sub 144+6
+	ld de,scale_offset
+	push de
+_
+	push bc
+	 call scale_offset_preserve_draw
+	pop bc
+	dec c
+	jr nz,scale_offset_preserve_loop
+	jr scale_offset
+	
+scale_offset_preserve_draw:
+scale_offset_preserve_smc_2 = $+1
+	ld c,0
+	lea de,ix
+	add hl,de
+	dec hl
+	push de
+	 djnz _
+	 add hl,de
+	 ex de,hl
+	 add hl,de
+	 jr +++_
+_
+	 ex de,hl
+	 add hl,de
+	 ex de,hl
+	 djnz _
+	 push bc
+	  lddr
+	 pop bc
+	 ex de,hl
+	 inc hl
+	pop de
+	add hl,de
+	ex de,hl
+	add hl,de
+	ex de,hl
+	ldir
+	lea hl,ix
+	add hl,de
+	ret
+_
+	 ld b,0
+_
+	 push bc
+	  lddr
+	 pop bc
+	 ex de,hl
+	 inc hl
+	pop de
+	add hl,de
+	add hl,de
+	ex de,hl
+	add hl,de
+	ldir
+	ret
+	
+	
 ; Displays a digit onscreen at the given framebuffer offset in bytes.
-; Draws to the old buffer.
+; Draws to the current buffer.
 ;
 ; Inputs:  B = digit (0-9)
 ;          C = offset
 ; Outputs: A = 0
 ; Destroys AF,BC,DE,HL
 display_digit:
-	ld hl,(current_display)
+	ld hl,(current_buffer)
 display_digit_smc_1 = $+1
 	ld d,2
 	ld e,c

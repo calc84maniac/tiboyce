@@ -754,6 +754,7 @@ _
 	ld bc,(current_buffer)
 	add hl,bc
 	ld c,a
+PutChar_8BitSMC1 = $+1
 	ld b,4
 	mlt bc
 	add hl,bc
@@ -766,9 +767,11 @@ PutCharRowLoop:
 	 ld a,(de)
 	 inc de
 	 ld c,a
+PutChar_8BitSMC2 = $+1
 	 ld b,4
 PutCharPixelLoop:
 	 ; Render 2 pixels to the framebuffer per iteration.
+PutChar_8BitSMC3 = $
 	 sla c
 	 sbc a,a
 	 cpl
@@ -785,6 +788,7 @@ PutChar_BgColorSMC2 = $+1
 	 inc hl
 	 djnz PutCharPixelLoop
 	 ; Advance output pointer to the next row.
+PutChar_8BitSMC4 = $+1
 	 ld c,160-4
 	 add hl,bc
 	pop bc
@@ -931,7 +935,7 @@ default_palette:
 	.db 0
 ; The digits for performance display.
 perf_digits:
-	.db 0,0,0,0
+	.db 0,0,0,0,10
 	
 ; The current text output column, in characters (0-39).
 cursorCol:
@@ -942,6 +946,13 @@ cursorRow:
 ; The output buffer for printf, large enough for two rows of text.
 text_buffer:
 	.block 83
+	
+; The duration of the displayed emulator message, in frames.
+emulatorMessageDuration:
+	.db 0
+; The current emulator message text, null-terminated.
+emulatorMessageText:
+	.block 21
 	
 ; The pointer to the currently selected menu item.
 current_item_ptr:
@@ -1024,8 +1035,8 @@ palette_obj1_colors:
 	
 	.echo "User RAM code size: ", $ - userMem
 	
-	; Pad to an odd number of bytes
-	.block (~$) & 1
+	; Pad to an even number of bytes
+	.block (-$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -1070,6 +1081,9 @@ TurboMode:
 	.db 0
 ; Scaling type (0=static, 1=scrolling)
 ScalingType:
+	.db 1
+; Message display (0=Off, 1=On)
+MessageDisplay:
 	.db 1
 	
 ; Number of key bytes

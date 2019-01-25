@@ -42,9 +42,10 @@ _
 	
 	; Speed display
 	ld a,(hl)
-	dec a
-	and $08
-	add a,$20
+	sub 1
+	sbc a,a
+	and NoSpeedDisplay - YesSpeedDisplay
+	add a,YesSpeedDisplay - (speed_display_smc_1 + 1)
 	ld (speed_display_smc_1),a
 	ld a,(hl)
 	sub 2
@@ -128,6 +129,8 @@ _
 	ld (turbo_keypress_smc),a
 	
 	; Scaling type
+	inc hl
+	; Message display
 	inc hl
 	
 	; Key configuration
@@ -864,6 +867,7 @@ OptionList:
 	.dw OptionSkinDisplay+1
 	.dw OptionTurboMode+1
 	.dw OptionScalingType+1
+	.dw OptionMessageDisplay+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -939,17 +943,19 @@ GraphicsMenu:
 	.db 8
 	.db 5,12,"Graphics Options",0
 	.db "",0
-	.db ITEM_OPTION,6, 70,1,"Scaling mode: %-10s",0
+	.db ITEM_OPTION,6, 60,1,"Scaling mode: %-10s",0
 	.db "Static: Scale absolutely.\n Scrolling: Scale relative to tilemap.",0
-	.db ITEM_OPTION,9, 80,1,"Scaling type: %-9s",0
+	.db ITEM_OPTION,9, 70,1,"Scaling type: %-9s",0
 	.db "Display a skin in \"no scaling\" mode.\n Requires the TIBoySkn.8xv AppVar.",0
-	.db ITEM_OPTION,7, 90,1,"Skin display: %-3s",0
+	.db ITEM_OPTION,7, 80,1,"Skin display: %-3s",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,0, 110,1,"Frameskip type: %-6s",0
+	.db ITEM_OPTION,0, 100,1,"Frameskip type: %-6s",0
 	.db "",0
-	.db ITEM_DIGIT,2, 120,1,"Frameskip value: %u",0
+	.db ITEM_DIGIT,2, 110,1,"Frameskip value: %u",0
 	.db "Show percentage of real GB performance.\n Turbo: Display when turbo is activated.\n Slowdown: Display when below fullspeed.",0
-	.db ITEM_OPTION,1, 140,1,"Speed display: %-8s",0
+	.db ITEM_OPTION,1, 130,1,"Speed display: %-8s",0
+	.db "Display emulator message overlays.",0
+	.db ITEM_OPTION,10, 140,1,"Message display: %-3s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
 	.db ITEM_OPTION,3, 160,1,"Palette selection: %-10s",0
 	.db "Return to the main menu.",0
@@ -1009,6 +1015,7 @@ OptionScalingMode:
 OptionAutoSaveState:
 OptionDST:
 OptionSkinDisplay:
+OptionMessageDisplay:
 	.db 2
 	.db "off",0
 	.db "on",0
