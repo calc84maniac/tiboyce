@@ -1035,8 +1035,8 @@ palette_obj1_colors:
 	
 	.echo "User RAM code size: ", $ - userMem
 	
-	; Pad to an even number of bytes
-	.block (-$) & 1
+	; Pad to an odd number of bytes
+	.block (~$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -1090,7 +1090,7 @@ MessageDisplay:
 	.db key_config_count
 ; Key configuration. Each is a GetCSC scan code.
 KeyConfig:
-	.db 51,3,2,4,1,54,48,40,55,15
+	.db 51,3,2,4,1,54,48,40,55,15,42,43,44
 	
 config_end:
 option_config_count = (KeyConfig-1) - FrameskipValue

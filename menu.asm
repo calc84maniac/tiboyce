@@ -962,7 +962,7 @@ GraphicsMenu:
 	.db ITEM_LINK,0, 180,1,"Back",0
 	
 ControlsMenu:
-	.db 11
+	.db 14
 	.db 5,12,"Control Options",0
 	.db "",0
 	.db ITEM_KEY,1,  50,1,"Right:  %-9s",0
@@ -980,12 +980,18 @@ ControlsMenu:
 	.db ITEM_KEY,7, 110,1,"Select: %-9s",0
 	.db "",0
 	.db ITEM_KEY,8, 120,1,"Start:  %-9s",0
-	.db "",0
-	.db ITEM_KEY,9, 140,1,"Menu:   %-9s",0
-	.db "",0
-	.db ITEM_KEY,0, 150,1,"Turbo:  %-9s",0
+	.db "Open the emulator menu.",0
+	.db ITEM_KEY,9, 135,1,"Open menu:  %-9s",0
+	.db "Enable or toggle turbo mode.",0
+	.db ITEM_KEY,0, 145,1,"Turbo mode: %-9s",0
+	.db "Save state to the current slot.",0
+	.db ITEM_KEY,10, 155,1,"Save state: %-9s",0
+	.db "Load state from the current slot.",0
+	.db ITEM_KEY,11, 165,1,"Load state: %-9s",0
+	.db "Show or select the current state slot.\n Press a number while holding to select.",0
+	.db ITEM_KEY,12, 175,1,"State slot: %-9s",0
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 160,1,"Back",0
+	.db ITEM_LINK,0, 190,1,"Back",0
 	
 EmulationMenu:
 	.db 5
@@ -1210,6 +1216,9 @@ KeySMCList:
 	.db key_smc_select - key_smc_b
 	.db key_smc_start - key_smc_select
 	.db key_smc_menu - key_smc_start
+	.db key_smc_save_state - key_smc_menu
+	.db key_smc_load_state - key_smc_save_state
+	.db key_smc_state_slot - key_smc_load_state
 	.db 0
 	
 TimeZoneOffsetTable:
