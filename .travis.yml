@@ -11,6 +11,8 @@ script:
   - ./spasm -E -A skin.asm TIBoySkn.8xv
   - cd tiboyce-romgen
   - gcc -std=c99 -O2 -W -Wall -Wextra -Wno-pointer-sign -Wno-unused-parameter -o romgen romgen.c zip.c
+  - cd ../tiboyce-convertsav
+  - gcc -std=c99 -O2 -W -Wall -Wextra -Wno-pointer-sign -Wno-unused-parameter -o convertsav convertsav.c lzf_c.c lzf_d.c
 
 notifications:
   irc:
