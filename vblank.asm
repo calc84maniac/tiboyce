@@ -253,7 +253,35 @@ key_smc_menu:
 	    call update_palettes_always
 	    ACALL(SetScalingMode)
 	    call reset_preserved_area
+	    jr keys_done
 _
+	    xor a
+key_smc_save_state:
+	    bit 1,(ix+2*2)	;STO>
+	    jr nz,_
+	    inc a
+key_smc_load_state:
+	    bit 2,(ix+2*2)	;LN
+	    jr z,++_
+_
+	    ld (main_menu_selection),a
+	    ld a,4
+	    ld (exitReason),a
+_
+key_smc_state_slot:
+	    bit 3,(ix+2*2)	;LOG
+	    jr z,_
+	    call update_state_with_numpad
+	    ld a,l
+	    ld (current_state),a
+	    push hl
+	     ld de,StateSlotMessage
+	     ld a,30
+	     ACALL(SetEmulatorMessageWithDuration)
+	    pop hl
+_
+
+keys_done:
 exitReason = $+1
 	    ld a,0
 	    or a
@@ -285,6 +313,47 @@ _
 	ei
 	jp.sis vblank_handler_ret
 	
+	; Input: IX = mpKeypadGrp0
+	; Output: L = new state
+update_state_with_numpad:
+	ld a,(ix+3*2)
+	ld l,'0'
+	rra
+	ret c
+	inc l
+	rra
+	ret c
+	ld e,3
+	add hl,de
+	rra
+	ret c
+	add hl,de
+	rra
+	ret c
+	ld a,(ix+4*2)
+	ld l,'2'
+	rra
+	rra
+	ret c
+	add hl,de
+	rra
+	ret c
+	add hl,de
+	rra
+	ret c
+	ld a,(ix+5*2)
+	ld l,'3'
+	rra
+	rra
+	ret c
+	add hl,de
+	rra
+	ret c
+	add hl,de
+	rra
+	ret c
+	ld hl,(current_state)
+	ret
 	
 ; Acknowledges one or more interrupt sources and then waits on them.
 ; Interrupt is neither acknowledged nor handled once it triggers.

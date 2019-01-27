@@ -1065,10 +1065,7 @@ _
 	jr c,ExitDone
 	ld de,StateSavedMessage
 _
-	or a
-	sbc hl,hl
-	ld a,(current_state)
-	ld l,a
+	ld hl,(current_state)
 	push hl
 	 ACALL(SetEmulatorMessage)
 	pop hl
@@ -2605,4 +2602,7 @@ AutoStateLoadedMessage:
 	
 StateSavedMessage:
 	.db "State %c saved",0
+	
+StateSlotMessage:
+	.db "State %c selected",0
 	
