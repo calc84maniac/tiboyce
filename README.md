@@ -59,8 +59,11 @@ You should now see a list of the ROMs on the calculator. Choose one with <kbd>up
 *   Select: <kbd>XTθn</kbd>
 
 ### Emulator controls:
-*   Emulator menu: <kbd>clear</kbd>
-*   Turbo: <kbd>zoom</kbd>
+*   Open menu: <kbd>clear</kbd>
+*   Turbo mode: <kbd>zoom</kbd>
+*   Save state: <kbd>sto></kbd>
+*   Load state: <kbd>ln</kbd>
+*   State slot: <kbd>log</kbd>
 *   Quick exit (non-configurable): <kbd>on</kbd>
 
 ### Menu controls (non-configurable):
