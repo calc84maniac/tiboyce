@@ -76,16 +76,18 @@ You should now see a list of the ROMs on the calculator. Choose one with <kbd>up
 
 The various files used by the emulator are as follows (replace Name with ROM prefix and # with digits):
 
-    Name.8xv — The file specifying the game title and how large the ROM is.
-    NameR##.8xv — Multiple files containing the actual ROM data.
-    NameSAV.8xv — The contents of the battery-backed cartridge save data.
-    NameStA.8xv — The automatic save state for this game.
-    NameSt#.8xv — The manual save state for the given numbered slot.
-    NameSv#.8xv — The cartridge save associated with a numbered save state.
-    TIBoyCE.8xp — The executable launcher.
-    TIBoyCfg.8xv — The current emulator configuration.
-    TIBoyDat.8xv — The core emulator data, loaded by the launcher.
-    TIBoySkn.8xv — An optional skin to be displayed in “no scaling” mode.
+| File         | Description                                                  |
+|:-------------|:-------------------------------------------------------------|
+| Name.8xv     | The file specifying the game title and how large the ROM is. |
+| NameR##.8xv  | Multiple files containing the actual ROM data.               |
+| NameSAV.8xv  | The contents of the battery-backed cartridge save data.      |
+| NameStA.8xv  | The automatic save state for this game.                      |
+| NameSt#.8xv  | The manual save state for the given numbered slot.           |
+| NameSv#.8xv  | The cartridge save associated with a numbered save state.    |
+| TIBoyCE.8xp  | The executable launcher.                                     |
+| TIBoyCfg.8xv | The current emulator configuration.                          |
+| TIBoyDat.8xv | The core emulator data, loaded by the launcher.              |
+| TIBoySkn.8xv | An optional skin to be displayed in “no scaling” mode.       |
 
 Note that save states cannot be loaded properly if the associated cartridge save data file is deleted or replaced. When transferring save states, make sure to include both the `St#` and `Sv#` files. However, this doesn't apply to games that have no cartridge save data in the first place.
 
@@ -94,13 +96,13 @@ Note that save states cannot be loaded properly if the associated cartridge save
 To build the emulator from source, first grab the latest release of [SPASM-ng](https://github.com/alberthdev/spasm-ng/releases).
 
 For simplicity's sake, I'll call the name of the executable `spasm` below. Run the following to produce the emulator files:
+```
+spasm -E -A launcher.asm TIBOYCE.8xp
 
-    spasm -E -A launcher.asm TIBOYCE.8xp
+spasm -E -A tiboyce.asm TIBoyDat.8xv
 
-    spasm -E -A tiboyce.asm TIBoyDat.8xv
-
-    spasm -E -A skin.asm TIBoySkn.8xv
-
+spasm -E -A skin.asm TIBoySkn.8xv
+```
 To build the rom generation tool, use the provided Visual Studio solution in the [tiboyce-romgen](tiboyce-romgen) directory, or theoretically you can build the source for any platform with your C compiler of choice.
 
 ## Issues / Bugs
