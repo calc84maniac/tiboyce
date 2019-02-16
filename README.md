@@ -47,12 +47,12 @@ If your calculator is running OS v5.3 or newer, you can keep all of these files 
 
 If your calculator is older than OS v5.3, the `TIBOYCE` program must be unarchived. Run it with `Asm(prgmTIBOYCE)`.
 
-You should now see a list of the ROMs on the calculator. Choose one with <kbd>up</kbd> / <kbd>down</kbd> and start it with <kbd>2nd</kbd> / <kbd>enter</kbd>.
+You should now see a list of the ROMs on the calculator. Choose one with <kbd>↑</kbd> <kbd>↓</kbd> and start it with <kbd>2nd</kbd> <kbd>enter</kbd>.
 
 ## Default controls
 
 ### Game controls:
-*   D-Pad: <kbd>Arrow buttons</kbd>
+*   D-Pad: <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd>
 *   A: <kbd>2nd</kbd>
 *   B: <kbd>alpha</kbd>
 *   Start: <kbd>mode</kbd>
@@ -63,13 +63,13 @@ You should now see a list of the ROMs on the calculator. Choose one with <kbd>up
 *   Turbo mode: <kbd>zoom</kbd>
 *   Save state: <kbd>sto></kbd>
 *   Load state: <kbd>ln</kbd>
-*   State slot: <kbd>log</kbd>
+*   State slot: <kbd>log</kbd> + <kbd>0</kbd>-<kbd>9</kbd>
 *   Quick exit (non-configurable): <kbd>on</kbd>
 
 ### Menu controls (non-configurable):
-*   Choose menu item: <kbd>up</kbd> / <kbd>down</kbd>
-*   Change option: <kbd>left</kbd> / <kbd>right</kbd>
-*   Select item: <kbd>2nd</kbd> / <kbd>enter</kbd>
+*   Choose menu item: <kbd>↑</kbd> <kbd>↓</kbd>
+*   Change option: <kbd>←</kbd> <kbd>→</kbd>
+*   Select item: <kbd>2nd</kbd> <kbd>enter</kbd>
 *   Close menu: <kbd>clear</kbd>
 
 ## File Types
