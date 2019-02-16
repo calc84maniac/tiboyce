@@ -10,5 +10,8 @@
 *.lst
 *.vcxproj.*
 .vs/
+.DS_Store
 Debug/
 Release/
+tiboyce-romgen/romgen
+tiboyce-convertsav/convertsav
