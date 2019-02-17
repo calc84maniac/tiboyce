@@ -1,7 +1,9 @@
 # TI-Boy CE Changelog
 All notable changes to this project will be documented in this file.
 
-## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.1.1...HEAD)
+## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.1.2...HEAD)
+
+## [Alpha v0.1.2 — 2019-02-16](https://github.com/calc84maniac/tiboyce/releases/tag/v0.1.2)
 
 ### Added
 -   Save file converter between binary and AppVar formats.
@@ -12,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 -   Updated ROM list, now integrated into the emulator menu system and sorted alphabetically by title.
 -   Refactored LCD mode switching and error handling, for smoother transitions between screens.
+-   Cleaned up the skin image, thanks [ndye](https://github.com/ndye)!
 
 ### Fixed
 -   Fix some cycle counting glitches related to serial port hardware.
