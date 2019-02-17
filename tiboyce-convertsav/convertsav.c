@@ -143,7 +143,7 @@ bool write_tifile(const char *filename, struct tifile *file) {
 	return true;
 }
 
-void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *length_out) {
+void *read_save_data(const char *filename, enum FILE_TYPE filetype, unsigned int *length_out) {
 	printf("Opening save file %s\n", filename);
 
 	FILE *file = fopen(filename, "rb");
@@ -178,7 +178,7 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 	fclose(file);
 
 	if (filetype == FILE_SAV) {
-		*length_out = length;
+		*length_out = (unsigned int)length;
 		return filedata;
 	}
 
@@ -227,7 +227,7 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 
 
 	uint8_t *savedata = NULL;
-	size_t savelength = 0;
+	unsigned int savelength = 0;
 	switch (tidata->var_data[0]) {
 	case 0:
 		savelength = tidata->var_length - 1;
@@ -265,9 +265,9 @@ void *read_save_data(const char *filename, enum FILE_TYPE filetype, size_t *leng
 	return savedata;
 }
 
-bool write_save_data(const char *filename, enum FILE_TYPE filetype, char appvarname[8], enum VAR_FLAG varflag, void *savedata, size_t savedatalength) {
+bool write_save_data(const char *filename, enum FILE_TYPE filetype, char appvarname[8], enum VAR_FLAG varflag, void *savedata, unsigned int savedatalength) {
 	if (filetype == FILE_SAV) {
-		printf("Writing save file %s (length = %d bytes)\n", filename, (int)savedatalength);
+		printf("Writing save file %s (length = %u bytes)\n", filename, savedatalength);
 		FILE *out = fopen(filename, "wb");
 		if (out == NULL) {
 			write_error(filename);
@@ -411,7 +411,7 @@ int main(int argc, char **argv) {
 	enum FILE_TYPE outputtype;
 	char output_appvarname[8];
 	void *savedata;
-	size_t savedatalength;
+	unsigned int savedatalength;
 
 	(void)argc;
 
