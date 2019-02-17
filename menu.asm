@@ -940,7 +940,7 @@ LoadRomNoRomsText:
 	.db "No ROMs found!",0
 	
 GraphicsMenu:
-	.db 8
+	.db 9
 	.db 5,12,"Graphics Options",0
 	.db "",0
 	.db ITEM_OPTION,6, 60,1,"Scaling mode: %-10s",0
