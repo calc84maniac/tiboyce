@@ -3,6 +3,25 @@ All notable changes to this project will be documented in this file.
 
 ## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.1.1...HEAD)
 
+### Added
+-   Save file converter between binary and AppVar formats.
+-   A launcher icon and description for shells such as Cesium.
+-   Overlay messages for state saving and loading (can be disabled).
+-   Hotkeys for quickly selecting the current state slot and saving or loading states.
+
+### Changed
+-   Updated ROM list, now integrated into the emulator menu system and sorted alphabetically by title.
+-   Refactored LCD mode switching and error handling, for smoother transitions between screens.
+
+### Fixed
+-   Fix some cycle counting glitches related to serial port hardware.
+-   Only trigger a STAT interrupt on LYC write if the value changes. Fixed a graphical glitch in Kid Icarus: Of Myths and Monsters.
+-   For RETI, count cycles before attempting to schedule an interrupt. Fixed a graphical glitch in Kid Icarus: Of Myths and Monsters.
+-   Load the ROM again from the beginning after archiving a file. Fixed a game title display glitch if a Garbage Collect occurred.
+-   Use an asm_data_ptr to track the ROM title. Fixed a game title display glitch if the metadata file is unarchived.
+-   Refactor JIT flushing logic; force a flush after two cache flushes. Fixed a continuous performance drop in certain scenarios.
+-   Schedule the initial event one cycle after the loaded state. Prevents state save/load from triggering the same event twice.
+
 ## [Alpha v0.1.1 — 2018-07-28](https://github.com/calc84maniac/tiboyce/releases/tag/v0.1.1)
 
 ### Added
