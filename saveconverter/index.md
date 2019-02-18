@@ -12,7 +12,7 @@ sidebar_link: true
     #dlList li:before { content: '\2022'; margin-left: 0.5em; margin-right: 0.25em; }
 </style>
 
-Convert save files between SAV.8xv and .sav/.srm formats (experimental): <input style="display: inline-block" type="file" accept=".8xv,.sav,.srm" onChange="fileLoad(event)"/>
+Convert save files between SAV.8xv and .sav/.srm formats: <input style="display: inline-block" type="file" accept=".8xv,.sav,.srm" onChange="fileLoad(event)"/>
 
 File link will appear here (click to download):
 <ul id="dlList"></ul>
