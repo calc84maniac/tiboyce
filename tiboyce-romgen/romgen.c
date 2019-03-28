@@ -12,7 +12,7 @@
 
 #define offset_of(STRUCTPTR, MEMBER) ((uint8_t*)(&(STRUCTPTR)->MEMBER) - (uint8_t*)(STRUCTPTR))
 
-#define MAX_VAR_SIZE 65513
+#define MAX_VAR_SIZE 65512
 
 const uint8_t metaheader[8] = "TIBOYCE";
 
