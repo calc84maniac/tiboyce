@@ -28,6 +28,6 @@ File links will appear here (click to download):
 <script src="romgen-utils.js"></script>
 <script>
     var script = document.createElement('script');
-    script.src = "romgen.js";
+    script.src = "romgen.js?v=2";
     document.body.appendChild(script);
 </script>
