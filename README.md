@@ -39,6 +39,8 @@ Note that the name prefix provided for the ROM must be at most 5 characters long
 
 The utility will generate multiple AppVar (*.8xv) files with the given prefix. Send all of them to the calculator in Archive memory.
 
+If you get a missing DLL error when running the command-line utility, you may need to install the [Universal C Runtime](https://support.microsoft.com/en-us/help/2999226/update-for-universal-c-runtime-in-windows).
+
 To convert save files between PC and AppVar formats, see the [Converting Save Files](#converting-save-files) section below.
 
 ## Running the emulator
@@ -111,6 +113,8 @@ Alternatively, a command-line utility (tiboyce-convertsav.exe) to convert betwee
 2.  Drag-and-drop a save file onto the utility, which will then prompt for an output file name.
 
 Note that when creating a `*SAV.8xv` AppVar, the name prefix provided must be the same as the converted ROM, or TI-Boy CE will not load it. This utility may also be used to change the prefix of a save AppVar if a ROM was converted with a different name.
+
+If you get a missing DLL error when running the command-line utility, you may need to install the [Universal C Runtime](https://support.microsoft.com/en-us/help/2999226/update-for-universal-c-runtime-in-windows).
 
 ## Build Instructions
 

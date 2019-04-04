@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 ## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.1.2...HEAD)
 
+## [Alpha v0.1.2a — 2019-04-03](https://github.com/calc84maniac/tiboyce/releases/tag/v0.1.2a)
+
+### Fixed
+-   Updated ROM converter to respect a new AppVar size limitation on OS 5.3.5 (at this time, only on TI-83 Premium CE).
+-   Dynamically linked the converter EXEs against the Universal C Runtime, avoiding false positives on many antivirus engines.
+
 ## [Alpha v0.1.2 — 2019-02-16](https://github.com/calc84maniac/tiboyce/releases/tag/v0.1.2)
 
 ### Added
