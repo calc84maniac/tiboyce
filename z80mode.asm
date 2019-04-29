@@ -84,7 +84,7 @@ Z80Error:
 	jp.lil runtime_error
 	
 do_push_and_return:
-	ex (sp),ix
+	pop ix
 do_push:
 	dec.l hl
 do_push_smc_1 = $+1
@@ -103,23 +103,22 @@ do_pop:
 	
 ophandlerRETnobank:
 	ld c,b	;C is now at least 2
-	ld de,(ix-5)
+	ld de,(ix-2)
 	ld a,e
 	cpi.l
 	jr nz,ophandlerRETnomatch_dec
 	ld a,d
 	cpi.l
 	jr nz,ophandlerRETnomatch_dec2
-	ld a,(ix-2)
-dispatch_cycles_exx:
-	exx
-dispatch_cycles:
-	ld (_+2),a
-_
+	ld a,(ix-3)
+dispatch_cycles_for_ret:
+	ld (dispatch_cycles_for_ret_smc),a
+dispatch_cycles_for_ret_smc = $+2
 	lea iy,iy+0
 	ld a,iyh
 	or a
-	jr z,cycle_overflow
+	jr z,cycle_overflow_for_ret
+	exx
 	ex af,af'
 	jp (ix)
 	
@@ -130,8 +129,8 @@ do_call_reset_callstack:
 do_call:
 	pea ix+7
 	ex af,af'
-	ld de,(ix+2)
-	ld a,(ix+6)
+	ld de,(ix+5)
+	ld a,(ix+2)
 do_call_common:
 	ld ix,(ix)
 	dec.l hl
@@ -141,7 +140,7 @@ do_push_smc_3 = $+1
 do_push_smc_4 = $+1
 	ld.l (hl),e
 	push.l hl
-	call dispatch_cycles_exx
+	call dispatch_cycles_for_call
 call_stack_ret:
 	ex af,af'
 	exx
@@ -152,7 +151,7 @@ call_stack_ret:
 	add.l hl,de
 	jr nz,ophandlerRETskip
 	pop ix
-	or (ix-3)
+	or (ix-4)
 	jr z,ophandlerRETnobank
 rom_bank_check_smc_3 = $+1
 	xor 0
@@ -182,41 +181,36 @@ ophandlerRETnomatch:
 	 call.il pop_and_lookup_code_cached
 	 ei
 	pop bc
-	jr dispatch_cycles_exx
+	add a,4
+	jr dispatch_cycles_for_ret
 	
-cycle_overflow_for_jump_alt:
-	pea ix-1
-cycle_overflow_for_jump:
-	pop ix
-	ld ix,(ix+2)
-cycle_overflow:
-cycle_overflow_flush_smc = $
-	push ix
-	push hl
+cycle_overflow_for_ret:
+	ld a,(dispatch_cycles_for_ret_smc)
+cycle_overflow_for_reti:
+	push de
+	 exx
+	 ex (sp),hl
 	 push de
 	  push bc
-	   lea de,ix
-	
-schedule_event:
-	   ld a,(event_value)
-event_address = $+1
-	   ld (event_value),a
-	
+	   ex de,hl
+	   sub 4
+	   ld c,a
 	   di
 	   jp.lil schedule_event_helper
-	   
+	
 do_rom_bank_call:
 	ex af,af'
 	exx
 	pop ix
 	ex (sp),ix
+	ld de,(ix)
 rom_bank_check_smc_1 = $+1
 	ld a,0
-	cp (ix+2)
+	cp d
 	jr nz,banked_call_mismatch
-	ld a,(ix+4)
+	ld a,e
 banked_call_mismatch_continue:
-	ld de,(ix)
+	ld de,(ix+3)
 	lea ix,ix+5
 	ex (sp),ix
 	djnz do_call_common
@@ -226,30 +220,111 @@ banked_call_mismatch_continue:
 	push bc
 	ld b,CALL_STACK_DEPTH
 	jp do_call_common
-	   
+	
+dispatch_cycles_for_call:
+	add a,iyl
+	jr c,++_
+_
+	ld iyl,a
+	exx
+	ex af,af'
+	jp (ix)
+_
+	inc iyh
+	jr nz,--_
+	push de
+	 exx
+	 ex (sp),hl
+	 push de
+	  push bc
+	   ex de,hl
+	   dec de
+	   ld c,iyl
+	   ld iyl,a
+	   sub c
+	   sub 6
+	   ld c,a
+	   di
+	   jp.lil schedule_call_event_helper
+	
 banked_call_mismatch:
 	di
 	jp.lil banked_call_mismatch_helper
-	   
+	
 do_rom_bank_jump:
 	ex af,af'
 	pop ix
-	ld a,(ix+4)
-	ld (_+2),a
 rom_bank_check_smc_2 = $+1
 	ld a,0
 	xor (ix+3)
 	jr nz,banked_jump_mismatch
+	ld a,(ix+4)
+banked_jump_mismatch_continue:
+	add a,iyl
+	ld iyl,a
+	jr c,++_
 _
-	lea iy,iy+0
-	cp iyh
-	jr z,cycle_overflow_for_jump_alt
 	ex af,af'
 	jp (ix)
+_
+	inc iyh
+	jr nz,--_
+	push hl
+	 push de
+	  push bc
+	   ld b,(ix)
+	   ld c,(ix+4)
+	   ld de,(ix+5)
+	   ld ix,(ix+1)
+	   jr schedule_jump_event_helper_trampoline
 	
 banked_jump_mismatch:
 	di
 	jp.lil banked_jump_mismatch_helper
+	
+cycle_overflow_for_jump:
+	pop ix
+	push hl
+	 push de
+	  push bc
+	   ld b,(ix+1)
+	   ld c,(ix-2)
+	   ld a,b
+	   xor $C3
+	   jr z,_
+	   and $E7
+	   dec a
+	   jr nz,++_
+_
+	   ld de,(ix+4)
+	   ld ix,(ix+2)
+schedule_jump_event_helper_trampoline:
+	   di
+	   jp.lil schedule_jump_event_helper
+_
+	   ld de,(ix-6)
+	   di
+	   jp.lil schedule_subblock_event_helper
+	   
+schedule_event_finish:
+	   ld (event_cycle_count),a
+	   ld (event_gb_address),hl
+#ifdef DEBUG
+	   ld a,(event_address+1)
+	   cp event_value >> 8
+	   jr nz,$
+#endif
+	   ex de,hl
+	   ld (event_address),hl
+	   ld a,(hl)
+	   ld (event_value),a
+	   ld (hl),RST_EVENT
+schedule_event_finish_no_schedule:
+	  pop bc
+	 pop de
+	pop hl
+	ex af,af'
+	jp (ix)
 	
 vblank_handler:
 	   di
@@ -356,11 +431,11 @@ not_expired:
 intstate_smc:
 	   and (hl)
 	   jr nz,trigger_interrupt
+	   cp iyh
+	   jr z,event_reschedule
 	  pop bc
 	 pop de
 	pop hl
-	cp iyh
-	jr z,event_reschedule
 	ex af,af'
 	jp (ix)
 	
@@ -406,15 +481,13 @@ _
 	   jr event_cycle_loop_shortcut
 	   
 event_reschedule:
-	push ix
-	push hl
-	 push de
-	  push bc
-	   lea de,ix
-	   ld.lil ix,(event_gb_address)
+event_gb_address = $+1
+	   ld de,0
 	   ld a,(event_cycle_count)
+	   neg
+	   ld c,a
 	   di
-	   jp.lil schedule_event_helper_post_lookup
+	   jp.lil schedule_event_helper
 	   
 serial_transmit_complete:
 	   ld hl,SC
@@ -429,119 +502,118 @@ serial_transmit_complete:
 	
 trigger_interrupt:
 	   rrca
-	   jr c,dispatch_vblank
+	   jr c,trigger_vblank
 	   rrca
-	   jr c,dispatch_stat
+	   jr c,trigger_stat
 	   rrca
-	   jr c,dispatch_timer
+	   jr c,trigger_timer
 	   rrca
-	   jr c,dispatch_serial
-dispatch_joypad:
+	   jr c,trigger_serial
+trigger_joypad:
 	   res 4,(hl)
-	   ld c,$60
-	   call decode_intcache
-	   jr dispatch_int
-dispatch_serial:
+	   ld hl,dispatch_joypad
+	   jr trigger_int_selected
+trigger_serial:
 	   res 3,(hl)
-	   ld c,$58
-	   call decode_intcache
-	   jr dispatch_int
-dispatch_timer:
+	   ld hl,dispatch_serial
+	   jr trigger_int_selected
+trigger_timer:
 	   res 2,(hl)
-	   ld c,$50
-	   call decode_intcache
-	   jr dispatch_int
-dispatch_stat:
+	   ld hl,dispatch_timer
+	   jr trigger_int_selected
+trigger_stat:
 	   res 1,(hl)
-	   ld c,$48
-	   call decode_intcache
-	   jr dispatch_int
-dispatch_vblank:
+	   ld hl,dispatch_stat
+	   jr trigger_int_selected
+trigger_vblank:
 	   res 0,(hl)
-	   ld c,$40
-	   call decode_intcache
-dispatch_int:
+	   ld hl,dispatch_vblank
+trigger_int_selected:
 	
 	   push hl
-	    push ix
-	     di
-	     call.il get_event_gb_address
-	     ei
+	    ld de,(event_gb_address)
+	    di
+	    jp.lil dispatch_int_helper
+		
+dispatch_int_continue:
+	    push de
+	     exx
 	    pop de
-	 
-	    ; If we're on a HALT, exit it
-	    ld.l a,(ix)
-	    xor $76
-	    ld a,(event_cycle_count)
-	    jr nz,_
-	    inc.l ix
-	    inc hl
-	    inc de
-	    inc de
-	    inc de
-	    inc a
-_
-	    push hl
-int_return_sp = $+2
-	     ld.lil hl,0
-	     ld b,(hl)
-	     djnz _
-	     sbc hl,hl
-	     ld.lil (int_cached_return),hl
-	     ld.lil hl,z80codebase+int_return_stack
-_
-	     ld (hl),a
-	     add a,c
-	     ld.lil bc,(int_cached_return)
-	     ld.lil (int_cached_return),ix
-	     inc.l hl
-	     ld.l (hl),bc
-	     inc hl
-	     inc hl
-	     inc hl
-	     ld (hl),de
-	     inc hl
-	     inc hl
-	     ld (int_return_sp),hl
-	    pop hl
+	    call do_push_and_return
 	   pop ix
+	   add a,(ix+3)
+dispatch_int_decoded:
+	   ld (_+2),a
+	   ld a,$AF ;XOR A
+	   ld (intstate_smc),a
+_
+	   lea iy,iy+0
+	   xor a
+	   cp iyh
+	   jr z,_
 	  pop bc
 	 pop de
-	 ex (sp),hl
-	 exx
-	pop de
-	call do_push_and_return
-	ld (_+2),a
-_
-	lea iy,iy+0
-	ld a,$AF ;XOR A
-	ld (intstate_smc),a
-	xor a
-	cp iyh
-	jr z,_
+	pop hl
 	ex af,af'
-	ret
-	
+	jp (ix)
 _
-	pop ix
-	jp cycle_overflow
+	   inc de
+	   ld d,a
+	   ld a,ixl
+	   sub (dispatch_vblank & $FF) - $20
+	   add a,a
+	   ld e,a
+	   ld a,(ix+2)
+	   cp decode_intcache >> 8
+	   jr z,decode_intcache_from_overflow
+	   ld a,(ix+3)
+	   sub 5
+	   ld c,a
+	   ld ix,(ix+1)
+	   di
+	   jp.lil schedule_event_helper
+
+dispatch_vblank:
+	jp decode_intcache
+	.db 0
+dispatch_stat:
+	jp decode_intcache
+	.db 0
+dispatch_timer:
+	jp decode_intcache
+	.db 0
+dispatch_serial:
+	jp decode_intcache
+	.db 0
+dispatch_joypad:
+	jp decode_intcache
+	.db 0
+rst_cached_targets:
+	.dl $00
+	.dl $08
+	.dl $10
+	.dl $18
+	.dl $20
+	.dl $28
+	.dl $30
+	.dl $38
 	
 decode_intcache:
-	push ix
-	 di
-	 call.il decode_intcache_helper
-	pop hl
-	ex (sp),hl
-	dec hl
-	dec hl
-	ld (hl),ix
-	dec hl
-	ld (hl),$21	;LD HL,addr
-	dec hl
-	ld (hl),a
-	dec hl
-	pop ix
-	jp (hl)
+	ex af,af'
+	push hl
+	 push de
+	  push bc
+	   ld d,a
+	   ld a,ixl
+	   sub (dispatch_vblank & $FF) - $20
+	   add a,a
+	   ld e,a
+decode_intcache_from_overflow:
+	   di
+	   call.il decode_intcache_helper
+	   ld (ix+1),hl
+	   ld (ix+3),a
+	   jr dispatch_int_decoded
 	
 LYCmatch:
 	ld hl,LCDC
@@ -651,27 +723,23 @@ decode_jump:
 	push.l hl
 	pop hl
 	push bc
+	 inc hl
+	 inc hl
+	 ld c,(hl)
+	 inc hl
 	 ld ix,(hl)
-	 inc hl
-	 inc hl
-	 ld de,(hl)
-	 inc hl
-	 inc hl
-	 ld a,(hl)
 	 push hl
+	  inc hl
+	  inc hl
+	  ld de,(hl)
 	  di
 	  jp.lil decode_jump_helper
 decode_jump_return:
 	 pop hl
-	 add a,(hl)	;calc cycle count
-	 dec hl
 	 ld (hl),ix
 	 dec hl
-	 ld (hl),$C3	;JP
 	 dec hl
-	 ld (hl),$08	;EX AF,AF'
 	 dec hl
-	 ld (hl),RST_CYCLE_CHECK
 	 dec hl
 	 ld (hl),a
 	 dec hl
@@ -691,20 +759,19 @@ decode_call:
 	ex (sp),hl
 	push bc
 	 push de
-	  ld de,(hl)
-	  inc hl
-	  inc hl
 	  inc hl
 	  push hl
+	   inc hl
+	   inc hl
+	   ld de,(hl)
+	   dec de
 	   di
 	   call.il decode_call_helper
-_
 	  pop hl
-	  sub (hl)
-	  inc hl
+	  dec hl
 	  ld (hl),a
-	  ld de,-6
-	  add hl,de
+	  dec hl
+	  dec hl
 	  ld (hl),ix
 	  dec hl
 	  ld (hl),b
@@ -714,39 +781,136 @@ _
 	ex af,af'
 	ret
 	
-decode_rst:
+decode_call_cond:
 	ex af,af'
 	ex (sp),hl
 	push bc
 	 push de
-	  ld de,(hl)
-	  inc hl
-	  inc hl
-	  inc hl
 	  push hl
+	   inc hl
+	   inc hl
+	   ld de,(hl)
+	   dec de
 	   di
-	   call.il decode_rst_helper
-	   jr -_
-	   
-decode_ret_cond:
-	ex af,af'
-	ex (sp),hl
-	push bc
-	 push de
-	  di
-	  call.il decode_ret_cond_helper
-	  ld (hl),$C9
+	   call.il decode_call_helper
+	  pop hl
 	  dec hl
 	  ld (hl),a
 	  dec hl
-	  ld (hl),$33
 	  dec hl
-	  ld (hl),$ED	;LEA IY,IY+d
+	  ld (hl),ix
+	  dec hl
+	  dec hl
+	  ; If a CALL opcode was returned instead of RST, this is a banked call
+	  bit 1,b
+	  jr nz,_
+	  ; Modify the conditional entry point to use the banked call
+	  ld de,(hl)
+	  dec de
+	  dec de
+	  ld (hl),de
+_
+	  dec hl
+	  ld (hl),$CD
 	 pop de
 	pop bc
 	ex (sp),hl
 	ex af,af'
 	ret
+	
+do_rst:
+	pop ix
+	exx
+	djnz _
+	ld b,CALL_STACK_DEPTH
+	ld.lil sp,myADLstack
+	ld sp,myz80stack-2	
+_
+	pea ix+4
+	ex af,af'
+	ld de,(ix+2)
+	di
+	jp.lil do_rst_helper
+	
+do_rst_finish:
+	ld ix,(ix)
+	push ix
+	call do_push_and_return
+	ld ix,call_stack_ret
+	ex (sp),ix
+	add a,iyl
+	jr c,++_
+_
+	ld iyl,a
+	ex af,af'
+	ei
+	jp (ix)
+_
+	inc iyh
+	jr nz,--_
+	exx
+	push de
+	 exx
+	 ex (sp),hl
+	 push de
+	  push bc
+	   ex de,hl
+	   dec de
+	   ld c,iyl
+	   ld iyl,a
+	   sub c
+	   sub 4
+	   ld c,a
+	   jp.lil schedule_rst_event_helper
+	
+do_banked_call_cond:
+	pop ix
+	pea ix+2
+	ld ix,(ix)
+	jp (ix)
+	
+	jr nz,do_banked_call_cond
+do_call_nz:
+	jr z,skip_cond_call
+	jp r_call
+	
+	jr z,do_banked_call_cond
+do_call_z:
+	jr nz,skip_cond_call
+	jp r_call
+	
+	jr nc,do_banked_call_cond
+do_call_nc:
+	jr c,skip_cond_call
+	jp r_call
+	
+	jr c,do_banked_call_cond
+do_call_c:
+	jp c,r_call
+skip_cond_call:
+	pop ix
+	lea ix,ix+7
+	ex af,af'
+	ld a,(ix-3)
+	dec a
+	add a,iyl
+	ld iyl,a
+	jr c,++_
+_
+	ex af,af'
+	jp (ix)
+_
+	inc iyh
+	jr nz,--_
+	push hl
+	 push de
+	  push bc
+	   ld a,(ix-3)
+	   sub 4
+	   ld c,a
+	   ld de,(ix-2)
+	   di
+	   jp.lil schedule_event_helper
 	
 wait_for_interrupt_stub:
 	ei
@@ -762,56 +926,26 @@ flush_address = $+1
 	
 flush_mem_handler:
 	exx
-	pop de
+	pop bc
 	di
 	jp.lil flush_mem
 	
 coherency_handler:
-	ex af,af'
-	ex (sp),hl
-	ld ix,(hl)
-	inc hl
-	inc hl
-	ex (sp),hl
+	pop ix
 	push hl
 	 push de
 	  push bc
-	   ld.lil de,recompile_struct
-	   add.l ix,de
-	   ld.l de,(ix+2)
-	   ld.l bc,(ix+5)
-	   ld.l hl,(ix+8)
-	   sbc hl,bc
-check_coherency_loop:
-	   ld.l a,(de)
-	   inc.l de
-	   cpi
-	   jr nz,check_coherency_failed
-	   jp pe,check_coherency_loop
+	   pea ix+RAM_PREFIX_SIZE-3
+	    ld ix,(ix)
+	    di
+	    jp.lil check_coherency_helper
+
 coherency_return:
-	   ld.l a,(ix+7)
-	   ld (_+2),a
-_
-	   lea iy,iy+0
-	   ld a,iyh
-	   or a
-	   jr z,check_coherency_cycle_overflow
+	   pop ix
 	  pop bc
 	 pop de
 	pop hl
-	ex af,af'
-	ret
-	
-check_coherency_cycle_overflow:
-	   ld hl,(event_address)
-	   ld a,(event_value)
-	   ld (hl),a
-	   di
-	   jp.lil coherency_cycle_overflow
-	
-check_coherency_failed:
-	   di
-	   jp.lil rerecompile
+	jp (ix)
 	   
 do_swap:
 	inc a
@@ -850,15 +984,13 @@ _
 do_swap_hl:
 	ex af,af'
 	push af
-	 inc iy	;Consume 1 extra cycle
-	 call mem_read_any
+	 call mem_read_any_before_write
 	 rrca
 	 rrca
 	 rrca
 	 rrca
 	 or a
-	 inc iy	;Consume 1 more cycle
-	 call mem_write_any
+	 call mem_write_any_after_read
 	pop ix
 	ld a,ixh
 	ret
@@ -869,10 +1001,9 @@ do_bits:
 	jr c,do_swap
 	add a,$38-1	;Use L instead of (HL)
 	cp $C0
-	inc iy	;Consume 1 extra cycle
 	jp pe,do_bits_readonly
 	ld (do_bits_smc),a
-	call mem_read_any
+	call mem_read_any_before_write
 	; Use L because we have to affect flags, bleh
 	push hl
 	 ld l,a
@@ -882,8 +1013,7 @@ do_bits_smc = $+1
 	 rlc l
 	 ld a,l
 	 ex (sp),hl
-	 inc iy	;Consume 1 more cycle
-	 call mem_write_any
+	 call mem_write_any_after_read
 	pop ix
 	ld a,ixh
 	ret
@@ -918,8 +1048,7 @@ ophandler08:
 	   call mem_write_any
 	   inc hl
 	   ld a,d
-	   inc iy
-	   call mem_write_any
+	   call mem_write_any_after_read
 	  pop hl
 	 pop de
 	pop af
@@ -972,8 +1101,7 @@ ophandler31:
 	
 ophandler34:
 	ex af,af'
-	dec iy
-	call mem_read_any
+	call mem_read_any_before_write
 	ld ixl,a
 	ex af,af'
 	inc ixl
@@ -981,15 +1109,13 @@ ophandler34:
 	
 ophandler35:
 	ex af,af'
-	dec iy
-	call mem_read_any
+	call mem_read_any_before_write
 	ld ixl,a
 	ex af,af'
 	dec ixl
 _
-	inc iy
 	push af
-	 call mem_write_any_ixl
+	 call mem_write_any_after_read_ixl
 	pop af
 	ret
 	
@@ -1032,17 +1158,9 @@ handle_waitloop_main:
 	 sub (ix+2)
 	 ld iyl,a
 handle_waitloop_noskip:
-	 ; Wipe the previous event trigger
-	 ld hl,(event_address)
-	 ld a,(event_value)
-	 ld (hl),a
 	 ; Run an event using our precomputed lookup
-	 ex de,hl
-	 ld.lil de,z80codebase
-	 add.l ix,de
-	 ex de,hl
-	 ld.l hl,(ix+4)
-	 ld.lil (event_gb_address),hl
+	 ld hl,(ix+4)
+	 ld (event_gb_address),hl
 	 ld a,(ix+2)
 	 ld (event_cycle_count),a
 	 ld ix,(ix)
@@ -1107,24 +1225,15 @@ _
 	 ; If the count has already expired, do an event immediately
 	 add a,(ix+2)
 	 jr c,handle_waitloop_noskip
-	 
-	 ; Wipe the previous event trigger
-	 ld hl,(event_address)
-	 ld a,(event_value)
-	 ld (hl),a
+
 	 ; Schedule an event using our precomputed lookup
-	 ld hl,(ix)
-	ex (sp),hl
-	push hl
 	 push de
 	  push bc
-	   ld.lil de,z80codebase
-	   add.l ix,de
-	   ld de,(ix)
+	   ld de,(ix+4)
 	   ld a,(ix+2)
-	   ld.l ix,(ix+4)
+	   ld ix,(ix)
 	   di
-	   jp.lil schedule_event_helper_post_lookup
+	   jp.lil schedule_event_helper
 	
 ophandler76:
 	ex af,af'
@@ -1151,7 +1260,8 @@ trigger_event_pushed:
 	 push de
 	  push bc
 	   push af
-	    ld hl,(event_address)
+event_address = $+1
+	    ld hl,0
 	    ld a,(event_value)
 	    ld (hl),a
 	   
@@ -1160,63 +1270,60 @@ trigger_event_pushed:
 	    exx
 	    ld a,b
 	    exx
-	    ld d,a
-	    ld e,CALL_STACK_ENTRY_SIZE
-	    mlt de
-	    add hl,de
-	    ld de,(hl)
+	    ld b,a
+	    ld c,CALL_STACK_ENTRY_SIZE
+	    mlt bc
+	    add hl,bc
+	    ld bc,(hl)
 	
 	    ; If the return address is the flush handler (e.g. generated from a RETI),
 	    ; don't do a reverse lookup or write a RST to the return address,
 	    ; but still schedule the event to be executed post-flush.
-	    ld a,d
+	    ld a,b
 	    sub flush_handler >> 8
 	    jr nz,_
-	    ld de,event_address
+	    ld bc,event_value
 _
 	    di
 	    call.il nz,lookup_gb_code_address
 	    ei
+	    ld (event_gb_address),de
+	    ld h,b
+	    ld l,c
+	    ld (event_address),hl
 	    ld c,a
+	    ld a,(hl)
+	    ld (event_value),a
+	    ld (hl),RST_EVENT
 	   pop af
-	   push de
-	    jr c,event_fast_forward
-	    ld a,c
-	    call get_cycle_offset
-	    ; If the end of this instruction is already past the target, don't rewind
-	    ld a,d
-	    or a
-	    jr z,trigger_event_already_triggered
-	    ld hl,(serial_cycle_count)
-	    sbc hl,de
-	    ld (serial_cycle_count),hl
-	    ld hl,(div_cycle_count)
-	    add hl,de
-	    ld (div_cycle_count),hl
-	    ld hl,(frame_cycle_target)
-	    add hl,de
-	    jr c,_
-	    ld de,CYCLES_PER_FRAME
-	    add hl,de
+	   jr c,event_fast_forward
+	   xor a
+	   sub c
+	   call get_cycle_offset
+	   ; If the end of this instruction is already past the target, don't rewind
+	   ld a,d
+	   or a
+	   jr z,trigger_event_already_triggered
+	   ld hl,(serial_cycle_count)
+	   sbc hl,de
+	   ld (serial_cycle_count),hl
+	   ld hl,(div_cycle_count)
+	   add hl,de
+	   ld (div_cycle_count),hl
+	   ld hl,(frame_cycle_target)
+	   add hl,de
+	   jr c,_
+	   ld de,CYCLES_PER_FRAME
+	   add hl,de
 _
-	    ld (frame_cycle_target),hl
+	   ld (frame_cycle_target),hl
 event_fast_forward:
-	    xor a
-	    ld iyh,a
-	    sub c
-	    ld iyl,a
+	   xor a
+	   ld iyh,a
+	   ld iyl,c
 trigger_event_already_triggered:
-	   pop hl
-	   ld a,c
-	   
-schedule_event_enable:
-	   ld.lil (event_gb_address),ix
+	   sub c
 	   ld (event_cycle_count),a
-	   ld a,(hl)
-	   ld (event_value),a
-	   ld (hl),RST_EVENT
-schedule_event_disable:
-	   ld (event_address),hl
 	  pop bc
 	 pop de
 	pop hl
@@ -1255,16 +1362,34 @@ ophandlerE8:
 	
 ophandlerE9:
 	ex af,af'
-	ex de,hl
-	push bc
+	push hl
 	 push de
-	  di
-	  call.il lookup_code_cached
-	  ei
+	  push bc
+	   ex de,hl
+	   di
+	   call.il lookup_code_cached
+	   ei
+	   scf
+	   adc a,iyl
+	   jr c,++_
+_
+	   ld iyl,a
+	  pop bc
 	 pop de
-	pop bc
-	ex de,hl
-	jp dispatch_cycles
+	pop hl
+	ex af,af'
+	jp (ix)
+_
+	   inc iyh
+	   jr nz,--_
+	   ld c,iyl
+	   ld iyl,a
+	   sbc a,c
+	   ld c,a
+	   inc de
+	   dec de
+	   di
+	   jp.lil schedule_event_helper
 	
 ophandlerF1:
 	exx
@@ -1374,14 +1499,15 @@ ophandlerRETI:
 	 call.il pop_and_lookup_code_cached
 	 ei
 	pop bc
-	exx
 	; Count cycles before attempting to trigger an interrupt
+	add a,4
 	ld (_+2),a
 _
 	lea iy,iy+0
-	ld a,iyh
-	or a
-	jp z,cycle_overflow
+	dec iyh
+	inc iyh
+	jp z,cycle_overflow_for_reti
+	exx
 	; Put the destination address on the stack where trigger_event can access it
 	push ix
 	 jp checkIntPostEnable
@@ -1396,7 +1522,8 @@ ophandlerRET:
 	 call.il pop_and_lookup_code_cached
 	 ei
 	pop bc
-	jp dispatch_cycles_exx
+	add a,4
+	jp dispatch_cycles_for_ret
 	
 write_vram_handler:
 	pop ix
@@ -1613,12 +1740,15 @@ mem_read_oam:
 	
 readTIMA:
 	call updateTIMA
+	 ei
 	 ld ixl,a
 	pop.l hl
 	exx
 	ex af,af'
 	ret
 	
+mem_read_any_before_write:
+	dec iy
 	;HL=GB address, reads into A, AF'=GB AF
 mem_read_any:
 	ld a,h
@@ -1673,6 +1803,7 @@ mem_read_any_rtc_smc = $+2
 	
 readDIV:
 	call updateTIMA
+	 ei
 	 ex de,hl
 	 add hl,hl
 	 add hl,hl
@@ -1704,8 +1835,10 @@ mem_write_any_cart:
 	jp mem_write_cart_swap
 	
 	;HL=GB address, IXL=data, destroys A,AF'
-mem_write_any_ixl:
+mem_write_any_after_read_ixl:
 	ld a,ixl
+mem_write_any_after_read:
+	inc iy
 	;HL=GB address, A=data, preserves AF, destroys AF'
 mem_write_any:
 	ex af,af'
@@ -1989,15 +2122,13 @@ mem_cycle_lookup_loop:
 	 dec hl
 	 add a,3
 	 jr nc,mem_cycle_lookup_loop
-	 ld d,b
-	 ld e,c
 	 push ix
 	  di
 	  call.il lookup_gb_code_address
 	  ei
-	  ex de,hl
-	  ex (sp),hl
-	  ex de,hl
+	  neg
+	 pop de
+	 push bc
 	  ld hl,MEM_CYCLE_LUT_SIZE
 	  add hl,de
 	  ld c,MEM_CYCLE_LUT_SIZE-3
@@ -2159,8 +2290,7 @@ _
 ;         DE = current DIV counter
 ;         A = current TIMA value
 ;         (TIMA) updated to current value
-updateTIMA_di:
-	di
+;         Interrupts are disabled
 updateTIMA:
 	exx
 	push.l hl
@@ -2171,6 +2301,7 @@ updateTIMA:
 	 ld a,(TAC)
 	 and 4
 	 ld a,(TIMA)
+	 di
 	 ret z
 	 ld hl,(timer_cycle_target)
 	 sbc hl,de
@@ -2353,13 +2484,13 @@ writeLCDC:
 writeTAChandler:
 	ex af,af'
 writeTAC:
-	call updateTIMA_di
+	call updateTIMA
 	jp.lil tac_write_helper
 	
 writeTIMAhandler:
 	ex af,af'
 writeTIMA:
-	call updateTIMA_di
+	call updateTIMA
 	ex af,af'
 	ld (TIMA),a
 	ex af,af'
@@ -2369,7 +2500,7 @@ _
 writeDIVhandler:
 	ex af,af'
 writeDIV:
-	call updateTIMA_di
+	call updateTIMA
 	or a
 	sbc hl,hl
 	ld (div_cycle_count),hl

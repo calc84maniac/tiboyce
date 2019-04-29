@@ -1,55 +1,77 @@
 decode_jump_helper:
-	ld bc,recompile_struct
-	add ix,bc
-	sub (ix+7)
-	ld.s (hl),a
-	
-	ld bc,-$4000
-	ld a,d
-	add a,b
-	add a,b
-	jr nc,decode_jump_bank_switch
-	
 	call get_base_address
-decode_jump_common:
-	ld (base_address),hl
 	add hl,de
-	
-	push hl
-	 call lookup_code_link_internal_by_pointer
-	pop hl
-	
+	ld a,(hl)
+	cp c
+	jr z,decode_absolute_jump
+	cp $18
+	jr z,decode_relative_jump
+	xor a
+	bit 0,c
+	jr nz,decode_block_linker
+decode_relative_jump:
+	inc hl
+	ld l,(hl)
+	ld a,l
+	rla
+	sbc a,a
+	ld h,a
+	inc de
+	inc de
+	add.s hl,de
+	ex de,hl
+	ld a,3
+	jr decode_block_linker
+decode_absolute_jump:
+	inc hl
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	ld a,4
+decode_block_linker:
 	push af
-	 or a
-	 call nz,identify_waitloop
-	pop af
+
+	 ld bc,recompile_struct
+	 add ix,bc
 	
+	 ld a,d
+	 add a,$40
+	 jp pe,decode_jump_bank_switch
+	
+decode_jump_common:
+	 push de
+	  call lookup_code_link_internal
+	 pop de
+	
+	 ;push af
+	 ; or a
+	 ; call nz,identify_waitloop
+	 ;pop af
+	
+	pop bc
+	add a,b
 	ei
 	jp.sis decode_jump_return
 	
 decode_jump_bank_switch:
-	push de
-	 ld hl,(ix+2)
-	 ld de,(rom_bank_base)
-	 sbc hl,de
-	 add hl,bc
-	 add hl,bc
-	 ex de,hl
-	pop de
-	jr nc,decode_jump_common
+	 ld a,(ix+3)
+	 add a,$40
+	 jp pe,decode_jump_common
 	
-	call lookup_code_link_internal_with_base
-	pop.s hl
-	add.s a,(hl)
-	ld.s (hl),a	;cycle count
-	dec hl
+	 call lookup_code_link_internal
+	pop bc
+	add a,b
+	ld b,a
 	ld a,(z80codebase+curr_rom_bank)
-	ld.s (hl),a	;rom bank
+	ld c,a
+	pop.s hl
+	ld.s (hl),bc	;rom bank / cycle count
 	dec hl
+	ld.s a,(hl)		;JP [cond,]
 	dec hl
 	ld.s (hl),ix
 	dec hl
-	ld.s (hl),$C3	;JP target
+	ld.s (hl),a		;JP [cond,]target
 	dec hl
 	ld.s (hl),do_rom_bank_jump >> 8
 	dec hl
@@ -59,49 +81,64 @@ decode_jump_bank_switch:
 	ei
 	jp.sis decode_jump_waitloop_return
 	
-decode_rst_helper:
-	push de
-	 ex de,hl
-	 call lookup_code_block
-	 ex de,hl
-	 ld a,(ix+7)
-	 sub.s (hl)
-	 ld.s (hl),a
-	pop de
-	call get_base_address
-	add hl,de
-	dec hl
-	ld a,(hl)
-	sub $C7
-	ld e,a
-	ld d,0
-	jr decode_call_common
-	
-decode_call_helper:
-	push de
-	 ex de,hl
-	 call lookup_code_block
-	 ex de,hl
-	 ld a,(ix+7)
-	 sub.s (hl)
-	 ld.s (hl),a
-	pop de
+do_rst_helper:
 	push hl
 	 call get_base_address
-	 ld a,d
 	 add hl,de
 	 dec hl
-	 ld d,(hl)
-	 dec hl
-	 ld e,(hl)
-	 xor d
+	 ld l,(hl)
+	 ld h,96
+	 mlt hl
+	 ld l,h
+	 xor a
+	 ld h,a
+	 ld ix,z80codebase + rst_cached_targets - ($C7 * 96 / 256)
+	 ex de,hl
+	 add ix,de
+	 ex de,hl
+	 or (ix+2)
+	 jr z,decode_rst
+_
 	pop hl
+	push hl
+	 jp.sis do_rst_finish
+	
+decode_rst:
+	 push ix
+	  push de
+	   push bc
+	    ld.s de,(ix)
+	    call lookup_code
+	   pop bc
+	  pop de
+	  ex (sp),ix
+	 pop hl
+	 ld (ix),hl
+	 add a,4
+	 ld (ix+2),a
+	 jr -_
+	
+decode_call_helper:
+	call get_base_address
+	ld b,d
+	add hl,de
+	ld d,(hl)
+	dec hl
+	ld e,(hl)
+	ld a,b
+	xor d
 	and $C0
 	jr nz,decode_call_bank_switch
 decode_call_common:
-	call lookup_code_link_internal
+	ld a,b
+	rla
+	jr nc,_
+	call.il lookup_code_cached
+	scf
 _
-	add a,3	; Taken call eats 3 cycles
+	call nc,lookup_code
+_
+	add a,6	; Taken call eats 6 cycles
 	ld b,RST_CALL
 	ei
 	ret.l
@@ -118,7 +155,8 @@ decode_call_bank_switch:
 	cp $40
 	jr nc,decode_call_common
 	
-	dec hl
+	pop.s hl
+	push.s hl
 	ld a,(z80codebase+curr_rom_bank)
 	ld.s (hl),a
 	
@@ -143,8 +181,14 @@ decode_call_bank_switch:
 	pop de
 	; Code lookup may overwrite the trampoline area, so wait to write it out
 	push hl
-	 call lookup_code_link_internal
-	 add a,3	; Taken call eats 3 cycles
+	 ld a,b
+	 rla
+	 jr nc,_
+	 call.il lookup_code_cached
+	 scf
+_
+	 call nc,lookup_code
+	 add a,6	; Taken call eats 6 cycles
 	 ex (sp),ix
 	pop hl
 	ld.s (ix+3),hl	;JIT target
@@ -168,22 +212,30 @@ banked_jump_mismatch_helper:
 	push bc
 	 push hl
 	  ; Look up the old target
-	  ld.s de,(ix+1)
-	  push ix
-	   call.il lookup_gb_code_address
-	   ex (sp),ix
-	   ld.s hl,(ix+3)
-	   add a,h
-	   ld h,3
-	   mlt hl
-	   ld de,rombankLUT
-	   add hl,de
-	   ld de,(hl)
-	  pop hl
-	  sbc hl,de
+	  ld.s de,(ix+5)
+	  call get_base_address
+	  add hl,de
+	  bit 7,(hl)	; Check whether it's JP or JR
+	  inc hl
+	  jr z,_
+	  ld e,(hl)
+	  inc hl
+	  ld d,(hl)
+	  ld h,4	; Taken JP eats 4 cycles
+	  jr ++_
+_
+	  ld a,(hl)
+	  ld l,a
+	  rla
+	  sbc a,a
+	  ld h,a
+	  inc de
+	  inc de
+	  add.s hl,de
 	  ex de,hl
+	  ld h,3	; Taken JR eats 3 cycles
+_
 	  push ix
-	   ld h,a
 	   call.il lookup_code_cached
 	   add a,h
 	   ld.sis hl,(curr_rom_bank)
@@ -192,17 +244,18 @@ banked_jump_mismatch_helper:
 	   ld.s (ix+3),hl
 	  pop hl
 	  ld.s (ix+1),hl
-	  ex (sp),hl
-	 pop ix
+	 pop hl
 	pop bc
+	exx
 	ei
-	jp.sis dispatch_cycles_exx
+	jp.sis banked_jump_mismatch_continue
+	
 	
 banked_call_mismatch_helper:
-	ld.s (ix+2),a
+	ld.s (ix+1),a
 	push bc
 	 push hl
-	  ld.s de,(ix)
+	  ld.s de,(ix+3)
 	  call get_base_address
 	  add hl,de
 	  dec hl
@@ -211,24 +264,24 @@ banked_call_mismatch_helper:
 	  ld e,(hl)
 	  push ix
 	   call.il lookup_code_cached
-	   add a,3	; Taken call eats 3 cycles
+	   add a,6	; Taken call eats 6 cycles
 	   pop.s hl
 	   ld.s (hl),ix
 	   push.s hl
 	  pop ix
-	  sub.s (ix+3)
-	  ld.s (ix+4),a
+	  ld.s (ix),a
 	 pop hl
 	pop bc
 	ei
 	jp.sis banked_call_mismatch_continue
 	
 decode_intcache_helper:
-	ld e,c
-	ld d,0
-	call lookup_code
-	; Spend 5 cycles for interrupt dispatch overhead
-	add a,5
+	push ix
+	 call lookup_code
+	 ; Spend 5 cycles for interrupt dispatch overhead
+	 add a,5
+	 ex (sp),ix
+	pop hl
 memroutine_gen_ret:
 	ei
 	ret.l

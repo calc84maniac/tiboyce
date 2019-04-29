@@ -75,17 +75,39 @@ set_gb_stack_done:
 flush_normal:
 	ex af,af'
 	push hl
-	 ld hl,$E5E5DD	;PUSH IX \ PUSH HL
-	 ld (z80codebase+cycle_overflow_flush_smc),hl
+	 ld hl,$C3 | (schedule_event_finish << 8)	;JP schedule_event_finish
+	 ld (flush_event_smc),hl
 flush_mem_finish:
 	 call flush_code
-	 call lookup_code
+	 push de
+	  call lookup_code
+	 pop de
 	pop hl
 	ld.sis sp,myz80stack-2
 	ld sp,myADLstack
 	ld bc,(CALL_STACK_DEPTH+1)*256
+	ld c,a
+	exx
+	ld (_+2),a
+_
+	lea iy,iy+0
+	xor a
+	cp iyh
+	jr z,_
+	ex af,af'
 	ei
-	jp.sis dispatch_cycles_exx
+	jp.s (ix)
+_
+	push.s hl
+	 push.s de
+	  push.s bc
+	   exx
+	   ld a,c
+	   push de
+	    exx
+	   pop de
+	   ld c,a
+	   jp schedule_event_helper
 	
 ; Flushes the JIT code and recompiles anew.
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -95,22 +117,22 @@ flush_mem_finish:
 ; The JIT address is reversed into the GB address before flushing normally.
 ; Recompilation starts at the offending memory instruction.
 ;
-; Inputs:  DE = address directly following recompiled memory instruction
+; Inputs:  BC = address directly following recompiled memory instruction
 ;          BCDEHL' have been swapped
 ; Outputs: JIT is flushed and execution begins at the new recompiled block
 ;          BCDEHL' have been unswapped
 flush_mem:
 	ex af,af'
-	dec de
-	dec de
-	dec de
+	dec bc
+	dec bc
+	dec.s bc
 	push hl
 	 call.il lookup_gb_code_address
-	 ld (_+2),a
-_
-	 lea iy,iy+0
-	 call.il get_gb_address
-	 ex de,hl
+	 neg
+	 ld c,a
+	 sbc a,a
+	 ld b,a
+	 add iy,bc
 	 jr flush_mem_finish
 	
 	
@@ -545,60 +567,251 @@ timer_smc_data:
 	.db 2,$08
 	.db 4,$20
 	
-; Inputs: DE = starting recompiled address
-;         IY = cycle count at end of block (>= 0)
-; Outputs: DE = event recompiled address
-;          IX = event opcode address
-;          A = event cycle count (negative)
+; Inputs: DE = Game Boy address at conditional branch
+;         IX = recompiled address after conditional branch (minus 1)
+;         IY = cycle count at end of sub-block (>= 0)
+;         C = cycles until end of sub-block (including conditional branch cycles)
+schedule_subblock_event_helper:
+	inc ix
+	call get_base_address
+	push hl
+	 add hl,de
+	 ld a,(hl)
+	 and $E7
+	 cp $20	;jr cond
+	 jr z,_
+	 cp $C0 ;ret cond
+	 jr z,++_
+	 ;jp cond
+	 inc de
+	 inc hl
+	 dec c
+_
+	 inc de
+	 inc hl
+_
+	 inc de
+	 inc hl
+	 dec c
+	 dec c
+	 jr schedule_event_helper_resolved
 	
+; Inputs: DE = Game Boy address at last byte of call instruction
+;         IX = starting recompiled address
+;         IY = cycle count at end of sub-block (>= 0)
+;         C = cycles until end of sub-block (plus jump cycles, if applicable)
+schedule_call_event_helper:
+	call get_base_address
+	add hl,de
+	ld d,(hl)
+	dec hl
+	ld e,(hl)
+	jr schedule_event_helper
+	
+; Inputs: DE = Game Boy address of RST instruction
+;         IX = starting recompiled address
+;         IY = cycle count at end of sub-block (>= 0)
+;         C = cycles until end of sub-block (plus jump cycles, if applicable)
+schedule_rst_event_helper:
+	call get_base_address
+	add hl,de
+	ld a,(hl)
+	sub $C7
+	ld e,a
+	ld d,0
+	jr schedule_event_helper
+	
+; Inputs: DE = Game Boy address of jump instruction
+;         IX = starting recompiled address
+;         IY = cycle count at end of sub-block (>= 0)
+;         B = recompiled jump opcode
+;         C = cycles until end of sub-block (plus jump cycles, if applicable)
+schedule_jump_event_helper:
+	call get_base_address
+	push hl
+	 add hl,de
+	 ld a,(hl)
+	 cp b
+	 jr z,schedule_jump_event_absolute
+	 cp $18
+	 jr z,schedule_jump_event_relative
+	 bit 0,b
+	 jr nz,schedule_event_helper_resolved
+schedule_jump_event_relative:
+	 inc hl
+	 ld l,(hl)
+	 ld a,l
+	 rla
+	 sbc a,a
+	 ld h,a
+	 inc de
+	 inc de
+	 add.s hl,de
+	 ex de,hl
+	 jr _
+schedule_jump_event_absolute:
+	 inc hl
+	 ld e,(hl)
+	 inc hl
+	 ld d,(hl)
+	 dec c
+_
+	 dec c \ dec c \ dec c
+	pop hl
+	
+; Inputs:  DE = starting Game Boy address
+;          IX = starting recompiled address
+;          IY = cycle count at end of sub-block (>= 0)
+;          C = cycles until end of sub-block
+; Outputs: HL = event Game Boy address
+;          DE = event recompiled address
+;          A = event (negative) cycles to sub-block end
+;          IX = starting recompiled address
 schedule_event_helper:
-	call.il lookup_gb_code_address
-schedule_event_helper_post_lookup:
-	or a
-	jr z,schedule_event_never
-	add a,iyl
-	jr c,schedule_event_now
+	call get_base_address
+	push hl
+	 add hl,de
+schedule_event_helper_resolved:
+	 bit 7,d
+	 jr nz,schedule_event_check_ram_prefix
+schedule_event_continue:
+#ifdef 0
+	 push ix
+	  push hl
+	   push de
+	    push bc
+		 lea.s bc,ix
+	     call.il lookup_gb_code_address
+	    pop bc
+		cp c
+		jr nz,$
+		ex de,hl
+	   pop de
+	   sbc hl,de
+	   jr nz,$
+	  pop hl
+	 pop ix
+#endif
+	 lea de,ix
+
+	 ld a,iyl
+	 sub c
+	 jr nc,schedule_event_now
 	
-	ld hl,opcodecycles
-	ld bc,0
-	
+	 push hl
+	  ex (sp),ix
+	 
+	  ld hl,opcodecycles
+	  ld bc,0
 schedule_event_cycle_loop:
-	dec h
-	ld l,(ix)
-	ld c,(hl)
-	add ix,bc
-	dec h
-	ld c,(hl)
-	ex de,hl
-	add hl,bc
-	ex de,hl
-	inc h
-	inc h
-	add a,(hl)	; If this is a block-ender, -1 is added and the loop exits.
-	jr c,schedule_event_now
-	bit 3,c
-	jr z,schedule_event_cycle_loop
-	; If the JIT instruction size is 8 or more, it's some kind of branch.
-	; The branch may be taken, so don't waste time continuing to loop.
-	; Schedule the event immediately after this instruction, and it will
-	; be rescheduled at its time of execution if necessary.
-	sub iyl
-	jr schedule_event_anyway
+	  dec h
+	  ld l,(ix)
+	  ld c,(hl)
+	  add ix,bc
+	  dec h
+	  ld c,(hl)
+	  ex de,hl
+	  add hl,bc
+	  ex de,hl
+	  inc h
+	  inc h
+	  add a,(hl)
+	  jr nc,schedule_event_cycle_loop
+	  jp m,schedule_event_prefix
+schedule_event_cycle_loop_finish:
 	
+	  ex (sp),ix
+	 pop hl
+	 
+	 or a
 schedule_event_now:
+	pop bc
+	sbc hl,bc
+
 	sub iyl
-	jr nc,schedule_event_never
-	
-schedule_event_anyway:
-	ex de,hl
 	ei
-	jp.sis schedule_event_enable
+flush_event_smc = $+1
+	jp.sis schedule_event_finish
 	
-schedule_event_never:
-	; If we passed the end, disable event
-	ld hl,event_value
+schedule_event_check_ram_prefix:
+	ld.s a,(ix)
+	cp $CD
+	jr nz,schedule_event_continue
+	ld.s de,(ix+1)
+	ld a,e
+	cp coherency_handler & $FF
+	jr nz,schedule_event_continue
+	ld a,d
+	cp coherency_handler >> 8
+	jr nz,schedule_event_continue
+	pop hl
+	pea.s ix+RAM_PREFIX_SIZE
+	ld.s ix,(ix+3)
+	jp check_coherency_helper_swapped
+	
+schedule_event_prefix:
+	  ; Count CB-prefixed opcode cycles
+	  push af
+	   ld a,(ix-1)
+	   xor $46
+	   and $C7
+	   jr z,_
+	   and 7
+	   jr nz,++_
+	   inc c
+_
+	   inc c
+_
+	  pop af
+	  adc a,c
+	  jr nc,schedule_event_cycle_loop
+	  jr schedule_event_cycle_loop_finish
+	
+; Inputs:  DE = current GB address
+;          IX = current JIT address
+; Outputs: DE = current GB address with bank information (possibly incremented past HALT)
+;          IX = current JIT address (possibly incremented past HALT)
+;          A = NEGATIVE cycles to add for current block position
+dispatch_int_helper:
+	call get_base_address
+	add hl,de
+
+	; If we're on a HALT, exit it
+	ld a,(hl)
+	xor $76
+	ld a,(z80codebase+event_cycle_count)
+	jr nz,_
+	inc de
+	lea ix,ix+3
+	inc a
+_
+
+int_return_sp = $+1
+	ld hl,0
+	ld b,(hl)
+	djnz _
+	scf
+	sbc hl,hl
+	ld (int_cached_return),hl
+	ld hl,z80codebase+int_return_stack
+_
+	ld (hl),a
+	ld bc,(int_cached_return)
+	inc hl
+	ld (hl),bc
+	inc hl
+	inc hl
+	inc hl
+	ld.s (hl),ix
+	inc hl
+	inc hl
+	ld (int_return_sp),hl
+	ld c,a
+	call get_banked_address
+	ld (int_cached_return),de
+	ld a,c
 	ei
-	jp.sis schedule_event_disable
+	jp.sis dispatch_int_continue
 	
 mbc_rtc_latch_helper:
 	exx

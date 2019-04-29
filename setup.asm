@@ -826,13 +826,14 @@ _
 	call flush_code_reset_padding
 
 	; Generate the initial code block
-	ld.s de,(iy-state_size+STATE_REG_PC)
-	call lookup_code
-	; Get the initial GB instruction address from the block info
-	ld hl,(recompile_struct+8+2)
-	ld (event_gb_address),hl
-	add hl,hl
-	jr nc,_
+	ld.s hl,(iy-state_size+STATE_REG_PC)
+	ld.sis (event_gb_address),hl
+	ex de,hl
+	push de
+	 call lookup_code
+	pop de
+	bit 7,d
+	jr z,_
 	; If the GB address was in RAM, skip over the block prefix
 	lea ix,ix+RAM_PREFIX_SIZE
 _
@@ -861,11 +862,11 @@ _
 	 ld a,(recompile_struct+8+7)
 	 ; Set the cycle count at block end relative to the current event,
 	 ; which has been set to 1 cycle after block start
-	 ld iy,0
-	 dec a
+	 ld iyh,0
 	 ld iyl,a
+	 dec.s iy
 	 ; Set the negative block cycle offset of the current instruction
-	 cpl
+	 neg
 	 ld (z80codebase+event_cycle_count),a
 	 
 	 ld bc,(CALL_STACK_DEPTH+1)*256
@@ -874,8 +875,8 @@ _
 	jp set_gb_stack
 	
 ExitEmulation:
-	call.il get_event_gb_address
 	ld ix,state_start+state_size
+	ld.sis hl,(event_gb_address)
 	ld (ix-state_size+STATE_REG_PC),hl
 	
 	exx

@@ -61,25 +61,35 @@ flush_code:
 	 ldir
 	 inc (hl)
 	 ld l,(z80codebase+int_return_stack) & $FF
-	 ld (z80codebase+int_return_sp),hl
-	 ; Set the cached interrupt return address to NULL
-	 ld (int_cached_return),bc
-	 ; Set the cached lookup address to NULL
-	 ld (lookup_gb_cache_jit_address),bc
+	 ld (int_return_sp),hl
 	 ; Reset the event address
 	 ld hl,event_value
 	 ld.sis (event_address),hl
 	 ; Reset the interrupt target caches
-	 ld ix,z80codebase+dispatch_joypad
-	 ld hl,(decode_intcache << 8) | $CD	;CALL decode_intcache
-	 ld a,$60
+	 ld hl,z80codebase+dispatch_vblank
+	 ld de,(decode_intcache << 8) | $C3	;CALL decode_intcache
 	 ld b,5
 _
-	 ld (ix+3),a
-	 ld (ix+4),hl
-	 lea ix,ix+9
-	 sub 8
+	 ld (hl),de
+	 inc hl \ inc hl \ inc hl
+	 ld (hl),c
+	 inc hl
 	 djnz -_
+	 ; Reset the cached RST targets
+	 xor a
+	 ld b,8
+_
+	 ld (hl),a
+	 inc hl
+	 ld (hl),c
+	 inc hl
+	 ld (hl),c
+	 inc hl
+	 add a,8
+	 djnz -_
+	 ; Set the cached interrupt return address to -1
+	 dec bc
+	 ld (int_cached_return),bc
 	 ld a,MAX_CACHE_FLUSHES_ALLOWED
 	 ld (cache_flushes_allowed),a
 	pop de
@@ -92,6 +102,14 @@ _
 ; Outputs: HL = base pointer
 ; Destroys AF
 get_base_address:
+#ifdef DEBUG
+	dec sp
+	push de
+	inc sp
+	pop af
+	or a
+	jr nz,$
+#endif
 	ld a,d
 	add a,a
 	jr c,++_
@@ -117,94 +135,60 @@ _
 	ld hl,hram_base
 	ret
 	
-; Outputs: IX = 24-bit pointer
-;          HL = GB address
-; Destroys: F,DE
-get_event_gb_address:
-event_gb_address = $+2
-	ld ix,0
-	
-; Gets the 16-bit Game Boy address from a 24-bit literal pointer.
+; Gets a 24-bit unique identifier for a given Game Boy address, using the current GB memory map.
 ;
-; Inputs:  IX = 24-bit pointer
-; Outputs: HL = GB address
-; Destroys F,DE
-get_gb_address:
-	or a
-	lea hl,ix
-	ld de,(rom_start)
-	sbc hl,de
-	ld de,$4000
-	sbc hl,de
-	jr c,_
-	lea hl,ix
-	ld de,(rom_bank_base)
-	sbc hl,de
-	ld de,$8000
-	sbc hl,de
-	jr c,_
-	lea hl,ix
-	ld de,vram_base
-	sbc hl,de
-	ld de,$A000
-	sbc hl,de
-	jr c,_
-	lea hl,ix
-	ld de,wram_base
-	sbc hl,de
-	ld de,$E000
-	sbc hl,de
-	jr c,_
-	lea hl,ix
-	ld de,(cram_bank_base)
-	sbc hl,de
-	ld de,$C000
-	sbc hl,de
-	jr c,_
-	lea hl,ix
-	ld de,-hram_base
-_
-	add hl,de
-	ret.l
-	
+; Inputs:  DE = GB address
+; Outputs: DE = GB address plus (bank << 24), depending on region
+; Destroys AF
+get_banked_address:
+	ld a,d
+	add a,$40
+	ret po
+	push hl
+	 ld hl,(z80codebase+curr_rom_bank-2)
+	 ld h,d
+	 ld l,e
+	 ex de,hl
+	pop hl
+	ret
 	
 ; Gets the recompile struct entry for a given code pointer.
 ;
-; Inputs: DE = 16-bit Z80 code pointer
+; Inputs: BC = 16-bit Z80 code pointer
 ; Outputs: IX = struct entry or $xx0000 if not found
-; Destroys AF,BC,HL
+; Destroys AF,DE,HL
 lookup_code_block:
 #ifdef 0
-	push de
+	push bc
 	 APRINTF(LookupGBMessage)
-	pop de
+	pop bc
 #endif
 	ld ix,recompile_struct
 	ld hl,recompile_index_LUT
-	ld l,d
+	ld l,b
 	ld a,(hl)
 	ld ixl,a
 	inc h
 	ld a,(hl)
 	ld ixh,a
-	ld a,e
+	ld a,c
 	cpl
-	ld c,a
-	ld a,d
+	ld e,a
+	ld a,b
 	cpl
-	ld b,a
+	ld d,a
 lookup_code_block_loop:
 	ld hl,(ix)
-	add.s hl,bc
+	add.s hl,de
 	ret nc
 	ld hl,(ix-8)
-	add.s hl,bc
+	add.s hl,de
 	jr nc,_
 	ld hl,(ix-16)
-	add.s hl,bc
+	add.s hl,de
 	jr nc,++_
 	ld hl,(ix-24)
-	add.s hl,bc
+	add.s hl,de
 	lea ix,ix-32
 	jr c,lookup_code_block_loop
 	lea ix,ix+8
@@ -219,19 +203,18 @@ _
 Z80InvalidOpcode_helper:
 	pop.s af
 	exx
-	pop.s de
+	pop.s bc
 #ifdef DEBUG
 	; Open debugger on CEmu
 	ld (exitReason),a
 	ld a,2
 	ld ($FFFFFF),a
-	push de
+	push bc
 	 APRINTF(InvalidOpcodeErrorMessage)
-	pop de
+	pop bc
 #endif
 	call.il lookup_gb_code_address
-	call.il get_gb_address
-	ld (errorArg),hl
+	ld (errorArg),de
 	ld a,(z80codebase+curr_rom_bank)
 	ld (errorArg+2),a
 	ld a,(ERROR_INVALID_OPCODE << 2) + 1
@@ -260,92 +243,141 @@ _
 ; Locating the code block is O(log N) in number of blocks.
 ; Locating the address within the block is O(N) in number of instructions.
 ;
-; Inputs:  DE = 16-bit Z80 code pointer
-; Outputs: IX = Literal 24-bit pointer to GB opcode
-;          DE = 16-bit Z80 code pointer
-;          A = NEGATIVE number of cycles until block end, or 0 if at start of RAM block
-; Destroys F,BC,HL
+; Inputs:  BC = 16-bit Z80 code pointer
+; Outputs: DE = 16-bit GB code address
+;          A = Number of cycles until sub-block end
+; Destroys F,HL,IX
 lookup_gb_code_address:
-	or a
-lookup_gb_cache_jit_address = $+1
-	ld hl,0
-	sbc hl,de
-	jr z,lookup_gb_cache_found
-	ld (lookup_gb_cache_jit_address),de
 #ifdef 0
-	push de
+	push bc
 	 APRINTF(LookupGBMessage)
-	pop de
+	pop bc
 #endif
 	call lookup_code_block
 	ld a,ixh
 	or ixl
 	jr z,runtime_error
-	ld hl,(ix)
-	xor a
-	sub (ix+7)	; Should set carry flag
-	ASSERT_C
-	ld ix,(ix+2)
-	inc.s hl
-	sbc hl,de
+	ld de,(ix)
+	ld hl,(ix+2)
+	ex.s de,hl
+	sbc hl,bc
 	jr z,lookup_gb_found_start
 	push hl
-	 ex (sp),iy
-	 lea hl,ix
-	 add hl,hl
-	 ld hl,opcodesizes
-	 ld bc,RAM_PREFIX_SIZE
-	 jr c,lookup_gb_add
-lookup_gb_found_loop:
-	 ld l,(ix)
-	 inc h
-	 add a,(hl)
-	 dec h
-	 ld c,(hl)
-	 add ix,bc
-	 dec h
-	 ld c,(hl)
-	 inc h
-lookup_gb_add:
-	 add iy,bc
-	 jr nc,lookup_gb_found_loop
-	 dec iy
-	 add iy,iy
+	 call get_base_address
 #ifdef DEBUG
-	 jp nc,runtime_error
-#else
-	 jr nc,runtime_error
+	 ld a,d
+	 sub $40
+	 cp $40
+	 jr nc,_
+	 ld a,(z80codebase+curr_rom_bank)
+	 cp (ix+4)
+	 jr nz,$
+_
 #endif
-	pop iy
+	 ld a,(ix+7)
+	pop ix
+	push hl
+	 push bc
+	  add hl,de
+	  bit 7,d	; Check whether the GB address is in ROM
+	  ld de,opcodesizes
+	  ld bc,RAM_PREFIX_SIZE
+	  jr nz,lookup_gb_add
+lookup_gb_found_loop:
+	  ld e,(hl)
+	  ex de,hl
+	  ld c,(hl)
+	  ex de,hl
+	  add hl,bc
+	  ex de,hl
+	  inc h
+	  sub (hl)
+	  dec h
+	  dec h
+	  ld c,(hl)
+	  inc h
+	  ex de,hl
+	  jr c,lookup_gb_new_sub_block
+lookup_gb_add:
+	  add ix,bc
+	  jr nc,lookup_gb_found_loop
+	  dec ix
+	  add ix,ix
+runtime_error_trampoline:
+#ifdef DEBUG
+	  jp nc,runtime_error
+#else
+	  jr nc,runtime_error
+#endif
+	 pop bc
+lookup_gb_finish:
+	pop de
+	or a
+	sbc hl,de
+	ex de,hl
 #ifdef 0
 	push af
-	 push ix
-	  push de
+	 push de
+	  push bc
 	   APRINTF(LookupGBFoundMessage)
-	  pop de
-	 pop ix
+	  pop bc
+	 pop de
 	pop af
 #endif
-	ld (lookup_gb_cache_gb_address),ix
-	ld (lookup_gb_cache_cycles),a
-	ret.l
-	
-lookup_gb_cache_found:
-lookup_gb_cache_gb_address = $+2
-	ld ix,0
-lookup_gb_cache_cycles = $+1
-	ld a,0
 	ret.l
 	
 lookup_gb_found_start:
-	lea hl,ix
-	ld (lookup_gb_cache_gb_address),hl
-	add hl,hl
+	ld a,(ix+7)
+	ret.l
+
+lookup_gb_new_sub_block_end:
+	 dec ix
+	 add ix,bc
+	 jr nc,runtime_error_trampoline
+	 add.s a,(ix-2)
+	 ASSERT_C
+	 jr lookup_gb_finish
+	
+lookup_gb_new_sub_block:
+	  bit 7,a
+	  jr z,lookup_gb_prefix
+	  add ix,bc
+	 pop bc
+	 jr c,lookup_gb_new_sub_block_end
+	 push hl
+	  lea hl,ix-3
+	  add hl,bc
+	  add.s a,(hl)
+	  ASSERT_C
+	 pop hl
+	 push bc
+	  ld bc,0
+	  jr lookup_gb_found_loop
+	
+lookup_gb_prefix:
+	  ; Count CB-prefixed opcode cycles
+	  sbc a,c
+	  ASSERT_NC
+	  ld c,a
+	  dec hl
+	  ld a,(hl)
+	  inc hl
+	  xor $46
+	  and $C7
+	  jr z,_
+	  and 7
+	  jr nz,++_
+	  dec c
 _
-	ld (lookup_gb_cache_cycles),a
-	ret.l nc
-	xor a
-	jr -_
+	  dec c
+#ifdef DEBUG
+	  jp m,$
+#endif
+_
+	  ld a,c
+	  ld c,2
+	  jr lookup_gb_add
+	
 	
 	; If a cached code lookup misses, resolve it and insert into the cache
 lookup_code_cached_miss:
@@ -353,21 +385,10 @@ lookup_code_cached_miss:
 	  push bc
 #ifdef DEBUG
 	   push de
-	    ld hl,(base_address)
-	    ex de,hl
-	    xor a
-	    sbc hl,de
-	    push hl
-	     ld h,a
-	     ld a,(z80codebase+curr_rom_bank)
-	     ld l,a
-	     push hl
-	      APRINTF(CacheMissMessage)
-	     pop hl
-	    pop hl
+	    APRINTF(CacheMissMessage)
 	   pop de
 #endif
-	   call lookup_code_by_pointer
+	   call lookup_code_with_bank
 	   ; Check if the cache needs to be flushed
 	   ld hl,(recompile_struct_end)
 	   ld de,(recompile_cache)
@@ -378,13 +399,13 @@ lookup_code_cached_miss:
 	   ; Allow a certain number of cache flushes before flushing the entire JIT space
 	   ld hl,cache_flushes_allowed
 	   dec (hl)
-	   ; Get the GB code pointer in HL
+	   ; Get the GB banked pointer in HL
 	   pop de
 	   pop hl
 	   push hl
 	   push de
 	   ; If no cache flushes remaining, prepare a JIT flush (replacing IX and A)
-	   call z,prepare_flush_by_pointer
+	   call z,prepare_flush
 	   ; Flush the cache
 	   ld de,recompile_cache_end
 _
@@ -409,10 +430,8 @@ _
 	 inc hl
 	 inc hl
 	 inc hl
-	 lea de,ix
-	 ld (hl),e
+	 ld (hl),ix
 	 inc hl
-	 ld (hl),d
 	 inc hl
 	 ld (hl),a
 	pop hl
@@ -445,7 +464,7 @@ lookup_code_cached_found:
 	
 	 ; Fast return to the last interrupted code address
 int_cache_hit:
-	 ld hl,(z80codebase+int_return_sp)
+	 ld hl,(int_return_sp)
 	 dec hl
 	 dec hl
 	 ld ix,(hl)
@@ -455,7 +474,7 @@ int_cache_hit:
 	 dec hl
 	 xor a
 	 sub (hl)
-	 ld (z80codebase+int_return_sp),hl
+	 ld (int_return_sp),hl
 	 inc hl
 	 ld hl,(hl)
 	 ld (int_cached_return),hl
@@ -468,6 +487,7 @@ int_cache_hit:
 ; Inputs:  HL = direct Game Boy stack pointer
 ; Outputs: IX = recompiled code address
 ;          HL = updated stack pointer
+;          DE = popped Game Boy address (banked)
 ; Destroys AF,BC,DE,HL
 pop_and_lookup_code_cached:
 	inc.s de
@@ -487,21 +507,19 @@ pop_and_lookup_code_cached:
 ;
 ; Inputs:  DE = Game Boy address
 ; Outputs: IX = recompiled code address
+;          DE = Game Boy address (banked)
 ;          A = number of cycles until block end
 ; Destroys AF,BC,DE
 lookup_code_cached:
+	; Get the banked address in DE
+	call get_banked_address
+
+lookup_code_cached_with_bank:
 	push hl
-	
-	 ; Get the direct address in DE
-	 call get_base_address
-	 ld (base_address),hl
-	 add hl,de
-	 ex de,hl
-	
-lookup_code_cached_by_pointer_pushed:
-	; Quickly check against the last interrupt return address
+	 ; Quickly check against the last interrupt return address
 int_cached_return = $+1
 	 ld hl,0
+	 or a
 	 sbc hl,de
 	 jr z,int_cache_hit
 	
@@ -532,58 +550,81 @@ _
 lookup_code_cached_lower:
 	 pop ix
 	 jr lookup_code_cached_loop
-	 
-lookup_code_cached_by_pointer:
-	call.il _
+	
+	
+lookup_code_link_internal_with_bank_cached:
+	call.il lookup_code_cached_with_bank
 	ret
-_
-	push hl
-	 jr lookup_code_cached_by_pointer_pushed
 	
-lookup_code_link_internal:
-	call get_base_address
-lookup_code_link_internal_with_base:
-	ld (base_address),hl
-	add hl,de
-	
-; Looks up a recompiled code pointer from a direct GB address,
-; allowing a direct link within the currently executing RAM block.
-; Normally, only the start of a RAM block is allowed for direct links.
-; If executing from ROM or target is not the same block, proceed as normal.
-;
-; Inputs:  HL = direct 24-bit GB address to look up
-;          IX = struct pointer of the currently executing block
-;          (base_address) = base address of pointer in HL
-; Outputs: IX = recompiled code pointer
-;          A = number of cycles until block end
-; Destroys AF,BC,DE,HL
-lookup_code_link_internal_by_pointer:
-	ex de,hl
-	bit 7,(ix+4)
-	jr z,lookup_code_by_pointer
-	; We're running from RAM, check if destination is in running block
-	ld hl,(ix+2)
-	or a
-	sbc hl,de
-	jr z,internal_found_start
-	jr nc,lookup_code_cached_by_pointer
-	ld bc,(ix+5)
-	dec.s bc
-	add hl,bc
-	jr nc,lookup_code_cached_by_pointer
 internal_found_start:
 	ld a,(ix+7)
 	ld ix,(ix)
 	lea ix,ix+RAM_PREFIX_SIZE
-	ret z
+	ret
+	
+internal_found_new_subblock:
+	  bit 7,a
+	  jr z,internal_found_prefix
+	  add.s a,(ix-3)
+	  ASSERT_C
+	  add hl,bc
+	  add iy,bc
+	  jr nc,foundloop_internal
+	  jr foundloop_internal_finish
+	  
+internal_found_prefix:
+	  ; Count CB-prefixed opcode cycles
+	  sbc a,c
+	  bit.s 2,(ix-2)
+	  jr z,foundloop_internal_continue
+	  sub c
+	  bit.s 7,(ix-1)
+	  jr nz,foundloop_internal_continue
+	  bit.s 6,(ix-1)
+	  jr z,foundloop_internal_continue
+	  inc a
+	  jr foundloop_internal_continue
+	
+lookup_code_link_internal:
+	call get_banked_address
+	
+; Looks up a recompiled code pointer from a banked GB address,
+; allowing a direct link within the currently executing RAM block.
+; Normally, only the start of a RAM block is allowed for direct links.
+; If executing from ROM or target is not the same block, proceed as normal.
+;
+; Inputs:  DE = banked GB address to look up
+;          IX = struct pointer of the currently executing block
+; Outputs: IX = recompiled code pointer
+;          A = number of cycles until block end
+; Destroys AF,BC,DE,HL
+lookup_code_link_internal_with_bank:
+	ld hl,(ix+2)
+	bit 7,h
+	jr z,lookup_code_with_bank
+	; We're running from RAM, check if destination is in running block
+	or a
+	sbc hl,de
+	jr z,internal_found_start
+	jr nc,lookup_code_link_internal_with_bank_cached
+	ld bc,(ix+5)
+	dec.s bc
+	add hl,bc
+	jr nc,lookup_code_link_internal_with_bank_cached
 	or a
 	sbc hl,bc
 	push hl
 	 ex (sp),iy
-	 add hl,de
+	 add.s hl,de
 	 push de
+	  ex de,hl
+	  call get_base_address
+	  add hl,de
 	  ld de,opcodesizes
 	  ld b,e
+	  ld a,(ix+7)
+	  ld ix,(ix)
+	  lea ix,ix+RAM_PREFIX_SIZE
 foundloop_internal:
 	  ; Get current opcode
 	  ld e,(hl)
@@ -600,15 +641,28 @@ foundloop_internal:
 	  ; Add GB instruction size
 	  ld c,(hl)
 	  ex de,hl
+	  jr c,internal_found_new_subblock
+foundloop_internal_continue:
 	  add hl,bc
 	  add iy,bc
 	  jr nc,foundloop_internal
+foundloop_internal_finish:
 	 pop de
+	 dec iy
+	 add iy,iy
 	pop iy
-	or a
-	sbc hl,de
+	ret c
+	jp lookup_code_link_internal_with_bank_cached
+	
+lookupfoundstart:
+	 ld a,(ix+7)
+	 bit 7,(ix+3)
+	 ld ix,(ix)
+	pop iy
 	ret z
-	jr lookup_code_by_pointer
+	; Report a cycle length of 0 for RAM blocks
+	xor a
+	ret
 	
 ; Looks up a recompiled code pointer from a GB address.
 ;
@@ -617,34 +671,19 @@ foundloop_internal:
 ;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
 lookup_code:
-	call get_base_address
-	ld (base_address),hl
-	add hl,de
-	ex de,hl
+	call get_banked_address
 	
-; Looks up a recompiled code pointer from a direct GB address.
+; Looks up a recompiled code pointer from a banked GB address.
 ;
-; Inputs:  DE = direct 24-bit GB address to look up
-;          (base_address) = base address of pointer in DE
+; Inputs:  DE = banked GB address to look up
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
-lookup_code_by_pointer:
+lookup_code_with_bank:
 	push iy
 #ifdef 0
 	 push de
-	  ld hl,(base_address)
-	  ex de,hl
-	  or a
-	  sbc hl,de
-	  push hl
-	   sbc hl,hl
-	   ld a,(z80codebase+curr_rom_bank)
-	   ld l,a
-	   push hl
-	    APRINTF(LookupMessage)
-	   pop hl
-	  pop hl
+	  APRINTF(LookupMessage)
 	 pop de
 #endif
 	 ld hl,(recompile_struct_end)
@@ -665,20 +704,23 @@ lookuploop:
 	 add hl,bc
 	 jr nc,lookuploop
 	 ; Don't allow jumping to the middle of a RAM block
-	 ld a,(ix+4)
+	 ld a,(ix+3)
 	 rla
 	 jr c,lookuploop
 	 push ix
 	  sbc hl,bc
 	  push hl
 	  pop iy
-	  add hl,de
+	  add.s hl,de
 	  push de
+	   ex de,hl
+	   call get_base_address
+	   add hl,de
 	   ld de,opcodesizes
 	   ld b,e
 	   ld a,(ix+7)
 	   ld ix,(ix)
-foundloop:
+lookup_found_loop:
 	   ; Get current opcode
 	   ld e,(hl)
 	   ex de,hl
@@ -694,33 +736,48 @@ foundloop:
 	   ; Add GB instruction size
 	   ld c,(hl)
 	   ex de,hl
+	   jr c,lookup_found_new_subblock
+lookup_found_continue:
 	   add hl,bc
 	   add iy,bc
-	   jr nc,foundloop
+	   jr nc,lookup_found_loop
+lookup_found_loop_finish:
 	  pop de
-	  or a
-	  sbc hl,de
-	  jr nz,lookuploop_restore
+	  dec iy
+	  add iy,iy
+	  jr nc,lookuploop_restore
 	 pop hl
 	pop iy
 	ret
 	
-lookupfoundstart:
-	 ld a,(ix+7)
-	 bit 7,(ix+4)
-	 ld ix,(ix)
-	pop iy
-	ret z
-	; Report a cycle length of 0 for RAM blocks
-	xor a
-	ret
+lookup_found_new_subblock:
+	   bit 7,a
+	   jr z,lookup_found_prefix
+	   add.s a,(ix-3)
+	   ASSERT_C
+	   add hl,bc
+	   add iy,bc
+	   jr nc,lookup_found_loop
+	   jr lookup_found_loop_finish
+	
+lookup_found_prefix:
+	   ; Count CB-prefixed opcode cycles
+	   sbc a,c
+	   bit.s 2,(ix-2)
+	   jr z,lookup_found_continue
+	   sub c
+	   bit.s 7,(ix-1)
+	   jr nz,lookup_found_continue
+	   bit.s 6,(ix-1)
+	   jr z,lookup_found_continue
+	   inc a
+	   jr lookup_found_continue
 	
 	
-; Recompiles a new code block starting from a direct GB address.
+; Recompiles a new code block starting from a banked GB address.
 ;
-; Inputs:  DE = direct 24-bit GB address to recompile
+; Inputs:  DE = banked GB address to recompile
 ;          IY saved on stack
-;          (base_address) = base address of pointer in DE
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
 ; Destroys AF,BC,DE,HL
@@ -730,7 +787,7 @@ recompile_struct_end = $+2
 	 
 	 ld hl,(ix)
 	 ld (ix+2),de
-	 bit 7,(ix+4)
+	 bit 7,d
 #ifdef DEBUG
 	 jp nz,recompile_ram
 #else
@@ -744,19 +801,7 @@ recompile_struct_end = $+2
 	   dec.s hl
 	   push hl
 	    push de
-	     ld hl,(base_address)
-	     ex de,hl
-	     or a
-	     sbc hl,de
-	     push hl
-	      or a
-	      sbc hl,hl
-	      ld a,(z80codebase+curr_rom_bank)
-	      ld l,a
-	      push hl
-	       APRINTF(RecompileMessage)
-	      pop hl
-	     pop hl
+	     APRINTF(RecompileMessage)
 	    pop de
 	   pop hl
 	  pop hl
@@ -764,6 +809,7 @@ recompile_struct_end = $+2
 #endif
 	 
 	 call generate_opcodes
+	 ld a,(ix+7)
 	
 recompile_end_common:
 	pop iy
@@ -802,21 +848,19 @@ _
 	dec (hl)
 	jr nz,flush_cache
 _
-	; Calculate the Game Boy start address from the generated code block
+	; Retrieve the Game Boy start address from the generated code block
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
-prepare_flush_by_pointer:
-	ld de,(base_address)
-	xor a
-	sbc hl,de
 prepare_flush:
 	; Save off the Game Boy start address
 	ld.sis (flush_address),hl
-	; Prevent the cycle overflow code path from being taken
-	ld hl,$E9DD08	;EX AF,AF' \ JP (IX)
-	ld (z80codebase+cycle_overflow_flush_smc),hl
+	; Prevent an event from being scheduled on the flush handler
+	ld hl,$C3 | (schedule_event_finish_no_schedule << 8)	;JP schedule_event_finish_no_schedule
+	ld (flush_event_smc),hl
 	; Dispatch to the flush handler instead of the recompiled code
 	ld ix,flush_handler
+	; Don't consume any cycles during dispatch
+	xor a
 	ret
 	
 recompile_ram:
@@ -827,13 +871,7 @@ recompile_ram:
 	   dec.s hl
 	   push hl
 	    push de
-	     ld hl,(base_address)
-	     ex de,hl
-	     or a
-	     sbc hl,de
-	     push hl
-	      APRINTF(RecompileRamMessage)
-	     pop hl
+	     APRINTF(RecompileRamMessage)
 	    pop de
 	   pop hl
 	  pop hl
@@ -853,8 +891,11 @@ recompile_ram:
 	 call generate_opcodes
 	
 	 ; Copy the GB opcodes for coherency
-	 push bc
-	  ex (sp),hl
+	 push hl
+	  ld hl,(ix+2)
+	  inc hl
+	  dec.s hl
+	  add hl,bc
 	  ; Add in padding to avoid flushes
 	  ex de,hl
 ram_block_padding = $+1
@@ -863,19 +904,73 @@ ram_block_padding = $+1
 	  ex de,hl
 	 pop bc
 	 ldir
+	 ; Complement the final byte to force the match to end here
+	 dec de
+	 ld a,(de)
+	 cpl
+	 ld (de),a
+	 inc de
 	 
 	 ; Report block cycle length of 0
 	 xor a
-#ifdef DEBUG
 	 jp recompile_end_common
-#else
-	 jr recompile_end_common
-#endif
 	 
 flush_cache:
 	ld hl,recompile_cache_end
 	ld (recompile_cache),hl
 	ret
+	
+	
+check_coherency_helper:
+	ex af,af'
+check_coherency_helper_swapped:
+	ld de,recompile_struct
+	add ix,de
+	ld hl,(ix+2)
+	ex.s de,hl
+	call get_base_address
+	add hl,de
+	ex de,hl
+	ld bc,(ix+5)
+	ld hl,(ix+8)
+	sbc hl,bc
+check_coherency_loop:
+	ld a,(de)
+	inc de
+	cpi.s
+	jr nz,_
+	ld a,(de)
+	inc de
+	cpi.s
+	jr nz,_
+	ld a,(de)
+	inc de
+	cpi.s
+	jr nz,_
+	ld a,(de)
+	inc de
+	cpi.s
+	jr z,check_coherency_loop
+_
+	jp pe,rerecompile
+	; Make sure the last (complemented) byte matches
+	cpl
+	dec hl
+	xor.s (hl)
+	jr nz,rerecompile
+	
+check_coherency_cycles:
+	ld a,(ix+7)
+	ld (_+2),a
+_
+	lea iy,iy+0
+	ld a,iyh
+	or a
+	jr z,check_coherency_cycle_overflow
+	ex af,af'
+	ei
+	jp.sis coherency_return
+	
 	
 ; Recompiles an existing RAM code block in-place.
 ;
@@ -892,42 +987,14 @@ rerecompile:
 	 inc hl
 	 dec.s hl
 	 push hl
-	  APRINTF(CoherencyFailedMessage)
+	  ld hl,(ix+2)
+	  push hl
+	   APRINTF(CoherencyFailedMessage)
+	  pop hl
 	 pop hl
 	pop ix
 	or a
 #endif
-	
-	; Remove any outstanding scheduled event
-	ld.sis hl,(event_address)
-	ld de,z80codebase + event_value
-	ld a,(de)
-	ld.s (hl),a
-	ld.sis (event_address),de
-	
-	ld hl,(ix+2)
-	ld de,vram_base
-	xor a
-	sbc hl,de
-	ld bc,$A000
-	sbc hl,bc
-	jr c,rerecompile_found_base
-	ld hl,(ix+2)
-	ld de,wram_base
-	sbc hl,de
-	ld bc,$E000
-	sbc hl,bc
-	jr c,rerecompile_found_base
-	ld hl,(ix+2)
-	ld de,hram_base
-	sbc hl,de
-	dec c
-	ld b,c
-	sbc hl,bc
-	jr c,rerecompile_found_base
-	ld de,(cram_bank_base)
-rerecompile_found_base:
-	ld (base_address),de
 	
 	ld hl,(ix)
 	inc.s hl
@@ -935,30 +1002,43 @@ rerecompile_found_base:
 	add hl,de
 	ld de,(ix+2)
 	push iy
-	 push ix
-	  call generate_opcodes
-	 pop ix
+	 call generate_opcodes
 	pop iy
 	
+#ifdef DEBUG
+	ld a,h
+	cp 1
+	jr nc,$
+#endif
+	
 	push hl
+	 ; Get the address to copy the opcodes from
+	 ld l,(ix+2)
+	 ld h,(ix+3)
+	 add hl,bc
 	pop bc
 	
-	; Get the address to copy the opcodes to
-	ld a,(ix+10)
-	ld (ix+10),z80codebase >> 16
-	ld hl,(ix+8)
-	ld (ix+10),a
-	sbc hl,bc	; Carry is reset
-	ex de,hl
+	push hl
+	 ; Get the address to copy the opcodes to
+	 ld hl,z80codebase
+	 ld l,(ix+8)
+	 ld h,(ix+9)
+	 sbc hl,bc	; Carry is reset
+	 ASSERT_NC
+	 ex de,hl
 	
-	; Make sure there is no overlap
-	scf
-	sbc hl,de
-	jr nc,coherency_flush
+	 ; Make sure there is no overlap
+	 scf
+	 sbc hl,de
+	 jr nc,coherency_flush
 	
 	; Copy the new opcodes, from first to last
-	ld hl,(ix+2)
+	pop hl
 	ldir
+	dec de
+	ld a,(de)
+	cpl
+	ld (de),a
 	
 	; Invalidate both the read and write cycle LUTs
 	ld hl,z80codebase+read_cycle_LUT
@@ -969,27 +1049,23 @@ rerecompile_found_base:
 	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2
 	ldir
 	; Empty the interrupt return stack
-	ld (z80codebase+int_return_sp),hl
+	ld (int_return_sp),hl
 	
-	; Set the cached interrupt return address to NULL
+	; Set the cached interrupt return address to -1
+	dec bc
 	ld (int_cached_return),bc
-	; Set the cached lookup address to NULL
-	ld (lookup_gb_cache_jit_address),bc
+	jr check_coherency_cycles
 	
-	ei
-	jp.sis coherency_return
-	
-coherency_cycle_overflow:
-	xor a
-	sub (ix+7)
-	ld hl,(ix)
-	ld de,RAM_PREFIX_SIZE
-	add hl,de
-	ex de,hl
-	ld ix,(ix+2)
-	jp schedule_event_helper_post_lookup
+check_coherency_cycle_overflow:
+	ld c,(ix+7)
+	ld hl,(ix+2)
+	ex.s de,hl
+	pop.s ix
+	jp schedule_event_helper
 	
 coherency_flush:
+	pop de
+	pop.s de
 	; Get the number of bytes in the overflow
 	inc hl
 	; Add that many bytes to the RAM block padding to avoid future issues
@@ -1006,7 +1082,7 @@ coherency_flush:
 	; Start at the very beginning
 	ld de,(ix+2)
 	call flush_code
-	call lookup_code_by_pointer
+	call lookup_code_with_bank
 	exx
 	ld bc,(CALL_STACK_DEPTH+1)*256
 	exx
@@ -1015,54 +1091,68 @@ coherency_flush:
 	pop.s hl
 	ld.sis sp,myz80stack-2
 	ld sp,myADLstack
+	; No need to count cycles, that is handled by the RAM block prefix
+	ex af,af'
 	ei
-	jp.sis dispatch_cycles
+	jp.s (ix)
+	
 	
 ; Inputs:  IX = struct entry
-;          DE = GB opcodes start
+;          DE = GB opcodes start address (banked)
 ;          HL = block start
 ; Outputs: IX = struct entry
-;          BC = GB opcodes start
+;          BC = GB opcodes base address
 ;          DE = block end
 ;          HL = GB opcodes size
 ;          A = total block cycle count
 ;          Carry flag reset
 ; Destroys None
 generate_opcodes:
-	; Cycle count while recompiling is hl-iy. Start at negative maximum.
-	ld a,e
-	add a,MAX_CYCLES_PER_BLOCK
-	ld iyl,a
 	push hl
-base_address = $+1
-	 ld hl,0
+	 lea hl,ix+7
+	 ld (opgen_last_cycle_count_smc),hl
 	 or a
+	 sbc hl,hl
 	 sbc hl,de
 	 ld (opgenCONSTwrite_smc),hl
-	pop hl
-	ex de,hl
-	ld bc,opgentable
-	ld a,ixl
-	ld (opgen_emit_jump_smc_1),a
-	ld a,ixh
-	ld (opgen_emit_jump_smc_2),a
-	push ix
-	 ld ix,opgenroutines
-	 call opgen_next_fast
-	 call p,opgen_cycle_overflow
-	pop ix
-	inc hl
-	inc de
-	; Get the cycle count
-	ld a,l
-	sub iyl
-	add a,MAX_CYCLES_PER_BLOCK
-	; Get the size of the GB opcodes and save it
-	ld bc,(ix+2)
-	or a
+	 dec de
+	 inc.s de
+	 call get_base_address
+	 ex de,hl
+	 add hl,de
+	 ex de,hl
+	 ld a,l
+	 ld (opgen_base_address_smc_1),a
+	 ld a,h
+	 ld (opgen_base_address_smc_2),a
+	 ex (sp),hl
+	 ex de,hl
+	 ld bc,opgentable
+	 ld a,ixl
+	 ld (opgen_emit_jump_smc_1),a
+	 ld a,ixh
+	 ld (opgen_emit_jump_smc_2),a
+	 ; Cycle count while recompiling is hl-iy. Start at negative maximum.
+	 ld a,l
+	 add a,MAX_CYCLES_PER_BLOCK + $80
+	 ld iyl,a
+	 push ix
+	  ld ix,opgenroutines
+	  call opgen_next_fast
+	  call m,opgen_cycle_overflow
+	 pop ix
+	 ex de,hl
+	 inc hl
+	 ; Get the size of the GB opcodes and save it
+	 ld bc,(ix+2)
+	 inc bc
+	 dec.s bc
+	 or a
+	 sbc hl,bc
+	pop bc
 	sbc hl,bc
-	ld (ix+5),hl
-	ld (ix+7),a
+	ld (ix+5),l
+	ld (ix+6),h
 	ret
 	
 #ifdef 0
@@ -1100,10 +1190,10 @@ opcoderecsizes:
 	.db 5,1,3,1,1,1,2,1
 	.db 1,3,3,1,1,1,2,1
 	.db 0,1,3,1,1,1,2,1
-	.db 10,3,3,1,1,1,2,3
-	.db 10,1,3,1,1,1,2,1
-	.db 10,5,3,4,3,3,4,1
-	.db 10,3,3,4,1,1,2,1
+	.db 17,3,3,1,1,1,2,3
+	.db 17,1,3,1,1,1,2,1
+	.db 17,5,3,4,3,3,4,1
+	.db 17,3,3,4,1,1,2,1
 	
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
@@ -1123,14 +1213,14 @@ opcoderecsizes:
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
 	
-	.db 6,2,10,0,10,2,2,8
-	.db 6,0,10,2,10,8,2,8
-	.db 6,2,10,0,10,2,2,8
-	.db 6,0,10,0,10,0,2,8
-	.db 3,2,3,0,0,2,2,8
-	.db 4,0,5,0,0,0,2,8
-	.db 3,3,3,3,0,3,2,8
-	.db 4,3,5,3,0,0,2,8
+	.db 12,2,17,0,10,2,2,7
+	.db 12,0,17,2,10,8,2,7
+	.db 12,2,17,0,10,2,2,7
+	.db 12,0,17,0,10,0,2,7
+	.db 3,2,3,0,0,2,2,7
+	.db 4,0,5,0,0,0,2,7
+	.db 3,3,3,3,0,3,2,7
+	.db 4,3,5,3,0,0,2,7
 	
 ; A table of Game Boy opcode sizes.
 opcodesizes:
@@ -1172,11 +1262,12 @@ opcodesizes:
 	
 ; A table of Game Boy opcode cycles. Block-ending opcodes are set to 0.
 ; Conditional branches are assumed not taken.
+; Prefix opcodes (i.e. CB) are set to -1, for efficient detection.
 opcodecycles:
 	.db 1,3,2,2,1,1,2,1
 	.db 5,2,2,2,1,1,2,1
 	.db 1,3,2,2,1,1,2,1
-	.db -1,2,2,2,1,1,2,1
+	.db 0,2,2,2,1,1,2,1
 	.db 2,3,2,2,1,1,2,1
 	.db 2,2,2,2,1,1,2,1
 	.db 2,3,2,2,3,3,3,1
@@ -1200,14 +1291,14 @@ opcodecycles:
 	.db 1,1,1,1,1,1,2,1
 	.db 1,1,1,1,1,1,2,1
 	
-	.db 2,3,3,-1,3,4,2,1
-	.db 2,-1,3,2,3,3,2,1
-	.db 2,3,3,-1,3,4,2,1
-	.db 2,-1,3,-1,3,-1,2,1
-	.db 3,3,2,-1,-1,4,2,1
-	.db 4,-1,4,-1,-1,-1,2,1
-	.db 3,3,2,1,-1,4,2,1
-	.db 3,2,4,1,-1,-1,2,1
+	.db 2,3,3,0,4,4,2,4
+	.db 2,0,3,-1,4,4,2,4
+	.db 2,3,3,0,4,4,2,4
+	.db 2,0,3,0,4,0,2,4
+	.db 3,3,2,0,0,4,2,4
+	.db 4,0,4,0,0,0,2,4
+	.db 3,3,2,1,0,4,2,4
+	.db 3,2,4,1,0,0,2,4
 	
 ; A table indexing opcode generation routines.
 ; All entry points live in a 256-byte space.
@@ -1597,63 +1688,77 @@ mem_write_port_handler_table_end:
 	
 	
 opgen_cycle_overflow:
-	ld a,(base_address)
-	cpl
-	add a,l
-	ld c,a
-	ld a,(base_address+1)
-	cpl
-	adc a,h
-	ld b,a
-	inc bc
-	ld a,l
-	sub iyl
-	add a,MAX_CYCLES_PER_BLOCK
-	dec hl
-	dec iy
-	jr opgen_emit_jump
+	push hl
+	 call opgen_emit_unconditional_jump
+	pop de
+	dec de
+	ret
 	
 _opgenRST:
-	ld.sis bc,decode_rst
-	sub 2
-	jr opgen_emit_call
-	
-_opgenCALLcond:
-	ld b,a
-	ld a,c
-	xor $C4 ^ $28
-	ld (de),a
-	inc de
-	ld a,8
-	ld (de),a
-	inc de
-	ld a,b
-_opgenCALL:
-	ld.sis bc,decode_call
-	inc hl
-	inc hl
-opgen_emit_call:
 	ex de,hl
-	inc de
 	ld (hl),$CD
 	inc hl
-	ld (hl),c
+	ld (hl),do_rst & $FF
 	inc hl
-	ld (hl),b
-	inc hl
-	; Store cycle count for call not taken, used by cached RET
-	add a,MAX_CYCLES_PER_BLOCK + 3
-	ld b,a
-	scf
-	ld a,(base_address)
-	cpl
-	adc a,e
+	ld (hl),do_rst >> 8
+	call opgen_reset_cycle_count
+	lea iy,iy-3
+	jr opgen_finish_rst
+	
+_opgenCALLcond:
+	ex de,hl
+	ld a,c
+	xor $C4 ^ $CC
 	ld (hl),a
 	inc hl
-	ld a,(base_address+1)
-	cpl
-	adc a,d
-	ld (hl),a
+	bit 4,c
+	jr nz,++_
+	bit 3,c
+	jr nz,_
+	ld (hl),do_call_nz & $FF
+	inc hl
+	ld (hl),do_call_nz >> 8
+	jr opgen_finish_cond_call
+_
+	ld (hl),do_call_z & $FF
+	inc hl
+	ld (hl),do_call_z >> 8
+	jr opgen_finish_cond_call
+_
+	bit 3,c
+	jr nz,_
+	ld (hl),do_call_nc & $FF
+	inc hl
+	ld (hl),do_call_nc >> 8
+	jr opgen_finish_cond_call
+_
+	ld (hl),do_call_c & $FF
+	inc hl
+	ld (hl),do_call_c >> 8
+opgen_finish_cond_call:
+	inc hl
+	ld (hl),$CD
+	inc hl
+	ld (hl),decode_call_cond & $FF
+	inc hl
+	ld (hl),decode_call_cond >> 8
+	jr opgen_finish_call
+
+_opgenCALL:
+	ex de,hl
+	ld (hl),$CD
+	inc hl
+	ld (hl),decode_call & $FF
+	inc hl
+	ld (hl),decode_call >> 8
+	inc hl
+opgen_finish_call:
+	call opgen_reset_cycle_count
+	dec iy
+	inc de
+	inc de
+opgen_finish_rst:
+	inc de
 	inc hl
 	; Store the current ROM bank if in the correct range, else 0
 	sub $40
@@ -1664,50 +1769,15 @@ opgen_emit_call:
 _
 	ld (hl),a
 	inc hl
-	ld (hl),b
-	inc hl
-	inc hl
+	ld (opgen_last_cycle_count_smc),hl
+	call opgen_emit_gb_address
 	ex de,hl
-	jp opgen_next
-	
-_opgenJR:
-	dec iy
-opgen_emit_JR:
-	add a,MAX_CYCLES_PER_BLOCK + 3
-	push af
-	 inc hl
-	 ld a,(base_address)
-	 cpl
-	 add a,l
-	 ld c,a
-	 ld a,(base_address+1)
-	 cpl
-	 adc a,h
-	 ld b,a
-	 inc bc
-	 inc bc
-	 push hl
-	  ld a,(hl)
-	  rlca
-	  sbc hl,hl
-	  rrca
-	  ld l,a
-	  add hl,bc
-	  ex (sp),hl
-	 pop bc
-	pop af
-	jr opgen_emit_jump
+	jp opgen_next_fast
 
-_opgenJP:
-	dec iy
-opgen_emit_JP:
-	add a,MAX_CYCLES_PER_BLOCK + 4
-	inc hl
-	ld c,(hl)
-	inc hl
-	ld b,(hl)
-opgen_emit_jump:
+opgen_emit_unconditional_jump:
 	ex de,hl
+opgen_emit_unconditional_jump_swapped:
+	ld a,$C3
 opgen_emit_jump_swapped:
 	ld (hl),$CD
 	inc hl
@@ -1715,50 +1785,105 @@ opgen_emit_jump_swapped:
 	inc hl
 	ld (hl),decode_jump >> 8
 	inc hl
-	; Save block struct pointer
+	ld (hl),RST_CYCLE_CHECK
+	inc hl
+	ld (hl),$08	;EX AF,AF'
+	inc hl
+	; Emit jump instruction
+	ld (hl),a
+	inc hl
+	; Emit block struct pointer
 opgen_emit_jump_smc_1 = $+1
 	ld (hl),0
 	inc hl
 opgen_emit_jump_smc_2 = $+1
 	ld (hl),0
-	inc hl
-	; Save target address
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	inc hl
-	; Save cycle count
-	ld (hl),a
-	ex de,hl
-	sbc a,a	; Carry was set, so set sign flag
+	call opgen_emit_gb_address
+	call opgen_reset_cycle_count
+	inc de
+	ld a,c
+	rla
+	ret nc
+	inc de
 	ret
 	
 _opgenRET:
-	; Update total cycle count
-	lea iy,iy-3
-	ld a,c
-	ld (de),a
+	ex de,hl
+	call opgen_reset_cycle_count
+	ld (hl),c
+	inc hl
 	ret
 	
 _opgenRETcond:
-	add a,MAX_CYCLES_PER_BLOCK + 5
-	ld b,a
-	dec iy
 	ex de,hl
+	call opgen_reset_cycle_count
+	dec iy
 	ld a,c
 	xor $C0 ^ $28
 	ld (hl),a
 	inc hl
-	ld (hl),4
+	ld (hl),5
 	inc hl
-	ld (hl),$CD
+	ld (hl),$FD	;INC IY
 	inc hl
-	ld (hl),decode_ret_cond & $FF
+	ld (hl),$23
 	inc hl
-	ld (hl),decode_ret_cond >> 8
+	ld (hl),$C9	;RET
+	call opgen_emit_gb_address
+	
+opgen_emit_block_bridge:
+	ld (hl),$ED	;LEA IY,IY+offset
 	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip
+	ld (hl),$33
+	inc hl
+	ld (opgen_last_cycle_count_smc),hl
+	inc hl
+	ld (hl),RST_CYCLE_CHECK
+	inc hl
+	ld (hl),$08	;EX AF,AF'
+	inc hl
+	inc de
+	ex de,hl
+	jp opgen_next_fast
+	
+opgen_emit_gb_address:
+	inc hl
+	ld a,e
+opgen_base_address_smc_1 = $+1
+	sub 0
+	ld (hl),a
+	inc hl
+	ld a,d
+opgen_base_address_smc_2 = $+1
+	sbc a,0
+	ld (hl),a
+	inc hl
+	ret
+	
+opgenblockend:
+	ex (sp),hl
+	ld hl,(hl)
+	ex de,hl
+	ld (hl),0	;NOP
+	inc hl
+	ld (hl),$C3	;JP
+	inc hl
+	ld (hl),e
+	inc hl
+	ld (hl),d
+	inc hl
+	pop de
+	
+opgen_reset_cycle_count:
+	ld a,e
+	sub iyl
+	add a,MAX_CYCLES_PER_BLOCK + $80
+opgen_last_cycle_count_smc = $+1
+	ld (0),a
+	add a,iyl
+	ld iyl,a
+	xor a
+	ret
 	
 opgenroutinecall2byte_5cc:
 	lea iy,iy-2
@@ -1847,6 +1972,7 @@ _
 	pop af
 	or a
 	jp nz,opgen_next
+	dec a	; Set sign flag
 	ret
 	
 opgencartwrite:
