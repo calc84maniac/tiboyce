@@ -767,25 +767,19 @@ _
 	  jr nc,schedule_event_cycle_loop
 	  jr schedule_event_cycle_loop_finish
 	
-; Inputs:  DE = current GB address
+; Inputs:  BCDEHL' are swapped
+;          DE = current GB address
 ;          IX = current JIT address
-; Outputs: DE = current GB address with bank information (possibly incremented past HALT)
-;          IX = current JIT address (possibly incremented past HALT)
-;          A = NEGATIVE cycles to add for current block position
+;          A = NEGATIVE cycles corresponding to current sub-block position
+;          C = NEGATIVE cycles to add for current sub-block position (may differ when exiting HALT)
+; Outputs: BCDEHL' are swapped
+;          DE = current GB address with bank information
+;          IX = current JIT address
+;          A = NEGATIVE cycles to add for current sub-block position
+; Preserves: HL,B
+;
 dispatch_int_helper:
-	call get_base_address
-	add hl,de
-
-	; If we're on a HALT, exit it
-	ld a,(hl)
-	xor $76
-	ld a,(z80codebase+event_cycle_count)
-	jr nz,_
-	inc de
-	lea ix,ix+3
-	inc a
-_
-
+	exx
 int_return_sp = $+1
 	ld hl,0
 	ld b,(hl)
@@ -806,7 +800,7 @@ _
 	inc hl
 	inc hl
 	ld (int_return_sp),hl
-	ld c,a
+	exx
 	call get_banked_address
 	ld (int_cached_return),de
 	ld a,c

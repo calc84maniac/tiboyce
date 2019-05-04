@@ -1201,7 +1201,7 @@ opcoderecsizes:
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
-	.db 3,3,3,3,3,3,3,3
+	.db 3,3,3,3,3,3,6,3
 	.db 1,1,1,1,1,1,3,1
 	
 	.db 1,1,1,1,1,1,3,1
@@ -1220,7 +1220,7 @@ opcoderecsizes:
 	.db 3,2,3,0,0,2,2,7
 	.db 4,0,5,0,0,0,2,7
 	.db 3,3,3,3,0,3,2,7
-	.db 4,3,5,3,0,0,2,7
+	.db 4,3,5,6,0,0,2,7
 	
 ; A table of Game Boy opcode sizes.
 opcodesizes:
@@ -1927,6 +1927,22 @@ opgenroutinecall_1cc:
 	ldi
 	ldi
 	pop hl
+	jp opgen_next_fast
+	
+opgenroutinecallsplit_1cc:
+	ld a,$CD
+	ld (de),a
+	inc de
+	ex (sp),hl
+	ldi
+	ldi
+	pop hl
+	ex de,hl
+	call opgen_reset_cycle_count
+	ld (opgen_last_cycle_count_smc),hl
+	inc de
+	call opgen_emit_gb_address
+	ex de,hl
 	jp opgen_next_fast
 	
 opgenCONSTwrite:

@@ -186,7 +186,6 @@ ophandlerRETnomatch:
 	
 cycle_overflow_for_ret:
 	ld a,(dispatch_cycles_for_ret_smc)
-cycle_overflow_for_reti:
 	push de
 	 exx
 	 ex (sp),hl
@@ -335,10 +334,11 @@ event_value = $+3
 	ld (ix),0
 	push hl
 do_event_pushed:
+	 ld hl,event_value
+	 ld (event_address),hl
+do_event_pushed_no_reset:
 	 push de
 	  push bc
-	   ld hl,event_value
-	   ld (event_address),hl
 	   xor a
 event_cycle_loop:
 event_cycle_count = $+2
@@ -481,8 +481,7 @@ _
 	   jr event_cycle_loop_shortcut
 	   
 event_reschedule:
-event_gb_address = $+1
-	   ld de,0
+	   ld de,(event_gb_address)
 	   ld a,(event_cycle_count)
 	   neg
 	   ld c,a
@@ -531,21 +530,32 @@ trigger_vblank:
 trigger_int_selected:
 	
 	   push hl
-	    ld de,(event_gb_address)
+	    ld a,$AF ;XOR A
+	    ld (intstate_smc),a
+	    exx
+event_gb_address = $+1
+	    ld de,event_gb_address
+	    ; If we're on a HALT, exit it
+cpu_halted = $+1
+	    and 0
+	    ld a,(event_cycle_count)
+	    ld c,a
 	    di
+	    jp.lil z,dispatch_int_helper
+	    ld (cpu_halted),a
+	    ld c,a
+	    inc a
+	    sub (ix+3)
+	    lea ix,ix+6
+	    inc de
 	    jp.lil dispatch_int_helper
-		
+
 dispatch_int_continue:
-	    push de
-	     exx
-	    pop de
 	    call do_push_and_return
 	   pop ix
 	   add a,(ix+3)
 dispatch_int_decoded:
 	   ld (_+2),a
-	   ld a,$AF ;XOR A
-	   ld (intstate_smc),a
 _
 	   lea iy,iy+0
 	   xor a
@@ -1235,22 +1245,55 @@ _
 	   di
 	   jp.lil schedule_event_helper
 	
+ophandlerEI:
+	ex af,af'
+	ld a,$A6 ;AND (HL)
+	ld (intstate_smc),a
+	pop ix
+	push hl
+	 ld a,(ix)
+	 ld (_+2),a
+_
+	 lea iy,iy+0
+	 neg
+	 inc a
+	 ld (event_cycle_count),a
+	 ld hl,(ix+1)
+	 ld (event_gb_address),hl
+	 lea ix,ix+3
+	 jp do_event_pushed_no_reset
+	
 ophandler76:
 	ex af,af'
+	pop ix
 	push hl
 	 ld hl,IF
 	 ld a,(hl)
 	 ld l,h
 	 and (hl)
-	pop hl
-	jr nz,haltdone
-	ex af,af'
-	ex (sp),hl
-	dec hl
-	dec hl
-	dec hl
-	ex (sp),hl
-	ex af,af'
+	 ld hl,(ix+1)
+	 jr z,haltspin
+	 ld a,(ix)
+	 ld (_+2),a
+_
+	 lea iy,iy+0
+	 neg	; A is non-zero, so this sets carry
+	 inc a
+	 lea ix,ix+3
+	 inc hl
+	 jr haltdone
+haltspin:
+	 dec hl
+	 lea ix,ix-3
+	 ld iy,0
+haltdone:
+	 ld (event_cycle_count),a
+	 ld (event_gb_address),hl
+	 sbc a,a
+	 inc a
+	 ld (cpu_halted),a
+	 jp do_event_pushed_no_reset
+	
 	
 trigger_event_fast_forward:
 	scf
@@ -1327,10 +1370,6 @@ trigger_event_already_triggered:
 	  pop bc
 	 pop de
 	pop hl
-	ex af,af'
-	ret
-	
-haltdone:
 	ex af,af'
 	ret
 	
@@ -1483,12 +1522,6 @@ ophandlerF9:
 	di
 	jp.lil set_gb_stack
 	
-ophandlerEI:
-	ex af,af'
-	ld a,$A6 ;AND (HL)
-	ld (intstate_smc),a
-	jp checkIntPostEnable
-	
 ophandlerRETI:
 	ex af,af'
 	ld a,$A6 ;AND (HL)
@@ -1504,13 +1537,13 @@ ophandlerRETI:
 	ld (_+2),a
 _
 	lea iy,iy+0
-	dec iyh
-	inc iyh
-	jp z,cycle_overflow_for_reti
+	cpl
+	add a,5
+	ld (event_cycle_count),a
+	ld (event_gb_address),de
 	exx
-	; Put the destination address on the stack where trigger_event can access it
-	push ix
-	 jp checkIntPostEnable
+	push hl
+	 jp do_event_pushed_no_reset
 	
 ophandlerRET:
 	di

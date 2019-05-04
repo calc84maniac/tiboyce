@@ -49,7 +49,7 @@ opgen39:
 	call opgenroutinecall_2cc
 	.dw ophandler39
 opgen76:
-	call opgenroutinecall_1cc
+	call opgenroutinecallsplit_1cc
 	.dw ophandler76
 opgenE2:
 	call opgenroutinecall_2cc
@@ -70,7 +70,7 @@ opgenF9:
 	call opgenroutinecall_2cc
 	.dw ophandlerF9
 opgenEI:
-	call opgenroutinecall_1cc
+	call opgenroutinecallsplit_1cc
 	.dw ophandlerEI
 	
 opgenE9:
