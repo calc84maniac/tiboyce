@@ -97,6 +97,9 @@ BLUE_BYTE = BLUE*$11
 
 ; System calls used
 _sprintf = $0000BC
+_GetFieldSizeFromType = $00030C
+_FindField = $000314
+_OSHeader = $020000
 _Mov9ToOP1 = $020320
 _MemChk = $0204FC
 _CmpPrgNamLen = $020504
@@ -158,7 +161,6 @@ mpLcdBase = $E30010
 mpLcdCtrl = $E30018
 mpLcdImsc = $E3001C
 mpLcdRis = $E30020
-pLcdMis = $4024
 mpLcdMis = $E30024
 mpLcdIcr = $E30028
 mpLcdPalette = $E30200
@@ -168,7 +170,6 @@ mpIntRawStatus = $F00000
 mpIntEnable = $F00004
 mpIntAcknowledge = $F00008
 mpIntLatch = $F0000C
-pIntMaskedStatus = $5014
 mpIntMaskedStatus = $F00014
 
 TMR_ENABLE = %00101001
@@ -202,8 +203,11 @@ mpKeypadGrp5 = $F5001A
 mpKeypadGrp6 = $F5001C
 mpKeypadGrp7 = $F5001E
 
+mpSpiConfig = $F80000
 mpSpiTransfer = $F80008
 mpSpiStatus = $F8000C
+mpSpiUnknown1 = $F80010
+mpSpiUnknown2 = $F80014
 mpSpiFifo = $F80018
 
 #ifdef DEBUG

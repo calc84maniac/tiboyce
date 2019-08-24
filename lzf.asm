@@ -355,9 +355,9 @@ lzf_decompress_failed:
 lzf_decompress_ref:
 	  ; Check the reference type
 	  add a,MAX_OFF >> 8
+	  cpl
 	  jr c,lzf_decompress_ref_long
 	  ; Get the high byte of the complemented offset
-	  cpl
 	  ld c,a
 	  or -(MAX_OFF >> 8)
 	  ld ixh,a
@@ -394,7 +394,6 @@ _
 	
 lzf_decompress_ref_long:
 	  ; Get the high byte of the complemented offset
-	  cpl
 	  ld ixh,a
 	  ; Read the extended length byte and add to it
 	  ld a,(hl)

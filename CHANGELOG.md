@@ -1,7 +1,12 @@
 # TI-Boy CE Changelog
 All notable changes to this project will be documented in this file.
 
-## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.1.2...HEAD)
+## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.1.3...HEAD)
+
+## [Alpha v0.1.3 — 2019-08-24](https://github.com/calc84maniac/tiboyce/releases/tag/v0.1.3)
+
+### Fixed
+-   Updated hardware accesses to support new (Revision M) calculators, including TI-83 Premium CE Python Edition.
 
 ## [Alpha v0.1.2a — 2019-04-03](https://github.com/calc84maniac/tiboyce/releases/tag/v0.1.2a)
 

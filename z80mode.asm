@@ -58,12 +58,10 @@ rst38h:
 	push af
 	 ld a,i
 	 jp pe,Z80InvalidOpcode
-	 ld a,pLcdMis >> 8
-	 in a,(pLcdMis & $FF)
+	 ld.lil a,(mpLcdMis)
 	 or a
 	 jp.lil nz,frame_interrupt
-	 ;ld a,pIntMaskedStatus >> 8
-	 ;in a,(pIntMaskedStatus & $FF)
+	 ;ld.lil a,(mpIntMaskedStatus)
 	 ;rra
 	 ;jr nc,$
 	

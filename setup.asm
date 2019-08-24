@@ -4,18 +4,19 @@ MENU_ITEM_COUNT = 15
 Startup:
 	ld (ArcBase),hl
 	
-	; Get the calculator type
-	; Write IN A,(3) \ RET.L to RAM
-	ld hl,$5B03DB
-	ld (pixelShadow),hl
-	ld a,$C9
-	ld (pixelShadow+3),a
-	di
-	xor a
-	call.is pixelShadow - ramStart
-	and 1
+	; Get the calculator type from the OS header
+	ld hl,_OSHeader
+	call _GetFieldSizeFromType
+	ld de,$80C0
+	call _FindField
+	; If not found, calcType stays at default 0 (84+CE)
+	jr nz,_
+	call _GetFieldSizeFromType
+	ld a,(hl)
+	inc hl
+	and (hl)
 	ld (calcType),a
-	ei
+_
 	
 	call _RunIndicOff
 	ACALL(LoadConfigFile)
@@ -2190,7 +2191,7 @@ SetLcdSettings:
 	 ld hl,(currentLcdSettings)
 	 or a
 	 sbc hl,de
-	 jr z,SetLcdSettingsFast
+	 jr z,SetLcdSettingsFastTrampoline
 	 ld (currentLcdSettings),de
 	 ; Wait for the the number of specified frames
 	 ld b,(ix+20)
@@ -2205,6 +2206,24 @@ _
 	 ; Turn off LCD
 	 ld l,mpLcdCtrl & $FF
 	 res 0,(hl)
+	 
+	 ; Configure SPI hardware (necessary for Rev-M support?)
+	 ld hl,$182B
+	 ld (mpSpiConfig),hl
+	 ld hl,$C
+	 ld (mpSpiTransfer),hl
+	 nop
+	 ld hl,$40
+	 ld (mpSpiTransfer),hl
+	 jr _	; Equivalent of 3 NOPs
+SetLcdSettingsFastTrampoline:
+	 jr SetLcdSettingsFast
+_
+	 ld hl,$21
+	 ld (mpSpiUnknown1),hl
+	 ld hl,$100
+	 ld (mpSpiTransfer),hl
+	 ld a,(mpSpiUnknown2)
 	 
 	 ; Start SPI transfer
 	 ld hl,mpSpiTransfer
