@@ -204,6 +204,7 @@ mpKeypadGrp6 = $F5001C
 mpKeypadGrp7 = $F5001E
 
 mpSpiConfig = $F80000
+mpSpiUnknown0 = $F80004
 mpSpiTransfer = $F80008
 mpSpiStatus = $F8000C
 mpSpiUnknown1 = $F80010

@@ -2207,7 +2207,9 @@ _
 	 ld l,mpLcdCtrl & $FF
 	 res 0,(hl)
 	 
-	 ; Configure SPI hardware (necessary for Rev-M support?)
+	 ; Configure SPI hardware (necessary for Python Edition support)
+	 ld hl,$2000B
+	 ld (mpSpiUnknown0),hl
 	 ld hl,$182B
 	 ld (mpSpiConfig),hl
 	 ld hl,$C
