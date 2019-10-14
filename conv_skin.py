@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 from PIL import Image
 import lzf
 import struct
