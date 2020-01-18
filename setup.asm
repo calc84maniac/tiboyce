@@ -652,24 +652,121 @@ _
 	ld (z80codebase+intstate_smc),a
 _
 	
-	; Set the initial frame-relative event to one cycle in the future
-	ld de,(iy-state_size+STATE_FRAME_COUNTER)
-	inc.s de
-	ld hl,-CYCLES_PER_FRAME
+	; Set the initial vblank counter to one cycle in the future
+	ld hl,(iy-state_size+STATE_FRAME_COUNTER)
+	inc.s hl
+	ld de,-(CYCLES_PER_SCANLINE * 144 + 1)
 	add hl,de
-	jr c,_
-	ex de,hl
+	jr nc,_
+	ld de,-CYCLES_PER_FRAME
+	add hl,de
 _
-	ld.sis (frame_cycle_target),hl
+	inc hl
+	ld.sis (vblank_counter),hl
 	
-	; Get the current DIV counter
-	ld de,(iy-state_size+STATE_DIV_COUNTER)
+	; Get the current scanline
+	dec hl
+	ld a,144
+	ld de,CYCLES_PER_SCANLINE
+_
+	dec a
+	add hl,de
+	jr nc,-_
+	cp 144
+	jr c,_
+	add a,SCANLINES_PER_FRAME
+_
+	ld b,a
+	ld c,l
+	
+	; Set the LYC counter to one cycle in the future if needed
+	bit 6,(iy-ioregs+STAT)
+	jr z,++++_
+	ld a,(iy-ioregs+LYC)
+	cp SCANLINES_PER_FRAME
+	jr nc,++++_
+	cpl
+	adc a,b
+	jr c,_
+	add a,SCANLINES_PER_FRAME
+_
+	cp b	;check if LYC == 0
+	ld l,a
+	ld h,e	;CYCLES_PER_SCANLINE
+	ld e,c	;D == 0
+	jr nz,_
+	inc l
+	dec de
+	dec de
+_
+	ld h,CYCLES_PER_SCANLINE
+	mlt hl
+	add.s hl,de
+	ld de,-SCANLINES_PER_FRAME
+	add hl,de
+	jr nc,_
+	add hl,de
+_
+	inc hl
+	ld.sis (lyc_counter),hl
+	ld hl,lyc_counter_checker
+	ld.sis (event_counter_checkers + 0),hl
+_
+	
+	; Set the STAT counter to one cycle in the future if needed
+	ld a,(iy-ioregs+STAT)
+	and $28
+	jr z,++++++_
+	ld ix,stat_counter_checker_mode0
+	ld e,a
+	ld a,c
+	sub MODE_2_CYCLES + MODE_3_CYCLES
+	jr c,_
+	add a,-MODE_0_CYCLES	;resets carry
+	bit 5,e
+	jr nz,++_
+	sub MODE_2_CYCLES + MODE_3_CYCLES	;resets carry
+	jr +++_
+_
+	bit 3,e
+	jr nz,++_
+	sub MODE_0_CYCLES	;resets carry
+_
+	lea ix,ix-stat_counter_checker_mode0+stat_counter_checker_mode2
+_
+	ld l,a
+	ld h,$FF
+	; Adjust by number of scanlines to spend in vblank
+	ld a,SCANLINES_PER_FRAME
+	sbc a,b
+	ld b,a
+	add a,-11
+	jr c,_
+	ld c,CYCLES_PER_SCANLINE
+	mlt bc
+	sbc hl,bc
+	ld a,143
+_
+	inc a
+	ld (z80codebase + stat_line_count_single_smc),a
+	ld (z80codebase + stat_line_count_double_smc),a
+	inc hl
+	ld.sis (stat_counter),hl
+	ld a,e
+	cp $28
+	jr z,_
+	ld ix,stat_counter_checker_single
+_
+	ld.sis (event_counter_checkers + 2),ix
+_
+	
 	; Initialize timer values
 	ld a,(iy-ioregs+TAC)
 	bit 2,a
 	jr z,_
 	and 3
 	ld c,a
+	ld b,0
 	ld hl,timer_smc_data
 	add hl,bc
 	add hl,bc
@@ -677,38 +774,42 @@ _
 	ld (z80codebase+updateTIMA_smc),a
 	inc hl
 	ld h,(hl)
-	ld a,(iy-ioregs+TIMA)
-	cpl
-	ld l,a
+	ld l,(iy-ioregs+TIMA)
 	ld a,h
 	ld (z80codebase+timer_cycles_reset_factor_smc),a
 	ld (writeTIMA_smc),a
 	mlt hl
 	add hl,hl
-	add hl,de
+	neg
 	add a,a
-	dec a
-	or l
-	ld l,a
+	ld d,a
+	cpl
+	and (iy-state_size+STATE_DIV_COUNTER)
+	ld e,a
+	add hl,de
+	; Set the initial timer counter to one cycle in the future
 	inc hl
-	ld.sis (timer_cycle_target),hl
-	ld a,$20 ;JR NZ (overriding JR Z)
-	ld (z80codebase+timer_enable_smc),a
+	ld.sis (timer_counter),hl
+	ld hl,timer_counter_checker
+	ld.sis (event_counter_checkers + 4),hl
 _
-	; Set the initial DIV-relative event to one cycle in the future
-	inc de
-	ld.sis (div_cycle_count),de
+	; Set the initial DIV counter to one cycle in the future
+	ld hl,(iy-state_size+STATE_DIV_COUNTER)
+	inc hl
+	ld.sis (div_counter),hl
 	
 	ld a,(iy-ioregs+SC)
 	cpl
 	and $81
 	jr nz,_
 	; Set the serial counter to one cycle in the future
-	ld hl,(iy-state_size+STATE_SERIAL_COUNTER)
-	dec hl
-	ld.sis (serial_cycle_count),hl
-	ld a,$38 ;JR C (overriding JR NC)
-	ld (z80codebase+serial_enable_smc),a
+	sbc hl,hl
+	ld de,(iy-state_size+STATE_SERIAL_COUNTER)
+	sbc hl,de
+	inc hl
+	ld.sis (serial_counter),hl
+	ld hl,serial_counter_checker
+	ld.sis (event_counter_checkers + 6),hl
 _
 	
 	lea hl,iy-ioregs+NR10
@@ -782,16 +883,6 @@ _
 	and 7
 	inc a
 	ld (SCX_smc_2),a
-	
-	ld a,(iy-ioregs+LYC)
-	or a
-	ld hl,CYCLES_PER_SCANLINE * 153 + 2
-	jr z,_
-	ld l,a
-	ld h,CYCLES_PER_SCANLINE
-	mlt hl
-_
-	ld.sis (current_lyc_target_count),hl
 	
 	ld hl,(iy-ioregs+WY)
 	ld a,l
@@ -875,6 +966,8 @@ _
 	jp set_gb_stack
 	
 ExitEmulation:
+	push.s bc
+
 	ld ix,state_start+state_size
 	ld.sis hl,(event_gb_address)
 	ld (ix-state_size+STATE_REG_PC),hl
@@ -893,14 +986,14 @@ ExitEmulation:
 	set 3,l
 	ld.s l,(hl)
 	ld h,a
-	ld (ix-state_size+STATE_REG_AF),hl
+	push.s hl
 	
 	xor a
 	ld b,a
 	sbc hl,hl
 	add.s hl,sp
-	lea de,ix-state_size+STATE_REG_BC
-	ld c,6
+	lea de,ix-state_size+STATE_REG_AF
+	ld c,8
 	ldir.s
 	
 	; Calculate the current event cycle offset
@@ -912,22 +1005,26 @@ ExitEmulation:
 	ex de,hl
 	
 	; Save the frame-relative cycle count
-	ld.sis hl,(frame_cycle_target)
-	add.s hl,de
-	jr c,_
-	ld bc,CYCLES_PER_FRAME
-	add hl,bc
+	ld.sis hl,(vblank_counter)
+	add hl,de
+	ld bc,(CYCLES_PER_SCANLINE * 144)
 _
+	add.s hl,bc
+	ld bc,CYCLES_PER_FRAME
+	jr nc,-_
 	ld (ix-state_size+STATE_FRAME_COUNTER),hl
 	
 	; Save the serial cycle count
-	ld.sis hl,(serial_cycle_count)
+	ld.sis hl,(serial_counter)
+	ex de,hl
 	or a
 	sbc hl,de
 	ld (ix-state_size+STATE_SERIAL_COUNTER),hl
+	add hl,de
+	ex de,hl
 	
 	; Save the DIV cycle count
-	ld.sis hl,(div_cycle_count)
+	ld.sis hl,(div_counter)
 	add hl,de
 	ld (ix-state_size+STATE_DIV_COUNTER),hl
 	
@@ -935,8 +1032,8 @@ _
 	ld a,(ix-ioregs+TAC)
 	and 4
 	jr z,+++_
-	ld.sis de,(timer_cycle_target)
-	sbc hl,de
+	ld.sis hl,(timer_counter)
+	add hl,de
 	ld a,(z80codebase+updateTIMA_smc)
 	sub 6
 	jr z,++_

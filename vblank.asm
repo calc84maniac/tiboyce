@@ -21,7 +21,7 @@ frame_emulated_count = $+1
 	ld (frame_emulated_count),hl
 	
 	; Finish rendering, if applicable
-	push de
+	;push de
 	 push ix
 	  push bc
 	   push iy
@@ -297,7 +297,7 @@ _
 	   pop iy
 	  pop bc
 	 pop ix
-	pop de
+	;pop de
 
 	; Trigger VBLANK
 	ld hl,hram_base+LCDC
@@ -310,8 +310,11 @@ _
 	jr z,_
 	set 1,(hl)
 _
-	ei
-	jp.sis vblank_handler_ret
+	ld hl,-CYCLES_PER_FRAME
+	ld.sis (vblank_counter),hl
+	ld de,CYCLES_PER_FRAME
+	pop.s hl
+	jp.s (hl)
 	
 	; Input: IX = mpKeypadGrp0
 	; Output: L = new state

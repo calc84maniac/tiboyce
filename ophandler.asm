@@ -306,7 +306,6 @@ scroll_write_done:
 	ei
 	jp.s (ix)
 	
-	
 ; Writes to the LY compare register (LYC).
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
@@ -322,45 +321,170 @@ scroll_write_done:
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
+	 ; If LYC interrupts are disabled, update the value and return
+	 ld hl,hram_base + STAT
+	 bit 6,(hl)
+	 ld l,LYC - ioregs
+	 jr z,scroll_write_done_swap
+	 ld c,a
+	 ex af,af'
+	 ld d,a
+	 ex af,af'
+	 ; If writing the same value, don't adjust any event schedules
+	 ld a,(hl)
+	 cp d
+	 jr z,scroll_write_done_swap
+	 ld (hl),d
+lyc_update_helper:
+	 ; If the old value is an invalid line number, possibly enable LYC counter checking
+	 cp SCANLINES_PER_FRAME
+	 ld a,d
+	 jr c,_
+	 cp SCANLINES_PER_FRAME
+	 jr nc,scroll_write_done_swap
+	 ld ix,lyc_counter_checker
+	 ld.sis (event_counter_checkers + 0),ix
+_
+	 cp SCANLINES_PER_FRAME
+	 jr nc,lyc_write_helper_disable_checker
+_
+	 
 	 ; Scanline 153 changes to scanline 0 after 2 cycles for LYC purposes
+	 ld a,c
 	 cp 2
 	 jr c,_
 	 ld a,e
 	 sub 153
-	 jr nz,_
-	 ld e,a
+	 jr z,++_
 _
-	 ex af,af'
-	 ld d,a
-	 ex af,af'
-	 ld a,d
-	 ld hl,hram_base + LYC
-	 cp (hl)
-	 jr z,scroll_write_done_swap
-	 ld (hl),a
-	 xor e
+	 ld a,e
+_
+	 ; Trigger an interrupt if setting the current scanline
+	 cp d
 	 jr nz,_
-	 ld l,STAT - ioregs
-	 bit 6,(hl)
-	 jr z,_
 	 ld l,IF - ioregs
 	 set 1,(hl)
 _
 	 
 	 ; Set new target
-	 xor e
-	 ld e,CYCLES_PER_SCANLINE
-	 mlt de
-	 jr nz,_
-	 ld de,CYCLES_PER_SCANLINE * 153 + 2
+	 ld a,e
+	 sub d
+	 jr nc,_
+	 add a,SCANLINES_PER_FRAME
 _
-	 ld.sis (current_lyc_target_count),de
+	 ld l,a
+	 xor a
+	 cp d
+	 ld d,a
+	 ld e,c
+	 jr nz,_
+	 inc l
+	 dec de
+	 dec de
+_
+	 ld h,CYCLES_PER_SCANLINE
+	 mlt hl
+	 add.s hl,de
+	 ld de,-SCANLINES_PER_FRAME
+	 add hl,de
+	 jr nc,_
+	 add hl,de
+_
+	 ld.sis (lyc_counter),hl
+lyc_write_helper_finish:
 	pop hl
 	exx
 	ei
 	; Carry is reset
 	jp.sis trigger_event
 	
+lyc_write_helper_disable_checker:
+	 ld hl,disabled_counter_checker
+	 ld.sis (event_counter_checkers + 0),hl
+	 jr lyc_write_helper_finish
+	
+	
+stat_write_helper:
+	 ld hl,hram_base + STAT
+	 ld c,a
+	 ex af,af'
+	 ld d,a
+	 ex af,af'
+	 ld a,(hl)
+	 ld (hl),d
+	 xor d
+	 push af
+	  and $28
+	  jr z,stat_write_helper_no_change
+	  ld ix,disabled_counter_checker
+	  ld a,d
+	  and $28
+	  jr z,stat_write_helper_set_checker
+	  ld ix,stat_counter_checker_mode0
+	  ld a,c
+	  sub MODE_2_CYCLES + MODE_3_CYCLES
+	  jr c,_
+	  add a,-MODE_0_CYCLES	;resets carry
+	  bit 5,d
+	  jr nz,++_
+	  sub MODE_2_CYCLES + MODE_3_CYCLES	;resets carry
+	  jr +++_
+_
+	  bit 3,d
+	  jr nz,++_
+	  sub MODE_0_CYCLES	;resets carry
+_
+	  lea ix,ix-stat_counter_checker_mode0+stat_counter_checker_mode2
+_
+	  ld l,a
+	  ld h,$FF
+	  ; Adjust by number of scanlines to spend in vblank
+	  ld a,SCANLINES_PER_FRAME
+	  sbc a,e
+	  push de
+	   ld e,a
+	   add a,-11
+	   jr c,_
+	   ld d,CYCLES_PER_SCANLINE
+	   mlt de
+	   sbc hl,de
+	   ld a,143
+_
+	   inc a
+	   ld (z80codebase + stat_line_count_single_smc),a
+	   ld (z80codebase + stat_line_count_double_smc),a
+	   ld.sis (stat_counter),hl
+	  pop de
+	  ld a,d
+	  cpl
+	  and $28
+	  jr z,stat_write_helper_set_checker
+	  ld ix,stat_counter_checker_single
+stat_write_helper_set_checker:
+	  ld.sis (event_counter_checkers + 2),ix
+stat_write_helper_no_change:
+	
+	 pop af
+	 bit 6,a
+	 jr z,++_
+	 bit 6,d
+	 jr z,_
+	 ld hl,hram_base + LYC
+	 ld d,(hl)
+	 ld a,SCANLINES_PER_FRAME
+	 jp lyc_update_helper
+_
+	 ld hl,disabled_counter_checker
+	 ld.sis (event_counter_checkers + 0),hl
+_
+	 and $28
+	 jp nz,lyc_write_helper_finish
+	pop hl
+	exx
+	pop.s ix
+	ex af,af'
+	ei
+	jp.s (ix)
 	
 ; Writes to the LCD control register (LCDC).
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -454,19 +578,54 @@ _
 	 ld (window_tile_ptr+1),a
 _
 	 bit 7,c
-	 jr z,return_from_write_helper
+	 jp z,return_from_write_helper
 	 ld a,(LCDC_7_smc)
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
 	 ; Forcibly skip to scanline 0
+	 ld hl,-(MODE_2_CYCLES + MODE_3_CYCLES)
+	 ld a,(hram_base+STAT)
+	 ld c,a
+	 ld a,144
+	 ld (z80codebase + stat_line_count_single_smc),a
+	 bit 5,c
+	 jr z,++_
+	 bit 3,c
+	 jr z,_
+	 ld (z80codebase + stat_line_count_double_smc),a
+	 ld hl,stat_counter_checker_mode2
+	 ld.sis (event_counter_checkers + 2),hl
+_
 	 sbc hl,hl
-	 ld.sis (frame_cycle_target),hl
-	 ld.sis hl,(serial_cycle_count)
-	 sbc hl,de
-	 ld.sis (serial_cycle_count),hl
-	 ld.sis hl,(div_cycle_count)
+_
+	 ld.sis (stat_counter),hl
+	 ld hl,-(CYCLES_PER_SCANLINE * 144)
+	 ld.sis (vblank_counter),hl
+	 ld hl,(hram_base+LYC)
+	 xor a
+	 sub l
+	 ld h,-CYCLES_PER_SCANLINE
+	 mlt hl
+	 jr nz,++_
+	 bit 6,c
+	 jr z,_
+	 ld hl,hram_base+IF
+	 set 1,(hl)
+_
+	 ld hl,-(CYCLES_PER_SCANLINE * 153 + 2)
+_
+	 add a,h
+	 ld h,a
+	 ld.sis (lyc_counter),hl
+	 ld.sis hl,(serial_counter)
 	 add hl,de
-	 ld.sis (div_cycle_count),hl
+	 ld.sis (serial_counter),hl
+	 ld.sis hl,(timer_counter)
+	 add hl,de
+	 ld.sis (timer_counter),hl
+	 ld.sis hl,(div_counter)
+	 add hl,de
+	 ld.sis (div_counter),hl
 	pop hl
 	exx
 	ei
@@ -477,7 +636,7 @@ _
 ;
 ; Updates the GB timer based on the new mode; applies SMC to getters/setters
 ;
-; Inputs:  DE = current div cycle count
+; Inputs:  DE = current cycle offset
 ;          A' = value being written
 ;          (SPS) = Z80 return address
 ;          (SPL) = saved HL'
@@ -494,8 +653,8 @@ tac_write_helper:
 	 ld (hram_base+TAC),a
 	 add a,4
 	 jr c,_
-	 ld a,$28	;JR Z
-	 ld (z80codebase + timer_enable_smc),a
+	 ld hl,disabled_counter_checker
+	 ld.sis (event_counter_checkers + 4),hl
 return_from_write_helper:
 	pop hl
 	exx
@@ -520,15 +679,15 @@ _
 	 ld (z80codebase + timer_cycles_reset_factor_smc),a
 	 ld (writeTIMA_smc),a
 
-	 ld a,$20	;JR NZ
-	 ld (z80codebase + timer_enable_smc),a
+	 ld hl,timer_counter_checker
+	 ld.sis (event_counter_checkers + 4),hl
 	
 ; Writes to the GB timer count (TIMA).
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
 ; Updates the GB timer based on the new value, if enabled.
 ;
-; Inputs:  DE = current div cycle count
+; Inputs:  DE = current cycle offset
 ;          (TIMA) = value written
 ;          (SPS) = Z80 return address
 ;          (SPL) = saved HL'
@@ -541,23 +700,26 @@ tima_write_helper:
 	 jr z,return_from_write_helper
 	 
 	 ld l,TIMA & $FF
-	 ld a,(hl)
-	 cpl
-	 ld l,a
+	 ld l,(hl)
 writeTIMA_smc = $+1
 	 ld h,0
-	 ld a,h
+	 xor a
+	 sub h
 	 mlt hl
-	 add hl,hl
-	 add hl,de
+	 add hl,hl	; Resets carry
+	 sbc hl,de
 	 add a,a
-	 dec a
-	 or l
-	 ld l,a
-	 inc hl
-	 ld.sis (timer_cycle_target),hl
+	 ld d,a
+	 ld a,(z80codebase + div_counter)
+	 add a,e
+	 or d
+	 xor d
+	 ld e,a
+	 add hl,de
+	 ld.sis (timer_counter),hl
 	pop hl
 	exx
+	or a	; Reset carry
 	ei
 	jp.sis trigger_event
 	

@@ -13,24 +13,30 @@
 ; in the loop - MMIO such as the LY register uses a different handler.
 ;
 ; Inputs:  IX = branch target recompiled code
-;          HL = branch target GB literal 24-bit address
-;          (SPS) = branch recompiled code address (plus 9)
-;          (SPL+4) = number of cycles to block end from target
+;          DE = branch target GB address
+;          (SPS) = branch recompiled code address (plus 8)
+;          (SPL+4) = number of cycles to sub-block end from target
+;          (SPL+7) = number of cycles used by branch
 ;          BC',DE',HL' = Game Boy BC,DE,HL registers
 ; Outputs: IX = filtered branch target
 identify_waitloop:
 #ifdef 0
-	push hl
+	push de
 	 push ix
 	 pop af
 	 push af
 	  APRINTF(WaitLoopSearchMessage)
 	 pop ix
-	pop hl
+	pop de
 #endif
 	
+	ld (waitloop_jp_smc),de
+	call get_base_address
+	add hl,de
 	ld (waitloop_jr_smc),hl
 	lea de,ix
+	xor a
+	ld (waitloop_length_smc),a
 	
 	; Check for a read
 	ld a,(hl)
@@ -93,9 +99,9 @@ waitloop_found_read_2:
 	ld c,(hl)
 	inc hl
 	ld b,(hl)
+waitloop_try_next_target_loop:
 	; Consume 2 more bytes of recompiled code
 	inc de
-waitloop_try_next_target:
 	inc de
 	; Consume immediate value
 	inc hl
@@ -153,7 +159,7 @@ waitloop_found_data_op_1:
 waitloop_found_data_op:
 	; See if we reached the loop end
 	push hl
-	 ld hl,9
+	 ld hl,8
 	 add hl,de
 	 ex de,hl
 	pop.s hl
@@ -173,22 +179,26 @@ waitloop_identified_trampoline:
 	; Validate the JP target address
 	inc hl
 	push de
-	 push hl
-	  ld hl,(waitloop_jr_smc)
-	  ld de,(base_address)
-	  sbc hl,de
-	  ex de,hl
-	 pop hl
+waitloop_jp_smc = $+1
+	 ld de,0
 	 ld a,(hl)
 	 cp e
-	 jr nz,_
-	 inc hl
-	 ld a,(hl)
-	 cp d
-_
+	 ld a,d
 	pop de
-	jr z,waitloop_try_next_target
-	ret
+	ret nz
+	cp (hl)
+	ret nz
+waitloop_try_next_target:
+	push hl
+	 ld hl,6
+	 add hl,de
+	 ld a,(waitloop_length_smc)
+	 add a,(hl)
+	 ld (waitloop_length_smc),a
+	 ex de,hl
+	pop hl
+	inc de
+	jr waitloop_try_next_target_loop
 	
 waitloop_found_jr:
 	; Validate the JR target address
@@ -213,7 +223,7 @@ _
 	
 waitloop_find_data_op_again:
 	ld a,e
-	sub 8
+	sub 7
 	ld e,a
 	jr nc,waitloop_find_data_op_again_loop
 	dec d
@@ -284,11 +294,11 @@ waitloop_finish:
 	ld (hl),a
 	inc hl
 	ld a,d
+waitloop_length_smc = $+1
+	add a,0 ; Compute the length of the loop in cycles
 	; Get the end of the recompiled code to overwrite
 	pop.s de
 	ex de,hl
-	; Compute the length of the loop in cycles
-	add.s a,(hl)
 	dec hl
 	dec hl
 	ld.s (hl),bc
