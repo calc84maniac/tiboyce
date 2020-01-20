@@ -51,17 +51,16 @@ flush_code:
 	 MEMSET_FAST(z80codebase+jit_start, memroutine_end - jit_start, $F3)
 	 ; Invalidate the memory routines and recompile index LUT
 	 MEMSET_FAST(memroutineLUT, $0400, 0)
-	 ; Invalidate both the read and write cycle LUTs
-	 ld hl,z80codebase+read_cycle_LUT
+	 ; Invalidate the interrupt return stack
+	 ld hl,z80codebase+int_return_stack
+	 ld (int_return_sp),hl
 	 ld (hl),e
 	 push hl
 	 pop de
 	 inc de
-	 ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2 + INT_RETURN_STACK_SIZE
+	 ld c,INT_RETURN_STACK_SIZE
 	 ldir
 	 inc (hl)
-	 ld l,(z80codebase+int_return_stack) & $FF
-	 ld (int_return_sp),hl
 	 ; Reset the event address
 	 ld hl,event_value
 	 ld.sis (event_address),hl
@@ -364,20 +363,22 @@ lookup_gb_prefix:
 	  inc hl
 	  xor $46
 	  and $C7
-	  jr z,_
+	  jr z,++_
 	  and 7
-	  jr nz,++_
+	  jr z,_
+	  ld a,c
+	  ld c,2
+	  jr lookup_gb_add
+_
 	  dec c
 _
 	  dec c
 #ifdef DEBUG
 	  jp m,$
 #endif
-_
 	  ld a,c
-	  ld c,2
+	  ld c,3
 	  jr lookup_gb_add
-	
 	
 	; If a cached code lookup misses, resolve it and insert into the cache
 lookup_code_cached_miss:
@@ -575,12 +576,17 @@ internal_found_new_subblock:
 internal_found_prefix:
 	  ; Count CB-prefixed opcode cycles
 	  sbc a,c
-	  bit.s 2,(ix-2)
-	  jr z,foundloop_internal_continue
-	  sub c
-	  bit.s 7,(ix-1)
+	  bit.s 1,(ix-2)
 	  jr nz,foundloop_internal_continue
-	  bit.s 6,(ix-1)
+	  inc ix
+	  sub c
+	  inc hl
+	  bit 7,(hl)
+	  dec hl
+	  jr nz,foundloop_internal_continue
+	  inc hl
+	  bit 6,(hl)
+	  dec hl
 	  jr z,foundloop_internal_continue
 	  inc a
 	  jr foundloop_internal_continue
@@ -763,12 +769,17 @@ lookup_found_new_subblock:
 lookup_found_prefix:
 	   ; Count CB-prefixed opcode cycles
 	   sbc a,c
-	   bit.s 2,(ix-2)
-	   jr z,lookup_found_continue
-	   sub c
-	   bit.s 7,(ix-1)
+	   bit.s 1,(ix-2)
 	   jr nz,lookup_found_continue
-	   bit.s 6,(ix-1)
+	   inc ix
+	   sub c
+	   inc hl
+	   bit 7,(hl)
+	   dec hl
+	   jr nz,lookup_found_continue
+	   inc hl
+	   bit 6,(hl)
+	   dec hl
 	   jr z,lookup_found_continue
 	   inc a
 	   jr lookup_found_continue
@@ -1040,15 +1051,8 @@ rerecompile:
 	cpl
 	ld (de),a
 	
-	; Invalidate both the read and write cycle LUTs
-	ld hl,z80codebase+read_cycle_LUT
-	ld (hl),c
-	push hl
-	pop de
-	inc de
-	ld c,(MEM_CYCLE_LUT_SIZE + 1) * 2
-	ldir
 	; Empty the interrupt return stack
+	ld hl,int_return_stack
 	ld (int_return_sp),hl
 	
 	; Set the cached interrupt return address to -1
@@ -1061,6 +1065,7 @@ check_coherency_cycle_overflow:
 	ld hl,(ix+2)
 	ex.s de,hl
 	pop.s ix
+	push.s ix
 	jp schedule_event_helper
 	
 coherency_flush:
@@ -1187,12 +1192,12 @@ _
 	.block (-$)&255
 opcoderecsizes:
 	.db 1,3,3,1,1,1,2,1
-	.db 5,1,3,1,1,1,2,1
+	.db 7,1,3,1,1,1,2,1
 	.db 1,3,3,1,1,1,2,1
 	.db 0,1,3,1,1,1,2,1
 	.db 17,3,3,1,1,1,2,3
 	.db 17,1,3,1,1,1,2,1
-	.db 17,5,3,4,3,3,4,1
+	.db 17,5,3,4,3,3,6,1
 	.db 17,3,3,4,1,1,2,1
 	
 	.db 1,1,1,1,1,1,3,1
@@ -1911,6 +1916,31 @@ opgenroutinecall1byte_3cc:
 	ldi
 	pop hl
 	jp opgen1byte
+	
+opgenroutinecall2byteload_5cc:
+	ld a,$DD	;LD IX,nnnn
+	ld (de),a
+	inc de
+	ld a,$21
+	ld (de),a
+	inc de
+	inc hl
+	ldi
+	ldi
+	dec hl
+	jr opgenroutinecall_3cc	
+	
+opgenroutinecall1byteload_3cc:
+	ld a,$DD	;LD IXL,nn
+	ld (de),a
+	inc de
+	ld a,$2E
+	ld (de),a
+	inc de
+	inc hl
+	ldi
+	dec hl
+	jr opgenroutinecall_2cc
 	
 opgenroutinecall_4cc:
 	dec iy

@@ -101,13 +101,14 @@ _
 	push.s hl
 	 push.s de
 	  push.s bc
-	   exx
-	   ld a,c
-	   push de
+	   push.s ix
 	    exx
-	   pop de
-	   ld c,a
-	   jp schedule_event_helper
+	    ld a,c
+	    push de
+	     exx
+	    pop de
+	    ld c,a
+	    jp schedule_event_helper
 	
 ; Flushes the JIT code and recompiles anew.
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -730,11 +731,10 @@ timer_smc_data:
 	.db 4,$20
 	
 ; Inputs: DE = Game Boy address at conditional branch
-;         IX = recompiled address after conditional branch (minus 1)
+;         IX = recompiled address after conditional branch
 ;         IY = cycle count at end of sub-block (>= 0)
 ;         C = cycles until end of sub-block (including conditional branch cycles)
 schedule_subblock_event_helper:
-	inc ix
 	call get_base_address
 	push hl
 	 add hl,de
@@ -826,9 +826,8 @@ _
 ;          IY = cycle count at end of sub-block (>= 0)
 ;          C = cycles until end of sub-block
 ; Outputs: HL = event Game Boy address
-;          DE = event recompiled address
+;          IX = event recompiled address
 ;          A = event (negative) cycles to sub-block end
-;          IX = starting recompiled address
 schedule_event_helper:
 	call get_base_address
 	push hl
@@ -842,53 +841,48 @@ schedule_event_continue:
 	  push hl
 	   push de
 	    push bc
-		 lea.s bc,ix
+	     lea.s bc,ix
 	     call.il lookup_gb_code_address
 	    pop bc
-		cp c
-		jr nz,$
-		ex de,hl
+	    cp c
+	    jr nz,$
+	    ex de,hl
 	   pop de
 	   sbc hl,de
 	   jr nz,$
 	  pop hl
 	 pop ix
 #endif
-	 lea de,ix
 
 	 ld a,iyl
 	 sub c
 	 jr nc,schedule_event_now
-	
-	 push hl
-	  ex (sp),ix
 	 
-	  ld hl,opcodecycles
-	  ld bc,0
+	 ld de,opcodecycles
+	 ld bc,0
 schedule_event_cycle_loop:
-	  dec h
-	  ld l,(ix)
-	  ld c,(hl)
-	  add ix,bc
-	  dec h
-	  ld c,(hl)
-	  ex de,hl
-	  add hl,bc
-	  ex de,hl
-	  inc h
-	  inc h
-	  add a,(hl)
-	  jr nc,schedule_event_cycle_loop
-	  jp m,schedule_event_prefix
+	 ld e,(hl)
+	 ex de,hl
+	 dec h
+	 ld c,(hl)
+	 ex de,hl
+	 add hl,bc
+	 ex de,hl
+	 dec h
+	 ld c,(hl)
+	 add ix,bc
+	 inc h
+	 inc h
+	 add a,(hl)
+	 ex de,hl
+	 jr nc,schedule_event_cycle_loop
+	 jp m,schedule_event_prefix
 schedule_event_cycle_loop_finish:
-	
-	  ex (sp),ix
-	 pop hl
 	 
 	 or a
 schedule_event_now:
-	pop bc
-	sbc hl,bc
+	pop de
+	sbc hl,de
 
 	sub iyl
 	ei
@@ -906,6 +900,7 @@ schedule_event_check_ram_prefix:
 	ld a,d
 	cp coherency_handler >> 8
 	jr nz,schedule_event_continue
+	pop.s hl
 	pop hl
 	pea.s ix+RAM_PREFIX_SIZE
 	ld.s ix,(ix+3)
@@ -914,7 +909,9 @@ schedule_event_check_ram_prefix:
 schedule_event_prefix:
 	  ; Count CB-prefixed opcode cycles
 	  push af
-	   ld a,(ix-1)
+	   dec hl
+	   ld a,(hl)
+	   inc hl
 	   xor $46
 	   and $C7
 	   jr z,_
@@ -923,11 +920,71 @@ schedule_event_prefix:
 	   inc c
 _
 	   inc c
+	   inc ix
 _
 	  pop af
 	  adc a,c
 	  jr nc,schedule_event_cycle_loop
 	  jr schedule_event_cycle_loop_finish
+	
+	
+; Inputs:  BCDEHL' are swapped
+;          IX = current JIT address
+;          HLC = desired trampoline opcodes
+; Outputs: BCDEHL' are swapped
+;          IX = current JIT address
+;          HL = current GB address
+;          A = NEGATIVE cycles to add for current sub-block position
+; Preserves: B
+;	
+resolve_mem_cycle_offset_helper:
+	push bc
+	 push hl
+	  lea bc,ix
+	  push bc
+	   call.il lookup_gb_code_address
+	   neg
+	   push de
+	    ld hl,(z80codebase+memroutine_next)
+	    ld de,-6
+	    add hl,de	;Sets C flag
+	    ; Check if enough room for trampoline
+	    ex de,hl
+	    ld hl,(recompile_struct_end)
+	    ld hl,(hl)
+	    sbc hl,de	;Carry is set
+	    ex de,hl
+	   pop de
+	  pop ix
+	  jr nc,++_
+	  ld (z80codebase+memroutine_next),hl
+	  ld bc,ERROR_CATCHER
+	  ld (hl),bc
+	  inc hl
+	  inc hl
+	  inc hl
+	  ld (hl),de
+	  inc hl
+	  inc hl
+	  ld (hl),a
+	  inc hl
+	  ld.s (ix-2),hl
+	  ld.s (ix-3),$CD
+	 pop bc
+	 ld (hl),bc
+	 inc hl
+	 inc hl
+	pop bc
+	ld (hl),c
+_
+	ex de,hl
+	ei
+	jp.sis get_cycle_offset
+	
+_
+	 pop bc
+	pop bc
+	jr --_
 	
 ; Inputs:  BCDEHL' are swapped
 ;          DE = current GB address

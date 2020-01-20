@@ -287,9 +287,7 @@ myz80stack = $FE00
 flags_lut = myz80stack - 512
 ; The end of the memory routines.
 memroutine_end = flags_lut - 3
-read_cycle_LUT = flags_lut+256+1
-write_cycle_LUT = read_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
-int_return_stack = write_cycle_LUT + MEM_CYCLE_LUT_SIZE + 1
+int_return_stack = flags_lut+256+1
 
 ; The bottom of the ADL stack. Grows down from the end of palette memory.
 myADLstack = mpLcdPalette + $01FE

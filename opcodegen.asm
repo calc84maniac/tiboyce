@@ -25,7 +25,7 @@ opgenRETcond:
 	jp _opgenRETcond
 
 opgen08:
-	call opgenroutinecall2byte_5cc
+	call opgenroutinecall2byteload_5cc
 	.dw ophandler08
 opgen31:
 	call opgenroutinecall2byte_3cc
@@ -37,7 +37,7 @@ opgenF8:
 	call opgenroutinecall1byte_3cc
 	.dw ophandlerF8
 opgen36:
-	call opgenroutinecall1byte_3cc
+	call opgenroutinecall1byteload_3cc
 	.dw ophandler36
 opgen34:
 	call opgenroutinecall_3cc
@@ -181,6 +181,9 @@ _opgenCB:
 	dec iy
 _
 	dec de
+	xor a
+	ld (de),a
+	inc de
 	ld a,RST_BITS
 	ld (de),a
 	inc de

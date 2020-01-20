@@ -194,8 +194,9 @@ cycle_overflow_for_ret:
 	   ex de,hl
 	   sub 4
 	   ld c,a
-	   di
-	   jp.lil schedule_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_event_helper
 	
 do_rom_bank_call:
 	ex af,af'
@@ -243,8 +244,9 @@ _
 	   sub c
 	   sub 6
 	   ld c,a
-	   di
-	   jp.lil schedule_call_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_call_event_helper
 	
 banked_call_mismatch:
 	di
@@ -298,27 +300,31 @@ _
 	   ld de,(ix+4)
 	   ld ix,(ix+2)
 schedule_jump_event_helper_trampoline:
-	   di
-	   jp.lil schedule_jump_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_jump_event_helper
 _
 	   ld de,(ix-6)
-	   di
-	   jp.lil schedule_subblock_event_helper
+	   inc ix
+	   push ix
+	    di
+	    jp.lil schedule_subblock_event_helper
 	   
 schedule_event_finish:
-	   ld (event_cycle_count),a
-	   ld (event_gb_address),hl
+	    ld (event_cycle_count),a
+	    ld (event_gb_address),hl
 #ifdef DEBUG
-	   ld a,(event_address+1)
-	   cp event_value >> 8
-	   jr nz,$
+	    ld a,(event_address+1)
+	    cp event_value >> 8
+	    jr nz,$
 #endif
-	   ex de,hl
-	   ld (event_address),hl
-	   ld a,(hl)
-	   ld (event_value),a
-	   ld (hl),RST_EVENT
+	    lea hl,ix
+	    ld (event_address),hl
+	    ld a,(hl)
+	    ld (event_value),a
+	    ld (hl),RST_EVENT
 schedule_event_finish_no_schedule:
+	   pop ix
 	  pop bc
 	 pop de
 	pop hl
@@ -410,8 +416,9 @@ event_reschedule:
 	   ld a,(event_cycle_count)
 	   neg
 	   ld c,a
-	   di
-	   jp.lil schedule_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_event_helper
 	
 trigger_interrupt:
 	  push bc
@@ -495,8 +502,9 @@ _
 	   sub 5
 	   ld c,a
 	   ld ix,(ix+1)
-	   di
-	   jp.lil schedule_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_event_helper
 
 dispatch_vblank:
 	jp decode_intcache
@@ -867,7 +875,8 @@ _
 	   sub c
 	   sub 4
 	   ld c,a
-	   jp.lil schedule_rst_event_helper
+	   push ix
+	    jp.lil schedule_rst_event_helper
 	
 do_banked_call_cond:
 	pop ix
@@ -915,8 +924,9 @@ _
 	   sub 4
 	   ld c,a
 	   ld de,(ix-2)
-	   di
-	   jp.lil schedule_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_event_helper
 	
 wait_for_interrupt_stub:
 	ei
@@ -1036,8 +1046,6 @@ do_bits_readonly_smc = $+1
 	ret
 	
 ophandler08:
-	pop ix
-	pea ix+2
 	push af
 	 push de
 	  exx
@@ -1048,7 +1056,7 @@ ophandler08:
 	   or a
 	   sbc hl,de
 	   ex de,hl
-	   ld hl,(ix)
+	   lea hl,ix
 	   ld a,e
 	   dec iy
 	   call mem_write_any
@@ -1126,10 +1134,8 @@ _
 	ret
 	
 ophandler36:
-	pop ix
-	pea ix+1
 	push af
-	 ld a,(ix)
+	 ld a,ixl
 	 call mem_write_any
 	pop af
 	ret
@@ -1238,8 +1244,9 @@ _
 	   ld de,(ix+4)
 	   ld a,(ix+2)
 	   ld ix,(ix)
-	   di
-	   jp.lil schedule_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_event_helper
 	
 ophandlerEI:
 	ex af,af'
@@ -1428,8 +1435,9 @@ _
 	   ld c,a
 	   inc de
 	   dec de
-	   di
-	   jp.lil schedule_event_helper
+	   push ix
+	    di
+	    jp.lil schedule_event_helper
 	
 ophandlerF1:
 	exx
@@ -1685,7 +1693,7 @@ readNR52_finish:
 readSTAT:
 	exx
 	push.l hl
-	 call get_read_cycle_offset
+	 call get_mem_cycle_offset
 	 call get_scanline_from_cycle_offset
 	 ld d,a
 	pop.l hl
@@ -1726,7 +1734,7 @@ readLY:
 	jr nc,readLY_force0
 	exx
 	push.l hl
-	 call get_read_cycle_offset
+	 call get_mem_cycle_offset
 	 call get_scanline_from_cycle_offset
 	pop.l hl
 	or a
@@ -2126,74 +2134,37 @@ mbc_2000_denied:
 	ex af,af'
 	ret
 	
-get_read_cycle_offset:
-	ld ix,read_cycle_LUT
+
 ; Inputs: IY = current block cycle base
-;         IX = pointer to cache LUT
 ;         B = number of empty call stack entries
 ;         (bottom of stack) = JIT return address
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
+;          HL = Game Boy address
+;          IX = current JIT address
 ; Destroys HL,IX
 get_mem_cycle_offset:
-	push bc
-	 ; Get the address of the recompiled code: the bottom stack entry
-	 ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
-	 ld c,CALL_STACK_ENTRY_SIZE
-	 mlt bc
-	 add hl,bc
-	 ld bc,(hl)
-	 
-	 lea hl,ix+MEM_CYCLE_LUT_SIZE-2
-	 ld a,-MEM_CYCLE_LUT_SIZE
-mem_cycle_lookup_loop:
-	 ld de,(hl)
-	 dec hl
-	 ex de,hl
-	 sbc hl,bc
-	 jr z,mem_cycle_lookup_found
-	 ex de,hl
-	 dec hl
-	 dec hl
-	 add a,3
-	 jr nc,mem_cycle_lookup_loop
-	 push ix
-	  di
-	  call.il lookup_gb_code_address
-	  ei
-	  neg
-	 pop de
-	 push bc
-	  ld hl,MEM_CYCLE_LUT_SIZE
-	  add hl,de
-	  ld c,MEM_CYCLE_LUT_SIZE-3
-	  jr mem_cycle_lookup_shift
-mem_cycle_lookup_found:
-	 lea hl,ix+MEM_CYCLE_LUT_SIZE
-	 add a,MEM_CYCLE_LUT_SIZE
-	 jr z,mem_cycle_lookup_found_fast
-	 cp (hl)
-	 jr nz,mem_cycle_lookup_found_fast
-	 push bc
-	  ld c,a
-	  ld a,(de)
-mem_cycle_lookup_shift:
-	  ld (hl),h
-	  ld hl,3
-	  ld b,h
-	  add hl,de
-	  ldir
-	  ld (de),a
-	 pop bc
-	 dec hl
-	 ld (hl),b
-	 dec hl
-	 ld a,c
-mem_cycle_lookup_found_fast:
-	 ld (hl),a
-	 ld a,(de)
-	pop bc
-	
+	; Get the address of the recompiled code: the bottom stack entry
+	ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
+	ld e,CALL_STACK_ENTRY_SIZE
+	ld d,b
+	mlt de
+	add hl,de
+	ld ix,(hl)
+	ld hl,(ix-2)
+	ld a,(ix-3)
+	or a
+	jr z,resolve_mem_cycle_offset_prefix
+	ld a,(hl)
+	xor $C3
+	and $FB
+	jr nz,resolve_get_mem_cycle_offset_call
+	dec hl
+	ld a,(hl)
+	dec hl
+	dec hl
+	ld hl,(hl)
+
 ; Inputs: IY = (negative) cycles until target
 ;         A = (negative) number of cycles to subtract
 ; Outputs: DE = (negative) cycle offset
@@ -2205,10 +2176,23 @@ get_cycle_offset_smc = $+2
 	lea de,iy+0
 	ret
 	
-get_scanline_from_write:
+	
+resolve_mem_cycle_offset_prefix:
+	ld c,$C9
+	jr _
+	 
+resolve_get_mem_cycle_offset_call:
+	ld c,h
+	ld h,l
+	ld l,$C3
+_
+	di
+	jp.lil resolve_mem_cycle_offset_helper
+
+	
+get_mem_scanline_offset:
 	exx
 	push.l hl
-	ld ix,write_cycle_LUT
 	call get_mem_cycle_offset
 	di
 	
@@ -2280,7 +2264,7 @@ _
 updateTIMA:
 	exx
 	push.l hl
-	 call get_read_cycle_offset
+	 call get_mem_cycle_offset
 	 ld a,(TAC)
 	 and 4
 	 ld a,(TIMA)
@@ -2465,14 +2449,14 @@ write_scroll_swap:
 	ex af,af'
 write_scroll:
 	push ix
-	 call get_scanline_from_write
+	 call get_mem_scanline_offset
 	pop hl
 	jp.lil scroll_write_helper
 	
 writeLCDChandler:
 	ex af,af'
 writeLCDC:
-	call get_scanline_from_write
+	call get_mem_scanline_offset
 	ex de,hl
 	call get_last_cycle_offset
 	jp.lil lcdc_write_helper
@@ -2506,13 +2490,13 @@ writeDIV:
 writeSTAThandler:
 	ex af,af'
 writeSTAT:
-	call get_scanline_from_write
+	call get_mem_scanline_offset
 	jp.lil stat_write_helper
 	
 writeLYChandler:
 	ex af,af'
 writeLYC:
-	call get_scanline_from_write
+	call get_mem_scanline_offset
 	jp.lil lyc_write_helper
 	
 writeIE:
