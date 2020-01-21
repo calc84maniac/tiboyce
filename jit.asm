@@ -212,7 +212,7 @@ Z80InvalidOpcode_helper:
 	 APRINTF(InvalidOpcodeErrorMessage)
 	pop bc
 #endif
-	call.il lookup_gb_code_address
+	call lookup_gb_code_address
 	ld (errorArg),de
 	ld a,(z80codebase+curr_rom_bank)
 	ld (errorArg+2),a
@@ -323,11 +323,11 @@ lookup_gb_finish:
 	 pop de
 	pop af
 #endif
-	ret.l
+	ret
 	
 lookup_gb_found_start:
 	ld a,(ix+7)
-	ret.l
+	ret
 
 lookup_gb_new_sub_block_end:
 	 dec ix

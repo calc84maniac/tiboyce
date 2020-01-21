@@ -128,7 +128,7 @@ flush_mem:
 	dec bc
 	dec.s bc
 	push hl
-	 call.il lookup_gb_code_address
+	 call lookup_gb_code_address
 	 neg
 	 ld c,a
 	 sbc a,a
@@ -842,7 +842,7 @@ schedule_event_continue:
 	   push de
 	    push bc
 	     lea.s bc,ix
-	     call.il lookup_gb_code_address
+	     call lookup_gb_code_address
 	    pop bc
 	    cp c
 	    jr nz,$
@@ -942,7 +942,7 @@ resolve_mem_cycle_offset_helper:
 	 push hl
 	  lea bc,ix
 	  push bc
-	   call.il lookup_gb_code_address
+	   call lookup_gb_code_address
 	   neg
 	   push de
 	    ld hl,(z80codebase+memroutine_next)

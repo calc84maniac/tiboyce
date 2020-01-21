@@ -1311,41 +1311,23 @@ event_address = $+1
 	    ld a,(event_value)
 	    ld (hl),a
 	   
-	    ; Get the address of the recompiled code: the bottom stack entry
-	    ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
+	    ; Get the cycle offset, GB address, and JIT address after the current opcode
 	    exx
 	    ld a,b
 	    exx
 	    ld b,a
-	    ld c,CALL_STACK_ENTRY_SIZE
-	    mlt bc
-	    add hl,bc
-	    ld bc,(hl)
+	    call get_mem_cycle_offset
 	
-	    ; If the return address is the flush handler (e.g. generated from a RETI),
-	    ; don't do a reverse lookup or write a RST to the return address,
-	    ; but still schedule the event to be executed post-flush.
-	    ld a,b
-	    sub flush_handler >> 8
-	    jr nz,_
-	    ld bc,event_value
-_
-	    di
-	    call.il nz,lookup_gb_code_address
-	    ei
-	    ld (event_gb_address),de
-	    ld h,b
-	    ld l,c
+	    ld (event_gb_address),hl
+	    lea hl,ix
 	    ld (event_address),hl
+	    ld (event_cycle_count),a
 	    ld c,a
 	    ld a,(hl)
 	    ld (event_value),a
 	    ld (hl),RST_EVENT
 	   pop af
 	   jr c,event_fast_forward
-	   xor a
-	   sub c
-	   call get_cycle_offset
 	   ; If the end of this instruction is already past the target, don't rewind
 	   ld a,d
 	   or a
@@ -1371,10 +1353,9 @@ _
 event_fast_forward:
 	   xor a
 	   ld iyh,a
-	   ld iyl,c
-trigger_event_already_triggered:
 	   sub c
-	   ld (event_cycle_count),a
+	   ld iyl,a
+trigger_event_already_triggered:
 	  pop bc
 	 pop de
 	pop hl
