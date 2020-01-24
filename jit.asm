@@ -1188,8 +1188,483 @@ _
 	ret
 #endif
 	
-; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
+#macro OPCYCLE_NEXT
+	ret c
+	inc d
+	ld e,(hl)
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+#endmacro
+	
 	.block (-$)&255
+opcycleroutines:
+	
+	; 1b op, 3b rec, 1cc
+opcycle27:
+opcycleF3:
+	lea ix,ix+(3-1)
+	; 1b op, 1b rec, 1cc
+opcycle1byte:
+opcycleNOP:
+	inc ix
+	inc de
+	ex de,hl
+	inc a
+	ret z
+	inc d
+opcycle_first:
+	ld e,(hl)
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+	
+	; 1b op, 4b rec, 2cc
+opcycle33:
+opcycle3B:
+	inc ix
+	; 1b op, 3b rec, 2cc
+opcycleMEM:
+opcycle39:
+opcycleE2:
+opcycleF2:
+opcycleF9:
+	add ix,bc
+	inc de
+	ex de,hl
+	add a,2
+	OPCYCLE_NEXT
+	
+	; 1b op, 1b rec, 2cc
+opcycle1byte_2cc:
+	inc ix
+	inc de
+	ex de,hl
+	add a,2
+	OPCYCLE_NEXT
+	
+	; 2b op, 2b rec, 2cc
+opcycle2byte:
+	inc de
+opcycleCB_normal:
+	lea ix,ix+2
+	inc de
+	ex de,hl
+	add a,2
+	OPCYCLE_NEXT
+
+	; 3b op, 5b rec, 3cc
+opcycle31:
+	lea ix,ix+(5-3)
+	; 3b op, 3b rec, 3cc
+opcycle3byte:
+	add ix,bc
+	ex de,hl
+	add hl,bc
+	add a,c
+	OPCYCLE_NEXT
+	
+	; 2b op, 4b rec, 3cc
+opcycleF8:
+	inc ix
+	jr opcycleE0
+	
+	; 1b op, 2b rec, 3cc
+opcyclePOP:
+	lea ix,ix+2
+	inc de
+	ex de,hl
+	add a,c
+	OPCYCLE_NEXT
+	
+	; 2b op, 6b rec, 3cc
+opcycle36:
+	add ix,bc
+	; 2b op, 3b rec, 3cc
+opcycleE0:
+opcycleF0:
+	inc de
+	; 1b op, 3b rec, 3cc
+opcycle34:
+opcycle35:
+opcycleF1:
+	add ix,bc
+	inc de
+	ex de,hl
+	add a,c
+	OPCYCLE_NEXT
+
+opcycleCB_bit:
+	ld a,l
+	add ix,bc
+	inc de
+	ex de,hl
+	add a,c
+	OPCYCLE_NEXT
+
+opcycleCB:
+	inc de
+	ld l,a
+	ld a,(de)
+	xor $46
+	and $E7
+	jr z,opcycleCB_bit	; 2b op, 3b rec, 3cc
+	and $07
+	ld a,l
+	jr nz,opcycleCB_normal	; 2b op, 2b rec, 2cc
+	; 2b op, 3b rec, 4cc
+	inc ix
+	; 1b op, 2b rec, 4cc
+opcyclePUSH:
+	lea ix,ix+2
+	inc de
+	ex de,hl
+	add a,4
+	OPCYCLE_NEXT
+
+	; 3b op, 5b rec, 4cc
+opcycleEA:
+opcycleFA:
+	lea ix,ix+5
+	ex de,hl
+	add hl,bc
+	add a,4
+	OPCYCLE_NEXT
+
+	; 2b op, 4b rec, 4cc
+opcycleE8:
+	inc de
+	inc ix
+	; 1b op, 3b rec, 4cc
+opcycleF5:
+	inc de
+	add ix,bc
+	ex de,hl
+	add a,4
+	OPCYCLE_NEXT
+	
+	; 3b op, 7b rec, 5cc
+opcycle08:
+	lea ix,ix+7
+	ex de,hl
+	add hl,bc
+	add a,5
+	OPCYCLE_NEXT
+	
+	; Invalid opcodes within a sub-block
+opcycleINVALID:
+opcycleJR:
+opcycleJRcond:
+opcycleJP:
+opcycleJPcond:
+opcycleCALL:
+opcycleCALLcond:
+opcycleRET:
+opcycleRETcond:
+opcycleRETI:
+opcycleRST:
+opcycle76:
+opcycleE9:
+opcycleEI:
+	jp runtime_error
+
+	.echo "Opcycle routine size: ", $ - opcycleroutines
+	.block 256 - ($ - opcycleroutines)
+; A table indexing opcode cycle counting routines.
+; All entry points live in a 256-byte space.
+opcounttable:
+;00
+	.db opcycleNOP - opcycleroutines
+	.db opcycle3byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;08
+	.db opcycle08 - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;10
+	.db opcycleNOP - opcycleroutines
+	.db opcycle3byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;18
+	.db opcycleJR - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;20
+	.db opcycleJRcond - opcycleroutines
+	.db opcycle3byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycle27 - opcycleroutines
+;28
+	.db opcycleJRcond - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;30
+	.db opcycleJRcond - opcycleroutines
+	.db opcycle31 - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle33 - opcycleroutines
+	.db opcycle34 - opcycleroutines
+	.db opcycle35 - opcycleroutines
+	.db opcycle36 - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;38
+	.db opcycleJRcond - opcycleroutines
+	.db opcycle39 - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle3B - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;40
+	.db opcycleNOP - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;48
+	.db opcycle1byte - opcycleroutines
+	.db opcycleNOP - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;50
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleNOP - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;58
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleNOP - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;60
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleNOP - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;68
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleNOP - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;70
+	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle76 - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+;78
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycleNOP - opcycleroutines
+;80
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;88
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;90
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;98
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;A0
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;A8
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;B0
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;B8
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+	.db opcycleMEM - opcycleroutines
+	.db opcycle1byte - opcycleroutines
+;C0
+	.db opcycleRETcond - opcycleroutines
+	.db opcyclePOP - opcycleroutines
+	.db opcycleJPcond - opcycleroutines
+	.db opcycleJP - opcycleroutines
+	.db opcycleCALLcond - opcycleroutines
+	.db opcyclePUSH - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+;C8
+	.db opcycleRETcond - opcycleroutines
+	.db opcycleRET - opcycleroutines
+	.db opcycleJPcond - opcycleroutines
+	.db opcycleCB - opcycleroutines
+	.db opcycleCALLcond - opcycleroutines
+	.db opcycleCALL - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+;D0
+	.db opcycleRETcond - opcycleroutines
+	.db opcyclePOP - opcycleroutines
+	.db opcycleJPcond - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycleCALLcond - opcycleroutines
+	.db opcyclePUSH - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+;D8
+	.db opcycleRETcond - opcycleroutines
+	.db opcycleRETI - opcycleroutines
+	.db opcycleJPcond - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycleCALLcond - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+;E0
+	.db opcycleE0 - opcycleroutines
+	.db opcyclePOP - opcycleroutines
+	.db opcycleE2 - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcyclePUSH - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+;E8
+	.db opcycleE8 - opcycleroutines
+	.db opcycleE9 - opcycleroutines
+	.db opcycleEA - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+;F0
+	.db opcycleF0 - opcycleroutines
+	.db opcycleF1 - opcycleroutines
+	.db opcycleF2 - opcycleroutines
+	.db opcycleF3 - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycleF5 - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+;F8
+	.db opcycleF8 - opcycleroutines
+	.db opcycleF9 - opcycleroutines
+	.db opcycleFA - opcycleroutines
+	.db opcycleEI - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycleINVALID - opcycleroutines
+	.db opcycle2byte - opcycleroutines
+	.db opcycleRST - opcycleroutines
+	
+; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
 opcoderecsizes:
 	.db 1,3,3,1,1,1,2,1
 	.db 7,1,3,1,1,1,2,1

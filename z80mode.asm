@@ -585,9 +585,18 @@ stat_line_count_single_smc = $+1
 	ld a,144
 	dec a
 	jr z,stat_counter_single_skip_vblank
-	ld l,-CYCLES_PER_SCANLINE
-stat_update_line_counter_single:
 	ld (stat_line_count_single_smc),a
+	ld l,-CYCLES_PER_SCANLINE
+	ld (stat_counter),hl
+	add hl,de
+	ret nc
+	ld de,CYCLES_PER_SCANLINE
+	ret
+	
+stat_counter_single_skip_vblank:
+	ld a,144
+	ld (stat_line_count_single_smc),a
+	ld hl,-(CYCLES_PER_SCANLINE * 11)
 	ld (stat_counter),hl
 stat_not_expired_single:
 	add hl,de
@@ -597,11 +606,6 @@ stat_not_expired_single:
 	sbc hl,de
 	ex de,hl
 	ret
-	
-stat_counter_single_skip_vblank:
-	ld a,144
-	ld hl,-(CYCLES_PER_SCANLINE * 11)
-	jr stat_update_line_counter_single
 	
 	
 stat_mode0_expired_handler:
@@ -1825,8 +1829,9 @@ mem_read_any_rtc_smc = $+2
 	ret
 	
 readDIV:
-	call updateTIMA
-	 ei
+	exx
+	push.l hl
+	 call get_mem_cycle_offset
 	 ld hl,(div_counter)
 	 add hl,de
 	 add hl,hl

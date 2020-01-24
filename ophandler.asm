@@ -197,6 +197,7 @@ scroll_write_DMA:
 	  ld de,hram_start
 	  ldir
 	 pop bc
+scroll_write_no_change:
 	pop hl
 	exx
 	ex af,af'
@@ -220,6 +221,12 @@ scroll_write_DMA:
 ;          AF' has been unswapped
 scroll_write_helper:
 	 ld d,a
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 cp.s (hl)
+	 jr z,scroll_write_no_change
 render_this_frame = $+1
 	 ld a,1
 	 or a
@@ -243,9 +250,6 @@ scroll_write_SCY:
 	 jr scroll_write_done
 	
 scroll_write_BGP:
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
 	 ; Only do things if BGP is changing
 	 ld.s a,(hl)
 	 cp c
@@ -269,9 +273,6 @@ scanlineLUT_palette_ptr = $+2
 	 jr scroll_write_done_swap
 	 
 scroll_write_WX:
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
 	 ld a,c
 	 ld (WX_smc_2),a
 	 cp 167
@@ -284,9 +285,6 @@ scroll_write_WX:
 	 jr scroll_write_done_swap
 	
 scroll_write_SCX:
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
 	 ld a,c
 	 rrca
 	 rrca
@@ -853,32 +851,14 @@ schedule_event_continue:
 	  pop hl
 	 pop ix
 #endif
-
+	 
 	 ld a,iyl
 	 sub c
 	 jr nc,schedule_event_now
 	 
-	 ld de,opcodecycles
-	 ld bc,0
-schedule_event_cycle_loop:
-	 ld e,(hl)
-	 ex de,hl
-	 dec h
-	 ld c,(hl)
-	 ex de,hl
-	 add hl,bc
-	 ex de,hl
-	 dec h
-	 ld c,(hl)
-	 add ix,bc
-	 inc h
-	 inc h
-	 add a,(hl)
-	 ex de,hl
-	 jr nc,schedule_event_cycle_loop
-	 jp m,schedule_event_prefix
-schedule_event_cycle_loop_finish:
-	 
+	 ld de,opcounttable
+	 ld bc,3
+	 call opcycle_first
 	 or a
 schedule_event_now:
 	pop de
@@ -905,27 +885,6 @@ schedule_event_check_ram_prefix:
 	pea.s ix+RAM_PREFIX_SIZE
 	ld.s ix,(ix+3)
 	jp check_coherency_helper_swapped
-	
-schedule_event_prefix:
-	  ; Count CB-prefixed opcode cycles
-	  push af
-	   dec hl
-	   ld a,(hl)
-	   inc hl
-	   xor $46
-	   and $C7
-	   jr z,_
-	   and 7
-	   jr nz,++_
-	   inc c
-_
-	   inc c
-	   inc ix
-_
-	  pop af
-	  adc a,c
-	  jr nc,schedule_event_cycle_loop
-	  jr schedule_event_cycle_loop_finish
 	
 	
 ; Inputs:  BCDEHL' are swapped
