@@ -319,9 +319,15 @@ memroutineLUT = vram_pixels_start + $6000
 ; and each pointer gives the last struct entry touching that range.
 recompile_index_LUT = memroutineLUT + $0200
 
+; Start of recompiler cached jump index lookup table. 512 bytes in size.
+; The first 256 bytes are the LSBs and the next 256 are the MSBs.
+; The lookup table is indexed by the low byte of a GB address,
+; and each pointer gives the first cache entry corresponding to that LSB.
+recompile_cache_LUT = recompile_index_LUT + $0200
+
 ; A lookup table for converting BG palettes to raw colors. 256 bytes in size.
 ; Must be 256-byte aligned.
-convert_palette_LUT = recompile_index_LUT + $0200
+convert_palette_LUT = recompile_cache_LUT + $0200
 
 ; Start of the ROM bank lookup table. 256 pointers in size.
 ; Stores the base address of each ROM bank (or mirror), minus $4000.
@@ -378,13 +384,16 @@ recompile_struct = z80codebase + $010000
 
 ; End of array caching mappings of GB addresses to recompiled code. 11KB max.
 ; Grows backward into the recompiled code block information (see above).
-; Each entry is 6 bytes in size, and contains the following members:
-;   +0: 24-bit pointer to a Game Boy opcode.
-;   +3: 16-bit pointer to recompiled code. May be inside a non-RAM-based block.
-;   +5: 8-bit clock cycle index within the block.
+; Each entry is 5 bytes in size, and contains the following members:
+;   +0: 16-bit pointer to recompiled code. May be inside a non-RAM-based block.
+;   +2: 8-bit clock cycle index within the block.
+;   +3: Upper 16 bits of the 24-bit banked Game Boy address.
 ; The start of the array is stored in (recompile_cache).
-; The array is sorted in ascending order by Game Boy opcode address.
-; Lookup is O(log n) on number of entries, and insertion is O(n) plus mapping.
+; The array is logically separated into ranges, each range corresponding to
+; the LSB of the contained GB addresses, in decreasing order ($FF to $00).
+; Range bounds are tracked in the recompile_cache_LUT and used for fast lookup.
+; Lookup is O(n) on number of entries with a given LSB. Insertion is O(n) on
+; number of total entries, plus the address lookup and updating LSB ranges.
 ; Only addresses reached via RET (when callstack fails) or JP HL use the cache.
 ; Additionally, jumps from RAM-based GB code use the cache to speed up SMC,
 ; and jumps/calls to banked regions use the cache upon a bank mismatch.

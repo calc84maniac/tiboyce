@@ -49,8 +49,9 @@ flush_code:
 	 ld (recompile_cache),hl
 	 ; Fill unused memory with DI to catch bad execution
 	 MEMSET_FAST(z80codebase+jit_start, memroutine_end - jit_start, $F3)
-	 ; Invalidate the memory routines and recompile index LUT
-	 MEMSET_FAST(memroutineLUT, $0400, 0)
+	 ; Invalidate the memory routines, recompile index, and recompile cache LUT
+	 MEMSET_FAST(memroutineLUT, $0500, 0)
+	 MEMSET_FAST(recompile_cache_LUT+256, 256, (recompile_cache_end>>8)&$FF)
 	 ; Invalidate the interrupt return stack
 	 ld hl,z80codebase+int_return_stack
 	 ld (int_return_sp),hl
@@ -380,84 +381,11 @@ _
 	  ld c,3
 	  jr lookup_gb_add
 	
-	; If a cached code lookup misses, resolve it and insert into the cache
-lookup_code_cached_miss:
-	 push de
-	  push bc
-#ifdef DEBUG
-	   push de
-	    APRINTF(CacheMissMessage)
-	   pop de
-#endif
-	   call lookup_code_with_bank
-	   ; Check if the cache needs to be flushed
-	   ld hl,(recompile_struct_end)
-	   ld de,(recompile_cache)
-	   ld bc,3+6
-	   add hl,bc
-	   sbc hl,de
-	   jr c,_
-	   ; Allow a certain number of cache flushes before flushing the entire JIT space
-	   ld hl,cache_flushes_allowed
-	   dec (hl)
-	   ; Get the GB banked pointer in HL
-	   pop de
-	   pop hl
-	   push hl
-	   push de
-	   ; If no cache flushes remaining, prepare a JIT flush (replacing IX and A)
-	   call z,prepare_flush
-	   ; Flush the cache
-	   ld de,recompile_cache_end
-_
-	  pop hl
-	  or a
-	  sbc hl,de
-	  jr nc,_
-	  cp a	;Set Z
-_
-	  ld b,h
-	  ld c,l
-	  ld hl,-6
-	  add hl,de
-	  ld (recompile_cache),hl
-	  jr z,_
-	  ex de,hl
-	  ldir
-	  ex de,hl
-_
-	 pop de
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	 inc hl
-	 ld (hl),ix
-	 inc hl
-	 inc hl
-	 ld (hl),a
-	pop hl
-	ret.l
 	
-	
-	
-	 ; When the binary search finishes, see if we found it
+	 ; When a match is found, load it from the cache
 lookup_code_cached_found:
-	 ; Past the end of the array means not found
-	 ld a,b
-	 sub recompile_cache_end>>8 & $FF
-	 or c
-	 jr z,lookup_code_cached_miss
-	 ; Does the address match?
-	 ld hl,(ix)
-	 sbc hl,de
-#ifdef DEBUG
-	 jp nz,lookup_code_cached_miss
-#else
-	 jr nz,lookup_code_cached_miss
-#endif
-	 ; We found it!
-	 ld a,(ix+5)
-	 ld ix,(ix+3)
+	 ld a,(ix-3)
+	 ld ix,(ix-5)
 	pop hl
 	ret.l
 	
@@ -520,37 +448,117 @@ lookup_code_cached_with_bank:
 	 ; Quickly check against the last interrupt return address
 int_cached_return = $+1
 	 ld hl,0
-	 or a
+	 xor a
 	 sbc hl,de
 	 jr z,int_cache_hit
 	
-	 ; Binary search the cache for the pointer
-recompile_cache = $+1
-	 ld bc,0
+	 ; Search the cache for the pointer, indexing by the LSB
 	 ld ix,recompile_cache_end
-lookup_code_cached_loop:
-	 lea hl,ix
-	 or a
-	 sbc hl,bc
-	 jr z,lookup_code_cached_found
-	 srl h
-	 rr l
-	 bit 0,l
+	 ld hl,recompile_cache_LUT
+	 ld l,e
+	 cp l
+	 ld a,(hl)
 	 jr z,_
-	 dec hl
-	 dec hl
-	 dec hl
+	 dec l
+	 ld c,(hl)
+	 inc h
+	 ld b,(hl)
+	 ld ixl,c
+	 ld ixh,b
 _
-	 add hl,bc
-	 push hl
-	  ld hl,(hl)
+	 sub ixl
+	 jr z,lookup_code_cached_miss
+	 ld bc,-5
+lookup_code_cached_loop:
+	 ld hl,(ix-3)
+	 ld l,e
+	 or a
+	 sbc hl,de
+	 jr z,lookup_code_cached_found
+	 add ix,bc
+	 sub c
+	 jr nz,lookup_code_cached_loop
+	
+	; If a cached code lookup misses, resolve it and insert into the cache
+lookup_code_cached_miss:
+	 push de
+	  push ix
+#ifdef DEBUG
+	   push de
+	    APRINTF(CacheMissMessage)
+	   pop de
+#endif
+	   call lookup_code_with_bank
+	   ; Check if the cache needs to be flushed
+	   ld hl,(recompile_struct_end)
+	   ld de,(recompile_cache)
+	   ld bc,3+5
+	   add hl,bc
+	   sbc hl,de
+	   jr c,_
+	   ; Allow a certain number of cache flushes before flushing the entire JIT space
+	   ld hl,cache_flushes_allowed
+	   dec (hl)
+	   ; Get the GB banked pointer in HL
+	   pop de
+	   pop hl
+	   push hl
+	   push de
+	   ; If no cache flushes remaining, prepare a JIT flush (replacing IX and A)
+	   call z,prepare_flush
+	   ; Flush the cache
+	   call flush_cache
+	   ex de,hl
+_
+	  pop hl
+	  ; Copy back the entries below the insert point to make room
+	  or a
 	  sbc hl,de
-	  jr nc,lookup_code_cached_lower
-	  ex (sp),ix
-	  lea bc,ix+6
-lookup_code_cached_lower:
-	 pop ix
-	 jr lookup_code_cached_loop
+	  jr nc,_
+	  cp a	;Set Z
+_
+	  ld b,h
+	  ld c,l
+	  ld hl,-5
+	  add hl,de
+	  ld (recompile_cache),hl
+	  jr z,_
+	  ex de,hl
+	  ldir
+	  ex de,hl
+_
+	 pop de
+	 ; Assign to the new entry
+	 ld (hl),ix
+	 inc hl
+	 inc hl
+	 ld (hl),de
+	 ld (hl),a
+	 ; Update range bounds for each LSB range copied back
+	 ld hl,recompile_cache_LUT + 5
+	 ld b,l
+	 ld l,e
+	 ld c,a
+_
+	 ld a,(hl)
+	 sub b
+	 ld (hl),a
+	 jr c,_
+	 inc l
+	 jr nz,-_
+	 ld a,c
+	pop hl
+	ret.l
+	
+_
+	 inc h
+	 dec (hl)
+	 dec h
+	 inc l
+	 jr nz,--_
+	 ld a,c
+	pop hl
+	ret.l
 	
 	
 lookup_code_link_internal_with_bank_cached:
@@ -849,8 +857,9 @@ _
 	sbc hl,de
 	jr c,_
 	; Check for collision with cache
-	ld hl,(recompile_cache)
-	lea de,ix+(MAX_CACHE_FLUSHES_ALLOWED*8)+3+6
+recompile_cache = $+1
+	ld hl,0
+	lea de,ix+(MAX_CACHE_FLUSHES_ALLOWED*8)+3+5
 	sbc hl,de
 	ld ix,(ix)
 	ret nc
@@ -927,6 +936,10 @@ ram_block_padding = $+1
 	 jp recompile_end_common
 	 
 flush_cache:
+	push af
+	 MEMSET_FAST(recompile_cache_LUT, 256, 0)
+	 MEMSET_FAST(recompile_cache_LUT+256, 256, (recompile_cache_end>>8)&$FF)
+	pop af
 	ld hl,recompile_cache_end
 	ld (recompile_cache),hl
 	ret

@@ -488,8 +488,7 @@ _
 	ret.l
 	
 memroutine_gen_flush:
-	ld hl,recompile_cache_end
-	ld (recompile_cache),hl
+	call flush_cache
 	ld de,flush_mem_handler
 	jr -_
 	
