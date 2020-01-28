@@ -1166,91 +1166,91 @@ handle_waitloop_stat:
 	
 handle_waitloop_variable:
 	ex af,af'
+	pop ix
 	push hl
-handle_waitloop_main:
-	 ; Skip straight to the counter expiration
-	 xor a
-	 ld iyh,a
-	 sub (ix+2)
-	 ld iyl,a
-handle_waitloop_noskip:
-	 ; Run an event using our precomputed lookup
-	 ld hl,(ix+4)
-	 ld (event_gb_address),hl
-	 ld a,(ix+2)
-	 ld (event_cycle_count),a
-	 ld ix,(ix)
-	 jp do_event_pushed
+	 push de
+	  push bc
+	   ld bc,(ix+1)
+	   ; Skip straight to the counter expiration
+	   ld iyl,c
+	   ld iyh,0
+handle_waitloop_common:
+	   ld de,(ix+5)
+	   ld ix,(ix+3)
+	   push ix
+	    di
+	    jp.lil schedule_jump_event_helper
+	
+_
+	   sbc a,a
+	   xor d
+	   jr nz,_
+	   add iy,bc
+	   ld iyh,a
+	   jr handle_waitloop_common
 	
 handle_waitloop_ly:
 	ex af,af'
+	pop ix
 	push hl
 	 push de
-	  ; Get the (negative) number of cycles until the next event
-	  ld a,(ix+2)
-	  call get_cycle_offset
-	  push de
-	   ; Get the (negative) number of cycles until the next scanline
-	   call get_scanline_from_cycle_offset
-	   ld d,a
+	  push bc
+	   ld bc,(ix+1)
+	   lea de,iy
 	   ld a,e
-	   cp 153
-	   ld a,d
+	   add a,c
+	   jr c,-_
+_
+	   ; Get the (negative) number of cycles until the next scanline
+	   push de
+	    call get_scanline_from_cycle_offset
+	    ld d,a
+	    ld a,e
+	    cp 153
+	    ld a,d
+	    jr nz,_
+	    sub 1
+	    jr c,++_
+	    sub CYCLES_PER_SCANLINE - 1
+_
+	    sub CYCLES_PER_SCANLINE
+_
+	   pop de
+	   ; Choose the smaller absolute value
+	   inc d
 	   jr nz,_
-	   sub 1
+	   cp e
+	   jr nc,_
+	   ld a,e
+_
+	   ld l,a
+	   ; Always advance by the first jump length first
+	   add a,c
 	   jr c,++_
-	   sub CYCLES_PER_SCANLINE - 1
+	   ; Advance as many full loops as possible without exceeding the cycle count
+	   ld h,(ix)
 _
-	   sub CYCLES_PER_SCANLINE
+	   add a,h
+	   jr nc,-_
+	   sub h
 _
-	  pop de
-	  ; Choose the smaller absolute value
-	  inc d
-	  jr nz,_
-	  cp e
-	  jr nc,_
-	  ld a,e
+	   sub l
+	   ; Add in the cycles and check for overflow
+	   add a,e
+	   ld iyl,a
+	   jr c,++_
 _
-	  ld e,a
-	  ; Step by a multiple of the loop length
-	  ld d,(ix+3)
-	  ; Always advance at least one iteration
-	  add a,d
-	  jr c,++_
-	  ; Advance as many iterations as possible without exceeding the cycle count
-_
-	  add a,d
-	  jr nc,-_
-	  sub d
-_
-	  sub e
+	  pop bc
 	 pop de
-	 ; Add in the cycles and check for overflow
-	 add a,iyl
-	 ld iyl,a
-	 jr c,_
-	 dec iyh
-_
-	 inc iyh
-	 jr z,_
-	 ld ix,(ix)
 	pop hl
 	ex af,af'
+	ld ix,(ix+3)
 	jp (ix)
+	
 _
-	 ; If the count has already expired, do an event immediately
-	 add a,(ix+2)
-	 jr c,handle_waitloop_noskip
-
-	 ; Schedule an event using our precomputed lookup
-	 push de
-	  push bc
-	   ld de,(ix+4)
-	   ld a,(ix+2)
-	   ld ix,(ix)
-	   push ix
-	    di
-	    jp.lil schedule_event_helper
+	   inc iyh
+	   jr nz,--_
+	   jr handle_waitloop_common
 	
 ophandlerEI:
 	ex af,af'

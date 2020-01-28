@@ -114,6 +114,7 @@ waitloop_found_read_bitwise:
 	ret nz
 	; Parse this opcode as a data op
 	dec hl
+	inc de
 	
 waitloop_found_read_hl_swap:
 	exx	
@@ -168,6 +169,7 @@ waitloop_found_data_op:
 	pop hl
 waitloop_identified_trampoline:
 	jr z,waitloop_identified
+	ret c
 	
 	ld a,(hl)
 	and $E7
@@ -190,7 +192,7 @@ waitloop_jp_smc = $+1
 	ret nz
 waitloop_try_next_target:
 	push hl
-	 ld hl,6
+	 ld hl,14-8
 	 add hl,de
 	 ld a,(waitloop_length_smc)
 	 add a,(hl)
@@ -249,24 +251,6 @@ waitloop_identified:
 	inc a
 	ret z
 	
-	ld hl,(z80codebase+memroutine_next)
-	ld de,-7
-	add hl,de	;Sets C flag
-	
-	; Bail if not enough room for trampoline
-	ex de,hl
-	ld hl,(recompile_struct_end)
-	ld hl,(hl)
-	sbc hl,de	;Carry is set
-	ret nc
-	ex de,hl
-	ld (z80codebase+memroutine_next),hl
-	ld de,ERROR_CATCHER
-	ld (hl),de
-	inc hl
-	inc hl
-	inc hl
-	
 	; Choose handler based on variable accessed
 	inc b
 	jr nz,waitloop_variable
@@ -283,43 +267,24 @@ waitloop_stat:
 waitloop_variable:
 	ld bc,handle_waitloop_variable
 waitloop_finish:
-	ld (hl),ix
-	inc hl
-	inc hl
-	pop de	; Pop the return address
-	pop de  ; Pop the target cycle count into D
-	; Store the negative target cycle count
-	xor a
-	sub d
-	ld (hl),a
-	inc hl
-	ld a,d
-waitloop_length_smc = $+1
-	add a,0 ; Compute the length of the loop in cycles
 	; Get the end of the recompiled code to overwrite
-	pop.s de
-	ex de,hl
+	pop.s hl
+	ld.s (hl),ix
+	dec hl
+	dec hl
+	pop de	; Pop the return address
+	pop af  ; Pop the target cycle count into A
+	; Store the target cycle count
+	ld.s (hl),a
+	dec hl
+	; Store the length of the loop in cycles
+waitloop_length_smc = $+1
+	add a,0
+	ld.s (hl),a
 	dec hl
 	dec hl
 	ld.s (hl),bc
 	dec hl
-	ld.s (hl),$C3	;JP handler
-	ex de,hl
-	ld (hl),a
-	inc hl
-	ld bc,(waitloop_jr_smc)
-	ld (hl),bc
-	dec hl
-	dec hl
-	dec hl
-	dec hl
-	ex de,hl
-	dec hl
-	dec hl
-	ld.s (hl),de
-	dec hl
-	ld.s (hl),$21
-	dec hl
-	ld.s (hl),$DD	;LD IX,ptr
+	ld.s (hl),$CD	;CALL handler
 	ei
 	jp.sis decode_jump_waitloop_return
