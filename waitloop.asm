@@ -16,7 +16,7 @@
 ;          DE = branch target GB address
 ;          (SPS) = branch recompiled code address (plus 8)
 ;          (SPL+4) = number of cycles to sub-block end from target
-;          (SPL+7) = number of cycles used by branch
+;                    (plus jump cycles)
 ;          BC',DE',HL' = Game Boy BC,DE,HL registers
 ; Outputs: IX = filtered branch target
 identify_waitloop:

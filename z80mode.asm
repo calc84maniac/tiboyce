@@ -1287,7 +1287,6 @@ _
 	 neg	; A is non-zero, so this sets carry
 	 inc a
 	 lea ix,ix+3
-	 inc hl
 	 jr haltdone
 haltspin:
 	 dec hl

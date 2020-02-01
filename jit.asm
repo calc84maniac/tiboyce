@@ -1065,7 +1065,7 @@ rerecompile:
 	ld (de),a
 	
 	; Empty the interrupt return stack
-	ld hl,int_return_stack
+	ld hl,z80codebase+int_return_stack
 	ld (int_return_sp),hl
 	
 	; Set the cached interrupt return address to -1
