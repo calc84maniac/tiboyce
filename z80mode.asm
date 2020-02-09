@@ -336,82 +336,85 @@ do_event:
 event_value = $+3
 	ld (ix),0
 	push hl
-do_event_pushed:
+#ifdef DEBUG
 	 ld hl,event_value
 	 ld (event_address),hl
-do_event_pushed_no_reset:
-	 push de
-	  xor a
-event_cycle_loop:
+#endif
+do_event_pushed:
+	 xor a
 event_cycle_count = $+2
-	  lea hl,iy+0
-	  or h
-	  jr nz,not_expired
+	 lea hl,iy+0
+	 cp h
+	 jr z,event_expired
+	 sbc hl,hl	;ld hl,IE
+	 ld a,(hl)
+	 ld l,IF - ioregs
+intstate_smc_1:
+	 and (hl)
+	 jr nz,trigger_interrupt_push
+	 cp iyh
+	 jr z,event_reschedule_push
+	pop hl
+	ex af,af'
+	jp (ix)
 
-	  ld (event_save_sp),sp
-	  di
-	  ld sp,event_counter_checkers
+event_expired:
+	 ; At least one event expired
+	 push de
+	  push bc
+div_counter = $+1
+	   ld hl,0
+	   ld (event_save_sp),sp
+	   di
+event_expired_loop:
+	   ld sp,event_counter_checkers
 
-	  ; At least one event expired
-	  ld l,h
+	   ld b,h
+	   ld c,l
 vblank_counter = $+1
-	  ld de,0
-	  sbc hl,de
-	  ex de,hl
-	  ret nz
-	  jp.lil vblank_helper
+	   ld de,0
+	   sbc hl,de
+	   ex de,hl
+	   ret nz
+	   jp.lil vblank_helper
 
 event_counter_checkers_done:
-	  ei
+	   ld h,b
+	   ld l,c
+	   or a
+	   sbc hl,de
+	   add iy,de
+	   jr nc,_
+	   ld a,(event_cycle_count)
+	   dec a
+	   adc a,iyl
+	   ccf
+	   jr nc,event_expired_loop
+_
+	   ld (div_counter),hl
+	   ei
 event_save_sp = $+1
-	  ld sp,0
-
-serial_counter = $+1
-	  ld hl,0
-	  add hl,de
-	  ld (serial_counter),hl
-timer_counter = $+1
-	  ld hl,0
-	  add hl,de
-	  ld (timer_counter),hl
-stat_counter = $+1
-	  ld hl,0
-	  add hl,de
-	  ld (stat_counter),hl
-lyc_counter = $+1
-	  ld hl,0
-	  add hl,de
-	  ld (lyc_counter),hl
-div_counter = $+1
-	  ld hl,0
-	  add hl,de
-	  ld (div_counter),hl
-	  ld hl,(vblank_counter)
-	  add hl,de
-	  ld (vblank_counter),hl
-	  xor a
-	  sbc hl,hl
-	  sbc hl,de
-	  ex de,hl
-	  add iy,de
-	  jr event_cycle_loop
+	   ld sp,0
 	   
-not_expired:
-	  ld hl,IE
-	  ld a,(hl)
-	  ld l,IF - ioregs
-intstate_smc:
-	  and (hl)
-	  jr nz,trigger_interrupt
-	  cp iyh
-	  jr z,event_reschedule
+event_not_expired:
+	   ld hl,IE
+	   ld a,(hl)
+	   ld l,IF - ioregs
+intstate_smc_2:
+	   and (hl)
+	   jr nz,trigger_interrupt
+	   cp iyh
+	   jr z,event_reschedule
+	  pop bc
 	 pop de
 	pop hl
 	ex af,af'
 	jp (ix)
 	   
-event_reschedule:
+event_reschedule_push:
+	 push de
 	  push bc
+event_reschedule:
 	   ld de,(event_gb_address)
 	   ld a,(event_cycle_count)
 	   neg
@@ -420,8 +423,10 @@ event_reschedule:
 	    di
 	    jp.lil schedule_event_helper
 	
-trigger_interrupt:
+trigger_interrupt_push:
+	 push de
 	  push bc
+trigger_interrupt:
 	   rrca
 	   jr c,trigger_vblank
 	   rrca
@@ -453,7 +458,8 @@ trigger_int_selected:
 	
 	   push hl
 	    ld a,$AF ;XOR A
-	    ld (intstate_smc),a
+	    ld (intstate_smc_1),a
+	    ld (intstate_smc_2),a
 	    exx
 event_gb_address = $+1
 	    ld de,event_gb_address
@@ -550,14 +556,14 @@ decode_intcache_from_overflow:
 	
 	
 lyc_counter_checker:
-	ld hl,(lyc_counter)
-	ld a,h
-	or l
+lyc_counter = $+1
+	ld hl,0
+	or a
+	sbc hl,bc
 	jr z,lyc_expired_handler
 	add hl,de
-	ret nc
+	ret c
 	ex de,hl
-	or a
 	sbc hl,de
 	ex de,hl
 	ret
@@ -569,99 +575,114 @@ lyc_expired_handler:
 	ld l,IF & $FF
 	set 1,(hl)
 _
-	ld hl,-CYCLES_PER_FRAME
+	ld hl,CYCLES_PER_FRAME
+	add hl,bc
 	ld (lyc_counter),hl
-	; Special case, DE cannot exceed CYCLES_PER_FRAME so this cannot replace it
+	; Special case, DE cannot exceed -CYCLES_PER_FRAME so this cannot replace it
 	ret
 	
 stat_counter_checker_single:
-	ld hl,(stat_counter)
-	ld a,h
-	or l
+stat_counter = $+1
+	ld hl,0
+	or a
+	sbc hl,bc
 	jr nz,stat_not_expired_single
 	ld hl,IF
 	set 1,(hl)
-stat_line_count_single_smc = $+1
-	ld a,144
-	dec a
+	ld hl,stat_line_count
+	dec (hl)
 	jr z,stat_counter_single_skip_vblank
-	ld (stat_line_count_single_smc),a
-	ld l,-CYCLES_PER_SCANLINE
+	ld hl,CYCLES_PER_SCANLINE
+	add hl,bc
 	ld (stat_counter),hl
+	or a
+	sbc hl,bc
 	add hl,de
-	ret nc
-	ld de,CYCLES_PER_SCANLINE
+	ret c
+	ld de,-CYCLES_PER_SCANLINE
 	ret
 	
 stat_counter_single_skip_vblank:
-	ld a,144
-	ld (stat_line_count_single_smc),a
-	ld hl,-(CYCLES_PER_SCANLINE * 11)
+	ld (hl),144
+	ld hl,CYCLES_PER_SCANLINE * 11
+	add hl,bc
 	ld (stat_counter),hl
+	ld hl,CYCLES_PER_SCANLINE * 11
+	add hl,de
+	ret c
+	ld de,-(CYCLES_PER_SCANLINE * 11)
+	ret
+	
 stat_not_expired_single:
 	add hl,de
-	ret nc
+	ret c
 	ex de,hl
-	or a
 	sbc hl,de
 	ex de,hl
 	ret
 	
+stat_line_count:
+	.db 144
 	
 stat_mode0_expired_handler:
 	ld hl,IF
 	set 1,(hl)
-stat_line_count_double_smc = $+1
-	ld a,144
-	dec a
+	ld hl,stat_line_count
+	dec (hl)
 	jr z,stat_counter_double_skip_vblank
-	ld l,-MODE_0_CYCLES
+	ld hl,MODE_0_CYCLES
 stat_update_line_counter_double:
-	ld (stat_line_count_double_smc),a
-	ld (stat_counter),hl
 	call stat_double_swap_modes
 stat_counter_checker_mode2:
 	ld hl,(stat_counter)
-	ld a,h
-	or l
+	or a
+	sbc hl,bc
 	jr nz,stat_not_expired_double
 	ld hl,IF
 	set 1,(hl)
-	ld l,-(MODE_2_CYCLES + MODE_3_CYCLES)
-	ld (stat_counter),hl
+	ld hl,MODE_2_CYCLES + MODE_3_CYCLES
 	call stat_double_swap_modes
 stat_counter_checker_mode0:
 	ld hl,(stat_counter)
-	ld a,h
-	or l
+	or a
+	sbc hl,bc
 	jr z,stat_mode0_expired_handler
-	.db $CA ;JP Z (skip next two bytes)
+stat_not_expired_double:
+	add hl,de
+	ret c
+	ex de,hl
+	sbc hl,de
+	ex de,hl
+	ret
+
 stat_double_swap_modes:
 	inc sp
 	inc sp
-stat_not_expired_double:
-	add hl,de
-	ret nc
-	ex de,hl
+	add hl,bc
+	ld (stat_counter),hl
 	or a
+	sbc hl,bc
+	add hl,de
+	ret c
+	ex de,hl
 	sbc hl,de
 	ex de,hl
 	ret
 	
 stat_counter_double_skip_vblank:
-	ld a,144
-	ld hl,-(CYCLES_PER_SCANLINE * 10 + MODE_0_CYCLES)
+	ld (hl),144
+	ld hl,CYCLES_PER_SCANLINE * 10 + MODE_0_CYCLES
 	jr stat_update_line_counter_double
 
 timer_counter_checker:
-	ld hl,(timer_counter)
-	ld a,h
-	or l
+timer_counter = $+1
+	ld hl,0
+	or a
+	sbc hl,bc
 	jr z,timer_expired_handler
 	add hl,de
-	ret nc
+	ret c
 	ex de,hl
-	or a
 	sbc hl,de
 	ex de,hl
 	ret
@@ -670,32 +691,38 @@ timer_expired_handler:
 	ld hl,IF
 	set 2,(hl)
 	ld l,TMA & $FF
-	ld l,(hl)
+	xor a
+	sub (hl)
 timer_cycles_reset_factor_smc = $+1
 	ld h,0
-	sub h
+	ld l,a
+	jr z,_
 	mlt hl
-	add a,h
-	ld h,a
+_
 	add hl,hl
+	; If scheduled for 65536 cycles in the future, no need to reschedule
+	; Returning here prevents the delay from being interpreted as 0
+	ret c
+	add hl,bc
 	ld (timer_counter),hl
-	add hl,de
-	ret nc
-	ex de,hl
 	or a
+	sbc hl,bc
+	add hl,de
+	ret c
+	ex de,hl
 	sbc hl,de
 	ex de,hl
 	ret
 
 serial_counter_checker:
-	ld hl,(serial_counter)
-	ld a,h
-	or l
+serial_counter = $+1
+	ld hl,0
+	or a
+	sbc hl,bc
 	jr z,serial_expired_handler
 	add hl,de
-	ret nc
+	ret c
 	ex de,hl
-	or a
 	sbc hl,de
 	ex de,hl
 	ret
@@ -1206,15 +1233,15 @@ _
 	    call get_scanline_from_cycle_offset
 	    ld d,a
 	    ld a,e
-	    cp 153
+	    cp 9
 	    ld a,d
 	    jr nz,_
-	    sub 1
-	    jr c,++_
-	    sub CYCLES_PER_SCANLINE - 1
+	    cp 1<<1
+	    jr nc,_
+	    add a,(CYCLES_PER_SCANLINE - 1)<<1
 _
-	    sub CYCLES_PER_SCANLINE
-_
+	    sub CYCLES_PER_SCANLINE<<1
+	    rra ; NOP this out in double-speed mode
 	   pop de
 	   ; Choose the smaller absolute value
 	   inc d
@@ -1232,7 +1259,7 @@ _
 _
 	   add a,h
 	   jr nc,-_
-	   sub h
+	   ;sub h
 _
 	   sub l
 	   ; Add in the cycles and check for overflow
@@ -1255,7 +1282,8 @@ _
 ophandlerEI:
 	ex af,af'
 	ld a,$A6 ;AND (HL)
-	ld (intstate_smc),a
+	ld (intstate_smc_1),a
+	ld (intstate_smc_2),a
 	pop ix
 	push hl
 	 ld a,(ix)
@@ -1268,7 +1296,7 @@ _
 	 ld hl,(ix+1)
 	 ld (event_gb_address),hl
 	 lea ix,ix+3
-	 jp do_event_pushed_no_reset
+	 jp do_event_pushed
 	
 ophandler76:
 	ex af,af'
@@ -1298,70 +1326,59 @@ haltdone:
 	 sbc a,a
 	 inc a
 	 ld (cpu_halted),a
-	 jp do_event_pushed_no_reset
+	 jp do_event_pushed
 	
 	
-trigger_event_fast_forward:
-	scf
 trigger_event:
-	push hl
+	exx
+	push.l hl
 trigger_event_pushed:
-	 push de
-	  push bc
-	   push af
+	 ; Get the cycle offset, GB address, and JIT address after the current opcode
+	 call get_mem_cycle_offset
+	 ; If the end of this instruction is already past the target, no reschedule
+	 xor a
+	 cp d
+	 jr z,trigger_event_already_triggered
+	 ; If the counter already overflowed, remove any already-scheduled event
+	 cp iyh
+	 jr nz,_
+#ifdef DEBUG
+	 ld a,(event_address+1)
+	 cp event_value >> 8
+	 jr z,$
+#endif
+	 ld a,(event_value)
 event_address = $+1
-	    ld hl,0
-	    ld a,(event_value)
-	    ld (hl),a
-	   
-	    ; Get the cycle offset, GB address, and JIT address after the current opcode
-	    exx
-	    ld a,b
-	    exx
-	    ld b,a
-	    call get_mem_cycle_offset
-	
-	    ld (event_gb_address),hl
-	    lea hl,ix
-	    ld (event_address),hl
-	    ld (event_cycle_count),a
-	    ld c,a
-	    ld a,(hl)
-	    ld (event_value),a
-	    ld (hl),RST_EVENT
-	   pop af
-	   jr c,event_fast_forward
-	   ; If the end of this instruction is already past the target, don't rewind
-	   ld a,d
-	   or a
-	   jr z,trigger_event_already_triggered
-	   ld hl,(serial_counter)
-	   add hl,de
-	   ld (serial_counter),hl
-	   ld hl,(timer_counter)
-	   add hl,de
-	   ld (timer_counter),hl
-	   ld hl,(stat_counter)
-	   add hl,de
-	   ld (stat_counter),hl
-	   ld hl,(lyc_counter)
-	   add hl,de
-	   ld (lyc_counter),hl
-	   ld hl,(div_counter)
-	   add hl,de
-	   ld (div_counter),hl
-	   ld hl,(vblank_counter)
-	   add hl,de
-	   ld (vblank_counter),hl
-event_fast_forward:
-	   xor a
-	   ld iyh,a
-	   sub c
-	   ld iyl,a
+	 ld (event_value),a
+	 xor a
+#ifdef DEBUG
+	 jr ++_
+_
+	 ld a,(event_address+1)
+	 sub event_value >> 8
+	 jr nz,$
+#endif
+_	 
+	 ld c,(hl)
+	 ld iyh,a
+	 ld iyl,c
+	 sub c
+	 ld (event_cycle_count),a
+	 dec hl
+	 dec hl
+	 ld hl,(hl)
+	 ld (event_gb_address),hl
+	 lea hl,ix
+	 ld (event_address),hl
+	 ld a,(hl)
+	 ld (event_value),a
+	 ld (hl),RST_EVENT
+	 ld hl,(div_counter)
+	 add hl,de
+	 ld (div_counter),hl
 trigger_event_already_triggered:
-	  pop bc
-	 pop de
-	pop hl
+	pop.l hl
+	exx
 	ex af,af'
 	ret
 	
@@ -1449,7 +1466,8 @@ ophandlerF2:
 ophandlerF3:
 	ex af,af'
 	ld a,$AF ;XOR A
-	ld (intstate_smc),a
+	ld (intstate_smc_1),a
+	ld (intstate_smc_2),a
 	ex af,af'
 	ret
 	
@@ -1518,7 +1536,8 @@ ophandlerF9:
 ophandlerRETI:
 	ex af,af'
 	ld a,$A6 ;AND (HL)
-	ld (intstate_smc),a
+	ld (intstate_smc_1),a
+	ld (intstate_smc_2),a
 	exx
 	push bc
 	 di
@@ -1536,7 +1555,7 @@ _
 	ld (event_gb_address),de
 	exx
 	push hl
-	 jp do_event_pushed_no_reset
+	 jp do_event_pushed
 	
 ophandlerRET:
 	di
@@ -1657,6 +1676,21 @@ readNR52:
 	pop hl
 	jr readNR52_finish
 	
+readSTAT_vblank:
+	 daa
+	 cp (hl)
+	 jr z,readSTAT_mode1
+	 res 2,c
+	 jr readSTAT_mode1
+	
+readLY_maybeforce0:
+	ld a,d
+	cp 1
+	jr c,readLY_noforce0
+readLY_force0:
+	xor a
+	jr readLY_continue
+	
 readP1:
 	ld a,(P1)
 	or $CF
@@ -1675,66 +1709,65 @@ readNR52_finish:
 	ret
 	
 readSTAT:
-	exx
-	push.l hl
-	 call get_mem_cycle_offset
+	call get_mem_cycle_offset_swap_push
 	 call get_scanline_from_cycle_offset
 	 ld d,a
-	pop.l hl
-	ld a,(STAT)
-	or $87
-	ld c,a
-	ld a,(LCDC)
-	add a,a
-	jr nc,readSTAT_mode0
-	ld a,(LYC)
-	cp e
-	jr z,_
-	res 2,c
+	 ld hl,STAT
+	 ld a,(hl)
+	 or $87
+	 ld c,a
+	 dec hl
+	 bit 7,(hl)
+	 jr z,readSTAT_mode0
+	 ld l,LYC & $FF
+	 ld a,e
+	 sub 10
+	 jr c,readSTAT_vblank
+	 cp (hl)
+	 jr z,_
+	 res 2,c
 _
-	ld a,e
-	cp 144
-	jr nc,readSTAT_mode1
-	ld a,d
-	sub MODE_2_CYCLES
-	jr c,readSTAT_mode2
-	sub MODE_3_CYCLES
-	jr c,readSTAT_mode3
+	 ld a,d
+	 sub MODE_2_CYCLES<<1
+	 jr c,readSTAT_mode2
+	 sub MODE_3_CYCLES<<1
+	 jr c,readSTAT_mode3
 readSTAT_mode0:
-	dec c
+	 dec c
 readSTAT_mode1:
-	dec c
+	 dec c
 readSTAT_mode2:
-	dec c
+	 dec c
 readSTAT_mode3:
-	ld ixl,c
+	 ld ixl,c
+	pop.l hl
 	exx
 	ex af,af'
 	ret
 	
 readLY:
+	exx
 	ld a,(LCDC)
 	add a,a
 	jr nc,readLY_force0
-	exx
-	push.l hl
-	 call get_mem_cycle_offset
+	call get_mem_cycle_offset_push
 	 call get_scanline_from_cycle_offset
 	pop.l hl
-	or a
+	ld d,a
 	ld a,e
-	exx
-	jr z,_
-	cp 153
-	jr z,readLY_force0
+	sub 9
+	jr z,readLY_maybeforce0
+	jr nc,_
+readLY_noforce0:
+	daa
 _
+	dec a
+readLY_continue:
 	ld ixl,a
+	exx
 	ex af,af'
 	ret
-	
-readLY_force0:
-	xor a
-	jr -_
+
 	
 	;IX=GB address, reads into IXL
 mem_read_ports:
@@ -2119,13 +2152,19 @@ mbc_2000_denied:
 	ex af,af'
 	ret
 	
+get_mem_cycle_offset_swap_push:
+	exx
+get_mem_cycle_offset_push:
+	push.l hl
 
 ; Inputs: IY = current block cycle base
 ;         B = number of empty call stack entries
 ;         (bottom of stack) = JIT return address
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
-;          HL = Game Boy address
+;          May be positive if target lies within an instruction
+;          (HL) = cycles until block end
+;          (HL-2) = Game Boy address
 ;          IX = current JIT address
 ; Destroys HL,IX
 get_mem_cycle_offset:
@@ -2137,70 +2176,73 @@ get_mem_cycle_offset:
 	add hl,de
 	ld ix,(hl)
 	ld hl,(ix-2)
-	ld a,(ix-3)
-	or a
-	jr z,resolve_mem_cycle_offset_prefix
 	ld a,(hl)
 	xor $C3
 	and $FB
 	jr nz,resolve_get_mem_cycle_offset_call
+	cp (ix-3)
+	jr z,resolve_mem_cycle_offset_prefix
 	dec hl
-	ld a,(hl)
-	dec hl
-	dec hl
-	ld hl,(hl)
-
-; Inputs: IY = (negative) cycles until target
-;         A = (negative) number of cycles to subtract
-; Outputs: DE = (negative) cycle offset
-;          May be positive if target lies within an instruction
-get_cycle_offset:
-	ld (get_cycle_offset_smc),a
-get_last_cycle_offset:
-get_cycle_offset_smc = $+2
-	lea de,iy+0
+get_mem_cycle_offset_continue:
+	ld a,iyl
+	sub (hl)
+	ld e,a
+	ld d,iyh
+	ret nc
+	dec d
 	ret
+
 	
-	
-resolve_mem_cycle_offset_prefix:
-	ld c,$C9
-	jr _
-	 
 resolve_get_mem_cycle_offset_call:
+	xor a
+	cp (ix-3)
+	jr z,resolve_mem_cycle_offset_prefix
 	ld c,h
 	ld h,l
 	ld l,$C3
-_
+	.db $CA	;JP Z,
+resolve_mem_cycle_offset_prefix:
+	ld c,$C9
 	di
 	jp.lil resolve_mem_cycle_offset_helper
 
+mem_cycle_scratch:
+	.dw 0
+	.db 0
+	
+get_scanline_overflow:
+	sbc hl,de
+	jr get_scanline_from_cycle_count
+	
 	
 get_mem_scanline_offset:
-	exx
-	push.l hl
-	call get_mem_cycle_offset
+	call get_mem_cycle_offset_swap_push
+get_scanline_from_cycle_offset_di:
 	di
 	
 ; Inputs: DE = (negative) cycles until target
 ;         May be non-negative if target falls within an instruction
-; Outputs: A = cycle count within scanline
-;          E = scanline index (0-153)
+; Outputs: A = cycle count within scanline (as if running in double-speed mode)
+;          E = scanline index relative to vblank
+;              (0-9 during vblank, 10-153 during frame)
 ; Destroys: D, HL
 get_scanline_from_cycle_offset:
-	ld hl,(vblank_counter)
+	ld hl,(div_counter)
 	add hl,de
-	dec h
-	ld de,(CYCLES_PER_SCANLINE * 144) + 256
-	add hl,de
-	jr c,get_scanline_from_cycle_count
+	ld de,(vblank_counter)
+	xor a
+	sbc hl,de
 	ld de,CYCLES_PER_FRAME
 	add hl,de
+	jr nc,get_scanline_overflow
 	
 ; Inputs: HL = cycle count within frame
-; Outputs: A = cycle count within scanline
-;          E = scanline index (0-153)
+; Outputs: A = cycle count within scanline (as if running in double-speed mode)
+;          E = scanline index relative to vblank
+;              (0-9 during vblank, 10-153 during frame)
 ; Destroys: D, HL
 get_scanline_from_cycle_count:
+	add hl,hl
 scanline_cycle_count_cache = $+1
 	ld de,0
 	xor a
@@ -2209,7 +2251,7 @@ scanline_cycle_count_cache = $+1
 	jr nz,++_
 	ld a,l
 scanline_index_cache = $+1
-	ld de,CYCLES_PER_SCANLINE * 256 + 0
+	ld de,(CYCLES_PER_SCANLINE<<1) * 256 + 0
 	cp d
 	ret c
 	sub d
@@ -2217,8 +2259,8 @@ scanline_index_cache = $+1
 	jr nc,_
 	inc e
 	ex de,hl
-get_scanline_from_cycle_count_finish:
 	ld e,l
+get_scanline_from_cycle_count_finish:
 	ld (scanline_index_cache),hl
 	mlt hl
 	ld (scanline_cycle_count_cache),hl
@@ -2227,18 +2269,43 @@ _
 	mlt de
 _
 	add hl,de
-	ld de,-(CYCLES_PER_SCANLINE * 128)
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	add hl,de \ jr c,$+4 \ sbc hl,de \ adc hl,hl
-	ld a,h
-	ld h,CYCLES_PER_SCANLINE
+	
+	; Algorithm adapted from Division by Invariant Integers Using Multiplication
+	; To make things simpler, a pre-normalized divisor is used, and the dividend
+	; and remainder are scaled and descaled according to the normalization factor
+	; This should also make it trivial to support GBC double-speed mode in the
+	; future where the normalized divisor will be the actual divisor
+	;add hl,hl
+	ld d,(256 * (256 - (CYCLES_PER_SCANLINE<<1)) - 1) / (CYCLES_PER_SCANLINE<<1)
+	ld e,h
+	ld a,l
+	bit 7,a
+	jr z,_
+	inc e
+	add a,CYCLES_PER_SCANLINE<<1
+_
+	mlt de
+	add a,e
+	ld a,d
+	adc a,h	; Resets carry
+	inc a
+	ld e,a
+	ld d,CYCLES_PER_SCANLINE<<1
+	;jr z,_		; Omit this check because the quotient cannot be 255
+	mlt de
+_
+	sbc hl,de
+	ld e,a
+	ld a,l
+	ld h,CYCLES_PER_SCANLINE<<1
+	jr nc,_
+	dec e
+	add a,h
+_
+	;rrca	; Low bit of the normalized remainder is always 0, so rotate works
+	ld l,e
 	jr get_scanline_from_cycle_count_finish
+	
 	
 ; Output: BCDEHL' are swapped
 ;         (SPL) = saved HL'
@@ -2247,19 +2314,21 @@ _
 ;         (TIMA) updated to current value
 ;         Interrupts are disabled
 updateTIMA:
-	exx
-	push.l hl
-	 call get_mem_cycle_offset
+	call get_mem_cycle_offset_swap_push
 	 ld a,(TAC)
 	 and 4
 	 ld a,(TIMA)
 	 di
 	 ret z
-	 ld hl,(timer_counter)
-	 add hl,de
+	 ld hl,(div_counter)
+	 ld a,b
+	 ld bc,(timer_counter)
+	 sbc hl,bc
+	 ld b,a
 	 ; Handle special case if cycle offset is non-negative
 	 xor a
 	 cp d
+	 add hl,de
 	 jr z,updateTIMAoverflow
 updateTIMAcontinue:
 updateTIMA_smc = $+1
@@ -2276,35 +2345,38 @@ updateTIMA_smc = $+1
 	
 updateTIMAoverflow:
 	 ; Check if adding the cycle offset created a non-negative result
+	 jr c,_
 	 sbc hl,de
 	 add hl,de
-	 jr c,_
 	 jr nz,updateTIMAcontinue
 _
 	 ; If so, offset the TIMA value by TMA
 	 ld a,(TMA)
 	 jr updateTIMAcontinue
 	
-	.block (-$-158)&$FF
+	.block (-$-159)&$FF
 	
 _writeSC:
 	ex af,af'
 _writeSChandler:
 	push af
-	 or $7E
-	 ld (SC),a
-	 inc a
-	 ld ix,disabled_counter_checker
-	 jr nz,_
 	 push hl
+	  or $7E
+	  ld (SC),a
+	  inc a
+	  ld hl,disabled_counter_checker
+	  jr nz,_
 	  call trigger_event
 	  ; Set this cycle count after setting up the trigger
-	  ld hl,-1024
+	  ld hl,(div_counter)
+	  ld a,h
+	  add a,1024 >> 8
+	  ld h,a
 	  ld (serial_counter),hl
-	 pop hl
-	 ld ix,serial_counter_checker
+	  ld hl,serial_counter_checker
 _
-	 ld (event_counter_checkers + 6),ix
+	  ld (event_counter_checkers + 6),hl
+	 pop hl
 	pop af
 	ret
 	
@@ -2441,9 +2513,10 @@ write_scroll:
 writeLCDChandler:
 	ex af,af'
 writeLCDC:
-	call get_mem_scanline_offset
-	ex de,hl
-	call get_last_cycle_offset
+	call get_mem_cycle_offset_swap_push
+	push de
+	 call get_scanline_from_cycle_offset_di
+	pop hl
 	jp.lil lcdc_write_helper
 	
 writeTAChandler:
@@ -2466,11 +2539,7 @@ writeDIVhandler:
 	ex af,af'
 writeDIV:
 	call updateTIMA
-	or a
-	sbc hl,hl
-	sbc hl,de
-	ld (div_counter),hl
-	jr -_
+	jp.lil div_write_helper
 	
 writeSTAThandler:
 	ex af,af'
@@ -2503,17 +2572,16 @@ writeIFhandler:
 	or $E0
 	ld (IF),a
 checkInt:
-	ld a,(intstate_smc)
+	ld a,(intstate_smc_1)
 	rra
 	jr c,checkIntDisabled
-checkIntPostEnable:
 	push hl
 	 ld hl,IF
 	 ld a,(hl)
 	 ld l,h
 	 and (hl)
-	 jp nz,trigger_event_pushed
 	pop hl
+	jp nz,trigger_event
 checkIntDisabled:
 write_port_ignore:
 	ex af,af'

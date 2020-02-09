@@ -150,16 +150,13 @@ render_catchup:
 	add a,a
 	ret nc
 	ld a,d
-	cp MODE_2_CYCLES + MODE_3_CYCLES
+	cp (MODE_2_CYCLES + MODE_3_CYCLES)<<1
 	ld a,e
-	jr c,_
-	inc e
-_
-	cp 144
-	ld a,e
+	sbc a,9
+	ret c
 	push bc
 	 push hl
-	  call c,render_scanlines
+	  call render_scanlines
 	 pop hl
 	pop bc
 	ret
@@ -346,17 +343,23 @@ lyc_update_helper:
 _
 	 cp SCANLINES_PER_FRAME
 	 jr nc,lyc_write_helper_disable_checker
+	 
+	 ; Convert LYC to vblank-relative range
+	 sbc a,143	; Sets half-carry flag
+	 jr nc,_
+	 daa
 _
+	 ld d,a
 	 
 	 ; Scanline 153 changes to scanline 0 after 2 cycles for LYC purposes
+	 ld a,e
+	 cp 9
+	 jr nz,_
 	 ld a,c
-	 cp 2
-	 jr c,_
-	 ld a,e
-	 sub 153
-	 jr z,++_
-_
-	 ld a,e
+	 cp 2<<1
+	 sbc a,a
+	 inc a
+	 add a,e
 _
 	 ; Trigger an interrupt if setting the current scanline
 	 cp d
@@ -366,36 +369,31 @@ _
 _
 	 
 	 ; Set new target
-	 ld a,e
-	 sub d
+	 ld.sis hl,(vblank_counter)
+	 ; If the current scanline is prior to the scheduled scanline, schedule
+	 ; relative to this frame instead of next frame
 	 jr nc,_
-	 add a,SCANLINES_PER_FRAME
+	 push de
+	  ld de,-CYCLES_PER_FRAME
+	  add hl,de
+	 pop de
 _
-	 ld l,a
-	 xor a
-	 cp d
-	 ld d,a
-	 ld e,c
+	 ; Adjust scanline 0 if necessary
+	 ld a,d
+	 cp 10
 	 jr nz,_
-	 inc l
-	 dec de
-	 dec de
+	 dec d
+	 ; TODO: Double-speed mode should increase by 4
+	 inc hl
+	 inc hl
 _
-	 ld h,CYCLES_PER_SCANLINE
-	 mlt hl
-	 add.s hl,de
-	 ld de,-SCANLINES_PER_FRAME
+	 ld e,CYCLES_PER_SCANLINE
+	 mlt de
 	 add hl,de
-	 jr nc,_
-	 add hl,de
-_
 	 ld.sis (lyc_counter),hl
 lyc_write_helper_finish:
-	pop hl
-	exx
-	ei
-	; Carry is reset
-	jp.sis trigger_event
+	 ei
+	 jp.sis trigger_event_pushed
 	
 lyc_write_helper_disable_checker:
 	 ld hl,disabled_counter_checker
@@ -411,7 +409,36 @@ stat_write_helper:
 	 ex af,af'
 	 ld a,(hl)
 	 ld (hl),d
+	 ; Save changed mode interrupt bits
 	 xor d
+	 push af
+	  ; Check for newly set mode interrupt bits
+	  and d
+	  and $38
+	  jr z,stat_write_no_interrupt
+	  ld l,a
+	  ld a,e
+	  cp 10
+	  jr nc,_
+	  bit 4,l
+	  jr z,stat_write_no_interrupt
+	  jr stat_write_set_interrupt
+_
+	  ld a,c
+	  bit 5,l
+	  jr z,_
+	  cp MODE_2_CYCLES<<1
+	  jr c,stat_write_set_interrupt
+_
+	  bit 3,l
+	  jr z,stat_write_no_interrupt
+	  cp (MODE_2_CYCLES + MODE_3_CYCLES)<<1
+	  jr c,stat_write_no_interrupt
+stat_write_set_interrupt:
+	  ld l,IF & $FF
+	  set 1,(hl)
+stat_write_no_interrupt:
+	 pop af
 	 push af
 	  and $28
 	  jr z,stat_write_helper_no_change
@@ -419,39 +446,51 @@ stat_write_helper:
 	  ld a,d
 	  and $28
 	  jr z,stat_write_helper_set_checker
-	  ld ix,stat_counter_checker_mode0
-	  ld a,c
-	  sub MODE_2_CYCLES + MODE_3_CYCLES
-	  jr c,_
-	  add a,-MODE_0_CYCLES	;resets carry
-	  bit 5,d
-	  jr nz,++_
-	  sub MODE_2_CYCLES + MODE_3_CYCLES	;resets carry
-	  jr +++_
-_
-	  bit 3,d
-	  jr nz,++_
-	  sub MODE_0_CYCLES	;resets carry
-_
-	  lea ix,ix-stat_counter_checker_mode0+stat_counter_checker_mode2
-_
-	  ld l,a
-	  ld h,$FF
-	  ; Adjust by number of scanlines to spend in vblank
-	  ld a,SCANLINES_PER_FRAME
-	  sbc a,e
 	  push de
-	   ld e,a
-	   add a,-11
+	   ld ix,stat_counter_checker_mode0
+	   ld a,(MODE_2_CYCLES + MODE_3_CYCLES)<<1 - 1
+	   cp c
+	   inc a
+	   jr nc,_
+	   bit 5,d
+	   jr nz,++_
+	   jr +++_
+_
+	   bit 3,d
+	   jr nz,++_
+_
+	   lea ix,ix-stat_counter_checker_mode0+stat_counter_checker_mode2
+	   xor a
+	   scf
+_
+	   ld d,a
+	   ; Calculate the cycle offset relative to vblank
+	   ld a,SCANLINES_PER_FRAME
+	   sbc a,e
+	   jr nz,_
+	   ld (z80codebase + stat_line_count),a
+	   ld a,d
+	   ld de,-(CYCLES_PER_SCANLINE * 10)
+	   jr +++_
+_
+	   cp 144
 	   jr c,_
+	   ld a,144
+_
+	   ld (z80codebase + stat_line_count),a
+	   ld e,a
+	   ld a,d
 	   ld d,CYCLES_PER_SCANLINE
 	   mlt de
-	   sbc hl,de
-	   ld a,143
 _
-	   inc a
-	   ld (z80codebase + stat_line_count_single_smc),a
-	   ld (z80codebase + stat_line_count_double_smc),a
+	   ld.sis hl,(vblank_counter)
+	   add a,l
+	   ld l,a
+	   jr nc,_
+	   inc h
+	   or a
+_
+	   sbc hl,de
 	   ld.sis (stat_counter),hl
 	  pop de
 	  ld a,d
@@ -491,8 +530,8 @@ _
 ; Catches up the renderer before writing, and then applies SMC to renderer.
 ;
 ; Inputs:  A' = value being written
-;          DE = current cycle offset (negative)
-;          L = current scanline
+;          HL = current cycle offset (negative)
+;          E = current scanline
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
 ;          (SPS) = Z80 return address
@@ -501,7 +540,6 @@ _
 ;          AF' has been unswapped
 ;          BCDEHL' have been unswapped
 lcdc_write_helper:
-	 ex de,hl
 	 ld d,a
 	 ld a,(render_this_frame)
 	 or a
@@ -582,28 +620,32 @@ _
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
 	 ; Forcibly skip to scanline 0
-	 ld hl,-(MODE_2_CYCLES + MODE_3_CYCLES)
+	 ld.sis hl,(div_counter)
+	 add hl,de
+	 ex de,hl
+	 ld hl,MODE_2_CYCLES + MODE_3_CYCLES
 	 ld a,(hram_base+STAT)
 	 ld c,a
 	 ld a,144
-	 ld (z80codebase + stat_line_count_single_smc),a
+	 ld (z80codebase + stat_line_count),a
+	 xor a
 	 bit 5,c
 	 jr z,++_
 	 bit 3,c
 	 jr z,_
-	 ld (z80codebase + stat_line_count_double_smc),a
 	 ld hl,stat_counter_checker_mode2
 	 ld.sis (event_counter_checkers + 2),hl
 _
 	 sbc hl,hl
 _
+	 add hl,de
 	 ld.sis (stat_counter),hl
-	 ld hl,-(CYCLES_PER_SCANLINE * 144)
+	 ld hl,CYCLES_PER_SCANLINE * 144
+	 add hl,de
 	 ld.sis (vblank_counter),hl
 	 ld hl,(hram_base+LYC)
-	 xor a
-	 sub l
-	 ld h,-CYCLES_PER_SCANLINE
+	 cp l
+	 ld h,CYCLES_PER_SCANLINE
 	 mlt hl
 	 jr nz,++_
 	 bit 6,c
@@ -611,24 +653,38 @@ _
 	 ld hl,hram_base+IF
 	 set 1,(hl)
 _
-	 ld hl,-(CYCLES_PER_SCANLINE * 153 + 2)
+	 ld hl,CYCLES_PER_SCANLINE * 153 + 2
 _
-	 add a,h
-	 ld h,a
+	 add hl,de
 	 ld.sis (lyc_counter),hl
-	 ld.sis hl,(serial_counter)
-	 add hl,de
-	 ld.sis (serial_counter),hl
-	 ld.sis hl,(timer_counter)
-	 add hl,de
-	 ld.sis (timer_counter),hl
-	 ld.sis hl,(div_counter)
-	 add hl,de
-	 ld.sis (div_counter),hl
-	pop hl
-	exx
-	ei
-	jp.sis trigger_event_fast_forward
+	 ei
+	 jp.sis trigger_event_pushed
+	
+	
+div_write_helper:
+	 push de
+	  or a
+	  sbc hl,hl
+	  sbc hl,de
+	  ld.sis de,(div_counter)
+	  ld.sis (div_counter),hl
+	  or a
+	  sbc hl,de
+	  ex de,hl
+	  ld.sis hl,(vblank_counter)
+	  add hl,de
+	  ld.sis (vblank_counter),hl
+	  ld.sis hl,(lyc_counter)
+	  add hl,de
+	  ld.sis (lyc_counter),hl
+	  ld.sis hl,(stat_counter)
+	  add hl,de
+	  ld.sis (stat_counter),hl
+	  ld.sis hl,(serial_counter)
+	  add hl,de
+	  ld.sis (serial_counter),hl
+	 pop de
+	 jr tima_write_helper
 	
 ; Writes to the GB timer control (TAC).
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -699,28 +755,27 @@ tima_write_helper:
 	 jr z,return_from_write_helper
 	 
 	 ld l,TIMA & $FF
-	 ld l,(hl)
+	 ld a,(hl)
+	 
+	 ld.sis hl,(div_counter)
+	 add hl,de
+	 
+	 cpl
+	 ld e,a 
 writeTIMA_smc = $+1
-	 ld h,0
-	 xor a
-	 sub h
-	 mlt hl
-	 add hl,hl	; Resets carry
-	 sbc hl,de
+	 ld d,0
+	 ld a,d
 	 add a,a
-	 ld d,a
-	 ld a,(z80codebase + div_counter)
-	 add a,e
-	 or d
-	 xor d
-	 ld e,a
+	 dec a
+	 or l
+	 ld l,a
+	 inc hl
+	 mlt de
+	 add hl,de
 	 add hl,de
 	 ld.sis (timer_counter),hl
-	pop hl
-	exx
-	or a	; Reset carry
-	ei
-	jp.sis trigger_event
+	 ei
+	 jp.sis trigger_event_pushed
 	
 timer_smc_data:
 	.db 6,$80
@@ -902,7 +957,6 @@ resolve_mem_cycle_offset_helper:
 	  lea bc,ix
 	  push bc
 	   call lookup_gb_code_address
-	   neg
 	   push de
 	    ld hl,(z80codebase+memroutine_next)
 	    ld de,-6
@@ -935,14 +989,21 @@ resolve_mem_cycle_offset_helper:
 	 inc hl
 	pop bc
 	ld (hl),c
+	dec hl
+	dec hl
+	dec hl
 _
-	ex de,hl
 	ei
-	jp.sis get_cycle_offset
+	jp.sis get_mem_cycle_offset_continue
 	
 _
 	 pop bc
 	pop bc
+	ld hl,z80codebase + mem_cycle_scratch
+	ld (hl),de
+	inc hl
+	inc hl
+	ld (hl),a
 	jr --_
 	
 ; Inputs:  BCDEHL' are swapped

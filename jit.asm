@@ -563,12 +563,14 @@ _
 	
 lookup_code_link_internal_with_bank_cached:
 	call.il lookup_code_cached_with_bank
+	or a
 	ret
 	
 internal_found_start:
 	ld a,(ix+7)
 	ld ix,(ix)
 	lea ix,ix+RAM_PREFIX_SIZE
+	scf
 	ret
 	
 internal_found_new_subblock:
@@ -611,6 +613,7 @@ lookup_code_link_internal:
 ;          IX = struct pointer of the currently executing block
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
+;          Carry is set if it is valid to use waitloop detection on the result
 ; Destroys AF,BC,DE,HL
 lookup_code_link_internal_with_bank:
 	ld hl,(ix+2)
@@ -670,9 +673,10 @@ foundloop_internal_finish:
 	
 lookupfoundstart:
 	 ld a,(ix+7)
-	 bit 7,(ix+3)
 	 ld ix,(ix)
 	pop iy
+	bit 7,d
+	scf
 	ret z
 	; Report a cycle length of 0 for RAM blocks
 	xor a
@@ -683,6 +687,7 @@ lookupfoundstart:
 ; Inputs:  DE = 16-bit GB address to look up
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
+;          Carry is reset if at the start of a newly recompiled or RAM block
 ; Destroys AF,BC,DE,HL
 lookup_code:
 	call get_banked_address
@@ -692,6 +697,7 @@ lookup_code:
 ; Inputs:  DE = banked GB address to look up
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
+;          Carry is reset if at the start of a newly recompiled or RAM block
 ; Destroys AF,BC,DE,HL
 lookup_code_with_bank:
 	push iy
@@ -718,7 +724,7 @@ lookuploop:
 	 add hl,bc
 	 jr nc,lookuploop
 	 ; Don't allow jumping to the middle of a RAM block
-	 ld a,(ix+3)
+	 ld a,d
 	 rla
 	 jr c,lookuploop
 	 push ix
@@ -799,6 +805,7 @@ lookup_found_prefix:
 ;          IY saved on stack
 ; Outputs: IX = recompiled code pointer
 ;          A = number of cycles until block end
+;          Carry is reset
 ; Destroys AF,BC,DE,HL
 recompile:
 recompile_struct_end = $+2
@@ -1322,7 +1329,7 @@ opcycleCB:
 	ld l,a
 	ld a,(de)
 	xor $46
-	and $E7
+	and $C7
 	jr z,opcycleCB_bit	; 2b op, 3b rec, 3cc
 	and $07
 	ld a,l

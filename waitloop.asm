@@ -14,9 +14,9 @@
 ;
 ; Inputs:  IX = branch target recompiled code
 ;          DE = branch target GB address
-;          (SPS) = branch recompiled code address (plus 8)
+;          (SPS) = branch recompiled code address (plus 8, or 6 if uncond)
 ;          (SPL+4) = number of cycles to sub-block end from target
-;                    (plus jump cycles)
+;          (SPL+7) = number of cycles taken by jump
 ;          BC',DE',HL' = Game Boy BC,DE,HL registers
 ; Outputs: IX = filtered branch target
 identify_waitloop:
@@ -41,7 +41,7 @@ identify_waitloop:
 	; Check for a read
 	ld a,(hl)
 	cp $BE		;CP (HL)
-	jr z,waitloop_found_read_hl_swap
+	jr z,waitloop_found_read_hl
 	cp $CB		;Bitwise ops
 	inc hl
 	jr z,waitloop_found_read_bitwise
@@ -57,24 +57,17 @@ identify_waitloop:
 	jr z,waitloop_found_uncond_jump
 	cp $C3
 	jr z,waitloop_found_uncond_jump
-	exx
-	push bc
-	 cp $0A		;LD A,(BC)
-	 jr z,waitloop_found_read_rr
-	pop bc
-	push de
-	 cp $1A		;LD A,(DE)
-	 jr z,waitloop_found_read_rr
-	pop de
+	cp $0A		;LD A,(BC)
+	jr z,waitloop_found_read_bc
+	cp $1A		;LD A,(DE)
+	jr z,waitloop_found_read_de
 	and $C7
 	cp $46		;LD r,(HL)
-	jr z,waitloop_found_read_hl
-	exx
-	ret
+	ret nz
+	jr waitloop_found_read_hl
 	
 waitloop_found_uncond_jump:
 	; See if we reached the loop end
-	inc de
 	inc de
 	inc de
 	inc de
@@ -107,6 +100,18 @@ waitloop_try_next_target_loop:
 	inc hl
 	jr waitloop_find_data_op
 	
+waitloop_found_read_bc:
+	exx
+	; Use BC as read address
+	push bc
+	 jr waitloop_found_read_rr
+	
+waitloop_found_read_de:
+	exx
+	; Use DE as read address
+	push de
+	 jr waitloop_found_read_rr
+	
 waitloop_found_read_bitwise:
 	ld a,(hl)
 	and $C7
@@ -116,9 +121,8 @@ waitloop_found_read_bitwise:
 	dec hl
 	inc de
 	
-waitloop_found_read_hl_swap:
-	exx	
 waitloop_found_read_hl:
+	exx	
 	; Use HL as read address
 	push hl
 waitloop_found_read_rr:
@@ -274,7 +278,9 @@ waitloop_finish:
 	dec hl
 	pop de	; Pop the return address
 	pop af  ; Pop the target cycle count into A
+	pop de  ; Pop the jump cycle count into D
 	; Store the target cycle count
+	add a,d
 	ld.s (hl),a
 	dec hl
 	; Store the length of the loop in cycles

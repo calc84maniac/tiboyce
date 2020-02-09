@@ -42,14 +42,11 @@ decode_jump_common:
 	 push de
 	  call lookup_code_link_internal
 	 pop de
+	 push af
+	  call c,identify_waitloop
+	 pop af
 	pop bc
 	add a,b
-	
-	push af
-	 cp b
-	 call nz,identify_waitloop
-	pop af
-	
 	ei
 	jp.sis decode_jump_return
 	

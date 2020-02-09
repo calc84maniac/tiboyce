@@ -288,7 +288,7 @@ exitReason = $+1
 	    jr z,_
 	    APTR(ExitEmulation)
 	    ex de,hl
-	    ld hl,z80codebase+not_expired
+	    ld hl,z80codebase+event_not_expired
 	    ; Emit DI
 	    ld (hl),$F3 \ inc hl
 	    ; Emit JP.LIL ExitEmulation
@@ -310,9 +310,10 @@ _
 	jr z,_
 	set 1,(hl)
 _
-	ld hl,-CYCLES_PER_FRAME
+	ld hl,CYCLES_PER_FRAME
+	add hl,bc
 	ld.sis (vblank_counter),hl
-	ld de,CYCLES_PER_FRAME
+	ld de,-CYCLES_PER_FRAME
 	pop.s hl
 	jp.s (hl)
 	

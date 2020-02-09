@@ -649,108 +649,114 @@ _
 	rra
 	jr c,_
 	ld a,$AF ;XOR A (overriding AND (HL))
-	ld (z80codebase+intstate_smc),a
+	ld (z80codebase+intstate_smc_1),a
+	ld (z80codebase+intstate_smc_2),a
 _
 	
-	; Set the initial vblank counter to one cycle in the future
-	ld hl,(iy-state_size+STATE_FRAME_COUNTER)
-	inc.s hl
-	ld de,-(CYCLES_PER_SCANLINE * 144 + 1)
-	add hl,de
-	jr nc,_
-	ld de,-CYCLES_PER_FRAME
-	add hl,de
-_
+	; Set the initial DIV counter to one cycle in the future
+	ld hl,(iy-state_size+STATE_DIV_COUNTER)
 	inc hl
+	ld.sis (div_counter),hl
+	push hl
+	
+	 ; Get the number of cycles from one cycle in the future until vblank
+	 ld hl,CYCLES_PER_SCANLINE * 144
+	 ld de,(iy-state_size+STATE_FRAME_COUNTER)
+	 inc.s de
+	 or a
+	 sbc hl,de
+	 jr nc,_
+	 ld bc,CYCLES_PER_FRAME
+	 add hl,bc
+_
+	pop bc
+	; Add to the DIV counter
+	add hl,bc
 	ld.sis (vblank_counter),hl
 	
-	; Get the current scanline
-	dec hl
-	ld a,144
-	ld de,CYCLES_PER_SCANLINE
-_
-	dec a
-	add hl,de
-	jr nc,-_
-	cp 144
-	jr c,_
-	add a,SCANLINES_PER_FRAME
-_
-	ld b,a
-	ld c,l
-	
-	; Set the LYC counter to one cycle in the future if needed
+	; Set the LYC counter if needed
 	bit 6,(iy-ioregs+STAT)
-	jr z,++++_
+	jr z,+++_
 	ld a,(iy-ioregs+LYC)
 	cp SCANLINES_PER_FRAME
-	jr nc,++++_
-	cpl
-	adc a,b
-	jr c,_
-	add a,SCANLINES_PER_FRAME
-_
-	cp b	;check if LYC == 0
+	jr nc,+++_
+	; Get the number of cycles from one cycle in the future until LYC match
+	ld hl,CYCLES_PER_SCANLINE * 153 + 2
+	or a
+	jr z,_
 	ld l,a
-	ld h,e	;CYCLES_PER_SCANLINE
-	ld e,c	;D == 0
-	jr nz,_
-	inc l
-	dec de
-	dec de
-_
 	ld h,CYCLES_PER_SCANLINE
 	mlt hl
-	add.s hl,de
-	ld de,-SCANLINES_PER_FRAME
-	add hl,de
-	jr nc,_
-	add hl,de
 _
-	inc hl
+	sbc hl,de
+	jr nc,_
+	push bc
+	 ld bc,CYCLES_PER_FRAME
+	 add hl,bc
+	pop bc
+_
+	; Add to the DIV counter (plus 1)
+	add hl,bc
 	ld.sis (lyc_counter),hl
 	ld hl,lyc_counter_checker
 	ld.sis (event_counter_checkers + 0),hl
 _
 	
-	; Set the STAT counter to one cycle in the future if needed
+	; Get the current scanline and cycle offset
+	dec de
+	ld hl,-CYCLES_PER_SCANLINE
+	ex de,hl
+	ld a,$FF
+_
+	inc a
+	add hl,de
+	jr c,-_
+	sbc hl,de
+	ld h,a
+	
+	; Set the STAT counter if needed
 	ld a,(iy-ioregs+STAT)
 	and $28
-	jr z,++++++_
+	jr z,setup_no_stat
 	ld ix,stat_counter_checker_mode0
 	ld e,a
-	ld a,c
-	sub MODE_2_CYCLES + MODE_3_CYCLES
-	jr c,_
-	add a,-MODE_0_CYCLES	;resets carry
+	ld a,l
+	add a,-(MODE_2_CYCLES + MODE_3_CYCLES)
+	jr nc,_
+	sub MODE_0_CYCLES	;sets carry
 	bit 5,e
 	jr nz,++_
-	sub MODE_2_CYCLES + MODE_3_CYCLES	;resets carry
+	add a,-(MODE_2_CYCLES + MODE_3_CYCLES)	;sets carry
 	jr +++_
 _
 	bit 3,e
 	jr nz,++_
-	sub MODE_0_CYCLES	;resets carry
+	add a,-MODE_0_CYCLES	;sets carry
 _
 	lea ix,ix-stat_counter_checker_mode0+stat_counter_checker_mode2
 _
+	; Calculate the number of cycles until the next STAT event
+	cpl
 	ld l,a
-	ld h,$FF
-	; Adjust by number of scanlines to spend in vblank
-	ld a,SCANLINES_PER_FRAME
-	sbc a,b
-	ld b,a
-	add a,-11
-	jr c,_
-	ld c,CYCLES_PER_SCANLINE
-	mlt bc
-	sbc hl,bc
+	; Calculate the STAT line counter
+	ld a,143
+	sbc a,h
+	ld h,0
+	jr nc,_
+	; If spanning vblank, add up to 10 scanlines
+	add a,11
+	ld d,a
+	ld a,e
+	ld e,CYCLES_PER_SCANLINE
+	mlt de
+	add hl,de
+	ld e,a
 	ld a,143
 _
 	inc a
-	ld (z80codebase + stat_line_count_single_smc),a
-	ld (z80codebase + stat_line_count_double_smc),a
-	inc hl
+	ld (z80codebase + stat_line_count),a
+	; Add to the DIV counter (plus 1)
+	add hl,bc
 	ld.sis (stat_counter),hl
 	ld a,e
 	cp $28
@@ -758,55 +764,55 @@ _
 	ld ix,stat_counter_checker_single
 _
 	ld.sis (event_counter_checkers + 2),ix
-_
+setup_no_stat:
+	
+	; Return to original DIV counter
+	dec bc
 	
 	; Initialize timer values
 	ld a,(iy-ioregs+TAC)
 	bit 2,a
 	jr z,_
 	and 3
-	ld c,a
-	ld b,0
+	ld e,a
+	ld d,2
+	mlt de
 	ld hl,timer_smc_data
-	add hl,bc
-	add hl,bc
+	add hl,de
 	ld a,(hl)
 	ld (z80codebase+updateTIMA_smc),a
 	inc hl
 	ld h,(hl)
-	ld l,(iy-ioregs+TIMA)
+	; Calculate the number of cycles until the timer event
+	ld a,(iy-ioregs+TIMA)
+	cpl
+	ld l,a
 	ld a,h
 	ld (z80codebase+timer_cycles_reset_factor_smc),a
 	ld (writeTIMA_smc),a
 	mlt hl
 	add hl,hl
-	neg
+	; Add to the DIV counter
+	add hl,bc
+	; Factor in the low bits of the DIV counter
 	add a,a
-	ld d,a
-	cpl
-	and (iy-state_size+STATE_DIV_COUNTER)
-	ld e,a
-	add hl,de
-	; Set the initial timer counter to one cycle in the future
+	dec a
+	or l
+	ld l,a
 	inc hl
 	ld.sis (timer_counter),hl
 	ld hl,timer_counter_checker
 	ld.sis (event_counter_checkers + 4),hl
 _
-	; Set the initial DIV counter to one cycle in the future
-	ld hl,(iy-state_size+STATE_DIV_COUNTER)
-	inc hl
-	ld.sis (div_counter),hl
 	
+	; Set the serial counter if needed
 	ld a,(iy-ioregs+SC)
 	cpl
 	and $81
 	jr nz,_
-	; Set the serial counter to one cycle in the future
-	sbc hl,hl
-	ld de,(iy-state_size+STATE_SERIAL_COUNTER)
-	sbc hl,de
-	inc hl
+	ld hl,(iy-state_size+STATE_SERIAL_COUNTER)
+	; Add to the DIV counter
+	add hl,bc
 	ld.sis (serial_counter),hl
 	ld hl,serial_counter_checker
 	ld.sis (event_counter_checkers + 6),hl
@@ -996,44 +1002,48 @@ ExitEmulation:
 	ld c,8
 	ldir.s
 	
-	; Calculate the current event cycle offset
+	; Calculate the DIV cycle count
 	dec bc
 	ld a,(z80codebase+event_cycle_count)
+	dec a
 	ld c,a
-	lea hl,iy
+	ld.sis hl,(div_counter)
+	add hl,bc
+	lea bc,iy+1
 	add hl,bc
 	ex de,hl
 	
 	; Save the frame-relative cycle count
 	ld.sis hl,(vblank_counter)
-	add hl,de
-	ld bc,(CYCLES_PER_SCANLINE * 144)
+	ld a,e
+	sub l
+	ld l,a
+	ld a,d
+	sbc a,h
+	ld h,a
+	ld bc,CYCLES_PER_SCANLINE * 144 + $FF0000
 _
-	add.s hl,bc
+	add hl,bc
 	ld bc,CYCLES_PER_FRAME
 	jr nc,-_
 	ld (ix-state_size+STATE_FRAME_COUNTER),hl
 	
 	; Save the serial cycle count
 	ld.sis hl,(serial_counter)
-	ex de,hl
 	or a
 	sbc hl,de
 	ld (ix-state_size+STATE_SERIAL_COUNTER),hl
-	add hl,de
-	ex de,hl
 	
 	; Save the DIV cycle count
-	ld.sis hl,(div_counter)
-	add hl,de
-	ld (ix-state_size+STATE_DIV_COUNTER),hl
+	ld (ix-state_size+STATE_DIV_COUNTER),de
 	
-	; Save the actual value of TAC if the timer is running
+	; Save the actual value of TIMA if the timer is running
 	ld a,(ix-ioregs+TAC)
 	and 4
 	jr z,+++_
 	ld.sis hl,(timer_counter)
-	add hl,de
+	ex de,hl
+	sbc hl,de
 	ld a,(z80codebase+updateTIMA_smc)
 	sub 6
 	jr z,++_
@@ -1045,7 +1055,7 @@ _
 	ld (ix-ioregs+TIMA),h
 _
 	
-	ld a,(z80codebase+intstate_smc)
+	ld a,(z80codebase+intstate_smc_1)
 	rra
 	sbc a,a
 	inc a
