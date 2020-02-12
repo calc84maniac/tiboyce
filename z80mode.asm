@@ -2259,8 +2259,8 @@ scanline_index_cache = $+1
 	jr nc,_
 	inc e
 	ex de,hl
-	ld e,l
 get_scanline_from_cycle_count_finish:
+	ld e,l
 	ld (scanline_index_cache),hl
 	mlt hl
 	ld (scanline_cycle_count_cache),hl
@@ -2270,40 +2270,36 @@ _
 _
 	add hl,de
 	
-	; Algorithm adapted from Division by Invariant Integers Using Multiplication
+	; Algorithm adapted from Improved division by invariant integers
 	; To make things simpler, a pre-normalized divisor is used, and the dividend
 	; and remainder are scaled and descaled according to the normalization factor
 	; This should also make it trivial to support GBC double-speed mode in the
 	; future where the normalized divisor will be the actual divisor
-	;add hl,hl
-	ld d,(256 * (256 - (CYCLES_PER_SCANLINE<<1)) - 1) / (CYCLES_PER_SCANLINE<<1)
+	ld d,65535 / (CYCLES_PER_SCANLINE<<1) - 256
 	ld e,h
-	ld a,l
-	bit 7,a
-	jr z,_
-	inc e
-	add a,CYCLES_PER_SCANLINE<<1
-_
 	mlt de
-	add a,e
-	ld a,d
-	adc a,h	; Resets carry
-	inc a
-	ld e,a
+	ld a,l
+	add hl,de
+	inc h
+	ld e,h
 	ld d,CYCLES_PER_SCANLINE<<1
-	;jr z,_		; Omit this check because the quotient cannot be 255
 	mlt de
-_
-	sbc hl,de
-	ld e,a
-	ld a,l
+	sub e
+	cp l
+	ld l,h
 	ld h,CYCLES_PER_SCANLINE<<1
-	jr nc,_
-	dec e
+	jr c,_
+	jr z,_
+	dec l
 	add a,h
+	jr c,get_scanline_from_cycle_count_finish
+	; Unlikely condition (allow redundant compare)
 _
-	;rrca	; Low bit of the normalized remainder is always 0, so rotate works
-	ld l,e
+	cp h
+	jr c,get_scanline_from_cycle_count_finish
+	; Unlikely condition
+	inc l
+	sub h
 	jr get_scanline_from_cycle_count_finish
 	
 	
