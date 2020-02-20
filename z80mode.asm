@@ -53,11 +53,16 @@ r_event:
 	jp do_event
 	
 	.block $38-$
-r_invalid_opcode:
+r_clear_zhn_flags:
 rst38h:
 	push af
 	 ld a,i
-	 jp pe,Z80InvalidOpcode
+	 jp po,_
+	pop ix
+	ld a,ixh
+	ret
+	
+_
 	 ld.lil a,(mpLcdMis)
 	 or a
 	 jp.lil nz,frame_interrupt

@@ -5,7 +5,7 @@
 #define RST_POP $C7+r_pop
 #define RST_CALL $C7+r_call
 #define RST_EVENT $C7+r_event
-#define RST_INVALID_OPCODE $C7+r_invalid_opcode
+#define RST_CLEAR_ZHN_FLAGS $C7+r_clear_zhn_flags
 
 #define RAM_PREFIX_SIZE 5
 #define MAX_CYCLES_PER_BLOCK 64
@@ -201,9 +201,11 @@ _
 	ret
 	
 Z80InvalidOpcode_helper:
-	pop.s af
 	exx
 	pop.s bc
+	dec bc
+	dec bc
+	dec bc
 #ifdef DEBUG
 	; Open debugger on CEmu
 	ld (exitReason),a
@@ -1223,7 +1225,9 @@ opcycleroutines:
 	
 	; 1b op, 3b rec, 1cc
 opcycle27:
+opcycle3F:
 opcycleF3:
+opcycleROT:
 	lea ix,ix+(3-1)
 	; 1b op, 1b rec, 1cc
 opcycle1byte:
@@ -1403,7 +1407,7 @@ opcounttable:
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle2byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycleROT - opcycleroutines
 ;08
 	.db opcycle08 - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
@@ -1412,7 +1416,7 @@ opcounttable:
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle2byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycleROT - opcycleroutines
 ;10
 	.db opcycleNOP - opcycleroutines
 	.db opcycle3byte - opcycleroutines
@@ -1421,7 +1425,7 @@ opcounttable:
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle2byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycleROT - opcycleroutines
 ;18
 	.db opcycleJR - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
@@ -1430,7 +1434,7 @@ opcounttable:
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle2byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycleROT - opcycleroutines
 ;20
 	.db opcycleJRcond - opcycleroutines
 	.db opcycle3byte - opcycleroutines
@@ -1466,7 +1470,7 @@ opcounttable:
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle2byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle3F - opcycleroutines
 ;40
 	.db opcycleNOP - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1686,14 +1690,14 @@ opcounttable:
 	
 ; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
 opcoderecsizes:
-	.db 1,3,3,1,1,1,2,1
-	.db 7,1,3,1,1,1,2,1
-	.db 1,3,3,1,1,1,2,1
-	.db 0,1,3,1,1,1,2,1
+	.db 1,3,3,1,1,1,2,3
+	.db 7,1,3,1,1,1,2,3
+	.db 1,3,3,1,1,1,2,3
+	.db 0,1,3,1,1,1,2,3
 	.db 17,3,3,1,1,1,2,3
 	.db 17,1,3,1,1,1,2,1
 	.db 17,5,3,4,3,3,6,1
-	.db 17,3,3,4,1,1,2,1
+	.db 17,3,3,4,1,1,2,3
 	
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
@@ -1811,7 +1815,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen2byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgenROT - opgenroutines
 ;08
 	.db opgen08 - opgenroutines
 	.db opgen1byte_2cc - opgenroutines
@@ -1820,7 +1824,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen2byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgenROT - opgenroutines
 ;10
 	.db opgenNOP - opgenroutines
 	.db opgen3byte - opgenroutines
@@ -1829,7 +1833,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen2byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgenROT - opgenroutines
 ;18
 	.db opgenJR - opgenroutines
 	.db opgen1byte_2cc - opgenroutines
@@ -1838,7 +1842,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen2byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgenROT - opgenroutines
 ;20
 	.db opgenJRcond - opgenroutines
 	.db opgen3byte - opgenroutines
@@ -1874,7 +1878,7 @@ opgentable:
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen2byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen3F - opgenroutines
 ;40
 	.db opgenNOP - opgenroutines
 	.db opgen1byte - opgenroutines
@@ -2194,6 +2198,17 @@ opgen_cycle_overflow:
 	dec de
 	ret
 	
+_opgen3F:
+	ldi
+	ex de,hl
+	; Reset H and N flags, preserve Z and C flags
+	ld (hl),$17	;RLA
+	inc hl
+	ld (hl),$1F	;RRA
+	inc hl
+	ex de,hl
+	jp opgen_next_fast
+	
 _opgenRST:
 	ex de,hl
 	ld (hl),$CD
@@ -2360,6 +2375,13 @@ opgen_base_address_smc_2 = $+1
 	inc hl
 	ret
 	
+opgenblockend_invalid:
+	push hl
+	ex de,hl
+	ld (hl),$CD	;CALL
+	ld de,Z80InvalidOpcode
+	jr _
+	
 opgenblockend:
 	ex (sp),hl
 	ld hl,(hl)
@@ -2367,6 +2389,7 @@ opgenblockend:
 	ld (hl),0	;NOP
 	inc hl
 	ld (hl),$C3	;JP
+_
 	inc hl
 	ld (hl),e
 	inc hl

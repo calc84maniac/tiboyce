@@ -510,6 +510,8 @@ _
 	
 	ld a,z80codebase >> 16
 	ld mb,a
+	; Set I to a non-zero value
+	ld i,a
 	
 	ld hl,fake_tile
 	push hl
@@ -972,8 +974,6 @@ _
 	jp set_gb_stack
 	
 ExitEmulation:
-	push.s bc
-
 	ld ix,state_start+state_size
 	ld.sis hl,(event_gb_address)
 	ld (ix-state_size+STATE_REG_PC),hl

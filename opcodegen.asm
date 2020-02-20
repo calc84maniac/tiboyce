@@ -162,6 +162,8 @@ opgen_next_fast:
 	
 opgenINVALID:
 	jr _opgenINVALID
+opgen3F:
+	jp _opgen3F
 opgenJRcond:
 	jr _opgenJRcond
 opgenJPcond:
@@ -171,7 +173,17 @@ opgen27:
 	call opgenroutinecall_1cc
 	.dw ophandler27
 	
+opgenROT:
+	ex de,hl
+	
 	.echo "Opgen routine size: ", $ - opgenroutines
+	
+	ld (hl),$28	;JR Z,$+1
+	inc hl
+	ld (hl),RST_CLEAR_ZHN_FLAGS
+	inc hl
+	ex de,hl
+	jr opgen1byte
 	
 _opgenCB:
 	dec iy
@@ -207,7 +219,5 @@ _opgenJPcond:
 	jr -_
 	
 _opgenINVALID:
-	ex de,hl
-	ld (hl),RST_INVALID_OPCODE
-	inc hl
-	jp opgen_reset_cycle_count
+	jp opgenblockend_invalid
+	
