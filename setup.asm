@@ -701,7 +701,7 @@ _
 	add hl,bc
 	ld.sis (lyc_counter),hl
 	ld hl,lyc_counter_checker
-	ld.sis (event_counter_checkers + 0),hl
+	ld.sis (event_counter_checker_slot_LYC),hl
 _
 	
 	; Get the current scanline and cycle offset
@@ -765,7 +765,7 @@ _
 	jr z,_
 	ld ix,stat_counter_checker_single
 _
-	ld.sis (event_counter_checkers + 2),ix
+	ld.sis (event_counter_checker_slot_STAT),ix
 setup_no_stat:
 	
 	; Return to original DIV counter
@@ -804,7 +804,7 @@ setup_no_stat:
 	inc hl
 	ld.sis (timer_counter),hl
 	ld hl,timer_counter_checker
-	ld.sis (event_counter_checkers + 4),hl
+	ld.sis (event_counter_checker_slot_timer),hl
 _
 	
 	; Set the serial counter if needed
@@ -817,7 +817,7 @@ _
 	add hl,bc
 	ld.sis (serial_counter),hl
 	ld hl,serial_counter_checker
-	ld.sis (event_counter_checkers + 6),hl
+	ld.sis (event_counter_checker_slot_serial),hl
 _
 	
 	lea hl,iy-ioregs+NR10

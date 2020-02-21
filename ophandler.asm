@@ -339,7 +339,7 @@ lyc_update_helper:
 	 cp SCANLINES_PER_FRAME
 	 jr nc,scroll_write_done_swap
 	 ld ix,lyc_counter_checker
-	 ld.sis (event_counter_checkers + 0),ix
+	 ld.sis (event_counter_checker_slot_LYC),ix
 _
 	 cp SCANLINES_PER_FRAME
 	 jr nc,lyc_write_helper_disable_checker
@@ -397,7 +397,7 @@ lyc_write_helper_finish:
 	
 lyc_write_helper_disable_checker:
 	 ld hl,disabled_counter_checker
-	 ld.sis (event_counter_checkers + 0),hl
+	 ld.sis (event_counter_checker_slot_LYC),hl
 	 jr lyc_write_helper_finish
 	
 	
@@ -499,7 +499,7 @@ _
 	  jr z,stat_write_helper_set_checker
 	  ld ix,stat_counter_checker_single
 stat_write_helper_set_checker:
-	  ld.sis (event_counter_checkers + 2),ix
+	  ld.sis (event_counter_checker_slot_STAT),ix
 stat_write_helper_no_change:
 	
 	 pop af
@@ -513,7 +513,7 @@ stat_write_helper_no_change:
 	 jp lyc_update_helper
 _
 	 ld hl,disabled_counter_checker
-	 ld.sis (event_counter_checkers + 0),hl
+	 ld.sis (event_counter_checker_slot_LYC),hl
 _
 	 and $28
 	 jp nz,lyc_write_helper_finish
@@ -634,7 +634,7 @@ _
 	 bit 3,c
 	 jr z,_
 	 ld hl,stat_counter_checker_mode2
-	 ld.sis (event_counter_checkers + 2),hl
+	 ld.sis (event_counter_checker_slot_STAT),hl
 _
 	 sbc hl,hl
 _
@@ -709,7 +709,7 @@ tac_write_helper:
 	 add a,4
 	 jr c,_
 	 ld hl,disabled_counter_checker
-	 ld.sis (event_counter_checkers + 4),hl
+	 ld.sis (event_counter_checker_slot_timer),hl
 return_from_write_helper:
 	pop hl
 	exx
@@ -735,7 +735,7 @@ _
 	 ld (writeTIMA_smc),a
 
 	 ld hl,timer_counter_checker
-	 ld.sis (event_counter_checkers + 4),hl
+	 ld.sis (event_counter_checker_slot_timer),hl
 	
 ; Writes to the GB timer count (TIMA).
 ; Does not use a traditional call/return, must be jumped to directly.

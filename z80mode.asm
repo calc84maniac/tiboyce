@@ -2376,7 +2376,7 @@ _writeSChandler:
 	  ld (serial_counter),hl
 	  ld hl,serial_counter_checker
 _
-	  ld (event_counter_checkers + 6),hl
+	  ld (event_counter_checker_slot_serial),hl
 	 pop hl
 	pop af
 	ret
@@ -2733,10 +2733,14 @@ render_save_sps:
 	; One word of stack space for sprite rendering during vblank
 	.dw 0
 event_counter_checkers:
-	.dw disabled_counter_checker	;LYC
-	.dw disabled_counter_checker	;STAT
-	.dw disabled_counter_checker	;Timer
-	.dw disabled_counter_checker	;Serial
+event_counter_checker_slot_LYC:
+	.dw disabled_counter_checker
+event_counter_checker_slot_STAT:
+	.dw disabled_counter_checker
+event_counter_checker_slot_timer:
+	.dw disabled_counter_checker
+event_counter_checker_slot_serial:
+	.dw disabled_counter_checker
 	.dw event_counter_checkers_done
 	
 	.assume adl=1
