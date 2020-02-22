@@ -1104,42 +1104,65 @@ ophandler08:
 	pop af
 	ret
 	
+	
 ophandler27:
-	push af
-	 ex (sp),hl
-	 daa
-	 bit 1,l
-	 jr nz,_
-	 ; If N was 0, behavior is same as Game Boy
-	pop hl
-	; Reset H and N flags, preserve C flag, set Z flag properly
-	rla
-	rr a
+	exx
+	ld c,a
+	; Get the DAA adjustment according to the N, H, C flags only
+	ld a,0
+	daa
+	; If the adjustment is 0, special-case to determine N flag
+	jr z,ophandler27_preserve_n
+	; If the adjustment is greater than 0, do addition
+	adc a,a
+	jr nc,ophandler27_add
+	; Restore adjustment value and set carry flag
+	rra
+	; If adjustment was $FA (not $A0 or $9A), output carry reset
+	jp m,ophandler27_subtract_reset_carry
+	; Otherwise, output carry set
+	; Add the adjustment to the original value (plus 1) and decrement
+	adc a,c
+	dec a
+	; If result is 0, N and Z are set, H is reset, C was set by the addition
+	jr z,_
+	; Set N and C, reset H and Z
+	scf
+	ld c,2
+	dec c
+_
+	exx
 	ret
 	
-	; Emulate N=1 case manually
-_
-	 ld a,h
-	 bit 4,l
-	 jr z,_
-	 sub $06
-_
-	 srl l
-	 jr c,++_
-	 sub $00
-_
-	pop hl
+ophandler27_preserve_n:
+	; Determine whether N was set
+	ld a,$FF
+	daa
+	rlca	; Resets H and N flags
+	jr nc,ophandler27_natural_daa
+	; N was set, use adjustment of 0
+	xor a
+ophandler27_subtract_reset_carry:
+	; Add the adjustment to the original value
+	add a,c
+	; Set N, reset H and C, update Z
+	sub 0
+	exx
 	ret
-_
-	 sub $60
-	 jr c,--_
-	 ; Set C flag and don't touch other flags
-	 push af
-	 pop hl
-	 inc l
-	 ex (sp),hl
-	pop af
+	
+ophandler27_add:
+	; Restore the original H and C flags
+	add a,a
+ophandler27_natural_daa:
+	; Do the natural DAA operation for addition, which is equivalent to GB
+	ld a,c
+	daa
+	; Reset H and N, preserve C and Z
+	rla
+	rra
+	exx
 	ret
+	
 	
 ophandler31:
 	pop ix
