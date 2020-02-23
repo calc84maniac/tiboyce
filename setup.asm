@@ -510,8 +510,6 @@ _
 	
 	ld a,z80codebase >> 16
 	ld mb,a
-	; Set I to a non-zero value
-	ld i,a
 	
 	ld hl,fake_tile
 	push hl
@@ -967,8 +965,9 @@ _
 	 ; Set the negative block cycle offset of the current instruction
 	 neg
 	 ld (z80codebase+event_cycle_count),a
-	 
-	 ld bc,(CALL_STACK_DEPTH+1)*256
+	 ; Set the callstack limit
+	 ld a,CALL_STACK_DEPTH + 1
+	 ld i,a
 	; Pop GB AF into AF
 	pop af
 	jp set_gb_stack

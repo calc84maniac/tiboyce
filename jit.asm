@@ -1053,7 +1053,7 @@ rerecompile:
 	
 	push hl
 	 ; Get the address to copy the opcodes to
-	 ld hl,z80codebase
+	 ld hl,i
 	 ld l,(ix+8)
 	 ld h,(ix+9)
 	 sbc hl,bc	; Carry is reset
@@ -1110,15 +1110,14 @@ coherency_flush:
 	ld de,(ix+2)
 	call flush_code
 	call lookup_code_with_bank
-	exx
-	ld bc,(CALL_STACK_DEPTH+1)*256
-	exx
 	pop.s bc
 	pop.s de
 	pop.s hl
 	ld.sis sp,myz80stack-2
 	ld sp,myADLstack
 	; No need to count cycles, that is handled by the RAM block prefix
+	ld a,CALL_STACK_DEPTH+1
+	ld i,a
 	ex af,af'
 	ei
 	jp.s (ix)

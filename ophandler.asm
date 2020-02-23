@@ -85,10 +85,11 @@ flush_mem_finish:
 	pop hl
 	ld.sis sp,myz80stack-2
 	ld sp,myADLstack
-	ld bc,(CALL_STACK_DEPTH+1)*256
 	ld c,a
 	exx
 	ld (_+2),a
+	ld a,CALL_STACK_DEPTH+1
+	ld i,a
 _
 	lea iy,iy+0
 	xor a

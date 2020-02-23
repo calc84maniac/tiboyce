@@ -269,6 +269,7 @@ banked_call_mismatch_helper:
 	  ld.s (ix),a
 	 pop hl
 	pop bc
+	ld e,a
 	ei
 	jp.sis banked_call_mismatch_continue
 	

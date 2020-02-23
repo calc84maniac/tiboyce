@@ -40,9 +40,10 @@ r_pop:
 	
 	.block $28-$
 r_call:
-	pop ix
-	exx
-	djnz do_call
+	ex af,af'
+	ld a,i
+	dec a
+	jr nz,do_call
 	jr do_call_reset_callstack
 	
 	.block $30-$
@@ -57,36 +58,10 @@ r_clear_zhn_flags:
 rst38h:
 	push af
 	 ld a,i
-	 jp po,_
+	 jp po,native_isr
 	pop ix
 	ld a,ixh
 	ret
-	
-_
-	 ld.lil a,(mpLcdMis)
-	 or a
-	 jp.lil nz,frame_interrupt
-	 ;ld.lil a,(mpIntMaskedStatus)
-	 ;rra
-	 ;jr nc,$
-	
-on_interrupt:
-	 inc a
-	 ld.lil (mpIntAcknowledge),a
-	 inc a
-	 ld.lil (exitReason),a
-frame_interrupt_return:
-	pop af
-	ei
-	ret
-	 
-Z80InvalidOpcode:
-	di
-	jp.lil Z80InvalidOpcode_helper
-	
-Z80Error:
-	di
-	jp.lil runtime_error
 	
 do_push_and_return:
 	pop ix
@@ -107,7 +82,10 @@ do_pop:
 	jp (ix)
 	
 ophandlerRETnobank:
-	ld c,b	;C is now at least 2
+	ld a,i
+	inc a
+	ld i,a
+	ld c,a	;C is now at least 2
 	ld de,(ix-2)
 	ld a,e
 	cpi.l
@@ -127,13 +105,27 @@ dispatch_cycles_for_ret_smc = $+2
 	ex af,af'
 	jp (ix)
 	
-do_call_reset_callstack:
-	ld b,CALL_STACK_DEPTH
-	ld.lil sp,myADLstack
-	ld sp,myz80stack-2
-do_call:
-	pea ix+7
+ophandlerRETskip:
+	jr c,ophandlerRETsave
+	ld a,i
+	inc a
+	ld i,a
+	pop de
+	exx
 	ex af,af'
+	ret
+	
+do_call_reset_callstack:
+	ld.lil sp,myADLstack
+	pop af
+	ld sp,myz80stack-2
+	push af
+	ld a,CALL_STACK_DEPTH
+do_call:
+	ld i,a
+	pop ix
+	pea ix+7
+	exx
 	ld de,(ix+5)
 	ld a,(ix+2)
 do_call_common:
@@ -150,7 +142,6 @@ call_stack_ret:
 	ex af,af'
 	exx
 	pop.l de
-	inc b
 	xor a
 	sbc.l hl,de
 	add.l hl,de
@@ -161,20 +152,15 @@ call_stack_ret:
 rom_bank_check_smc_3 = $+1
 	xor 0
 	jr z,ophandlerRETnobank
+	ld a,i
+	inc a
+	ld i,a
 	jr ophandlerRETnomatch
-	
-ophandlerRETskip:
-	jr c,ophandlerRETsave
-	pop de
-	exx
-	ex af,af'
-	ret
 	
 ophandlerRETsave:
 	push.l de
-	ld de,call_stack_ret
-	push de
-	djnz ophandlerRETnomatch	; B > 1 so always taken
+	call ophandlerRETnomatch
+	jr call_stack_ret
 	
 ophandlerRETnomatch_dec2:
 	dec.l hl
@@ -213,17 +199,23 @@ rom_bank_check_smc_1 = $+1
 	ld a,0
 	cp d
 	jr nz,banked_call_mismatch
-	ld a,e
 banked_call_mismatch_continue:
+	ld a,i
+	dec a
+	ld i,a
+	ld a,e
 	ld de,(ix+3)
 	lea ix,ix+5
 	ex (sp),ix
-	djnz do_call_common
+	jr nz,do_call_common
 	ld.lil sp,myADLstack
-	pop bc
+	ld c,a
+	pop af
 	ld sp,myz80stack-2
-	push bc
-	ld b,CALL_STACK_DEPTH
+	push af
+	ld a,CALL_STACK_DEPTH
+	ld i,a
+	ld a,c
 	jp do_call_common
 	
 dispatch_cycles_for_call:
@@ -335,6 +327,33 @@ schedule_event_finish_no_schedule:
 	pop hl
 	ex af,af'
 	jp (ix)
+	
+	
+native_isr:
+	 ld.lil a,(mpLcdMis)
+	 or a
+	 jp.lil nz,frame_interrupt
+	 ;ld.lil a,(mpIntMaskedStatus)
+	 ;rra
+	 ;jr nc,$
+	
+on_interrupt:
+	 inc a
+	 ld.lil (mpIntAcknowledge),a
+	 inc a
+	 ld.lil (exitReason),a
+frame_interrupt_return:
+	pop af
+	ei
+	ret
+	 
+Z80InvalidOpcode:
+	di
+	jp.lil Z80InvalidOpcode_helper
+	
+Z80Error:
+	di
+	jp.lil runtime_error
 	
 	
 do_event:
@@ -871,13 +890,16 @@ _
 do_rst:
 	pop ix
 	exx
-	djnz _
-	ld b,CALL_STACK_DEPTH
+	ex af,af'
+	ld a,i
+	dec a
+	jr nz,_
 	ld.lil sp,myADLstack
 	ld sp,myz80stack-2	
+	ld a,CALL_STACK_DEPTH
 _
+	ld i,a
 	pea ix+4
-	ex af,af'
 	ld de,(ix+2)
 	di
 	jp.lil do_rst_helper
@@ -2196,7 +2218,7 @@ get_mem_cycle_offset_push:
 	push.l hl
 
 ; Inputs: IY = current block cycle base
-;         B = number of empty call stack entries
+;         I = number of empty call stack entries
 ;         (bottom of stack) = JIT return address
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
@@ -2207,10 +2229,10 @@ get_mem_cycle_offset_push:
 ; Destroys HL,IX
 get_mem_cycle_offset:
 	; Get the address of the recompiled code: the bottom stack entry
-	ld hl,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
-	ld e,CALL_STACK_ENTRY_SIZE
-	ld d,b
-	mlt de
+	ld hl,i
+	ld h,CALL_STACK_ENTRY_SIZE
+	mlt hl
+	ld de,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
 	add hl,de
 	ld ix,(hl)
 	ld hl,(ix-2)
