@@ -1001,7 +1001,7 @@ EmulationMenu:
 	.db "",0
 	.db ITEM_OPTION,8, 60,1,"Turbo mode: %-6s",0
 	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
-	.db ITEM_OPTION,4, 80,1,"Time zone: UTC%-6s",0
+	.db ITEM_OPTION,4, 80,1,"Time zone: UTC%-13s",0
 	.db "Set to on if DST is currently active.",0
 	.db ITEM_OPTION,5, 90,1,"Daylight Saving Time: %-3s",0
 	.db "Return to the main menu.",0
@@ -1076,19 +1076,19 @@ OptionTimeZone:
 	.db "+8:00",0
 	.db "+9:00",0
 	.db "+9:30",0
-	.db "+10:00",0
+	.db "+10:00 (ChST)",0
 	.db "+11:00",0
 	.db "+12:00",0
 	.db "+13:00",0
 	.db "-12:00",0
-	.db "-11:00",0
-	.db "-10:00",0
-	.db "-9:00",0
-	.db "-8:00",0
-	.db "-7:00",0
-	.db "-6:00",0
-	.db "-5:00",0
-	.db "-4:00",0
+	.db "-11:00 (SST)",0
+	.db "-10:00 (HST)",0
+	.db "-9:00 (AKST)",0
+	.db "-8:00 (PST)",0
+	.db "-7:00 (MST)",0
+	.db "-6:00 (CST)",0
+	.db "-5:00 (EST)",0
+	.db "-4:00 (AST)",0
 	.db "-3:30",0
 	.db "-3:00",0
 	.db "-2:00",0
