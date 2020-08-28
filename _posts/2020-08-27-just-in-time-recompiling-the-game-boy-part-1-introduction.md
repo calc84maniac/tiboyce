@@ -118,7 +118,7 @@ However, there are also disadvantages to JIT, aside from the obvious aspect of i
   is important to avoid making assumptions when emulating jumps between different areas of memory. Since
   jumps on the Game Boy refer to only a 16-bit address and exclude any mapping information, it cannot
   be assumed that the same jump instruction will always target the same recompiled code block, unless
-  both the jump and destination are within the same memory page (or the destination is in a area that
+  both the jump and destination are within the same memory page (or the destination is in an area that
   cannot be remapped). There are also issues when code is allowed to run straight from one memory area
   to the next without jumping.
 * Detecting and responding to self-modifying code -- when Game Boy code is executed from RAM, there is
