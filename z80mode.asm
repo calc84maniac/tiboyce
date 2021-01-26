@@ -1237,11 +1237,8 @@ handle_waitloop_common:
 	    jp.lil schedule_jump_event_helper
 	
 _
-	   sbc a,a
-	   xor d
+	   inc iyh
 	   jr nz,_
-	   add iy,bc
-	   ld iyh,a
 	   jr handle_waitloop_common
 	
 handle_waitloop_ly:
@@ -1250,63 +1247,75 @@ handle_waitloop_ly:
 	push hl
 	 push de
 	  push bc
+	   ; Add the next jump cycles, but preserve the original count
 	   ld bc,(ix+1)
 	   lea de,iy
 	   ld a,e
 	   add a,c
+	   ld iyl,a
 	   jr c,-_
 _
-	   ; Get the (negative) number of cycles until the next scanline
-	   push de
-	    call get_scanline_from_cycle_offset
-	    ld d,a
-	    ld a,e
-	    cp 9
-	    ld a,d
-	    jr nz,_
-	    cp 1<<1
-	    jr nc,_
-	    add a,(CYCLES_PER_SCANLINE - 1)<<1
-_
-	    sub CYCLES_PER_SCANLINE<<1
-	    rra ; NOP this out in double-speed mode
-	   pop de
-	   ; Choose the smaller absolute value
-	   inc d
-	   jr nz,_
-	   cp e
-	   jr nc,_
+	   ld b,a
+	   ; Get the current scanline cycle count
+	   call get_scanline_from_cycle_offset
+	   ld d,a
+	   ; Adjust the cycle offset for the start of LY=0,
+	   ; to avoid skipping from LY=153 to the middle of LY=0
 	   ld a,e
+	   cp 9
+	   jr nz,_
+	   ld a,d
+	   sub 1<<1
+	   jr c,_
+	   ld d,a
+_
+	   ; Get the cached cycle offset of the LY load
+	   ld hl,(ix+3)
+	   inc hl
+	   ld hl,(hl)
+	   dec hl
+	   ld a,(hl)
+	   ; Convert this to the (negative) cycles passed since the LY read
+	   sub c
+	   ld h,(ix)
+	   add a,h
+	   cpl
+	   add a,a ; NOP this out in double-speed mode
+	   ; Apply the negative count to the scanline offset
+	   add a,d
+	   ; If the result is negative, the scanline already changed
+	   ; since the last read, so don't skip any loops
+	   jr nc,handle_waitloop_ly_finish
+	   sub CYCLES_PER_SCANLINE<<1
+	   rra ; NOP this out in double-speed mode
+	   ; Choose the smaller absolute value of the cycle counter
+	   ; and the remaining scanline cycles
+	   inc iyh
+	   jr nz,_
+	   cp b
+	   jr nc,_
+	   ld a,b
 _
 	   ld l,a
-	   ; Always advance by the first jump length first
-	   add a,c
-	   jr c,++_
-	   ; Advance as many full loops as possible without exceeding the cycle count
-	   ld h,(ix)
+	   ; Skip as many full loops as possible without exceeding the cycle count
 _
 	   add a,h
 	   jr nc,-_
-	   ;sub h
-_
+	   sub h
 	   sub l
-	   ; Add in the cycles and check for overflow
-	   add a,e
+	   ; Add in the cycles (this cannot overflow because of the counter limit)
+	   add a,b
 	   ld iyl,a
-	   jr c,++_
-_
+	   jr c,handle_waitloop_ly_finish
+	   dec iyh
+handle_waitloop_ly_finish:
 	  pop bc
 	 pop de
 	pop hl
 	ex af,af'
 	ld ix,(ix+3)
 	jp (ix)
-	
-_
-	   inc iyh
-	   jr nz,--_
-	   jr handle_waitloop_common
-	
+
 ophandlerEI:
 	ex af,af'
 	ld a,$A6 ;AND (HL)
@@ -1713,6 +1722,7 @@ readSTAT_vblank:
 	
 readLY_maybeforce0:
 	ld a,d
+	rra
 	cp 1
 	jr c,readLY_noforce0
 readLY_force0:
