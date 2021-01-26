@@ -78,42 +78,45 @@ decode_jump_bank_switch:
 	ei
 	jp.sis decode_jump_waitloop_return
 	
-do_rst_helper:
-	push hl
-	 call get_base_address
-	 add hl,de
-	 dec hl
-	 ld l,(hl)
-	 ld h,96
-	 mlt hl
-	 ld l,h
-	 xor a
-	 ld h,a
-	 ld ix,z80codebase + rst_cached_targets - ($C7 * 96 / 256)
-	 ex de,hl
-	 add ix,de
-	 ex de,hl
-	 or (ix+2)
-	 jr z,decode_rst
-_
-	pop hl
-	push hl
-	 jp.sis do_rst_finish
 	
-decode_rst:
-	 push ix
-	  push de
-	   push bc
-	    ld.s de,(ix)
-	    call lookup_code
-	   pop bc
-	  pop de
-	  ex (sp),ix
+decode_rst_helper:
+	ex af,af'
+	push hl
+	 push de
+	  push bc
+	   ; Get the offset of the RST dispatch
+	   ld a,e
+	   sub dispatch_rst_00 & $FF
+	   ld d,0
+	   ld e,a
+	   ; Get a pointer to the corresponding JR offset
+	   ld hl,z80codebase + do_rst_08 - 1
+	   add hl,de
+	   srl e
+	   add hl,de
+	   ; Get the RST target address
+	   add a,a
+	   ld e,a
+	   ; Adjust the JR offset
+	   ld a,(do_rst-1) & $FF
+	   sub l
+	   ld (hl),a
+	   call lookup_code
+	  pop bc
 	 pop hl
-	 ld (ix),hl
+	 ; Emit the cycle count
 	 add a,4
-	 ld (ix+2),a
-	 jr -_
+	 ld.s (hl),a
+	 ; Emit the jump target
+	 push hl
+	  inc hl
+	  inc hl
+	  ld.s (hl),ix
+	 pop de
+	pop hl
+	ex af,af'
+	ei
+	jp.sis do_rst
 	
 decode_call_helper:
 	call get_base_address

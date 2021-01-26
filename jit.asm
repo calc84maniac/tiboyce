@@ -1,8 +1,7 @@
 #define RST_BITS $C7+r_bits
 #define RST_MEM $C7+r_mem
-#define RST_CYCLE_CHECK $C7+r_cycle_check
-#define RST_PUSH $C7+r_push
 #define RST_POP $C7+r_pop
+#define RST_CYCLE_CHECK $C7+r_cycle_check
 #define RST_CALL $C7+r_call
 #define RST_EVENT $C7+r_event
 #define RST_CLEAR_ZHN_FLAGS $C7+r_clear_zhn_flags
@@ -67,25 +66,21 @@ flush_code:
 	 ld.sis (event_address),hl
 	 ; Reset the interrupt target caches
 	 ld hl,z80codebase+dispatch_vblank
-	 ld de,(decode_intcache << 8) | $C3	;CALL decode_intcache
+	 ld de,dispatch_stat - dispatch_vblank
 	 ld b,5
 _
-	 ld (hl),de
-	 inc hl \ inc hl \ inc hl
 	 ld (hl),c
-	 inc hl
+	 add hl,de
 	 djnz -_
-	 ; Reset the cached RST targets
-	 xor a
+	 ; Reset the RST target caches
+	 ld hl,z80codebase+do_rst_08-1
+	 ld e,do_rst_08 - do_rst_00
+	 ld a,decode_rst - do_rst_08
 	 ld b,8
 _
 	 ld (hl),a
-	 inc hl
-	 ld (hl),c
-	 inc hl
-	 ld (hl),c
-	 inc hl
-	 add a,8
+	 add hl,de
+	 sub e
 	 djnz -_
 	 ; Set the cached interrupt return address to -1
 	 dec bc
@@ -122,13 +117,16 @@ _
 	ret
 _
 	cp -2*2
+	jr nc,++_
+	add a,a
 	jr nc,_
 	ld hl,wram_base
-	add a,a
-	ret c
+	ret p
+	ld hl,wram_base-$2000
+	ret
+_
 	ld hl,vram_base
-	add a,a
-	ret nc
+	ret p
 	ld hl,(cram_bank_base)
 	ret
 _
@@ -412,20 +410,6 @@ int_cache_hit:
 	pop hl
 	ret.l
 	
-	
-; Pops an address from the Game Boy stack and does a cached lookup.
-;
-; Inputs:  HL = direct Game Boy stack pointer
-; Outputs: IX = recompiled code address
-;          HL = updated stack pointer
-;          DE = popped Game Boy address (banked)
-; Destroys AF,BC,DE,HL
-pop_and_lookup_code_cached:
-	inc.s de
-	ld e,(hl)
-	inc hl
-	ld d,(hl)
-	inc hl
 	
 ; Looks up a Game Boy address from the cached code mappings, and
 ; adds it to the cache upon miss.
@@ -956,7 +940,6 @@ flush_cache:
 	
 check_coherency_helper:
 	ex af,af'
-check_coherency_helper_swapped:
 	ld de,recompile_struct
 	add ix,de
 	ld hl,(ix+2)
@@ -1114,7 +1097,6 @@ coherency_flush:
 	pop.s de
 	pop.s hl
 	ld.sis sp,myz80stack-2
-	ld sp,myADLstack
 	; No need to count cycles, that is handled by the RAM block prefix
 	ld a,CALL_STACK_DEPTH+1
 	ld i,a
@@ -1219,7 +1201,7 @@ _
 	jp (hl)
 #endmacro
 	
-	.block (-$)&255
+	.block (-$)&255	
 opcycleroutines:
 	
 	; 1b op, 3b rec, 1cc
@@ -1244,13 +1226,11 @@ opcycle_first:
 	dec h
 	jp (hl)
 	
-	; 1b op, 4b rec, 2cc
-opcycle33:
-opcycle3B:
-	inc ix
 	; 1b op, 3b rec, 2cc
 opcycleMEM:
+opcycle33:
 opcycle39:
+opcycle3B:
 opcycleE2:
 opcycleF2:
 opcycleF9:
@@ -1291,17 +1271,7 @@ opcycle3byte:
 	
 	; 2b op, 4b rec, 3cc
 opcycleF8:
-	inc ix
-	jr opcycleE0
-	
-	; 1b op, 2b rec, 3cc
-opcyclePOP:
-	lea ix,ix+2
-	inc de
-	ex de,hl
-	add a,c
-	OPCYCLE_NEXT
-	
+	lea ix,ix+(4-6)
 	; 2b op, 6b rec, 3cc
 opcycle36:
 	add ix,bc
@@ -1313,6 +1283,7 @@ opcycleF0:
 opcycle34:
 opcycle35:
 opcycleF1:
+opcyclePOP:
 	add ix,bc
 	inc de
 	ex de,hl
@@ -1338,10 +1309,7 @@ opcycleCB:
 	ld a,l
 	jr nz,opcycleCB_normal	; 2b op, 2b rec, 2cc
 	; 2b op, 3b rec, 4cc
-	inc ix
-	; 1b op, 2b rec, 4cc
-opcyclePUSH:
-	lea ix,ix+2
+	add ix,bc
 	inc de
 	ex de,hl
 	add a,4
@@ -1361,6 +1329,9 @@ opcycleE8:
 	inc de
 	inc ix
 	; 1b op, 3b rec, 4cc
+opcycleC5:
+opcycleD5:
+opcycleE5:
 opcycleF5:
 	inc de
 	add ix,bc
@@ -1395,6 +1366,7 @@ opcycleEI:
 
 	.echo "Opcycle routine size: ", $ - opcycleroutines
 	.block 256 - ($ - opcycleroutines)
+
 ; A table indexing opcode cycle counting routines.
 ; All entry points live in a 256-byte space.
 opcounttable:
@@ -1620,7 +1592,7 @@ opcounttable:
 	.db opcycleJPcond - opcycleroutines
 	.db opcycleJP - opcycleroutines
 	.db opcycleCALLcond - opcycleroutines
-	.db opcyclePUSH - opcycleroutines
+	.db opcycleC5 - opcycleroutines
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 ;C8
@@ -1638,7 +1610,7 @@ opcounttable:
 	.db opcycleJPcond - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
 	.db opcycleCALLcond - opcycleroutines
-	.db opcyclePUSH - opcycleroutines
+	.db opcycleD5 - opcycleroutines
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 ;D8
@@ -1656,7 +1628,7 @@ opcounttable:
 	.db opcycleE2 - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
-	.db opcyclePUSH - opcycleroutines
+	.db opcycleE5 - opcycleroutines
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 ;E8
@@ -1695,8 +1667,8 @@ opcoderecsizes:
 	.db 0,1,3,1,1,1,2,3
 	.db 17,3,3,1,1,1,2,3
 	.db 17,1,3,1,1,1,2,1
-	.db 17,5,3,4,3,3,6,1
-	.db 17,3,3,4,1,1,2,3
+	.db 17,5,3,3,3,3,6,1
+	.db 17,3,3,3,1,1,2,3
 	
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
@@ -1716,11 +1688,11 @@ opcoderecsizes:
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
 	
-	.db 12,2,17,0,10,2,2,7
+	.db 12,3,17,0,10,3,2,7
 	.db 12,0,17,2,10,8,2,7
-	.db 12,2,17,0,10,2,2,7
+	.db 12,3,17,0,10,3,2,7
 	.db 12,0,17,0,10,0,2,7
-	.db 3,2,3,0,0,2,2,7
+	.db 3,3,3,0,0,3,2,7
 	.db 4,0,5,0,0,0,2,7
 	.db 3,3,3,3,0,3,2,7
 	.db 4,3,5,6,0,0,2,7
@@ -2028,7 +2000,7 @@ opgentable:
 	.db opgenJPcond - opgenroutines
 	.db opgenJP - opgenroutines
 	.db opgenCALLcond - opgenroutines
-	.db opgenPUSH - opgenroutines
+	.db opgenC5 - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;C8
@@ -2046,7 +2018,7 @@ opgentable:
 	.db opgenJPcond - opgenroutines
 	.db opgenINVALID - opgenroutines
 	.db opgenCALLcond - opgenroutines
-	.db opgenPUSH - opgenroutines
+	.db opgenD5 - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;D8
@@ -2064,7 +2036,7 @@ opgentable:
 	.db opgenE2 - opgenroutines
 	.db opgenINVALID - opgenroutines
 	.db opgenINVALID - opgenroutines
-	.db opgenPUSH - opgenroutines
+	.db opgenE5 - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;E8
@@ -2189,6 +2161,137 @@ mem_write_port_handler_table:
 	.db writeWXhandler - mem_write_port_handler_base
 mem_write_port_handler_table_end:
 	
+	.block (128-$)&255
+; A table of information for stack memory areas
+stack_bank_info_table:
+	.dl 0	;$ff80-$ffff
+	.db ($ff+1)&$ff,($ff+1)&$ff
+	; push jump targets
+	.db do_push_z80 - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_z80 - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_z80 - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_z80 - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_z80 - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr nz,$+(callstack_pop_skip - callstack_pop_check_overflow_smc)
+	bit 6,b
+	jr nz,$+(callstack_pop_overflow - (callstack_pop_check_overflow_smc + 4))
+
+; The start address of Game Boy ROM page 0.
+rom_start:
+	.dl 0	;$0000-$3fff
+	.db $00+1,$3f+1
+	; push jump targets
+	.db do_push_cart - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_cart - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr nz,$+(callstack_pop_skip - callstack_pop_check_overflow_smc)
+	cp b
+	jr z,$+(callstack_pop_bound - (callstack_pop_check_overflow_smc + 3))
+	xor a
+
+	.dl 0	;$fe00-$ffff
+	.db $fe+1,($ff+1)&$ff
+	; push jump targets
+	.db do_push_ports - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_ports - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_ports - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_overflow - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_ports - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr $+(callstack_pop_save - callstack_pop_check_overflow_smc)
+	nop
+	nop
+	nop
+	nop
+
+; The address of the currently banked ROM page, minus $4000.
+; Can be indexed directly by the Game Boy address.
+rom_bank_base:
+	.dl 0	;$4000-$7fff
+	.db $40+1,$7f+1
+	; push jump targets
+	.db do_push_cart - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_cart - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr nz,$+(callstack_pop_skip - callstack_pop_check_overflow_smc)
+	cp b
+	jr z,$+(callstack_pop_bound - (callstack_pop_check_overflow_smc + 3))
+	xor a
+
+	.dl vram_base	;$8000-$9fff
+	.db $80+1,$9f+1
+	; push jump targets
+	.db do_push_vram - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_vram - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr nz,$+(callstack_pop_skip - callstack_pop_check_overflow_smc)
+	cp b
+	jr z,$+(callstack_pop_bound - (callstack_pop_check_overflow_smc + 3))
+	xor a
+
+; The address of the currently banked RAM page, minus $A000.
+; Can be indexed directly by the Game Boy address.
+cram_bank_base:
+	.dl 0	;$a000-$bfff
+	.db $a0+1,$bf+1
+	; push jump targets
+	.db do_push_adl - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr nz,$+(callstack_pop_skip - callstack_pop_check_overflow_smc)
+	cp b
+	jr z,$+(callstack_pop_bound - (callstack_pop_check_overflow_smc + 3))
+	xor a
+
+	.dl wram_base	;$c000-$dfff
+	.db $c0+1,$df+1
+	; push jump targets
+	.db do_push_adl - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr nz,$+(callstack_pop_skip - callstack_pop_check_overflow_smc)
+	cp b
+	jr z,$+(callstack_pop_bound - (callstack_pop_check_overflow_smc + 3))
+	xor a
+
+	.dl wram_base-$2000	;$e000-$fdff
+	.db $e0+1,$fd+1
+	; push jump targets
+	.db do_push_adl - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr nz,$+(callstack_pop_skip - callstack_pop_check_overflow_smc)
+	cp b
+	jr z,$+(callstack_pop_bound - (callstack_pop_check_overflow_smc + 3))
+	xor a
+
 	
 opgen_cycle_overflow:
 	push hl
@@ -2212,9 +2315,18 @@ _opgenRST:
 	ex de,hl
 	ld (hl),$CD
 	inc hl
-	ld (hl),do_rst & $FF
+	; Translate the opcode into a routine entry offset
+	ld a,c
+	rrca
+	rrca
+	cpl
+	add a,c
+	add a,(do_rst_38+1) & $FF
+	ld (hl),a
+	adc a,((do_rst_38+1) >> 8) - 1
+	sub (hl)
 	inc hl
-	ld (hl),do_rst >> 8
+	ld (hl),a
 	call opgen_reset_cycle_count
 	lea iy,iy-3
 	jr opgen_finish_rst
@@ -2434,7 +2546,7 @@ opgenroutinecall1byte_3cc:
 	pop hl
 	jp opgen1byte
 	
-opgenroutinecall2byteload_5cc:
+_opgen08:
 	ld a,$DD	;LD IX,nnnn
 	ld (de),a
 	inc de
@@ -2445,9 +2557,10 @@ opgenroutinecall2byteload_5cc:
 	ldi
 	ldi
 	dec hl
-	jr opgenroutinecall_3cc	
+	call opgenroutinecall_3cc
+	.dw ophandler08
 	
-opgenroutinecall1byteload_3cc:
+_opgen36:
 	ld a,$DD	;LD IXL,nn
 	ld (de),a
 	inc de
@@ -2457,7 +2570,8 @@ opgenroutinecall1byteload_3cc:
 	inc hl
 	ldi
 	dec hl
-	jr opgenroutinecall_2cc
+	call opgenroutinecall_2cc
+	.dw ophandler36
 	
 opgenroutinecall_4cc:
 	dec iy
@@ -2518,6 +2632,7 @@ opgenCONSTwrite_smc = $+1
 opgenWRAMwrite:
 	 push hl
 	  ld hl,wram_base
+	  res 5,b ; Handle mirroring
 	  add hl,bc
 	  ex de,hl
 	  ld (hl),$5B ;LD.LIL (addr),A
@@ -2695,6 +2810,7 @@ opgenCONSTread:
 opgenWRAMread:
 	push hl
 	 ld hl,wram_base
+	 res 5,b ; Handle mirroring
 	 add hl,bc
 	 ex de,hl
 	 ld (hl),$5B ;LD.LIL A,(addr)

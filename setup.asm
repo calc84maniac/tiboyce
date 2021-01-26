@@ -554,6 +554,8 @@ _
 	ld (memroutine_rtc_smc_1),a
 	ld a,$18	;JR
 	ld (memroutine_rtc_smc_2),a
+	; Use a value that's not a multiple of 32, guarantees a stack bank switch
+	ld (z80codebase+curr_gb_stack_bank),a
 	
 	ld hl,(cram_start)
 	ld bc,$A000
@@ -926,14 +928,10 @@ _
 	ld.s hl,(iy-state_size+STATE_REG_PC)
 	ld.sis (event_gb_address),hl
 	ex de,hl
-	push de
-	 call lookup_code
-	pop de
-	bit 7,d
-	jr z,_
-	; If the GB address was in RAM, skip over the block prefix
-	lea ix,ix+RAM_PREFIX_SIZE
-_
+	call lookup_code
+	; Set the negative block cycle offset of the current instruction
+	neg
+	ld (z80codebase+event_cycle_count),a
 	; Save the event address and write an event handler call
 	lea hl,ix
 	ld.sis (event_address),hl
@@ -954,23 +952,22 @@ _
 	push de
 	 ; Get GB SP before we destroy IY
 	 ld.s hl,(iy-state_size+STATE_REG_SP)
-	 
-	 ; Get the block cycle count (need to use this in case of a RAM block)
-	 ld a,(recompile_struct+8+7)
+
 	 ; Set the cycle count at block end relative to the current event,
 	 ; which has been set to 1 cycle after block start
+	 ld a,(z80codebase+event_cycle_count)
+	 neg
 	 ld iyh,0
 	 ld iyl,a
 	 dec.s iy
-	 ; Set the negative block cycle offset of the current instruction
-	 neg
-	 ld (z80codebase+event_cycle_count),a
+
 	 ; Set the callstack limit
 	 ld a,CALL_STACK_DEPTH + 1
 	 ld i,a
 	; Pop GB AF into AF
 	pop af
-	jp set_gb_stack
+	; No need to enable interrupts here, stack bank switch handles that
+	jp.sis set_gb_stack
 	
 ExitEmulation:
 	ld ix,state_start+state_size
@@ -978,10 +975,8 @@ ExitEmulation:
 	ld (ix-state_size+STATE_REG_PC),hl
 	
 	exx
-	ld de,(z80codebase+sp_base_address)
-	xor a
-	ld (ix-state_size+STATE_SYSTEM_TYPE),a
-	sbc hl,de
+	ld.sis de,(sp_base_address_neg)
+	add hl,de
 	ld.s (ix-state_size+STATE_REG_SP),hl
 	
 	ex af,af'
@@ -994,6 +989,7 @@ ExitEmulation:
 	push.s hl
 	
 	xor a
+	ld (ix-state_size+STATE_SYSTEM_TYPE),a
 	ld b,a
 	sbc hl,hl
 	add.s hl,sp

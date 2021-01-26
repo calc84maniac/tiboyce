@@ -1,67 +1,115 @@
-; Get a literal 24-bit pointer to the Game Boy stack.
-; Does not use a traditional call/return, must be jumped to directly.
-;
-; This routine is jumped to whenever SP is set to a new value, excluding
-; increment/decrement operations. In addition, if SP points to ROM,
-; push operations are modified to disable the memory writes.
-;
-; Inputs:  HL = 16-bit Game Boy SP
-;          IX = Z80-mode return address
-;          BCDEHL' have been swapped
-; Outputs: HL' = 24-bit literal SP
-;          BCDEHL' have been unswapped
-;          SMC applied to push operations
-set_gb_stack:
-	ex af,af'
-	ex de,hl
+set_gb_stack_bank_helper:
+	push ix
+	 push hl
+	  ld c,a
+	  ld (z80codebase+curr_gb_stack_bank),a
+	  call.il set_gb_stack_bounds_helper
+	  ; Set callstack memory access prefixes
+	  ld a,c
+	  or a	; For high RAM, use NOP as the prefix
+	  jr z,_
+	  ld a,$49	; Otherwise, use .lis
+_
+	  ld (z80codebase+callstack_pop_compare_smc_1),a
+	  ld (z80codebase+callstack_pop_compare_smc_2),a
+	  ; Set push jump offsets
+	  ld hl,(ix+5)
+	  ld a,l
+	  ld (z80codebase+do_push_jump_smc_1),a
+	  sub do_push_jump_smc_2 - do_push_jump_smc_1
+	  ld (z80codebase+do_push_jump_smc_2),a
+	  sub do_push_jump_smc_3 - do_push_jump_smc_2
+	  ld (z80codebase+do_push_jump_smc_3),a
+	  sub do_push_jump_smc_4 - do_push_jump_smc_3
+	  ld (z80codebase+do_push_jump_smc_4),a
+	  sub do_push_jump_smc_5 - do_push_jump_smc_4
+	  ld (z80codebase+do_push_jump_smc_5),a
+	  sub do_push_and_return_jump_smc - do_push_jump_smc_5
+	  ; Override offset for CALL to special-case return value
+	  cp do_push_ports - (do_push_and_return_jump_smc+1)
+	  jr nz,_
+	  ld a,do_push_and_return_ports - (do_push_and_return_jump_smc+1)
+_
+	  ld (z80codebase+do_push_and_return_jump_smc),a
+	  ld a,h
+	  ld (z80codebase+do_push_for_call_jump_smc_1),a
+	  sub do_push_for_call_jump_smc_2 - do_push_for_call_jump_smc_1
+	  ld (z80codebase+do_push_for_call_jump_smc_2),a
+	  ; Set pop jump offsets
+	  ld hl,(ix+7)
+	  ld a,l
+	  ld (z80codebase+do_pop_jump_smc_1),a
+	  sub do_pop_jump_smc_2 - do_pop_jump_smc_1
+	  ld (z80codebase+do_pop_jump_smc_2),a
+	  ld a,h
+	  ld (z80codebase+do_pop_for_ret_jump_smc_1),a
+	  sub do_pop_for_ret_jump_smc_2 - do_pop_for_ret_jump_smc_1
+	  ld (z80codebase+do_pop_for_ret_jump_smc_2),a
+	  ld a,(ix+9)
+	  ld (z80codebase+ophandlerF1_jump_smc_1),a
+	  add a,(ophandlerF1_jump_smc_1 + 1) & $FF
+	  ld l,a
+	  adc a,(ophandlerF1_jump_smc_1 + 1) >> 8
+	  sub l
+	  ld h,a
+	  ld.sis (ophandlerF1_jump_smc_2),hl
+	  ; Copy callstack pop overflow check
+	  ld a,c
+	  lea hl,ix+10
+	  ld de,z80codebase+callstack_pop_check_overflow_smc
+	  ld bc,6
+	  ldir
+	 pop hl
+	pop ix
+	ei
+	jp.sis set_gb_stack_bank_done
+
+set_gb_stack_bounds_helper:
+	ld ix,stack_bank_info_table
+	scf
+	rra
+	ld ixl,a
+	; Get the bank base in DE
+	ld de,(ix)
+	ld (z80codebase+sp_base_address),de
+	; Adjust inc/dec sp handlers based on the address alignment
+	ld a,e
+	and 1
+	add a,a
+	add a,a
+	add a,a
+	add a,$20
+	ld (z80codebase+ophandler33_jr_smc),a
+	ld (z80codebase+ophandler3B_jr_smc),a
+	; Calculate the negative of the bank base
+	sbc hl,hl
+	sbc hl,de
+	ld.sis (sp_base_address_neg),hl
+	; Get the MSBs of the boundaries for the bank
+	ld hl,(ix+3)
+	; Lower boundary triggers when pushing with SP <= lower_bound+1
+	inc de
 	ld a,d
-	; If $C000 or higher, assume pushes will be done first
-	cp $C0
-	jr c,_
+	add a,l
+	ld (z80codebase+do_push_bound_smc_1),a
+	ld (z80codebase+do_push_bound_smc_2),a
+	ld (z80codebase+ophandler3B_bound_smc),a
+	; Upper boundary triggers when popping with SP >= upper_bound-2
+	dec de
+	dec de
 	dec de
 	ld a,d
+	add a,h
+	ld (z80codebase+do_pop_bound_smc_1),a
+	ld (z80codebase+do_pop_bound_smc_2),a
+	ld (z80codebase+do_pop_bound_smc_3),a
+	ld (z80codebase+do_pop_bound_smc_4),a
+	ld (z80codebase+ophandler33_bound_smc),a
 	inc de
-_
-	add a,a
-	jr c,_
-	add a,a
-	ld a,$53	;LD D,E
-	ld hl,(rom_start)
-	jr nc,set_gb_stack_done
-	ld hl,(rom_bank_base)
-	jr set_gb_stack_done
-_
-	cp -2*2
-	jr nc,_
-	ld hl,wram_base
-	add a,a
-	jr c,set_gb_stack_done_ram
-	ld hl,vram_base
-	add a,a
-	jr nc,set_gb_stack_done_ram
-	ld hl,(cram_bank_base)
-	jr set_gb_stack_done_ram
-_
-	ld hl,hram_base
-set_gb_stack_done_ram:
-	ld a,$72	;LD (HL),D
-set_gb_stack_done:
-	ld (z80codebase+sp_base_address),hl
-	add hl,de
-	exx
-	ld (z80codebase+do_push_smc_1),a
-	ld (z80codebase+do_push_smc_3),a
-	or 1	;LD D,E or LD (HL),E
-	ld (z80codebase+do_push_smc_2),a
-	ld (z80codebase+do_push_smc_4),a
-	or 7    ;LD D,A or LD (HL),A
-	ld (z80codebase+do_push_smc_5),a
-	ld (z80codebase+do_push_smc_6),a
-	ex af,af'
-	ei
-	jp.s (ix)
+	inc de
+	ret.l
 
-	
+
 ; Flushes the JIT code and recompiles anew.
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
@@ -74,17 +122,18 @@ set_gb_stack_done:
 ;          BCDEHL' have been unswapped
 flush_normal:
 	ex af,af'
-	push hl
-	 ld hl,$C3 | (schedule_event_finish << 8)	;JP schedule_event_finish
-	 ld (flush_event_smc),hl
+	push bc
+	 push hl
+	  ld hl,$C3 | (schedule_event_finish << 8)	;JP schedule_event_finish
+	  ld (flush_event_smc),hl
 flush_mem_finish:
-	 call flush_code
-	 push de
-	  call lookup_code
-	 pop de
-	pop hl
+	  call flush_code
+	  push de
+	   call lookup_code
+	  pop de
+	 pop hl
+	pop bc
 	ld.sis sp,myz80stack-2
-	ld sp,myADLstack
 	ld c,a
 	exx
 	ld (_+2),a
@@ -124,18 +173,18 @@ _
 ; Outputs: JIT is flushed and execution begins at the new recompiled block
 ;          BCDEHL' have been unswapped
 flush_mem:
-	ex af,af'
-	dec bc
-	dec bc
-	dec.s bc
-	push hl
-	 call lookup_gb_code_address
-	 neg
-	 ld c,a
-	 sbc a,a
-	 ld b,a
-	 add iy,bc
-	 jr flush_mem_finish
+	push af
+	 push hl
+	  dec bc
+	  dec bc
+	  dec.s bc
+	  call lookup_gb_code_address
+	  neg
+	  ld c,a
+	  sbc a,a
+	  ld b,a
+	  add iy,bc
+	  jr flush_mem_finish
 	
 	
 ; Catches up the renderer before changing an LCD register.
@@ -824,19 +873,7 @@ schedule_call_event_helper:
 	ld e,(hl)
 	jr schedule_event_helper
 	
-; Inputs: DE = Game Boy address of RST instruction
-;         IX = starting recompiled address
-;         IY = cycle count at end of sub-block (>= 0)
-;         C = cycles until end of sub-block (plus jump cycles, if applicable)
-schedule_rst_event_helper:
-	call get_base_address
-	add hl,de
-	ld a,(hl)
-	sub $C7
-	ld e,a
-	ld d,0
-	jr schedule_event_helper
-	
+
 ; Inputs: DE = Game Boy address of jump instruction
 ;         IX = starting recompiled address
 ;         IY = cycle count at end of sub-block (>= 0)
@@ -915,32 +952,28 @@ schedule_event_continue:
 	 ld de,opcounttable
 	 ld bc,3
 	 call opcycle_first
-	 or a
 schedule_event_now:
+	 sub iyl
+	 or a
+schedule_event_ram_prefix:
 	pop de
 	sbc hl,de
-
-	sub iyl
 	ei
 flush_event_smc = $+1
 	jp.sis schedule_event_finish
 	
 schedule_event_check_ram_prefix:
-	ld.s a,(ix)
-	cp $CD
-	jr nz,schedule_event_continue
-	ld.s de,(ix+1)
-	ld a,e
-	cp coherency_handler & $FF
-	jr nz,schedule_event_continue
-	ld a,d
-	cp coherency_handler >> 8
-	jr nz,schedule_event_continue
-	pop.s hl
-	pop hl
-	pea.s ix+RAM_PREFIX_SIZE
-	ld.s ix,(ix+3)
-	jp check_coherency_helper_swapped
+	 ld.s a,(ix)
+	 cp $CD
+	 jr nz,schedule_event_continue
+	 ld.s de,(ix+1)
+	 ld a,e
+	 cp coherency_handler & $FF
+	 jr nz,schedule_event_continue
+	 ld a,d
+	 sub coherency_handler >> 8
+	 jr nz,schedule_event_continue
+	 jr schedule_event_ram_prefix
 	
 	
 ; Inputs:  BCDEHL' are swapped
@@ -972,24 +1005,30 @@ resolve_mem_cycle_offset_helper:
 	  pop ix
 	  jr nc,++_
 	  ld (z80codebase+memroutine_next),hl
+	  ; Emit the error catcher
 	  ld bc,ERROR_CATCHER
 	  ld (hl),bc
 	  inc hl
 	  inc hl
 	  inc hl
+	  ; Emit the Game Boy address
 	  ld (hl),de
 	  inc hl
 	  inc hl
+	  ; Emit the block cycle offset
 	  ld (hl),a
 	  inc hl
+	  ; Overwrite the JIT code with a call to the trampoline
 	  ld.s (ix-2),hl
 	  ld.s (ix-3),$CD
 	 pop bc
+	 ; Emit the trampoline code
 	 ld (hl),bc
 	 inc hl
 	 inc hl
 	pop bc
 	ld (hl),c
+	; Return the trampoline pointer minus 1
 	dec hl
 	dec hl
 	dec hl
@@ -997,13 +1036,39 @@ _
 	ei
 	jp.sis get_mem_cycle_offset_continue
 	
+	
+; Inputs:  BCDEHL' are swapped
+;          IX = current JIT address
+;          DE = call return GB address
+;          A = cycles taken by call
+; Outputs: BCDEHL' are swapped
+;          IX = current JIT address
+;          HL = current GB address
+;          A = NEGATIVE cycles to add for current sub-block position
+; Preserves: B
+resolve_mem_cycle_offset_for_call_helper:
+	push af
+	 call get_base_address
+	 add hl,de
+	 dec hl
+	 ld d,(hl)
+	 dec hl
+	 ld e,(hl)
+	pop af
+	add a,-6	; Sets the carry flag
+	ASSERT_C
+	.db $21	;LD HL,
 _
 	 pop bc
 	pop bc
+	scf
+	; No trampoline was emitted, so use a scratch area to return the info
 	ld hl,z80codebase + mem_cycle_scratch
+	; Emit the Game Boy address
 	ld (hl),de
 	inc hl
 	inc hl
+	; Emit the block cycle offset
 	ld (hl),a
 	jr --_
 	
@@ -1043,7 +1108,7 @@ _
 	exx
 	call get_banked_address
 	ld (int_cached_return),de
-	ld a,c
+	xor a
 	ei
 	jp.sis dispatch_int_continue
 	

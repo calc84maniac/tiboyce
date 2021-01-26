@@ -17,6 +17,15 @@ r_mem:
 	 jp decode_mem
 	
 	.block $10-$
+r_pop:
+	ex af,af'
+	exx
+	inc b
+do_pop_jump_smc_1 = $+1
+	djnz do_pop_ports
+	jr do_pop_check_overflow
+	
+	.block $18-$
 r_cycle_check:
 	ex af,af'
 	ld a,iyh
@@ -24,19 +33,8 @@ r_cycle_check:
 	ret nz
 	jp cycle_overflow_for_jump
 	
-	.block $18-$
-r_push:
-	pop ix
-	exx
-	pop de
-	jr do_push
-	
 	.block $20-$
-r_pop:
-	exx
-	ld.l ix,(hl)
-	ex (sp),ix
-	jr do_pop
+	; Currently unused
 	
 	.block $28-$
 r_call:
@@ -63,60 +61,75 @@ rst38h:
 	ld a,ixh
 	ret
 	
-do_push_and_return:
-	pop ix
-do_push:
-	dec.l hl
-do_push_smc_1 = $+1
-	ld.l (hl),d
-	dec.l hl
-do_push_smc_2 = $+1
-	ld.l (hl),e
-	exx
-	jp (ix)
-	
-do_pop:
-	inc.l hl
-	inc.l hl
-	exx
-	jp (ix)
-	
-ophandlerRETnobank:
-	ld a,i
-	inc a
-	ld i,a
-	ld c,a	;C is now at least 2
-	ld de,(ix-2)
-	ld a,e
-	cpi.l
-	jr nz,ophandlerRETnomatch_dec
-	ld a,d
-	cpi.l
-	jr nz,ophandlerRETnomatch_dec2
-	ld a,(ix-3)
-dispatch_cycles_for_ret:
-	ld (dispatch_cycles_for_ret_smc),a
-dispatch_cycles_for_ret_smc = $+2
-	lea iy,iy+0
-	ld a,iyh
-	or a
-	jr z,cycle_overflow_for_ret
+do_pop_check_overflow:
+	ld a,h
+do_pop_bound_smc_1 = $+1
+	cp 0
+_
+	jp p,do_pop_overflow
+do_pop_jump_smc_2 = $+1
+	jr do_pop_ports
+do_pop_z80:
+	bit 6,b
+	jr nz,-_
+	inc b
+	ld ix,(hl)
+	inc hl
+	inc hl
+	ex (sp),ix
 	exx
 	ex af,af'
 	jp (ix)
 	
-ophandlerRETskip:
-	jr c,ophandlerRETsave
+do_pop_adl:
+	inc b
+	ld.l ix,(hl)
+	inc.l hl
+	inc.l hl
+	ex (sp),ix
+	exx
+	ex af,af'
+	jp (ix)
+	
+do_pop_ports:
+	; Advance the return address to the end of the instruction,
+	; and execute the skipped pop opcode here in case it's overwritten
+	pop de
+	ld a,(de)
+	ld (do_pop_ports_smc),a
+	inc de
+	push de
+	call pop_ports
+	push de
+	 exx
+do_pop_ports_smc = $
+	pop bc
+	ret
+	
+callstack_pop_save:
+	push ix
+	scf
+	adc a,b
+	push af
+	call pop_and_lookup_code_cached
+	jr callstack_ret
+	
+callstack_pop_skip:
+	jp p,callstack_pop_save
 	ld a,i
 	inc a
 	ld i,a
-	pop de
 	exx
 	ex af,af'
 	ret
 	
+do_call_maybe_overflow:
+	inc iyh
+	jr nz,do_call_no_overflow
+	call cycle_overflow_for_call
+	jr callstack_ret
+	
 do_call_reset_callstack:
-	ld.lil sp,myADLstack
 	pop af
 	ld sp,myz80stack-2
 	push af
@@ -129,65 +142,73 @@ do_call:
 	ld de,(ix+5)
 	ld a,(ix+2)
 do_call_common:
+	push bc
 	ld ix,(ix)
-	dec.l hl
-do_push_smc_3 = $+1
-	ld.l (hl),d
-	dec.l hl
-do_push_smc_4 = $+1
-	ld.l (hl),e
-	push.l hl
-	call dispatch_cycles_for_call
-call_stack_ret:
+	add a,iyl
+	jr c,do_call_maybe_overflow
+do_call_no_overflow:
+	ld iyl,a
+	call do_push_for_call_swapped
+callstack_ret:
 	ex af,af'
 	exx
-	pop.l de
-	xor a
-	sbc.l hl,de
-	add.l hl,de
-	jr nz,ophandlerRETskip
+	pop af
 	pop ix
+	scf
+	sbc a,b
+callstack_pop_check_overflow_smc:
+	jr nz,callstack_pop_skip
+	cp b
+	jr z,callstack_pop_bound
+callstack_pop_nobound:
+	xor a
 	or (ix-4)
-	jr z,ophandlerRETnobank
+	jr z,callstack_pop_nobank
 rom_bank_check_smc_3 = $+1
 	xor 0
-	jr z,ophandlerRETnobank
+	jr nz,callstack_pop_nomatch_inc
+callstack_pop_nobank:
 	ld a,i
 	inc a
 	ld i,a
-	jr ophandlerRETnomatch
+	ld c,a	;C is now at least 2
+	ld de,(ix-2)
+	ld a,e
+callstack_pop_compare_smc_1:
+	cpi.l
+	jr nz,callstack_pop_nomatch_dec
+	ld a,d
+callstack_pop_compare_smc_2:
+	cpi.l
+	jr nz,callstack_pop_nomatch_dec2
+	inc b
+	ld a,(ix-3)
+dispatch_cycles_for_ret:
+	ld (dispatch_cycles_for_ret_smc),a
+dispatch_cycles_for_ret_smc = $+2
+	lea iy,iy+0
+	ld a,iyh
+	or a
+	jr z,cycle_overflow_for_ret
+	exx
+	ex af,af'
+	jp (ix)
 	
-ophandlerRETsave:
-	push.l de
-	call ophandlerRETnomatch
-	jr call_stack_ret
-	
-ophandlerRETnomatch_dec2:
-	dec.l hl
-ophandlerRETnomatch_dec:
-	dec.l hl
-ophandlerRETnomatch:
-	push bc
-	 di
-	 call.il pop_and_lookup_code_cached
-	 ei
-	pop bc
-	add a,4
-	jr dispatch_cycles_for_ret
-	
-cycle_overflow_for_ret:
-	ld a,(dispatch_cycles_for_ret_smc)
-	push de
-	 exx
-	 ex (sp),hl
-	 push de
-	  push bc
-	   ex de,hl
-	   sub 4
-	   ld c,a
-	   push ix
-	    di
-	    jp.lil schedule_event_helper
+callstack_pop_bound:
+	ld a,h
+do_pop_bound_smc_4 = $+1
+	cp 0
+	jp m,callstack_pop_nobound
+callstack_pop_overflow:
+	ld a,i
+	inc a
+	ld i,a
+do_pop_for_ret_overflow:
+	call pop_overflow
+	ex af,af'
+	exx
+	pop de	; Ensure top byte clear
+	jr pop_and_lookup_code_cached_continue
 	
 do_rom_bank_call:
 	ex af,af'
@@ -208,7 +229,6 @@ banked_call_mismatch_continue:
 	lea ix,ix+5
 	ex (sp),ix
 	jr nz,do_call_common
-	ld.lil sp,myADLstack
 	ld c,a
 	pop af
 	ld sp,myz80stack-2
@@ -218,36 +238,103 @@ banked_call_mismatch_continue:
 	ld a,c
 	jp do_call_common
 	
-dispatch_cycles_for_call:
-	add a,iyl
-	jr c,++_
-_
-	ld iyl,a
-	exx
-	ex af,af'
-	jp (ix)
-_
-	inc iyh
-	jr nz,--_
+callstack_pop_nomatch_inc:
+	ld a,i
+	inc a
+	ld i,a
+	jr pop_and_lookup_code_cached
+	
+callstack_pop_nomatch_dec2:
+	dec.l hl
+callstack_pop_nomatch_dec:
+	dec.l hl
+pop_and_lookup_code_cached:
+	inc b
+do_pop_for_ret_jump_smc_1 = $+1
+	djnz do_pop_for_ret_overflow
+	ld a,h
+do_pop_bound_smc_2 = $+1
+	cp 0
+	jp p,do_pop_for_ret_overflow
+do_pop_for_ret_jump_smc_2 = $+1
+	jr do_pop_for_ret_overflow
+	
+do_pop_for_ret_adl:
+	inc b
+	inc de	; Ensure top byte clear
+	ld.l e,(hl)
+	inc.l hl
+	ld.l d,(hl)
+	inc.l hl
+pop_and_lookup_code_cached_continue:
+	push bc
+	 di
+	 call.il lookup_code_cached
+	 ei
+	pop bc
+	add a,4
+dispatch_cycles_for_reti_smc = $+1
+	jr dispatch_cycles_for_ret
+	
+do_pop_for_ret_z80:
+	bit 6,b
+	jr nz,do_pop_for_ret_overflow
+	inc b
+	ld de,(hl)	; Ensure top byte clear
+	inc hl
+	inc hl
+	jr pop_and_lookup_code_cached_continue
+	
+cycle_overflow_for_ret:
+	ld a,(dispatch_cycles_for_ret_smc)
 	push de
 	 exx
 	 ex (sp),hl
 	 push de
 	  push bc
 	   ex de,hl
-	   dec de
-	   ld c,iyl
-	   ld iyl,a
-	   sub c
-	   sub 6
+	   sub 4
 	   ld c,a
 	   push ix
 	    di
-	    jp.lil schedule_call_event_helper
+	    jp.lil schedule_event_helper
 	
 banked_call_mismatch:
 	di
 	jp.lil banked_call_mismatch_helper
+	
+cycle_overflow_for_call:
+	push ix
+	 push de
+	  exx
+	  ex (sp),hl
+	  push de
+	   push bc
+	    ld de,do_push_and_return
+	    push de
+	     ex de,hl
+	     dec de
+	     ld c,iyl
+	     ld iyl,a
+	     sub c
+	     sub 6
+	     ld c,a
+	     di
+	     jp.lil schedule_call_event_helper
+	
+dispatch_cycles_for_reti:
+	; Count cycles before attempting to trigger an interrupt
+	ld (_+2),a
+_
+	lea iy,iy+0
+	cpl
+	add a,5
+	ld (event_cycle_count),a
+	ld a,dispatch_cycles_for_ret - (dispatch_cycles_for_reti_smc+1)
+	ld (dispatch_cycles_for_reti_smc),a
+	ld (event_gb_address),de
+	exx
+	jp do_event_no_reset
 	
 do_rom_bank_jump:
 	ex af,af'
@@ -355,10 +442,152 @@ Z80Error:
 	di
 	jp.lil runtime_error
 	
+do_push_for_call_overflow:
+	; Place the call target where the cycle count resolver can identify it
+	ld (do_push_for_call_target),ix
+	call do_push_overflow
+do_push_for_call_target = $+1
+	jp 0
+	
+	  ; If the cycle count underflowed, modify event trigger logic
+	  ; to force it to recognize the count as an overflow
+do_push_overflow_underflow:
+	  ex af,af'
+	  xor a
+	  ld (trigger_event_remove_smc),a
+	  ex af,af'
+	  call mem_write_any
+	  ld a,trigger_event_no_remove - (trigger_event_remove_smc+1)
+	  ld (trigger_event_remove_smc),a
+	  jr do_push_overflow_continue
+	
+do_push_overflow:
+	ex af,af'
+	push af
+	 ld b,e	; B' can be used for safe storage, since set_gb_stack restores it
+	 ld a,d
+	 ld de,(sp_base_address_neg)
+	 add hl,de
+	 push hl
+	  ld de,-1
+	  add iy,de
+	  exx
+	  ex (sp),hl
+	  dec hl
+	  jr nc,do_push_overflow_underflow
+	  call mem_write_any
+do_push_overflow_continue:
+	  exx
+	  ld a,b
+	  exx
+	  dec hl
+	  call mem_write_any_after_read
+	  ex (sp),hl
+	  exx
+	 pop hl
+	pop af
+	pop ix
+
+; Get a literal 24-bit pointer to the Game Boy stack.
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; This routine is invoked whenever SP is set to a new value which may be outside
+; its current bank. If the bank has changed, any relevant stack routines are modified.
+;
+; Inputs:  HL = 16-bit Game Boy SP
+;          IX = return address
+;          BCDEHL' have been swapped
+; Outputs: HL' = 24-bit literal SP
+;          BCDEHL' have been unswapped
+;          SMC applied to stack operations
+set_gb_stack:
+	ex af,af'
+set_gb_stack_swapped:
+	; Get memory region, 0-7
+	; This is the same as memroutines, except $FFFF is included in region 0 because
+	; accesses would always be handled by the overflow handler
+	ld a,h
+	cp $FE
+	jr c,_
+	rrca
+	and l
+	rrca
+	cpl
+	and $40
+	jr ++_
+_
+	and $E0
+	jp m,_
+	set 5,a
+_
+curr_gb_stack_bank = $+1
+	cp 0
+	jr nz,set_gb_stack_bank
+
+set_gb_stack_bank_done:
+	; Put the new stack bound counter in B
+	or a
+	ld a,h
+	rra
+	ld a,l
+	rra
+	jr nz,_
+	; Special-case for HRAM, base the counter at $FF80
+	and $3F
+_
+	inc a
+	ld b,a
+	; Put the direct stack pointer in HL'
+sp_base_address = $+2
+	ld.lil de,0
+	add.l hl,de
+	exx
+	ex af,af'
+	jp (ix)
+
+set_gb_stack_bank:
+	di
+	jp.lil set_gb_stack_bank_helper
+
+do_pop_overflow:
+	; Advance the return address to the end of the instruction,
+	; and execute the skipped pop opcode here in case it's overwritten
+	pop de
+	ld a,(de)
+	ld (do_pop_overflow_smc),a
+	inc de
+	push de
+	call pop_overflow
+do_pop_overflow_smc = $
+	pop bc
+	ret
+
+pop_overflow:
+	ld de,(sp_base_address_neg)
+	add hl,de
+	push hl
+	 exx
+	 ex (sp),hl
+	 call mem_read_any_before_write
+	 inc hl
+	 inc iy
+	 push af
+	  call mem_read_any
+	 pop ix
+	 ld ixl,ixh
+	 ld ixh,a
+	 inc hl
+	 ex (sp),hl
+	 exx
+	pop hl
+	ex (sp),ix
+	jr set_gb_stack_swapped
+	
 	
 do_event:
 event_value = $+3
 	ld (ix),0
+do_event_no_reset:
 	push hl
 #ifdef DEBUG
 	 ld hl,event_value
@@ -461,23 +690,23 @@ trigger_interrupt:
 	   jr c,trigger_serial
 trigger_joypad:
 	   res 4,(hl)
-	   ld hl,dispatch_joypad
+	   ld hl,dispatch_joypad+1
 	   jr trigger_int_selected
 trigger_serial:
 	   res 3,(hl)
-	   ld hl,dispatch_serial
+	   ld hl,dispatch_serial+1
 	   jr trigger_int_selected
 trigger_timer:
 	   res 2,(hl)
-	   ld hl,dispatch_timer
+	   ld hl,dispatch_timer+1
 	   jr trigger_int_selected
 trigger_stat:
 	   res 1,(hl)
-	   ld hl,dispatch_stat
+	   ld hl,dispatch_stat+1
 	   jr trigger_int_selected
 trigger_vblank:
 	   res 0,(hl)
-	   ld hl,dispatch_vblank
+	   ld hl,dispatch_vblank+1
 trigger_int_selected:
 	
 	   push hl
@@ -495,7 +724,6 @@ cpu_halted = $+1
 	    di
 	    jp.lil z,dispatch_int_helper
 	    ld (cpu_halted),a
-	    ld c,a
 	    inc a
 	    sub (ix+3)
 	    lea ix,ix+6
@@ -503,81 +731,51 @@ cpu_halted = $+1
 	    jp.lil dispatch_int_helper
 
 dispatch_int_continue:
-	    call do_push_and_return
 	   pop ix
-	   add a,(ix+3)
+	   or (ix-1)
+	   jr z,decode_intcache
 dispatch_int_decoded:
-	   ld (_+2),a
-_
-	   lea iy,iy+0
-	   xor a
-	   cp iyh
-	   jr z,_
+	   add a,c
+	   exx
 	  pop bc
 	 pop de
 	pop hl
-	ex af,af'
-	jp (ix)
+	ld (_+2),a
 _
-	   inc de
-	   ld d,a
-	   ld a,ixl
-	   sub (dispatch_vblank & $FF) - $20
-	   add a,a
-	   ld e,a
-	   ld a,(ix+2)
-	   cp decode_intcache >> 8
-	   jr z,decode_intcache_from_overflow
-	   ld a,(ix+3)
-	   sub 5
-	   ld c,a
-	   ld ix,(ix+1)
-	   push ix
-	    di
-	    jp.lil schedule_event_helper
+	lea iy,iy+0
+	ld a,iyh
+	or a
+	jp nz,do_push_for_call
+	; Carry is reset
+cycle_overflow_for_rst_or_int:
+	push ix
+	 push hl
+	  push de
+	   push bc
+	    ld hl,do_push_and_return
+	    push hl
+	     ld a,(ix-1)
+	     ; Subtract 4 for RST, 5 for CALL
+	     adc a,-5
+	     ld c,a
+	     lea de,ix+(-(dispatch_rst_00+1 + $80) & $FF) - $80
+	     ld d,0
+	     sla e
+	     ld ix,(ix+1)
+	     di
+	     jp.lil schedule_event_helper
 
-dispatch_vblank:
-	jp decode_intcache
-	.db 0
-dispatch_stat:
-	jp decode_intcache
-	.db 0
-dispatch_timer:
-	jp decode_intcache
-	.db 0
-dispatch_serial:
-	jp decode_intcache
-	.db 0
-dispatch_joypad:
-	jp decode_intcache
-	.db 0
-rst_cached_targets:
-	.dl $00
-	.dl $08
-	.dl $10
-	.dl $18
-	.dl $20
-	.dl $28
-	.dl $30
-	.dl $38
-	
 decode_intcache:
-	ex af,af'
-	push hl
-	 push de
-	  push bc
+	   exx
+	   lea de,ix+(-(dispatch_rst_00+1 + $80) & $FF) - $80
 	   ld d,a
-	   ld a,ixl
-	   sub (dispatch_vblank & $FF) - $20
-	   add a,a
-	   ld e,a
-decode_intcache_from_overflow:
+	   sla e
 	   di
 	   call.il decode_intcache_helper
 	   ld (ix+1),hl
-	   ld (ix+3),a
+	   ld (ix-1),a
+	   exx
 	   jr dispatch_int_decoded
-	
 	
 lyc_counter_checker:
 lyc_counter = $+1
@@ -887,54 +1085,77 @@ _
 	ex af,af'
 	ret
 	
+do_rst_00:
+	exx
+	ld de,dispatch_rst_00
+	jr decode_rst
+do_rst_08:
+	exx
+	ld de,dispatch_rst_08
+	jr decode_rst
+do_rst_10:
+	exx
+	ld de,dispatch_rst_10
+	jr decode_rst
+do_rst_18:
+	exx
+	ld de,dispatch_rst_18
+	jr decode_rst
+do_rst_20:
+	exx
+	ld de,dispatch_rst_20
+	jr decode_rst
+do_rst_28:
+	exx
+	ld de,dispatch_rst_28
+	jr decode_rst
+do_rst_30:
+	exx
+	ld de,dispatch_rst_30
+	jr decode_rst
+do_rst_38:
+	exx
+	ld de,dispatch_rst_38
+	jr decode_rst
+	
+decode_rst:
+	di
+	jp.lil decode_rst_helper
+	
 do_rst:
 	pop ix
-	exx
 	ex af,af'
 	ld a,i
 	dec a
-	jr nz,_
-	ld.lil sp,myADLstack
-	ld sp,myz80stack-2	
-	ld a,CALL_STACK_DEPTH
+	jr z,++_
 _
 	ld i,a
 	pea ix+4
-	ld de,(ix+2)
-	di
-	jp.lil do_rst_helper
-	
-do_rst_finish:
-	ld ix,(ix)
-	push ix
-	call do_push_and_return
-	ld ix,call_stack_ret
-	ex (sp),ix
-	add a,iyl
-	jr c,++_
-_
-	ld iyl,a
-	ex af,af'
-	ei
-	jp (ix)
-_
-	inc iyh
-	jr nz,--_
-	exx
+	push bc
+	ld a,(de)
+	inc de
 	push de
-	 exx
-	 ex (sp),hl
-	 push de
-	  push bc
-	   ex de,hl
-	   dec de
-	   ld c,iyl
-	   ld iyl,a
-	   sub c
-	   sub 4
-	   ld c,a
-	   push ix
-	    jp.lil schedule_rst_event_helper
+	 ld de,(ix+2)
+	pop ix
+	add a,iyl
+	ld iyl,a
+	jr c,do_rst_maybe_overflow
+do_rst_no_overflow:
+	ld iyl,a
+	call do_push_for_call_swapped
+	jp callstack_ret
+_
+	ld sp,myz80stack-2
+	ld a,CALL_STACK_DEPTH
+	jr --_
+	
+do_rst_maybe_overflow:
+	inc iyh
+	jr nz,do_rst_no_overflow
+	; Carry is set
+	exx
+	call cycle_overflow_for_rst_or_int
+	jp callstack_ret
 	
 do_banked_call_cond:
 	pop ix
@@ -998,8 +1219,50 @@ flush_address = $+1
 	di
 	jp.lil flush_normal
 	
+dispatch_rst_00:
+	.db 0
+	jp 0
+dispatch_rst_08:
+	.db 0
+	jp 0
+dispatch_rst_10:
+	.db 0
+	jp 0
+dispatch_rst_18:
+	.db 0
+	jp 0
+dispatch_rst_20:
+	.db 0
+	jp 0
+dispatch_rst_28:
+	.db 0
+	jp 0
+dispatch_rst_30:
+	.db 0
+	jp 0
+dispatch_rst_38:
+	.db 0
+	jp 0
+dispatch_vblank:
+	.db 0
+	jp 0
+dispatch_stat:
+	.db 0
+	jp 0
+dispatch_timer:
+	.db 0
+	jp 0
+dispatch_serial:
+	.db 0
+	jp 0
+dispatch_joypad:
+	.db 0
+	jp 0
+	
 flush_mem_handler:
 	exx
+	ex af,af'
+	ld a,b
 	pop bc
 	di
 	jp.lil flush_mem
@@ -1110,14 +1373,16 @@ ophandler08:
 	  push hl
 	   exx
 	   ex (sp),hl
-	   ld de,(sp_base_address)
-	   or a
-	   sbc hl,de
+	   ld de,(sp_base_address_neg)
+	   add hl,de
+	   ld de,-1
+	   add iy,de
 	   ex de,hl
 	   lea hl,ix
+	   jr nc,ophandler08_underflow
 	   ld a,e
-	   dec iy
 	   call mem_write_any
+ophandler08_continue:
 	   inc hl
 	   ld a,d
 	   call mem_write_any_after_read
@@ -1125,7 +1390,16 @@ ophandler08:
 	 pop de
 	pop af
 	ret
-	
+	   ; If the cycle count underflowed, modify event trigger logic
+	   ; to force it to recognize the count as an overflow
+ophandler08_underflow:
+	   xor a
+	   ld (trigger_event_remove_smc),a
+	   ld a,e
+	   call mem_write_any
+	   ld a,trigger_event_no_remove - (trigger_event_remove_smc+1)
+	   ld (trigger_event_remove_smc),a
+	   jr ophandler08_continue
 	
 ophandler27:
 	exx
@@ -1191,8 +1465,48 @@ ophandler31:
 	exx
 	ld hl,(ix)
 	lea ix,ix+2
-	di
-	jp.lil set_gb_stack
+	jp set_gb_stack
+	
+ophandler33:
+	ex af,af'
+	exx
+	inc.l hl
+	bit 0,l
+ophandler33_jr_smc = $
+	jr nz,++_
+	inc b
+	djnz _
+	ld a,h
+ophandler33_bound_smc = $+1
+	cp 0
+	jp m,_
+	ld de,(sp_base_address_neg)
+	add hl,de
+	pop ix
+	jp set_gb_stack_swapped
+_
+	inc b
+_
+	exx
+	ex af,af'
+	ret
+	
+ophandler3B:
+	ex af,af'
+	exx
+	bit 0,l
+	dec.l hl
+ophandler3B_jr_smc = $
+	jr nz,-_
+	djnz -_
+	ld a,h
+ophandler3B_bound_smc = $+1
+	cp 0
+	jp p,-_
+	ld de,(sp_base_address_neg)
+	add hl,de
+	pop ix
+	jp set_gb_stack_swapped
 	
 ophandler34:
 	ex af,af'
@@ -1222,18 +1536,16 @@ ophandler36:
 	ret
 	
 ophandler39:
-	ex af,af'
 	push de
 	 exx
 	 push hl
 	  exx
 	  ex (sp),hl
-	  ld de,(sp_base_address)
-	  or a
-	  sbc hl,de
+sp_base_address_neg = $+1
+	  ld de,0
+	  add hl,de
 	  ex de,hl
 	 pop hl
-	 ex af,af'
 	 add hl,de
 	pop de
 	ret
@@ -1400,7 +1712,8 @@ trigger_event_pushed:
 	 jr z,trigger_event_already_triggered
 	 ; If the counter already overflowed, remove any already-scheduled event
 	 cp iyh
-	 jr nz,_
+trigger_event_remove_smc = $+1
+	 jr nz,trigger_event_no_remove
 #ifdef DEBUG
 	 ld a,(event_address+1)
 	 cp event_value >> 8
@@ -1411,17 +1724,20 @@ event_address = $+1
 	 ld (event_value),a
 	 xor a
 #ifdef DEBUG
-	 jr ++_
-_
+	 jr _
+#endif
+trigger_event_no_remove:
+#ifdef DEBUG
 	 ld a,(event_address+1)
 	 sub event_value >> 8
 	 jr nz,$
+_
 #endif
-_	 
 	 ld c,(hl)
 	 ld iyh,a
-	 ld iyl,c
 	 sub c
+	 inc c	; New cycle count is relative to the memory access
+	 ld iyl,c
 	 ld (event_cycle_count),a
 	 dec hl
 	 dec hl
@@ -1433,7 +1749,7 @@ _
 	 ld (event_value),a
 	 ld (hl),RST_EVENT
 	 ld hl,(div_counter)
-	 add hl,de
+	 add hl,de	; Reset div counter to the time of memory access
 	 ld (div_counter),hl
 trigger_event_already_triggered:
 	pop.l hl
@@ -1452,9 +1768,8 @@ ophandlerE8:
 	pop ix
 	ld a,(ix)
 	inc ix
-	ld de,(sp_base_address)
-	or a
-	sbc hl,de
+	ld de,(sp_base_address_neg)
+	add hl,de
 	ld e,a
 	rla
 	sbc a,a
@@ -1464,8 +1779,7 @@ ophandlerE8:
 	add a,e
 	call z,reset_z_flag_only
 	ld a,c
-	di
-	jp.lil set_gb_stack
+	jp set_gb_stack
 	
 ophandlerE9:
 	ex af,af'
@@ -1501,17 +1815,63 @@ _
 	
 ophandlerF1:
 	exx
+	ld d,flags_lut >> 8
+	inc b
+ophandlerF1_jump_smc_1 = $+1
+	djnz ophandlerF1_pop_z80
+	ld a,h
+do_pop_bound_smc_3 = $+1
+	cp 0
+ophandlerF1_jump_smc_2 = $+1
+	jp m,ophandlerF1_pop_z80
+ophandlerF1_overflow:
+	call pop_overflow
+	exx
+	pop de
+ophandlerF1_continue:
+	ld c,d
+	ld d,flags_lut >> 8
+	res 3,e
+	ld a,(de)
+	ld e,a
+	ld d,c
+	push de
+	 exx
+	pop af
+	ret
+	
+ophandlerF1_pop_ports:
+	call pop_ports
+	jr ophandlerF1_continue
+	
+ophandlerF1_pop_adl:
+	inc b
 	ld.l e,(hl)
 	inc.l hl
-	ld d,flags_lut >> 8
 	res 3,e
 	ld a,(de)
 	ld e,a
 	ld.l d,(hl)
 	inc.l hl
 	push de
+	 exx
 	pop af
-	exx
+	ret
+	
+ophandlerF1_pop_z80:
+	bit 6,b
+	jr nz,ophandlerF1_overflow
+	inc b
+	ld e,(hl)
+	inc hl
+	res 3,e
+	ld a,(de)
+	ld e,a
+	ld d,(hl)
+	inc hl
+	push de
+	 exx
+	pop af
 	ret
 	
 ophandlerF2:
@@ -1533,20 +1893,190 @@ ophandlerF3:
 ophandlerF5:
 	exx
 	ld c,a
-	dec.l hl
-do_push_smc_5 = $+1
-	ld.l (hl),a
 	push af
 	pop de
 	ld d,flags_lut >> 8
 	set 3,e
 	ld a,(de)
-	dec.l hl
-do_push_smc_6 = $+1
-	ld.l (hl),a
+	ld d,c
+	ld e,a
 	ld a,c
+do_push_jump_smc_1 = $+1
+	djnz do_push_ports
+	jr do_push_check_overflow
+	
+ophandlerE5:
+	push hl
+	 exx
+	pop de
+do_push_jump_smc_2 = $+1
+	djnz do_push_ports
+do_push_check_overflow:
+	ex af,af'
+	ld a,h
+do_push_bound_smc_1 = $+1
+	cp 0
+	jp m,do_push_overflow
+	ex af,af'
+do_push_jump_smc_3 = $+1
+	jr do_push_ports
+	
+ophandlerD5:
+	push de
+	 exx
+	pop de
+do_push_jump_smc_4 = $+1
+	djnz do_push_ports
+	jr do_push_check_overflow
+	
+ophandlerC5:
+	push bc
+	 exx
+	pop de
+do_push_jump_smc_5 = $+1
+	djnz do_push_ports
+	jr do_push_check_overflow
+	
+do_push_adl:
+	dec.l hl
+	ld.l (hl),d
+	dec.l hl
+	ld.l (hl),e
 	exx
 	ret
+	
+do_push_z80:
+	dec hl
+	dec hl
+	ld (hl),de
+	exx
+	ret
+	
+do_push_for_call_cart:
+	push ix
+do_push_cart:
+	dec.l hl
+	push hl
+	pop ix
+	dec.l hl
+	push af
+	 ld a,e
+	 push af
+	  ld a,d
+	  ld de,(sp_base_address_neg)
+	  add ix,de
+	  exx
+	  pea ix-1
+	   call mem_write_cart_always
+	  pop ix
+	 pop af
+	 call mem_write_cart_always
+	pop af
+	ret
+	
+do_push_for_call_vram:
+	push ix
+do_push_vram:
+	dec.l hl
+	push hl
+	pop ix
+	dec.l hl
+	push af
+	 ld a,e
+	 push af
+	  ld a,d
+	  ld de,(sp_base_address_neg)
+	  add ix,de
+	  exx
+	  pea ix-1
+	   call mem_write_vram_always
+	  pop ix
+	 pop af
+	 call mem_write_vram_always
+	pop af
+	ret
+	
+do_push_ports:
+	dec hl
+	push hl
+	pop ix
+	push af
+	 ld a,e
+	 push af
+	  ld a,d
+	  dec hl
+	  push hl
+	   ld de,-1
+	   add iy,de
+	   exx
+	   jr nc,push_ports_underflow
+	   call mem_write_ports
+push_ports_continue:
+	  pop ix
+	 pop af
+	 inc iy
+	 call mem_write_ports
+	pop af
+	ret
+	
+do_push_and_return:
+	exx
+do_push_and_return_jump_smc = $+1
+	djnz do_push_adl
+	pop ix
+	jr do_push_for_call_check_overflow
+	
+do_push_for_call:
+	exx
+do_push_for_call_swapped:
+	ex af,af'
+do_push_for_call_jump_smc_1 = $+1
+	djnz do_push_for_call_adl
+do_push_for_call_check_overflow:
+	ex af,af'
+	ld a,h
+do_push_bound_smc_2 = $+1
+	cp 0
+	jp m,do_push_for_call_overflow
+	ex af,af'
+do_push_for_call_jump_smc_2 = $+1
+	jr do_push_for_call_adl
+	
+do_push_and_return_ports:
+	pop ix
+do_push_for_call_ports:
+	; Place the call target where the cycle count resolver can identify it
+	ld (do_push_for_call_ports_target),ix
+	call do_push_ports
+do_push_for_call_ports_target = $+1
+	jp 0
+	
+	   ; If the cycle count underflowed, modify event trigger logic
+	   ; to force it to recognize the count as an overflow
+push_ports_underflow:
+	   ex af,af'
+	   xor a
+	   ld (trigger_event_remove_smc),a
+	   ex af,af'
+	   call mem_write_ports
+	   ld a,trigger_event_no_remove - (trigger_event_remove_smc+1)
+	   ld (trigger_event_remove_smc),a
+	   jr push_ports_continue
+	
+do_push_for_call_z80:
+	dec hl
+	dec hl
+	ld (hl),de
+	exx
+	jp (ix)
+	
+do_push_for_call_adl:
+	dec.l hl
+	ld.l (hl),d
+	dec.l hl
+	ld.l (hl),e
+	exx
+	jp (ix)
 	
 ophandlerF8:
 	ld ixl,a
@@ -1559,9 +2089,8 @@ ophandlerF8:
 	 exx
 	pop hl
 	push de
-	 ld de,(sp_base_address)
-	 or a
-	 sbc hl,de
+	 ld de,(sp_base_address_neg)
+	 add hl,de
 	 ld e,a
 	 rla
 	 sbc a,a
@@ -1589,45 +2118,44 @@ ophandlerF9:
 	push hl
 	 exx
 	pop hl
-	di
-	jp.lil set_gb_stack
+	jp set_gb_stack
 	
 ophandlerRETI:
 	ex af,af'
 	ld a,$A6 ;AND (HL)
 	ld (intstate_smc_1),a
 	ld (intstate_smc_2),a
+	ld a,dispatch_cycles_for_reti - (dispatch_cycles_for_reti_smc+1)
+	ld (dispatch_cycles_for_reti_smc),a
 	exx
-	push bc
-	 di
-	 call.il pop_and_lookup_code_cached
-	 ei
-	pop bc
-	; Count cycles before attempting to trigger an interrupt
-	add a,4
-	ld (_+2),a
-_
-	lea iy,iy+0
-	cpl
-	add a,5
-	ld (event_cycle_count),a
-	ld (event_gb_address),de
-	exx
-	push hl
-	 jp do_event_pushed
+	jp pop_and_lookup_code_cached
 	
 ophandlerRET:
 	di
 	dec sp
+	ei
 	dec sp
 	ex af,af'
 	exx
-	push bc
-	 call.il pop_and_lookup_code_cached
-	 ei
-	pop bc
-	add a,4
-	jp dispatch_cycles_for_ret
+	jp pop_and_lookup_code_cached
+	
+pop_ports:
+	inc b
+	push hl
+	pop ix
+	inc hl
+	push hl
+	 inc hl
+	 exx
+	 dec iy
+	 call mem_read_ports_swapped
+	 ex (sp),ix
+	 inc iy
+	 call mem_read_ports
+	 exx
+	pop de
+	ld d,ixl
+	ret
 	
 write_vram_handler:
 	pop ix
@@ -1832,6 +2360,7 @@ readLY_continue:
 	;IX=GB address, reads into IXL
 mem_read_ports:
 	ex af,af'
+mem_read_ports_swapped:
 	ld a,ixh
 	cp $FE
 	jr c,mem_read_bail
@@ -1896,29 +2425,16 @@ _
 	add.l ix,de
 	ld.l a,(ix)
 	ex de,hl
-	ret
-_
-	add a,a
-	jr c,_
-	ld.lil ix,vram_base
-	add.l ix,de
-	ld.l a,(ix)
+	ret p
 	ex de,hl
-	ret
+	ld.lil ix,wram_base-$2000
+	jr mem_read_any_finish
 	
 mem_read_bail:
 	pop ix
 mem_write_bail_a:
 	lea ix,ix-8
 	jp (ix)
-	
-_
-	ld.lil ix,(cram_bank_base)
-mem_read_any_rtc_smc = $+2
-	add.l ix,de
-	ld.l a,(ix)
-	ex de,hl
-	ret
 	
 readDIV:
 	exx
@@ -1933,6 +2449,22 @@ readDIV:
 	pop.l hl
 	exx
 	ex af,af'
+	ret
+	
+_
+	jp m,_
+	ld.lil ix,vram_base
+mem_read_any_finish:
+	add.l ix,de
+	ld.l a,(ix)
+	ex de,hl
+	ret
+_
+	ld.lil ix,(cram_bank_base)
+mem_read_any_rtc_smc = $+2
+	add.l ix,de
+	ld.l a,(ix)
+	ex de,hl
 	ret
 	
 mem_read_any_ports:
@@ -1950,11 +2482,6 @@ _
 	ld a,(hl)
 	ret
 	
-mem_write_any_cart:
-	push hl
-	pop ix
-	jp mem_write_cart_swap
-	
 	;HL=GB address, IXL=data, destroys A,AF'
 mem_write_any_after_read_ixl:
 	ld a,ixl
@@ -1968,24 +2495,17 @@ mem_write_any:
 	jr nc,mem_write_any_ports
 	add a,a
 	jr nc,mem_write_any_cart
-	sub $40
-	jr c,mem_write_any_vram
+	add a,a
+	jr nc,_
 	ex de,hl
-	sub $40
-	jr c,mem_write_any_cram
+	add a,a
+	jr c,mem_write_any_wram_mirror
+mem_write_any_wram:
 	ld.lil ix,wram_base
+mem_write_any_finish:
 	add.l ix,de
 	ex de,hl
 	ex af,af'
-	ld.l (ix),a
-	ret
-mem_write_any_cram:
-	ld.lil ix,(cram_bank_base)
-mem_write_any_cram_smc_1 = $+2
-	add.l ix,de
-	ex de,hl
-	ex af,af'
-mem_write_any_cram_smc_2 = $+3
 	ld.l (ix),a
 	ret
 	
@@ -1999,18 +2519,27 @@ mem_write_bail:
 	ex af,af'
 	jp (ix)
 	
-	;IX=GB address, A=data, preserves AF, destroys AF'
-mem_write_vram:
+_
+	jp p,mem_write_any_vram
+mem_write_any_cram:
+	ex de,hl
+	ld.lil ix,(cram_bank_base)
+mem_write_any_cram_smc_1 = $+2
+	add.l ix,de
+	ex de,hl
 	ex af,af'
-	ld a,ixh
-	sub $20
-	jp po,mem_write_bail
-mem_write_vram_swap:
-	ex af,af'
-	;IX=GB address, A=data
-mem_write_vram_always:
-	di
-	jp.lil write_vram_and_expand
+mem_write_any_cram_smc_2 = $+3
+	ld.l (ix),a
+	ret
+	
+mem_write_any_cart:
+	push hl
+	pop ix
+	jr mem_write_cart_swapped
+	
+mem_write_any_wram_mirror:
+	ld.lil ix,wram_base-$2000
+	jr mem_write_any_finish
 	
 mem_write_any_ports:
 	push hl
@@ -2053,16 +2582,29 @@ mem_write_ports_swap:
 	ret
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
+mem_write_vram:
+	ex af,af'
+	ld a,ixh
+	sub $20
+	jp po,mem_write_bail
+mem_write_vram_swap:
+	ex af,af'
+	;IX=GB address, A=data
+mem_write_vram_always:
+	di
+	jp.lil write_vram_and_expand
+	
+	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart:
 	ex af,af'
 	ld a,ixh
 	rla
 	jp c,mem_write_bail
-mem_write_cart_swap:
 	ex af,af'
 	;IX=GB address, A=data, preserves AF, destroys AF'
 mem_write_cart_always:
 	ex af,af'
+mem_write_cart_swapped:
 	ld a,ixh
 	sub $20
 	jr c,mbc_0000
@@ -2138,18 +2680,9 @@ mbc_ram_any:
 	 add.l ix,bc
 	 ld.lil (cram_bank_base),ix
 	 ; See if SP is pointing into the swapped bank
-	 exx
-	 ld de,(sp_base_address)
-	 ld a,l
-	 sub e
-	 ld e,a
-	 ld a,h
-	 sbc a,d
-	 ld d,a
-	 sub $A0
-	 cp $20
-	 jr c,mbc_fix_sp
-	 exx
+	 ld a,(curr_gb_stack_bank)
+	 cp 5 << 5
+	 jr z,mbc_fix_sp
 mbc_4000_denied:
 	pop bc
 	ex af,af'
@@ -2190,27 +2723,27 @@ curr_rom_bank = $+1
 	 ld.l ix,(ix)
 	 ld.lil (rom_bank_base),ix
 	 ; See if SP is pointing into the swapped bank
-	 exx
-	 ld de,(sp_base_address)
-	 ld a,l
-	 sub e
-	 ld e,a
-	 ld a,h
-	 sbc a,d
-	 cp $C0
-	 jp po,mbc_no_fix_sp
-	 ; If so, update it
-	 ld d,a
+	 ld a,(curr_gb_stack_bank)
+	 cp 3 << 5
+	 jr nz,mbc_no_fix_sp
 mbc_fix_sp:
-	 lea.l hl,ix
-	 ld.lil (z80codebase+sp_base_address),hl
-	 add.l hl,de
-mbc_no_fix_sp:
+	 ; If so, update it
 	 exx
+	 ld de,(sp_base_address_neg)
+	 add hl,de
+	 push hl
+	  di
+	  call.il set_gb_stack_bounds_helper
+	  ei
+	 pop hl
+	 add.l hl,de
+	 exx
+mbc_no_fix_sp:
 mbc_2000_denied:
 	pop bc
 	ex af,af'
 	ret
+	
 	
 get_mem_cycle_offset_swap_push:
 	exx
@@ -2235,36 +2768,135 @@ get_mem_cycle_offset:
 	ld de,myz80stack - 2 - ((CALL_STACK_DEPTH + 1) * CALL_STACK_ENTRY_SIZE) - 2
 	add hl,de
 	ld ix,(hl)
+	; Assume the JIT code was a routine call; get its target address
 	ld hl,(ix-2)
+	; Check if the target begins with a JP, RST 00h, or RST 10h instruction.
+	; This should only be the case when the target is a cycle cache trampoline.
+	; Note that to avoid false positives, no routine called directly from JIT
+	; should start with JP nnnn; OUT (nn),A; RST 00h; or RST 10h.
 	ld a,(hl)
 	xor $C3
-	and $FB
+	and $EB
 	jr nz,resolve_get_mem_cycle_offset_call
+	; We probably have a trampoline target; however, we must check whether our
+	; assumption that the JIT code was a routine call is accurate. If the first
+	; byte of the JIT code is a NOP, then we actually have a bitwise prefix op.
 	cp (ix-3)
 	jr z,resolve_mem_cycle_offset_prefix
+	; Get a pointer to the cached cycle offset, which is right before the target
 	dec hl
 get_mem_cycle_offset_continue:
+	; Carry is set, calculate the cycle count in DE.
+	; The extra one cycle is subtracted because the memory access occurs during
+	; the last cycle of the instruction.
 	ld a,iyl
-	sub (hl)
+	sbc a,(hl)
 	ld e,a
 	ld d,iyh
 	ret nc
 	dec d
 	ret
-
+	
 	
 resolve_get_mem_cycle_offset_call:
+	; Check if the call was made from a JIT address or not
+	ld a,ixh
+	cp jit_start >> 8
+	jr c,resolve_mem_cycle_offset_special
+	; Check if the JIT code corresponds to a prefixed bitwise operation, which begins with NOP
 	xor a
 	cp (ix-3)
 	jr z,resolve_mem_cycle_offset_prefix
+	; If not, the JIT code is a routine call, so we emit a jump to the original call target
 	ld c,h
 	ld h,l
 	ld l,$C3
 	.db $CA	;JP Z,
 resolve_mem_cycle_offset_prefix:
+	; For a prefixed bitwise operation, we emit the two-byte operation followed by a RET
 	ld c,$C9
 	di
 	jp.lil resolve_mem_cycle_offset_helper
+
+resolve_mem_cycle_offset_special:
+	; Check the opcode of the non-JIT target
+	ld a,(ix)
+	cp $C3
+	jr nz,resolve_mem_cycle_offset_ret
+	; This is a push related to an RST, interrupt, or CALL,
+	; so retrieve the cycle info and actual target address,
+	; and infer the Game Boy address
+	ld ix,(ix+1)
+	ld a,ixh
+	cp jit_start >> 8
+	jr nc,resolve_mem_cycle_offset_for_call
+	ld hl,mem_cycle_scratch
+	ld a,ixl
+	sub (dispatch_rst_00 + 1) & $FF
+	; If this carries, the target should be the flush handler.
+	add a,a
+	jr c,resolve_mem_cycle_offset_flush
+	ld (hl),a
+	inc hl
+	ld (hl),0
+	inc hl
+	; Subtract 4 cycles for RST, or 5 for interrupt
+	cp $40
+	ld a,(ix-1)
+	adc a,-5	; Sets carry flag
+	ASSERT_C
+	ld (hl),a
+	ld ix,(ix+1)
+	jr get_mem_cycle_offset_continue
+
+resolve_mem_cycle_offset_ret:
+	; The second read of an unconditional RET is always two cycles after
+	; the end of a JIT sub-block. A conditional RET adds an extra cycle,
+	; but this is already accounted by pre-incrementing IY.
+	; Additionally, IX and HL returns are never used by reads.
+	lea de,iy+2
+	ret
+	
+resolve_mem_cycle_offset_flush:
+	; The target should be the flush handler.
+#ifdef DEBUG
+	ld a,ixh
+	cp flush_handler >> 8
+	jr nz,$
+	ld a,ixl
+	cp flush_handler & $FF
+	jr nz,$
+#endif
+	; Get the Game Boy address currently in the handler.
+	ld de,(ix+2)
+	ld (hl),de
+	inc hl
+	inc hl
+	; Cycle count is always zero.
+	ld (hl),0
+	; Set the JIT address to a harmless location in case an event is scheduled.
+	ld ix,event_value
+	jr get_mem_cycle_offset_continue
+
+resolve_mem_cycle_offset_for_call:
+	; Get the end of the CALL instruction from the call stack
+	ld hl,i
+	ld h,CALL_STACK_ENTRY_SIZE
+	inc l
+	mlt hl
+	add hl,de
+	ld hl,(hl)
+	; Get the Game Boy return address to use for extracting the CALL target
+	dec hl
+	dec hl
+	ld de,(hl)
+	; Get the cycle count
+	dec hl
+	dec hl
+	dec hl
+	ld a,(hl)
+	di
+	jp.lil resolve_mem_cycle_offset_for_call_helper
 
 mem_cycle_scratch:
 	.dw 0
@@ -2778,8 +3410,6 @@ audio_port_masks:
 keys:
 	.dw $FFFF
 	
-sp_base_address:
-	.dl 0
 memroutine_next:
 	.dl 0
 render_save_sps:

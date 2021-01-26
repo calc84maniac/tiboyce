@@ -1,6 +1,5 @@
 #define CALL_STACK_DEPTH 32
-#define CALL_STACK_ENTRY_SIZE 4
-#define MEM_CYCLE_LUT_SIZE 8*3
+#define CALL_STACK_ENTRY_SIZE 6
 #define INT_RETURN_STACK_SIZE 5*6
 
 #define ERROR_CATCHER (Z80Error << 8) | $C3
@@ -912,22 +911,11 @@ saveSP:
 ; The pointer to the skin file data (or 0 if it doesn't exist)
 skin_file_ptr:
 	.dl 0
-; The start address of Game Boy ROM page 0.
-rom_start:
-	.dl 0
-; The address of the currently banked ROM page, minus $4000.
-; Can be indexed directly by the Game Boy address.
-rom_bank_base:
-	.dl 0
 ; The size of Game Boy cartridge RAM (plus 48 for RTC carts)
 cram_size:
 	.dl 0
 ; The start address of Game Boy cartridge RAM.
 cram_start:
-	.dl 0
-; The address of the currently banked RAM page, minus $A000.
-; Can be indexed directly by the Game Boy address.
-cram_bank_base:
 	.dl 0
 ; The cartridge's Memory Bank Controller type.
 mbc:
