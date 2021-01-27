@@ -82,14 +82,21 @@ do_pop_z80:
 	jp (ix)
 	
 do_pop_adl:
-	inc b
 	ld.l ix,(hl)
+_
+	inc b
 	inc.l hl
 	inc.l hl
 	ex (sp),ix
 	exx
 	ex af,af'
 	jp (ix)
+	
+do_pop_rtc:
+	ld ix,(sp_base_address)
+	ld ix,(ix)
+	ld ixh,ixl
+	jr -_
 	
 do_pop_ports:
 	; Advance the return address to the end of the instruction,
@@ -523,10 +530,11 @@ _
 curr_gb_stack_bank = $+1
 	cp 0
 	jr nz,set_gb_stack_bank
-
-set_gb_stack_bank_done:
-	; Put the new stack bound counter in B
+sp_base_address = $+2
+	ld.lil bc,0
 	or a
+set_gb_stack_bank_done:
+	; Calculate the new stack bound counter
 	ld a,h
 	rra
 	ld a,l
@@ -536,18 +544,23 @@ set_gb_stack_bank_done:
 	and $3F
 _
 	inc a
-	ld b,a
 	; Put the direct stack pointer in HL'
-sp_base_address = $+2
-	ld.lil de,0
-	add.l hl,de
+	add.l hl,bc
+	; Put the new stack bound counter in B
+	ld b,a
 	exx
 	ex af,af'
 	jp (ix)
 
 set_gb_stack_bank:
-	di
-	jp.lil set_gb_stack_bank_helper
+	ld (curr_gb_stack_bank),a
+	push ix
+	 di
+	 call.il set_gb_stack_bounds_helper
+	 call.il set_gb_stack_bank_helper
+	 ei
+	pop ix
+	jr set_gb_stack_bank_done
 
 do_pop_overflow:
 	; Advance the return address to the end of the instruction,
@@ -1830,6 +1843,7 @@ ophandlerF1_overflow:
 	pop de
 ophandlerF1_continue:
 	ld c,d
+ophandlerF1_rtc_continue:
 	ld d,flags_lut >> 8
 	res 3,e
 	ld a,(de)
@@ -1843,6 +1857,15 @@ ophandlerF1_continue:
 ophandlerF1_pop_ports:
 	call pop_ports
 	jr ophandlerF1_continue
+	
+ophandlerF1_pop_rtc:
+	inc b
+	ld ix,(sp_base_address)
+	ld e,(ix)
+	ld c,e
+	inc.l hl
+	inc.l hl
+	jr ophandlerF1_rtc_continue
 	
 ophandlerF1_pop_adl:
 	inc b
@@ -1888,6 +1911,14 @@ ophandlerF3:
 	ld (intstate_smc_1),a
 	ld (intstate_smc_2),a
 	ex af,af'
+	ret
+	
+_do_push_rtc:
+	ld ix,(sp_base_address)
+	ld (ix+5),e
+	dec.l hl
+	dec.l hl
+	exx
 	ret
 	
 ophandlerF5:
@@ -1951,6 +1982,11 @@ do_push_z80:
 	ld (hl),de
 	exx
 	ret
+
+do_push_for_call_rtc:
+	push ix
+do_push_rtc:
+	jr _do_push_rtc
 	
 do_push_for_call_cart:
 	push ix
@@ -2040,7 +2076,7 @@ do_push_bound_smc_2 = $+1
 	jp m,do_push_for_call_overflow
 	ex af,af'
 do_push_for_call_jump_smc_2 = $+1
-	jr do_push_for_call_adl
+	jr do_push_for_call_rtc
 	
 do_push_and_return_ports:
 	pop ix
@@ -2729,14 +2765,15 @@ curr_rom_bank = $+1
 mbc_fix_sp:
 	 ; If so, update it
 	 exx
-	 ld de,(sp_base_address_neg)
-	 add hl,de
-	 push hl
+	 push bc
+	  ld bc,(sp_base_address_neg)
+	  add hl,bc
 	  di
 	  call.il set_gb_stack_bounds_helper
 	  ei
-	 pop hl
-	 add.l hl,de
+	  ex de,hl
+	  add.l hl,bc
+	 pop bc
 	 exx
 mbc_no_fix_sp:
 mbc_2000_denied:

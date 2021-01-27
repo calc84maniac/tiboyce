@@ -2161,7 +2161,24 @@ mem_write_port_handler_table:
 	.db writeWXhandler - mem_write_port_handler_base
 mem_write_port_handler_table_end:
 	
-	.block (128-$)&255
+	.block (128-11-$)&255
+; Information for stack jump targets when RTC is mapped
+; The base address and bound information are omitted,
+; those are taken from the main CRAM stack info
+	; push jump targets
+	.db do_push_rtc - (do_push_jump_smc_1 + 1)
+	.db do_push_for_call_rtc - (do_push_for_call_jump_smc_1 + 1)
+	; pop jump targets
+	.db do_pop_rtc - (do_pop_jump_smc_1 + 1)
+	.db do_pop_for_ret_overflow - (do_pop_for_ret_jump_smc_1 + 1)
+	.db ophandlerF1_pop_rtc - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop overflow check
+	jr $+(callstack_pop_save - callstack_pop_check_overflow_smc)
+	nop
+	nop
+	nop
+	nop
+
 ; A table of information for stack memory areas
 stack_bank_info_table:
 	.dl 0	;$ff80-$ffff

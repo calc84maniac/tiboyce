@@ -1,77 +1,19 @@
-set_gb_stack_bank_helper:
-	push ix
-	 push hl
-	  ld c,a
-	  ld (z80codebase+curr_gb_stack_bank),a
-	  call.il set_gb_stack_bounds_helper
-	  ; Set callstack memory access prefixes
-	  ld a,c
-	  or a	; For high RAM, use NOP as the prefix
-	  jr z,_
-	  ld a,$49	; Otherwise, use .lis
-_
-	  ld (z80codebase+callstack_pop_compare_smc_1),a
-	  ld (z80codebase+callstack_pop_compare_smc_2),a
-	  ; Set push jump offsets
-	  ld hl,(ix+5)
-	  ld a,l
-	  ld (z80codebase+do_push_jump_smc_1),a
-	  sub do_push_jump_smc_2 - do_push_jump_smc_1
-	  ld (z80codebase+do_push_jump_smc_2),a
-	  sub do_push_jump_smc_3 - do_push_jump_smc_2
-	  ld (z80codebase+do_push_jump_smc_3),a
-	  sub do_push_jump_smc_4 - do_push_jump_smc_3
-	  ld (z80codebase+do_push_jump_smc_4),a
-	  sub do_push_jump_smc_5 - do_push_jump_smc_4
-	  ld (z80codebase+do_push_jump_smc_5),a
-	  sub do_push_and_return_jump_smc - do_push_jump_smc_5
-	  ; Override offset for CALL to special-case return value
-	  cp do_push_ports - (do_push_and_return_jump_smc+1)
-	  jr nz,_
-	  ld a,do_push_and_return_ports - (do_push_and_return_jump_smc+1)
-_
-	  ld (z80codebase+do_push_and_return_jump_smc),a
-	  ld a,h
-	  ld (z80codebase+do_push_for_call_jump_smc_1),a
-	  sub do_push_for_call_jump_smc_2 - do_push_for_call_jump_smc_1
-	  ld (z80codebase+do_push_for_call_jump_smc_2),a
-	  ; Set pop jump offsets
-	  ld hl,(ix+7)
-	  ld a,l
-	  ld (z80codebase+do_pop_jump_smc_1),a
-	  sub do_pop_jump_smc_2 - do_pop_jump_smc_1
-	  ld (z80codebase+do_pop_jump_smc_2),a
-	  ld a,h
-	  ld (z80codebase+do_pop_for_ret_jump_smc_1),a
-	  sub do_pop_for_ret_jump_smc_2 - do_pop_for_ret_jump_smc_1
-	  ld (z80codebase+do_pop_for_ret_jump_smc_2),a
-	  ld a,(ix+9)
-	  ld (z80codebase+ophandlerF1_jump_smc_1),a
-	  add a,(ophandlerF1_jump_smc_1 + 1) & $FF
-	  ld l,a
-	  adc a,(ophandlerF1_jump_smc_1 + 1) >> 8
-	  sub l
-	  ld h,a
-	  ld.sis (ophandlerF1_jump_smc_2),hl
-	  ; Copy callstack pop overflow check
-	  ld a,c
-	  lea hl,ix+10
-	  ld de,z80codebase+callstack_pop_check_overflow_smc
-	  ld bc,6
-	  ldir
-	 pop hl
-	pop ix
-	ei
-	jp.sis set_gb_stack_bank_done
-
+; Sets the stack base address and boundary values for the current bank
+;
+; Inputs:  A = stack bank identifier
+; Outputs: IX = stack info pointer for the specified bank
+;          BC = stack base address
+;          DE = old value of HL
+; Destroys: AF, HL
 set_gb_stack_bounds_helper:
+	ex de,hl
 	ld ix,stack_bank_info_table
 	scf
 	rra
 	ld ixl,a
-	; Get the bank base in DE
-	ld de,(ix)
-	ld (z80codebase+sp_base_address),de
+	; Get the bank base in BC
+	ld bc,(ix)
+	ld (z80codebase+sp_base_address),bc
 	; Adjust inc/dec sp handlers based on the address alignment
 	ld a,e
 	and 1
@@ -83,30 +25,108 @@ set_gb_stack_bounds_helper:
 	ld (z80codebase+ophandler3B_jr_smc),a
 	; Calculate the negative of the bank base
 	sbc hl,hl
-	sbc hl,de
+	sbc hl,bc
 	ld.sis (sp_base_address_neg),hl
 	; Get the MSBs of the boundaries for the bank
 	ld hl,(ix+3)
 	; Lower boundary triggers when pushing with SP <= lower_bound+1
-	inc de
-	ld a,d
+	inc bc
+	ld a,b
 	add a,l
 	ld (z80codebase+do_push_bound_smc_1),a
 	ld (z80codebase+do_push_bound_smc_2),a
 	ld (z80codebase+ophandler3B_bound_smc),a
 	; Upper boundary triggers when popping with SP >= upper_bound-2
-	dec de
-	dec de
-	dec de
-	ld a,d
+	dec bc
+	dec bc
+	dec bc
+	ld a,b
 	add a,h
 	ld (z80codebase+do_pop_bound_smc_1),a
 	ld (z80codebase+do_pop_bound_smc_2),a
 	ld (z80codebase+do_pop_bound_smc_3),a
 	ld (z80codebase+do_pop_bound_smc_4),a
 	ld (z80codebase+ophandler33_bound_smc),a
-	inc de
-	inc de
+	inc bc
+	inc bc
+	ret.l
+
+; Sets the current stack access routines for the current bank.
+;
+; Inputs:  IX = stack info pointer for the specified region
+; Outputs: HL = old value of DE
+;          Z if the region is HRAM, else NZ
+; Destroys: AF, DE, IX
+set_gb_stack_bank_helper:
+	; Special case for RTC when stack points to CRAM 
+	ld a,ixl
+	cp cram_bank_base & $FF
+	jr nz,_
+	ld a,(ix+2)
+	cp z80codebase >> 16
+; Inputs: IX = cram_bank_base
+;         Z if setting RTC routines, NZ if setting CRAM routines
+set_gb_stack_cram_bank_helper:
+	jr nz,++_
+	ld ixl,(stack_bank_info_table - $10) & $FF
+_
+	; Set callstack memory access prefixes
+	add a,a	; For high RAM, use NOP as the prefix
+	jr z,++_
+_
+	ld a,$49	; Otherwise, use .lis
+_
+	ld (z80codebase+callstack_pop_compare_smc_1),a
+	ld (z80codebase+callstack_pop_compare_smc_2),a
+	; Set push jump offsets
+	ld hl,(ix+5)
+	ld a,l
+	ld (z80codebase+do_push_jump_smc_1),a
+	sub do_push_jump_smc_2 - do_push_jump_smc_1
+	ld (z80codebase+do_push_jump_smc_2),a
+	sub do_push_jump_smc_3 - do_push_jump_smc_2
+	ld (z80codebase+do_push_jump_smc_3),a
+	sub do_push_jump_smc_4 - do_push_jump_smc_3
+	ld (z80codebase+do_push_jump_smc_4),a
+	sub do_push_jump_smc_5 - do_push_jump_smc_4
+	ld (z80codebase+do_push_jump_smc_5),a
+	sub do_push_and_return_jump_smc - do_push_jump_smc_5
+	; Override offset for CALL to special-case return value
+	cp do_push_ports - (do_push_and_return_jump_smc+1)
+	jr nz,_
+	ld a,do_push_and_return_ports - (do_push_and_return_jump_smc+1)
+_
+	ld (z80codebase+do_push_and_return_jump_smc),a
+	ld a,h
+	ld (z80codebase+do_push_for_call_jump_smc_1),a
+	sub do_push_for_call_jump_smc_2 - do_push_for_call_jump_smc_1
+	ld (z80codebase+do_push_for_call_jump_smc_2),a
+	; Set pop jump offsets
+	ld hl,(ix+7)
+	ld a,l
+	ld (z80codebase+do_pop_jump_smc_1),a
+	sub do_pop_jump_smc_2 - do_pop_jump_smc_1
+	ld (z80codebase+do_pop_jump_smc_2),a
+	ld a,h
+	ld (z80codebase+do_pop_for_ret_jump_smc_1),a
+	sub do_pop_for_ret_jump_smc_2 - do_pop_for_ret_jump_smc_1
+	ld (z80codebase+do_pop_for_ret_jump_smc_2),a
+	ld a,(ix+9)
+	ld (z80codebase+ophandlerF1_jump_smc_1),a
+	add a,(ophandlerF1_jump_smc_1 + 1) & $FF
+	ld l,a
+	adc a,(ophandlerF1_jump_smc_1 + 1) >> 8
+	sub l
+	ld h,a
+	ld.sis (ophandlerF1_jump_smc_2),hl
+	; Copy callstack pop overflow check
+	ld hl,(ix+10)
+	ld (z80codebase+callstack_pop_check_overflow_smc),hl
+	ld hl,(ix+13)
+	ld (z80codebase+callstack_pop_check_overflow_smc+3),hl
+	ld a,ixl
+	add a,a
+	ex de,hl
 	ret.l
 
 
@@ -1175,6 +1195,7 @@ mbc_rtc_toggle_smc:
 	ld (z80codebase+mem_read_any_rtc_smc),a
 	ld (z80codebase+mem_write_any_cram_smc_1),a
 	ld a,(memroutine_rtc_smc_1)
+	ld b,a
 	xor 0^5
 	ld (memroutine_rtc_smc_1),a
 	ld (z80codebase+write_cram_bank_handler_smc_2),a
@@ -1184,6 +1205,14 @@ mbc_rtc_toggle_smc:
 	ld (memroutine_rtc_smc_2),a
 	push hl
 	 push de
+	  ; Update stack access routines if current stack bank is CRAM
+	  ld a,(z80codebase+curr_gb_stack_bank)
+	  sub 5 << 5
+	  jr nz,_
+	  ld ix,cram_bank_base
+	  cp b
+	  call.il set_gb_stack_cram_bank_helper
+_
 	  ld hl,memroutineLUT + $A0
 	  ld b,32
 mbc_rtc_memroutine_smc_loop:
