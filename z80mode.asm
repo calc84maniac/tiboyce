@@ -528,7 +528,7 @@ _
 	set 5,a
 _
 curr_gb_stack_bank = $+1
-	cp 0
+	cp 1	; Default value forces a mismatch
 	jr nz,set_gb_stack_bank
 sp_base_address = $+2
 	ld.lil bc,0
@@ -2680,25 +2680,23 @@ mbc_4000:
 	 ex af,af'
 	 ld c,a
 	 ex af,af'
-	 ld a,(mbc_z80)
-	 dec a
+mbc_z80 = $+1
+	 ld a,0
+	 dec a	; Check for MBC1
 	 jr nz,_
-mbc1_ram_smc:
+mbc1_ram_smc = $
 	 jr z,mbc_ram
 	 ld a,c
 	 rrca
 	 rrca
 	 rrca
-	 ld c,a
 	 jr mbc_2000_finish
 _
-	 dec a
-	 dec a
-	 jr z,mbc_ram
-	 dec a
-	 jr nz,mbc_4000_denied
+	 srl a 
+	 jr nc,mbc_ram ; MBC3 or MBC5
+	 jr z,mbc_4000_denied ; MBC2
 	 di
-	 jp.lil mbc_rtc_helper
+	 jp.lil mbc_rtc_helper ; MBC3+RTC
 mbc_ram:
 cram_size_smc = $
 	 or a
@@ -2724,29 +2722,36 @@ mbc_4000_denied:
 	ex af,af'
 	ret
 	
+mbc_zero_page_override:
+	; If the masked value is 0, increase the result (except MBC5)
+	; When setting the high bits, this is ignored by the masking below
+	inc a
+	jr mbc_zero_page_continue
+	
 mbc_2000:
 	push bc
 	 ex af,af'
 	 ld c,a
 	 ex af,af'
-mbc_z80 = $+1
-	 ld b,1
-	 djnz _
-	 ld b,$1F
-	 jr mbc_2000_finish
-_
-	 djnz _
-	 ld b,$0F
-	 jr mbc_2000_finish
-_
+	 ld a,c
+mbc5_rom_bank_smc = $
+rom_bank_mbc_mask_smc = $+1
 	 ld b,$FF
 mbc_2000_finish:
-	 ld a,c
 curr_rom_bank = $+1
 	 ld c,1
+	 ; Mask the new value and check if 0-page should be overridden
+	 and b
+	 jr z,mbc_zero_page_override
+mbc_zero_page_continue:
+	 ; Set only the given mask of the page
 	 xor c
 	 and b
 	 xor c
+mbc5_rom_bank_continue:
+	 ; Adjust value to physical page based on ROM size
+rom_bank_mask_smc = $+1
+	 and 0
 	 ld c,a
 	 ld (curr_rom_bank),a
 	 ld (rom_bank_check_smc_1),a

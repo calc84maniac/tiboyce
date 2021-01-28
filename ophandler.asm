@@ -15,12 +15,11 @@ set_gb_stack_bounds_helper:
 	ld bc,(ix)
 	ld (z80codebase+sp_base_address),bc
 	; Adjust inc/dec sp handlers based on the address alignment
-	ld a,e
-	and 1
-	add a,a
-	add a,a
-	add a,a
-	add a,$20
+	bit 0,c
+	ld a,$20	;JR NZ
+	jr z,_
+	ld a,$28	;JR Z
+_
 	ld (z80codebase+ophandler33_jr_smc),a
 	ld (z80codebase+ophandler3B_jr_smc),a
 	; Calculate the negative of the bank base

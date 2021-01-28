@@ -920,6 +920,9 @@ cram_start:
 ; The cartridge's Memory Bank Controller type.
 mbc:
 	.db 0
+; The mask to apply to ROM banks, depending on the size of the ROM.
+rom_bank_mask:
+	.db 0
 	
 ; The number of frames left to skip, plus 1.
 skippable_frames:

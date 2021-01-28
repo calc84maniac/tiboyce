@@ -554,18 +554,29 @@ _
 	ld (memroutine_rtc_smc_1),a
 	ld a,$18	;JR
 	ld (memroutine_rtc_smc_2),a
-	; Use a value that's not a multiple of 32, guarantees a stack bank switch
-	ld (z80codebase+curr_gb_stack_bank),a
 	
 	ld hl,(cram_start)
 	ld bc,$A000
 	sbc hl,bc
 	ld (z80codebase+cram_base_0),hl
 	
+	ld a,(rom_bank_mask)
+	ld (z80codebase+rom_bank_mask_smc),a
+	
 	ld a,(mbc)
 	ld (z80codebase+mbc_z80),a
-	cp 4	;MBC3+RTC
-	jr nz,setup_ram_bank
+	ld b,a
+	ld a,$FF	;MBC3/MBC3+RTC/MBC5
+	djnz _
+	ld a,$1F	;MBC1
+_
+	djnz _
+	ld a,$0F	;MBC2
+_
+	ld (z80codebase+rom_bank_mbc_mask_smc),a
+	dec b
+	djnz setup_ram_bank_no_rtc
+	;MBC3+RTC
 	
 	; Update rtc_last
 	call update_rtc
@@ -622,6 +633,11 @@ _
 	ld hl,z80codebase+rtc_latched
 	jr _
 	
+setup_ram_bank_no_rtc:
+	djnz setup_ram_bank
+	;MBC5
+	ld hl,$18 + ((mbc5_rom_bank_continue - (mbc5_rom_bank_smc+2)) << 8)
+	ld.sis (mbc5_rom_bank_smc),hl
 setup_ram_bank:
 	ld a,(cram_size+1)
 	add a,a
@@ -1275,10 +1291,31 @@ LoadROMAndRAM:
 	
 	ld ix,rombankLUT
 	ld hl,(ix)
+	; Get the end of the loaded ROM banks.
+	; If 256 banks were loaded this gets the start instead,
+	; but that makes the mirroring copy a no-op as it should be in that case.
 	ld e,3
+	ld a,d
 	mlt de
 	add ix,de
-	
+	ld b,a
+	; Make sure the ROM size is a power of 2 (and at least 2)
+	; If not, fill up to the next power of 2 with blank pages
+	ld de,mpZeroPage - $4000
+	djnz ++_
+	; If the page count was 1, always fill at least one page
+_
+	ld (ix),de
+	lea ix,ix+3
+	ld b,a
+	inc a
+_
+	tst a,b
+	jr nz,--_
+	; Save the power of 2 minus 1 as the mask to apply to banks
+	dec a
+	ld (rom_bank_mask),a
+
 	ld de,$4000
 	add hl,de
 	ld (rom_start),hl
@@ -1306,7 +1343,8 @@ LoadROMAndRAM:
 	dec b	;MBC3
 	cp $14-$11
 	jr c,mbc_valid
-	;MBC5
+	inc b
+	inc b	;MBC5
 	sub $19-$11
 	cp $1F-$19
 mbc_valid:
@@ -1321,19 +1359,17 @@ mbc_valid_no_carry:
 	lea de,ix
 	ld hl,rombankLUT_end
 	sbc hl,de
-	jr z,_
-	ld a,ERROR_INVALID_ROM
-	ret c
-	ld a,b
 	push hl
 	pop bc
 	ld hl,rombankLUT
 	ldir
-_
 	
 	; Handle MBC-specific mirrors
+	cp 5	;MBC5
+	jr z,_
 	ld hl,(rombankLUT+3)
 	ld (rombankLUT),hl
+_
 	dec a	;MBC1
 	jr nz,_
 	ld hl,(rombankLUT+($21*3))
