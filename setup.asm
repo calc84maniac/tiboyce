@@ -579,7 +579,7 @@ _
 	;MBC3+RTC
 	
 	; Update rtc_last
-	call update_rtc
+	call update_rtc_always
 	
 	ld ix,save_state_size_bytes - 44
 	ld bc,(ix+44)
@@ -623,12 +623,12 @@ _
 	ld.sis (rtc_last+2),a
 	ld.sis (rtc_last+3),hl
 _
+	call update_rtc_always
 	ld a,(iy-state_size+STATE_RAM_BANK)
 	sub 8
 	jr c,setup_ram_bank
 	ld c,a
 	call mbc_rtc_toggle_smc
-	call update_rtc
 	ld b,0
 	ld hl,z80codebase+rtc_latched
 	jr _
@@ -2280,6 +2280,8 @@ BackupHardwareSettings:
 	ld (ix+8),a
 	ld a,(mpLcdImsc)
 	ld (ix+9),a
+	ld a,(mpRtcCtrl)
+	ld (ix+10),a
 	ret
 	
 SetCustomHardwareSettings:
@@ -2309,6 +2311,8 @@ RestoreHardwareSettings:
 	ld (mpKeypadScanMode),a
 	ld a,(ix+9)
 	ld (mpLcdImsc),a
+	ld a,(ix+10)
+	ld (mpRtcCtrl),a
 	ret
 	
 RestoreOriginalLcdSettings:
@@ -2625,6 +2629,8 @@ customHardwareSettings:
 	.db 3
 	;mpLcdImsc
 	.db 4
+	;mpRtcCtrl
+	.db $83
 	
 lcdSettings4Bit:
 	; LcdTiming0

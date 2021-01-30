@@ -1144,12 +1144,23 @@ mbc_rtc_last_latch = $+1
 	jr nc,_
 	push bc
 	 call update_rtc
-	 push hl
-	  ld hl,(z80codebase+rtc_current)
-	  ld (z80codebase+rtc_latched),hl
-	  ld.sis hl,(rtc_current+3)
-	  ld.sis (rtc_latched+3),hl
-	 pop hl
+	 ld ix,z80codebase+rtc_latched
+	 ld bc,(ix+5)
+	 ld a,c
+	 and $3F
+	 ld c,a
+	 ld a,b
+	 and $3F
+	 ld b,a
+	 ld (ix),bc
+	 ld bc,(ix+7)
+	 ld a,c
+	 and $1F
+	 ld c,a
+	 ld (ix+2),bc
+	 ld a,(ix+9)
+	 and $C1
+	 ld (ix+4),a
 	pop bc
 _
 	ld a,c
@@ -1250,23 +1261,34 @@ _
 	pop hl
 	ret
 	
+update_rtc_always:
+	ld ix,mpRtcSecondCount
+	jr _
 update_rtc:
+	ld ix,mpRtcSecondCount
+	; Early out if the timer has not changed since last update
+	bit 0,(ix-mpRtcSecondCount+mpRtcIntStatus)
+	ret z
+_
 	push hl
 	 push de
-	  ld ix,mpRtcSecondCount
 _
 	  ld b,(ix)
-	  ld e,(ix+4)
-	  ld d,(ix+8)
-	  ld hl,(ix+12)
+	  ld e,(ix-mpRtcSecondCount+mpRtcMinuteCount)
+	  ld d,(ix-mpRtcSecondCount+mpRtcHourCount)
+	  ld hl,(ix-mpRtcSecondCount+mpRtcDayCount)
+	  ; Clear the second interrupt status before reloading the second counter
+	  ld (ix-mpRtcSecondCount+mpRtcIntStatus),1
 	  ld a,(ix)
 	  cp b
 	  jr nz,-_
 	  
+	  ; If the RTC is halted, set the last time to now
 	  ld ix,z80codebase+rtc_last
 	  bit 6,(ix-1)
-	  jr nz,update_rtc_halted
+	  jp nz,update_rtc_halted
 	
+	  ; Get the time since last update
 	  sub (ix)
 	  ld (ix),b
 	  jr nc,_
@@ -1302,50 +1324,121 @@ _
 	  
 	  lea ix,ix-5
 	  ld a,(ix)
+	  ; Adjust carry range
+	  add a,64-60
+	  or $C0
+	  ; Add elapsed seconds
 	  add a,b
-	  ld b,a
-	  add a,-60
-	  jr nc,_
-	  ld b,a
+	  jr c,++_
 _
+	  ; Adjust back to normal range
+	  add a,60
+	  jr c,++_
+	  ; Value was out of range, but if any minutes elapsed
+	  ; then consume one of them to go back into range
+	  call update_rtc_dec_minutes
+	  jr nc,-_
+	  ; No minutes available, so remain out of range
+	  ld b,a
+	  jr update_rtc_seconds_only
+_
+	  ; Increment elapsed minutes due to carry
+	  inc e
+_
+	  ld b,a
 	  
 	  ld a,(ix+1)
-	  adc a,e
-	  ld e,a
-	  add a,-60
-	  jr nc,_
-	  ld e,a
+	  ; Adjust carry range
+	  add a,64-60
+	  or $C0
+	  ; Add elapsed minutes
+	  add a,e
+	  jr c,++_
 _
+	  ; Adjust back to normal range
+	  add a,60
+	  jr c,++_
+	  ; Value was out of range, but if any hours elapsed
+	  ; then consume one of them to go back into range
+	  call update_rtc_dec_hours
+	  jr nc,-_
+	  ; No hours available, so remain out of range
+	  ld (ix+1),a
+	  jr update_rtc_seconds_only
+_
+	  ; Increment elapsed hours due to carry
+	  inc d
+_
+	  ld e,a
 	  
 	  ld a,(ix+2)
-	  adc a,d
-	  ld d,a
-	  add a,-24
-	  jr nc,_
-	  ld d,a
+	  ; Adjust carry range
+	  add a,32-24
+	  or $E0
+	  ; Add elapsed hours
+	  add a,d
+	  jr c,++_
 _
+	  ; Adjust back to normal range and reset carry
+	  sub -24
+	  jr nc,_
+	  ; Value was out of range, but if any days elapsed
+	  ; then consume one of them to go back into range
+	  call update_rtc_dec_days
+	  jr nc,-_
+	  ; No days available, so remain out of range
+	  ld d,a
+	  jr update_rtc_hours_only
+_
+	  ld d,a
 	  
+	  ; Add low byte of days, along with carry
 	  ld a,(ix+3)
 	  adc a,l
 	  ld l,a
 	  
-	  ld a,(ix+4)
+	  ; Add carry to days, carry out if at least 2 days passed
+	  ld a,h
+	  adc a,$FE
+	  ; Put carry in the high bit and bit 8 of the day in the low bit
 	  rla
-	  or $FC
-	  sra a
-	  adc a,h
-	  ld h,(ix+4)
-	  rr h
-	  rra
-	  rl h
+	  rrca
+	  and $81
+	  ld h,a
+	  ; Add to the existing value, ensuring carry from low bit
+	  ; propagates to the high bit
+	  ld a,(ix+4)
+	  or $7E
+	  add a,h
 	  jr nc,_
-	  set 7,h
+	  ; Make sure overflow bit sticks
+	  or $80
 _
+	  ; Mask result (ensures halt bit is reset)
+	  and $81
+	  ld h,a
 	  
 update_rtc_halted:
-	  ld (ix),b
-	  ld (ix+1),de
 	  ld.s (ix+3),hl
+update_rtc_hours_only:
+	  ld.s (ix+1),de
+update_rtc_seconds_only:
+	  ld (ix),b
 	 pop de
+	pop hl
+	ret
+	
+update_rtc_dec_minutes:
+	dec e
+	ret p
+	ld e,59
+update_rtc_dec_hours:
+	dec d
+	ret p
+	ld d,23
+update_rtc_dec_days:
+	dec hl
+	push hl
+	 add hl,hl
 	pop hl
 	ret

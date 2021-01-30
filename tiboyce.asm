@@ -191,6 +191,8 @@ mpRtcSecondCount = $F30000
 mpRtcMinuteCount = $F30004
 mpRtcHourCount = $F30008
 mpRtcDayCount = $F3000C
+mpRtcCtrl = $F30020
+mpRtcIntStatus = $F30034
 
 mpKeypadScanMode = $F50000
 mpKeypadGrp0 = $F50010
@@ -992,6 +994,8 @@ originalHardwareSettings:
 	;mpKeypadScanMode
 	.db 0
 	;mpLcdImsc
+	.db 0
+	;mpRtcCtrl
 	.db 0
 	
 originalLcdSettings:
