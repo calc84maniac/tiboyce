@@ -47,7 +47,6 @@ decode_jump_common:
 	 pop af
 	pop bc
 	add a,b
-	ei
 	jp.sis decode_jump_return
 	
 decode_jump_bank_switch:
@@ -75,7 +74,6 @@ decode_jump_bank_switch:
 	ld.s (hl),do_rom_bank_jump & $FF
 	dec hl
 	ld.s (hl),$CD	;CALL do_rom_bank_jump
-	ei
 	jp.sis decode_jump_waitloop_return
 	
 	
@@ -115,7 +113,6 @@ decode_rst_helper:
 	 pop de
 	pop hl
 	ex af,af'
-	ei
 	jp.sis do_rst
 	
 decode_call_helper:
@@ -140,7 +137,6 @@ _
 _
 	add a,6	; Taken call eats 6 cycles
 	ld b,RST_CALL
-	ei
 	ret.l
 	
 decode_call_flush:
@@ -195,7 +191,6 @@ _
 	ld hl,(do_rom_bank_call << 8) | $CD	; CALL do_rom_bank_call
 	ld (ix),hl
 	ld b,l	;CALL
-	ei
 	ret.l
 	
 decode_ret_cond_helper:
@@ -204,7 +199,6 @@ decode_ret_cond_helper:
 	ex de,hl
 	ld.s a,(hl)
 	sub (ix+7)
-	ei
 	ret.l
 	
 banked_jump_mismatch_helper:
@@ -247,7 +241,6 @@ _
 	 pop hl
 	pop bc
 	exx
-	ei
 	jp.sis banked_jump_mismatch_continue
 	
 	
@@ -273,7 +266,6 @@ banked_call_mismatch_helper:
 	 pop hl
 	pop bc
 	ld e,a
-	ei
 	jp.sis banked_call_mismatch_continue
 	
 decode_intcache_helper:
@@ -283,8 +275,6 @@ decode_intcache_helper:
 	 add a,5
 	 ex (sp),ix
 	pop hl
-memroutine_gen_ret:
-	ei
 	ret.l
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
@@ -389,7 +379,7 @@ _
 	ld d,(hl)
 	ld a,d
 	or e
-	jr nz,memroutine_gen_ret
+	ret.l nz
 	
 	; Routine doesn't exist, let's generate it!
 	push bc \ push hl
@@ -485,7 +475,6 @@ _
 	ld (hl),d
 	dec h
 	ld (hl),e
-	ei
 	ret.l
 	
 memroutine_gen_flush:

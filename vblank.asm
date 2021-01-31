@@ -20,19 +20,20 @@ frame_emulated_count = $+1
 	ld h,a
 	ld (frame_emulated_count),hl
 	
-	; Finish rendering, if applicable
+	; Update real frame count if expired
 	;push de
 	 push ix
 	  push bc
 	   push iy
+	    ; Finish rendering, if applicable
 	    ld a,(render_this_frame)
 	    or a
 	    jp z,skip_this_frame
-	
+	    
 	    ; Finish rendering the frame
 	    ld a,144
 	    call render_scanlines
-	  
+	    
 	    ; Display sprites
 	    ld a,(hram_base+LCDC)
 	    rla
@@ -282,15 +283,19 @@ key_smc_state_slot:
 _
 
 keys_done:
-exitReason = $+1
-	    ld a,0
+	    ld a,(mpIntMaskedStatus)
 	    or a
+	    jr z,_
+	    ld (mpIntAcknowledge),a
+	    inc a
+	    ld (exitReason),a
+_
+exitReason = $+1
+	    or 0
 	    jr z,_
 	    APTR(ExitEmulation)
 	    ex de,hl
 	    ld hl,z80codebase+event_not_expired
-	    ; Emit DI
-	    ld (hl),$F3 \ inc hl
 	    ; Emit JP.LIL ExitEmulation
 	    ld (hl),$5B \ inc hl \ ld (hl),$C3 \ inc hl \ ld (hl),de
 _
@@ -384,31 +389,30 @@ wait_for_interrupt:
 	ld hl,z80codebase+rst38h
 	ld (hl),$C9	;RET
 	call.is wait_for_interrupt_stub
-	ld (hl),$F5	;PUSH AF
+	ld (hl),$DD	;LD IXL,A
 	ex de,hl
 	ld (hl),ix
 	ret
 	
 frame_interrupt:
 	ld (mpLcdIcr),a
+	exx
 	push hl
-	 push de
-	  push bc
-	   push ix
-	    call update_palettes
-	    call inc_real_frame_count
-	   pop ix
-	  pop bc
-	 pop de
+	 push bc
+	  call update_palettes
+	  call inc_real_frame_count
+	 pop bc
 	pop hl
+	exx
 frame_excess_count = $+1
 	ld a,0
 	inc a
 _
 	ld (frame_excess_count),a
+	ld a,0
 	jp.sis po,frame_interrupt_return
-	; Revert $80 to $7F and set parity odd
-	xor $FF
+	; Revert $7F and set parity odd
+	xor $7F
 	jr -_
 	
 ; Prepares to render the next frame.

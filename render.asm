@@ -232,12 +232,13 @@ draw_sprite_priority_hdir_2:
 	
 write_vram_and_expand:
 	exx
+	lea de,ix
+	pop.s ix
 	push bc
 	 push hl
 	  ld c,a
 	  ex af,af'
 	  ld hl,vram_base
-	  lea de,ix
 	  add hl,de
 	  ld (hl),c
 	  ld a,d
@@ -285,8 +286,6 @@ _
 	pop bc
 	exx
 	ex af,af'
-	pop.s ix
-	ei
 	jp.s (ix)
 write_vram_pixels:
 	  res 0,l
@@ -313,8 +312,6 @@ scaling_mode_smc_2 = $+1
 	pop bc
 	exx
 	ex af,af'
-	pop.s ix
-	ei
 	jp.s (ix)
 	
 scanline_do_subtile:

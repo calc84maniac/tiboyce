@@ -292,5 +292,4 @@ waitloop_length_smc = $+1
 	ld.s (hl),bc
 	dec hl
 	ld.s (hl),$CD	;CALL handler
-	ei
 	jp.sis decode_jump_waitloop_return

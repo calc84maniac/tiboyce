@@ -11,7 +11,6 @@ r_bits:
 	
 	.block $08-$
 r_mem:
-	di
 	pop ix
 	push af
 	 jp decode_mem
@@ -28,12 +27,15 @@ do_pop_jump_smc_1 = $+1
 	.block $18-$
 r_cycle_check:
 	ex af,af'
-	ld a,iyh
+	ld.lil a,(mpLcdMis)
 	or a
+	jr nz,do_frame_interrupt
+frame_interrupt_return:
+	cp iyh
 	ret nz
 	jp cycle_overflow_for_jump
 	
-	.block $20-$
+	;.block $20-$
 	; Currently unused
 	
 	.block $28-$
@@ -54,11 +56,9 @@ r_event:
 	.block $38-$
 r_clear_zhn_flags:
 rst38h:
-	push af
-	 ld a,i
-	 jp po,native_isr
-	pop ix
-	ld a,ixh
+	ld ixl,a
+	ld a,i
+	ld a,ixl
 	ret
 	
 do_pop_check_overflow:
@@ -112,6 +112,9 @@ do_pop_ports:
 do_pop_ports_smc = $
 	pop bc
 	ret
+	
+do_frame_interrupt:
+	jp.lil frame_interrupt
 	
 callstack_pop_save:
 	push ix
@@ -275,9 +278,7 @@ do_pop_for_ret_adl:
 	inc.l hl
 pop_and_lookup_code_cached_continue:
 	push bc
-	 di
 	 call.il lookup_code_cached
-	 ei
 	pop bc
 	add a,4
 dispatch_cycles_for_reti_smc = $+1
@@ -303,11 +304,9 @@ cycle_overflow_for_ret:
 	   sub 4
 	   ld c,a
 	   push ix
-	    di
 	    jp.lil schedule_event_helper
 	
 banked_call_mismatch:
-	di
 	jp.lil banked_call_mismatch_helper
 	
 cycle_overflow_for_call:
@@ -326,7 +325,6 @@ cycle_overflow_for_call:
 	     sub c
 	     sub 6
 	     ld c,a
-	     di
 	     jp.lil schedule_call_event_helper
 	
 dispatch_cycles_for_reti:
@@ -371,7 +369,6 @@ _
 	   jr schedule_jump_event_helper_trampoline
 	
 banked_jump_mismatch:
-	di
 	jp.lil banked_jump_mismatch_helper
 	
 cycle_overflow_for_jump:
@@ -392,13 +389,11 @@ _
 	   ld ix,(ix+2)
 schedule_jump_event_helper_trampoline:
 	   push ix
-	    di
 	    jp.lil schedule_jump_event_helper
 _
 	   ld de,(ix-6)
 	   inc ix
 	   push ix
-	    di
 	    jp.lil schedule_subblock_event_helper
 	   
 schedule_event_finish:
@@ -422,31 +417,10 @@ schedule_event_finish_no_schedule:
 	ex af,af'
 	jp (ix)
 	
-	
-native_isr:
-	 ld.lil a,(mpLcdMis)
-	 or a
-	 jp.lil nz,frame_interrupt
-	 ;ld.lil a,(mpIntMaskedStatus)
-	 ;rra
-	 ;jr nc,$
-	
-on_interrupt:
-	 inc a
-	 ld.lil (mpIntAcknowledge),a
-	 inc a
-	 ld.lil (exitReason),a
-frame_interrupt_return:
-	pop af
-	ei
-	ret
-	 
 Z80InvalidOpcode:
-	di
 	jp.lil Z80InvalidOpcode_helper
 	
 Z80Error:
-	di
 	jp.lil runtime_error
 	
 do_push_for_call_overflow:
@@ -555,10 +529,8 @@ _
 set_gb_stack_bank:
 	ld (curr_gb_stack_bank),a
 	push ix
-	 di
 	 call.il set_gb_stack_bounds_helper
 	 call.il set_gb_stack_bank_helper
-	 ei
 	pop ix
 	jr set_gb_stack_bank_done
 
@@ -631,7 +603,6 @@ event_expired:
 div_counter = $+1
 	   ld hl,0
 	   ld (event_save_sp),sp
-	   di
 event_expired_loop:
 	   ld sp,event_counter_checkers
 
@@ -658,7 +629,6 @@ event_counter_checkers_done:
 	   jr nc,event_expired_loop
 _
 	   ld (div_counter),hl
-	   ei
 event_save_sp = $+1
 	   ld sp,0
 	   
@@ -686,7 +656,6 @@ event_reschedule:
 	   neg
 	   ld c,a
 	   push ix
-	    di
 	    jp.lil schedule_event_helper
 	
 trigger_interrupt_push:
@@ -734,7 +703,6 @@ cpu_halted = $+1
 	    and 0
 	    ld a,(event_cycle_count)
 	    ld c,a
-	    di
 	    jp.lil z,dispatch_int_helper
 	    ld (cpu_halted),a
 	    inc a
@@ -775,7 +743,6 @@ cycle_overflow_for_rst_or_int:
 	     ld d,0
 	     sla e
 	     ld ix,(ix+1)
-	     di
 	     jp.lil schedule_event_helper
 
 decode_intcache:
@@ -783,7 +750,6 @@ decode_intcache:
 	   lea de,ix+(-(dispatch_rst_00+1 + $80) & $FF) - $80
 	   ld d,a
 	   sla e
-	   di
 	   call.il decode_intcache_helper
 	   ld (ix+1),hl
 	   ld (ix-1),a
@@ -1012,7 +978,6 @@ decode_jump:
 	  inc hl
 	  inc hl
 	  ld de,(hl)
-	  di
 	  jp.lil decode_jump_helper
 decode_jump_return:
 	 pop hl
@@ -1045,7 +1010,6 @@ decode_call:
 	   inc hl
 	   ld de,(hl)
 	   dec de
-	   di
 	   call.il decode_call_helper
 	  pop hl
 	  dec hl
@@ -1071,7 +1035,6 @@ decode_call_cond:
 	   inc hl
 	   ld de,(hl)
 	   dec de
-	   di
 	   call.il decode_call_helper
 	  pop hl
 	  dec hl
@@ -1132,7 +1095,6 @@ do_rst_38:
 	jr decode_rst
 	
 decode_rst:
-	di
 	jp.lil decode_rst_helper
 	
 do_rst:
@@ -1217,7 +1179,6 @@ _
 	   ld c,a
 	   ld de,(ix-2)
 	   push ix
-	    di
 	    jp.lil schedule_event_helper
 	
 wait_for_interrupt_stub:
@@ -1229,7 +1190,6 @@ flush_handler:
 	exx
 flush_address = $+1
 	ld de,0
-	di
 	jp.lil flush_normal
 	
 dispatch_rst_00:
@@ -1277,7 +1237,6 @@ flush_mem_handler:
 	ex af,af'
 	ld a,b
 	pop bc
-	di
 	jp.lil flush_mem
 	
 coherency_handler:
@@ -1287,10 +1246,10 @@ coherency_handler:
 	  push bc
 	   pea ix+RAM_PREFIX_SIZE-3
 	    ld ix,(ix)
-	    di
 	    jp.lil check_coherency_helper
 
 coherency_return:
+	    ex af,af'
 	   pop ix
 	  pop bc
 	 pop de
@@ -1580,7 +1539,6 @@ handle_waitloop_common:
 	   ld de,(ix+5)
 	   ld ix,(ix+3)
 	   push ix
-	    di
 	    jp.lil schedule_jump_event_helper
 	
 _
@@ -1800,9 +1758,7 @@ ophandlerE9:
 	 push de
 	  push bc
 	   ex de,hl
-	   di
 	   call.il lookup_code_cached
-	   ei
 	   scf
 	   adc a,iyl
 	   jr c,++_
@@ -1823,7 +1779,6 @@ _
 	   inc de
 	   dec de
 	   push ix
-	    di
 	    jp.lil schedule_event_helper
 	
 ophandlerF1:
@@ -2167,9 +2122,7 @@ ophandlerRETI:
 	jp pop_and_lookup_code_cached
 	
 ophandlerRET:
-	di
 	dec sp
-	ei
 	dec sp
 	ex af,af'
 	exx
@@ -2424,7 +2377,6 @@ mem_read_oam:
 	
 readTIMA:
 	call updateTIMA
-	 ei
 	 ld ixl,a
 	pop.l hl
 	exx
@@ -2627,7 +2579,6 @@ mem_write_vram_swap:
 	ex af,af'
 	;IX=GB address, A=data
 mem_write_vram_always:
-	di
 	jp.lil write_vram_and_expand
 	
 	;IX=GB address, A=data, preserves AF, destroys AF'
@@ -2671,7 +2622,6 @@ mbc_0000:
 	ret
 	
 _
-	di
 	jp.lil mbc_rtc_latch_helper
 	
 mbc_4000:
@@ -2694,9 +2644,8 @@ mbc1_ram_smc = $
 _
 	 srl a 
 	 jr nc,mbc_ram ; MBC3 or MBC5
-	 jr z,mbc_4000_denied ; MBC2
-	 di
-	 jp.lil mbc_rtc_helper ; MBC3+RTC
+	 jp.lil nz,mbc_rtc_helper ; MBC3+RTC
+	 jr mbc_4000_denied ; MBC2
 mbc_ram:
 cram_size_smc = $
 	 or a
@@ -2773,9 +2722,7 @@ mbc_fix_sp:
 	 push bc
 	  ld bc,(sp_base_address_neg)
 	  add hl,bc
-	  di
 	  call.il set_gb_stack_bounds_helper
-	  ei
 	  ex de,hl
 	  add.l hl,bc
 	 pop bc
@@ -2857,7 +2804,6 @@ resolve_get_mem_cycle_offset_call:
 resolve_mem_cycle_offset_prefix:
 	; For a prefixed bitwise operation, we emit the two-byte operation followed by a RET
 	ld c,$C9
-	di
 	jp.lil resolve_mem_cycle_offset_helper
 
 resolve_mem_cycle_offset_special:
@@ -2937,7 +2883,6 @@ resolve_mem_cycle_offset_for_call:
 	dec hl
 	dec hl
 	ld a,(hl)
-	di
 	jp.lil resolve_mem_cycle_offset_for_call_helper
 
 mem_cycle_scratch:
@@ -2951,8 +2896,6 @@ get_scanline_overflow:
 	
 get_mem_scanline_offset:
 	call get_mem_cycle_offset_swap_push
-get_scanline_from_cycle_offset_di:
-	di
 	
 ; Inputs: DE = (negative) cycles until target
 ;         May be non-negative if target falls within an instruction
@@ -3048,7 +2991,6 @@ updateTIMA:
 	 ld a,(TAC)
 	 and 4
 	 ld a,(TIMA)
-	 di
 	 ret z
 	 ld hl,(div_counter)
 	 ld a,b
@@ -3245,7 +3187,7 @@ writeLCDChandler:
 writeLCDC:
 	call get_mem_cycle_offset_swap_push
 	push de
-	 call get_scanline_from_cycle_offset_di
+	 call get_scanline_from_cycle_offset
 	pop hl
 	jp.lil lcdc_write_helper
 	

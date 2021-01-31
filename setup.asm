@@ -136,7 +136,6 @@ NoRomMenuLoop:
 	jr nz,SaveConfigAndQuit
 	
 	ACALL(RestoreOriginalHardwareSettings)
-	ei
 LoadNewGameLoop:
 	; Copy the name from ROMNameToLoad
 	ld hl,ROMName+1
@@ -160,7 +159,6 @@ SaveConfigAndQuit:
 	call _PopErrorHandler
 SaveConfigAndQuitForError:
 	ACALL(RestoreOriginalHardwareSettings)
-	ei
 	ACALL_SAFERET(SaveConfigFile)
 RestoreHomeScreen:
 	; Set all palette entries to white to smooth the transition
@@ -1164,7 +1162,6 @@ _
 _
 	ld sp,(saveSP)
 	ACALL(RestoreOriginalHardwareSettings)
-	ei
 	ld a,(exitReason)
 	dec a
 	srl a
@@ -1880,7 +1877,6 @@ _
 	push af
 	 ACALL(RestoreOriginalHardwareSettings)
 	pop af
-	ei
 	ret
 	
 LoadStateInvalid:
@@ -2298,6 +2294,7 @@ SetCustomHardwareSettings:
 RestoreOriginalHardwareSettings:
 	ld iy,flags
 	ld ix,originalHardwareSettings
+	scf
 RestoreHardwareSettings:
 	ld hl,(ix+0)
 	ld (mpIntEnable),hl
@@ -2313,6 +2310,8 @@ RestoreHardwareSettings:
 	ld (mpLcdImsc),a
 	ld a,(ix+10)
 	ld (mpRtcCtrl),a
+	ret nc
+	ei
 	ret
 	
 RestoreOriginalLcdSettings:
@@ -2618,7 +2617,7 @@ default_palette_found:
 	
 customHardwareSettings:
 	;mpIntEnable
-	.dl $000801
+	.dl $000001
 	;mpIntLatch
 	.dl $000011
 	;mpFlashWaitStates
@@ -2640,7 +2639,7 @@ lcdSettings4Bit:
 	; LcdTiming2
 	.db $00,$78,$EF,$00
 	; LcdCtrl
-	.dl $010C25
+	.dl $013C25
 	; Window left
 	.db 0
 	; Window right
@@ -2660,7 +2659,7 @@ lcdSettings8Bit:
 	; LcdTiming2
 	.db $02,$78,$1F,$01
 	; LcdCtrl
-	.dl $010C27
+	.dl $013C27
 	; Window left
 	.db 80
 	; Window right

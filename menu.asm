@@ -745,7 +745,7 @@ _
 	or a
 	ret nz
 	ld a,(mpIntMaskedStatus)
-	and 1
+	or a
 	jr z,-_
 	ld (mpIntAcknowledge),a
 	xor a

@@ -977,16 +977,17 @@ _
 	
 check_coherency_cycles:
 	ld a,(ix+7)
-	ld (_+2),a
-_
-	lea iy,iy+0
-	ld a,iyh
-	or a
-	jr z,check_coherency_cycle_overflow
-	ex af,af'
-	ei
-	jp.sis coherency_return
-	
+	add a,iyl
+	ld iyl,a
+	jp.sis nc,coherency_return
+	inc iyh
+	jp.sis nz,coherency_return
+	ld c,(ix+7)
+	ld hl,(ix+2)
+	ex.s de,hl
+	pop.s ix
+	push.s ix
+	jp schedule_event_helper
 	
 ; Recompiles an existing RAM code block in-place.
 ;
@@ -1065,14 +1066,6 @@ rerecompile:
 	ld (int_cached_return),bc
 	jr check_coherency_cycles
 	
-check_coherency_cycle_overflow:
-	ld c,(ix+7)
-	ld hl,(ix+2)
-	ex.s de,hl
-	pop.s ix
-	push.s ix
-	jp schedule_event_helper
-	
 coherency_flush:
 	pop de
 	pop.s de
@@ -1101,7 +1094,6 @@ coherency_flush:
 	ld a,CALL_STACK_DEPTH+1
 	ld i,a
 	ex af,af'
-	ei
 	jp.s (ix)
 	
 	

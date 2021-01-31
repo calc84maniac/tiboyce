@@ -164,7 +164,6 @@ _
 	cp iyh
 	jr z,_
 	ex af,af'
-	ei
 	jp.s (ix)
 _
 	push.s hl
@@ -268,7 +267,6 @@ scroll_write_no_change:
 	exx
 	ex af,af'
 	pop.s ix
-	ei
 	jp.s (ix)
 	
 ; Writes to an LCD scroll register (SCX,SCY,WX,WY). Also BGP and DMA.
@@ -368,7 +366,6 @@ scroll_write_done:
 	pop hl
 	exx
 	pop.s ix
-	ei
 	jp.s (ix)
 	
 ; Writes to the LY compare register (LYC).
@@ -460,14 +457,12 @@ _
 	 mlt de
 	 add hl,de
 	 ld.sis (lyc_counter),hl
-lyc_write_helper_finish:
-	 ei
 	 jp.sis trigger_event_pushed
 	
 lyc_write_helper_disable_checker:
 	 ld hl,disabled_counter_checker
 	 ld.sis (event_counter_checker_slot_LYC),hl
-	 jr lyc_write_helper_finish
+	 jp.sis trigger_event_pushed
 	
 	
 stat_write_helper:
@@ -585,12 +580,11 @@ _
 	 ld.sis (event_counter_checker_slot_LYC),hl
 _
 	 and $28
-	 jp nz,lyc_write_helper_finish
+	 jp.sis nz,trigger_event_pushed
 	pop hl
 	exx
 	pop.s ix
 	ex af,af'
-	ei
 	jp.s (ix)
 	
 ; Writes to the LCD control register (LCDC).
@@ -726,7 +720,6 @@ _
 _
 	 add hl,de
 	 ld.sis (lyc_counter),hl
-	 ei
 	 jp.sis trigger_event_pushed
 	
 	
@@ -784,7 +777,6 @@ return_from_write_helper:
 	exx
 	ex af,af'
 	pop.s ix
-	ei
 	jp.s (ix)
 _
 	 ; Get SMC data
@@ -843,7 +835,6 @@ writeTIMA_smc = $+1
 	 add hl,de
 	 add hl,de
 	 ld.sis (timer_counter),hl
-	 ei
 	 jp.sis trigger_event_pushed
 	
 timer_smc_data:
@@ -977,7 +968,6 @@ schedule_event_now:
 schedule_event_ram_prefix:
 	pop de
 	sbc hl,de
-	ei
 flush_event_smc = $+1
 	jp.sis schedule_event_finish
 	
@@ -1022,7 +1012,7 @@ resolve_mem_cycle_offset_helper:
 	    ex de,hl
 	   pop de
 	  pop ix
-	  jr nc,++_
+	  jr nc,_
 	  ld (z80codebase+memroutine_next),hl
 	  ; Emit the error catcher
 	  ld bc,ERROR_CATCHER
@@ -1051,8 +1041,6 @@ resolve_mem_cycle_offset_helper:
 	dec hl
 	dec hl
 	dec hl
-_
-	ei
 	jp.sis get_mem_cycle_offset_continue
 	
 	
@@ -1089,7 +1077,7 @@ _
 	inc hl
 	; Emit the block cycle offset
 	ld (hl),a
-	jr --_
+	jp.sis get_mem_cycle_offset_continue
 	
 ; Inputs:  BCDEHL' are swapped
 ;          DE = current GB address
@@ -1128,7 +1116,6 @@ _
 	call get_banked_address
 	ld (int_cached_return),de
 	xor a
-	ei
 	jp.sis dispatch_int_continue
 	
 mbc_rtc_latch_helper:
@@ -1167,26 +1154,14 @@ _
 	and 1
 	ld (mbc_rtc_last_latch),a
 	exx
-	ei
 	jp.sis mbc_6000_denied
 	
 mbc_rtc_helper:
 	ld a,(cram_bank_base+2)
 	cp z80codebase>>16
-	jr z,_
+	jr z,++_
 	bit 3,c
-	jr nz,mbc_rtc_set_rtc_bank
-mbc_rtc_helper_exit_ram:
-	ei
-	jp.sis mbc_ram
-_
-	bit 3,c
-	jr nz,_
-	call mbc_rtc_toggle_smc
-	call update_rtc
-	ld b,$60
-	jr mbc_rtc_helper_exit_ram
-mbc_rtc_set_rtc_bank:
+	jp.sis z,mbc_ram
 	call mbc_rtc_toggle_smc
 _
 	call update_rtc
@@ -1196,6 +1171,14 @@ _
 	ld b,0
 	ld ix,z80codebase+rtc_latched
 	jp.sis mbc_ram_any
+_
+	bit 3,c
+	jr nz,--_
+	call mbc_rtc_toggle_smc
+	call update_rtc
+	ld b,$60
+	jp.sis mbc_ram
+	
 	
 mbc_rtc_toggle_smc:
 	ld a,(z80codebase+read_cram_bank_handler_smc)
@@ -1223,19 +1206,25 @@ mbc_rtc_toggle_smc:
 	  cp b
 	  call.il set_gb_stack_cram_bank_helper
 _
-	  ld hl,memroutineLUT + $A0
-	  ld b,32
-mbc_rtc_memroutine_smc_loop:
-	  inc.s de
-	  ld e,(hl)
-	  inc h
-	  ld d,(hl)
-	  dec h
-	  ld a,d
-	  or e
-	  jr z,++_ 
 	  ld ix,z80codebase
-	  add ix,de
+	  ld hl,memroutineLUT + $1A0
+	  ld b,32
+mbc_rtc_memroutine_smc_loop_restore:
+	  xor a
+mbc_rtc_memroutine_smc_loop:
+	  or (hl)
+	  jr nz,_
+	  inc l
+	  djnz mbc_rtc_memroutine_smc_loop
+	 pop de
+	pop hl
+	ret
+_
+	  ld ixh,a
+	  dec h
+	  ld a,(hl)
+	  ld ixl,a
+	  inc h
 	  ld a,l
 	  cp $A4
 	  lea de,ix+16
@@ -1256,7 +1245,7 @@ _
 	  ld (ix+21),a
 _
 	  inc l
-	  djnz mbc_rtc_memroutine_smc_loop
+	  djnz mbc_rtc_memroutine_smc_loop_restore
 	 pop de
 	pop hl
 	ret
