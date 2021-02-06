@@ -61,9 +61,10 @@ decode_jump_bank_switch:
 	ld a,(z80codebase+curr_rom_bank)
 	ld c,a
 	pop.s hl
-	ld.s (hl),bc	;rom bank / cycle count
 	dec hl
 	ld.s a,(hl)		;JP [cond,]
+	ld.s (hl),bc	;rom bank / cycle count
+	dec hl
 	dec hl
 	ld.s (hl),ix
 	dec hl
@@ -78,41 +79,41 @@ decode_jump_bank_switch:
 	
 	
 decode_rst_helper:
-	ex af,af'
-	push hl
-	 push de
-	  push bc
-	   ; Get the offset of the RST dispatch
-	   ld a,e
-	   sub dispatch_rst_00 & $FF
-	   ld d,0
-	   ld e,a
-	   ; Get a pointer to the corresponding JR offset
-	   ld hl,z80codebase + do_rst_08 - 1
-	   add hl,de
-	   srl e
-	   add hl,de
-	   ; Get the RST target address
-	   add a,a
-	   ld e,a
-	   ; Adjust the JR offset
-	   ld a,(do_rst-1) & $FF
-	   sub l
-	   ld (hl),a
-	   call lookup_code
-	  pop bc
-	 pop hl
-	 ; Emit the cycle count
-	 add a,4
-	 ld.s (hl),a
-	 ; Emit the jump target
+	push af
 	 push hl
-	  inc hl
-	  inc hl
-	  ld.s (hl),ix
-	 pop de
-	pop hl
-	ex af,af'
+	  push de
+	   push bc
+	    ; Get the offset of the RST dispatch
+	    ld a,e
+	    sub dispatch_rst_00 & $FF
+	    ld d,0
+	    ld e,a
+	    ; Get a pointer to the corresponding JR offset
+	    ld hl,z80codebase + do_rst_08 - 1
+	    add hl,de
+	    srl e
+	    add hl,de
+	    ; Get the RST target address
+	    add a,a
+	    ld e,a
+	    ; Adjust the JR offset
+	    ld a,(do_rst-1) & $FF
+	    sub l
+	    ld (hl),a
+	    call lookup_code
+	   pop bc
+	  pop hl
+	  ; Emit the cycle count
+	  add a,4
+	  ld.s (hl),a
+	  ; Emit the jump target
+	  push hl
+	   inc hl
+	   inc hl
+	   ld.s (hl),ix
+	  pop de
+	 pop hl
+	pop af
 	jp.sis do_rst
 	
 decode_call_helper:
@@ -154,6 +155,7 @@ decode_call_bank_switch:
 	pop.s hl
 	push.s hl
 	ld a,(z80codebase+curr_rom_bank)
+	inc hl
 	ld.s (hl),a
 	
 	push de
@@ -193,20 +195,11 @@ _
 	ld b,l	;CALL
 	ret.l
 	
-decode_ret_cond_helper:
-	ex de,hl
-	call lookup_code_block
-	ex de,hl
-	ld.s a,(hl)
-	sub (ix+7)
-	ret.l
-	
 banked_jump_mismatch_helper:
-	exx
 	push bc
 	 push hl
 	  ; Look up the old target
-	  ld.s de,(ix+5)
+	  ld.s de,(ix+6)
 	  call get_base_address
 	  add hl,de
 	  bit 7,(hl)	; Check whether it's JP or JR
@@ -240,12 +233,11 @@ _
 	  ld.s (ix+1),hl
 	 pop hl
 	pop bc
-	exx
 	jp.sis banked_jump_mismatch_continue
 	
 	
 banked_call_mismatch_helper:
-	ld.s (ix+1),a
+	ld.s (ix+2),a
 	push bc
 	 push hl
 	  ld.s de,(ix+3)
@@ -265,7 +257,6 @@ banked_call_mismatch_helper:
 	  ld.s (ix),a
 	 pop hl
 	pop bc
-	ld e,a
 	jp.sis banked_call_mismatch_continue
 	
 decode_intcache_helper:
@@ -427,7 +418,7 @@ _
 	 
 	 ld (hl),d
 	 dec hl
-	 ld (hl),$08 ;EX AF,AF'
+	 ld (hl),$F1 ;POP AF
 	 dec hl
 	 ld (hl),-10
 	 dec hl
@@ -446,9 +437,9 @@ _
 	 add a,$7D-$A4 ;LD A,C/E/L
 	 ld (hl),a
 	 
-memroutine_gen_end_swap:
+memroutine_gen_end_push:
 	 dec hl
-	 ld (hl),$08 ;EX AF,AF' 
+	 ld (hl),$F5 ;PUSH AF
 memroutine_gen_end:
 	 push hl
 	  dec hl
@@ -523,7 +514,7 @@ _
 	 ld a,c
 	 add a,$7C	;LD A,B/D/H
 	 ld (hl),a
-	 jr memroutine_gen_end_swap
+	 jr memroutine_gen_end_push
 	 
 memroutine_gen_write_ports:
 	 ld de,mem_write_ports
@@ -619,7 +610,7 @@ memroutine_gen_not_cart_bank:
 	 ld a,c
 	 add a,$7C	;LD A,B/D/H
 	 ld (hl),a
-	 jp memroutine_gen_end_swap
+	 jp memroutine_gen_end_push
 	 
 memroutine_gen_not_ports:
 	 djnz memroutine_gen_not_cart_bank
@@ -652,7 +643,7 @@ memroutine_gen_not_ports:
 	 ld a,c
 	 add a,$7C	;LD A,B/D/H
 	 ld (hl),a
-	 jp memroutine_gen_end_swap
+	 jp memroutine_gen_end_push
 	 
 memroutine_gen_not_vram:
 	 djnz memroutine_gen_not_cram
@@ -665,12 +656,12 @@ memroutine_rtc_smc_1 = $+1
 	 ld (hl),de
 memroutine_rtc_smc_2 = $
 	 jr _   ; JR C when RTC bank selected
-	 ld de,5
+	 ld de,4
 	 cp 1
 	 push hl
 	  adc hl,de
 	  ld a,(hl)
-	  xor $09 ^ $84	;ADD.L IX,rr vs op.L A,IXH
+	  xor $DD ^ $FE	;ADD.L IX,rr vs CP.L nn
 	  ld (hl),a
 	 pop hl
 _
@@ -696,7 +687,7 @@ _
 	 ld a,c
 	 add a,$7C	;LD A,B/D/H
 	 ld (hl),a
-	 jp memroutine_gen_end_swap
+	 jp memroutine_gen_end_push
 	
 memroutine_gen_not_cram:
 	 ;We're in RAM, cool!
@@ -734,7 +725,7 @@ _
 	 ld a,c
 	 add a,$7C	;LD A,B/D/H
 	 ld (hl),a
-	 jp memroutine_gen_end_swap
+	 jp memroutine_gen_end_push
 	
 memroutine_gen_index:
 	 xor a
@@ -747,7 +738,7 @@ memroutine_gen_index_offset:
 	 dec hl
 	 ld (hl),$5B	;.LIL prefix
 	 dec hl
-	 ld (hl),$08	;EX AF,AF'
+	 ld (hl),$F1	;POP AF
 	 dec hl
 	 ld a,c
 	 or a

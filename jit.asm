@@ -1,10 +1,9 @@
 #define RST_BITS $C7+r_bits
 #define RST_MEM $C7+r_mem
 #define RST_POP $C7+r_pop
-#define RST_CYCLE_CHECK $C7+r_cycle_check
 #define RST_CALL $C7+r_call
 #define RST_EVENT $C7+r_event
-#define RST_CLEAR_ZHN_FLAGS $C7+r_clear_zhn_flags
+#define RST_CYCLE_CHECK $C7+r_cycle_check
 
 #define RAM_PREFIX_SIZE 5
 #define MAX_CYCLES_PER_BLOCK 64
@@ -334,7 +333,7 @@ lookup_gb_new_sub_block_end:
 	 dec ix
 	 add ix,bc
 	 jr nc,runtime_error_trampoline
-	 add.s a,(ix-2)
+	 add.s a,(ix-3)
 	 ASSERT_C
 	 jr lookup_gb_finish
 	
@@ -345,7 +344,7 @@ lookup_gb_new_sub_block:
 	 pop bc
 	 jr c,lookup_gb_new_sub_block_end
 	 push hl
-	  lea hl,ix-3
+	  lea hl,ix-4
 	  add hl,bc
 	  add.s a,(hl)
 	  ASSERT_C
@@ -562,7 +561,7 @@ internal_found_start:
 internal_found_new_subblock:
 	  bit 7,a
 	  jr z,internal_found_prefix
-	  add.s a,(ix-3)
+	  add.s a,(ix-4)
 	  ASSERT_C
 	  add hl,bc
 	  add iy,bc
@@ -759,7 +758,7 @@ lookup_found_loop_finish:
 lookup_found_new_subblock:
 	   bit 7,a
 	   jr z,lookup_found_prefix
-	   add.s a,(ix-3)
+	   add.s a,(ix-4)
 	   ASSERT_C
 	   add hl,bc
 	   add iy,bc
@@ -940,6 +939,7 @@ flush_cache:
 	
 check_coherency_helper:
 	ex af,af'
+	ld iyl,a
 	ld de,recompile_struct
 	add ix,de
 	ld hl,(ix+2)
@@ -978,10 +978,10 @@ _
 check_coherency_cycles:
 	ld a,(ix+7)
 	add a,iyl
-	ld iyl,a
 	jp.sis nc,coherency_return
 	inc iyh
 	jp.sis nz,coherency_return
+	ld iyl,a
 	ld c,(ix+7)
 	ld hl,(ix+2)
 	ex.s de,hl
@@ -1093,6 +1093,7 @@ coherency_flush:
 	; No need to count cycles, that is handled by the RAM block prefix
 	ld a,CALL_STACK_DEPTH+1
 	ld i,a
+	ld a,iyl
 	ex af,af'
 	jp.s (ix)
 	
@@ -1200,8 +1201,10 @@ opcycleroutines:
 opcycle27:
 opcycle3F:
 opcycleF3:
+	dec ix
+	; 1b op, 4b rec, 1cc
 opcycleROT:
-	lea ix,ix+(3-1)
+	add ix,bc
 	; 1b op, 1b rec, 1cc
 opcycle1byte:
 opcycleNOP:
@@ -1653,14 +1656,14 @@ opcounttable:
 	
 ; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
 opcoderecsizes:
-	.db 1,3,3,1,1,1,2,3
-	.db 7,1,3,1,1,1,2,3
-	.db 1,3,3,1,1,1,2,3
-	.db 0,1,3,1,1,1,2,3
-	.db 17,3,3,1,1,1,2,3
-	.db 17,1,3,1,1,1,2,1
-	.db 17,5,3,3,3,3,6,1
-	.db 17,3,3,3,1,1,2,3
+	.db 1,3,3,1,1,1,2,4
+	.db 7,1,3,1,1,1,2,4
+	.db 1,3,3,1,1,1,2,4
+	.db 0,1,3,1,1,1,2,4
+	.db 19,3,3,1,1,1,2,3
+	.db 19,1,3,1,1,1,2,1
+	.db 19,5,3,3,3,3,6,1
+	.db 19,3,3,3,1,1,2,3
 	
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
@@ -1668,7 +1671,7 @@ opcoderecsizes:
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
-	.db 3,3,3,3,3,3,6,3
+	.db 3,3,3,3,3,3,7,3
 	.db 1,1,1,1,1,1,3,1
 	
 	.db 1,1,1,1,1,1,3,1
@@ -1680,14 +1683,14 @@ opcoderecsizes:
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1
 	
-	.db 12,3,17,0,10,3,2,7
-	.db 12,0,17,2,10,8,2,7
-	.db 12,3,17,0,10,3,2,7
-	.db 12,0,17,0,10,0,2,7
+	.db 12,3,19,0,10,3,2,7
+	.db 12,0,19,2,10,8,2,7
+	.db 12,3,19,0,10,3,2,7
+	.db 12,0,19,0,10,0,2,7
 	.db 3,3,3,0,0,3,2,7
 	.db 4,0,5,0,0,0,2,7
 	.db 3,3,3,3,0,3,2,7
-	.db 4,3,5,6,0,0,2,7
+	.db 4,3,5,7,0,0,2,7
 	
 ; A table of Game Boy opcode sizes.
 opcodesizes:
@@ -2165,7 +2168,7 @@ mem_write_port_handler_table_end:
 	.db do_pop_for_ret_overflow - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_rtc - (ophandlerF1_jump_smc_1 + 1)
 	; callstack pop overflow check
-	jr $+(callstack_pop_save - callstack_pop_check_overflow_smc)
+	jr $+(callstack_pop_skip - callstack_pop_check_overflow_smc)
 	nop
 	nop
 	nop
@@ -2214,7 +2217,7 @@ rom_start:
 	.db do_pop_for_ret_overflow - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_ports - (ophandlerF1_jump_smc_1 + 1)
 	; callstack pop overflow check
-	jr $+(callstack_pop_save - callstack_pop_check_overflow_smc)
+	jr $+(callstack_pop_skip - callstack_pop_check_overflow_smc)
 	nop
 	nop
 	nop
@@ -2395,6 +2398,8 @@ opgen_finish_call:
 opgen_finish_rst:
 	inc de
 	inc hl
+	ld (opgen_last_cycle_count_smc),hl
+	inc hl
 	; Store the current ROM bank if in the correct range, else 0
 	sub $40
 	cp $40
@@ -2403,8 +2408,6 @@ opgen_finish_rst:
 	ld a,(z80codebase+curr_rom_bank)
 _
 	ld (hl),a
-	inc hl
-	ld (opgen_last_cycle_count_smc),hl
 	call opgen_emit_gb_address
 	ex de,hl
 	jp opgen_next_fast
@@ -2419,6 +2422,8 @@ opgen_emit_jump_swapped:
 	ld (hl),decode_jump & $FF
 	inc hl
 	ld (hl),decode_jump >> 8
+	inc hl
+	ld (hl),$38	;JR C,
 	inc hl
 	ld (hl),RST_CYCLE_CHECK
 	inc hl
@@ -2445,7 +2450,9 @@ opgen_emit_jump_smc_2 = $+1
 _opgenRET:
 	ex de,hl
 	call opgen_reset_cycle_count
-	ld (hl),c
+	ld (hl),$08	;EX AF,AF'
+	inc hl
+	ld (hl),c	;RET
 	inc hl
 	ret
 	
@@ -2454,24 +2461,24 @@ _opgenRETcond:
 	call opgen_reset_cycle_count
 	dec iy
 	ld a,c
-	xor $C0 ^ $28
-	ld (hl),a
+	xor $C0 ^ $C4
+	ld (hl),a	;CALL cc,ophandlerRETcond
 	inc hl
-	ld (hl),5
+	ld (hl),ophandlerRETcond & $FF
 	inc hl
-	ld (hl),$FD	;INC IY
+	ld (hl),ophandlerRETcond >> 8
 	inc hl
-	ld (hl),$23
-	inc hl
-	ld (hl),$C9	;RET
+	ld (hl),a	;CALL cc,gb_address
 	call opgen_emit_gb_address
 	
 opgen_emit_block_bridge:
-	ld (hl),$ED	;LEA IY,IY+offset
+	ld (hl),$08	;EX AF,AF'
 	inc hl
-	ld (hl),$33
+	ld (hl),$C6	;ADD A,
 	inc hl
 	ld (opgen_last_cycle_count_smc),hl
+	inc hl
+	ld (hl),$38	;JR C,
 	inc hl
 	ld (hl),RST_CYCLE_CHECK
 	inc hl
@@ -2506,7 +2513,7 @@ opgenblockend:
 	ex (sp),hl
 	ld hl,(hl)
 	ex de,hl
-	ld (hl),0	;NOP
+	ld (hl),$08	;EX AF,AF'
 	inc hl
 	ld (hl),$C3	;JP
 _
@@ -2612,6 +2619,7 @@ opgenroutinecallsplit_1cc:
 	ld (opgen_last_cycle_count_smc),hl
 	inc de
 	call opgen_emit_gb_address
+	inc hl
 	ex de,hl
 	jp opgen_next_fast
 	

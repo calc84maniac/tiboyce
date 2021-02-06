@@ -14,7 +14,7 @@
 ;
 ; Inputs:  IX = branch target recompiled code
 ;          DE = branch target GB address
-;          (SPS) = branch recompiled code address (plus 8, or 6 if uncond)
+;          (SPS) = branch recompiled code address (plus 9, or 7 if uncond)
 ;          (SPL+4) = number of cycles to sub-block end from target
 ;          (SPL+7) = number of cycles taken by jump
 ;          BC',DE',HL' = Game Boy BC,DE,HL registers
@@ -68,6 +68,7 @@ identify_waitloop:
 	
 waitloop_found_uncond_jump:
 	; See if we reached the loop end
+	inc de
 	inc de
 	inc de
 	inc de
@@ -164,7 +165,7 @@ waitloop_found_data_op_1:
 waitloop_found_data_op:
 	; See if we reached the loop end
 	push hl
-	 ld hl,8
+	 ld hl,9
 	 add hl,de
 	 ex de,hl
 	pop.s hl
@@ -196,13 +197,14 @@ waitloop_jp_smc = $+1
 	ret nz
 waitloop_try_next_target:
 	push hl
-	 ld hl,14-8
+	 ld hl,15-9
 	 add hl,de
 	 ld a,(waitloop_length_smc)
 	 add a,(hl)
 	 ld (waitloop_length_smc),a
 	 ex de,hl
 	pop hl
+	inc de
 	inc de
 	jr waitloop_try_next_target_loop
 	
@@ -282,6 +284,7 @@ waitloop_finish:
 	; Store the target cycle count
 	add a,d
 	ld.s (hl),a
+	dec hl
 	dec hl
 	; Store the length of the loop in cycles
 waitloop_length_smc = $+1

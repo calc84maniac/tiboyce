@@ -233,58 +233,58 @@ draw_sprite_priority_hdir_2:
 write_vram_and_expand:
 	exx
 	lea de,ix
+write_vram_and_expand_swapped:
 	pop.s ix
 	push bc
 	 push hl
-	  ld c,a
-	  ex af,af'
 	  ld hl,vram_base
 	  add hl,de
-	  ld (hl),c
+	  ex af,af'
+	  ld (hl),a
+	  ex af,af'
 	  ld a,d
 	  sub $98
 	  jr c,write_vram_pixels
+	  ld d,(hl)
 	  ld h,a
 	  ld a,e
 	  and $E0
 	  ld l,a
 	  xor e
 	  add a,a
-	  ld e,a
-	  ld a,c
 	  add hl,hl
 	  add hl,hl
 	  add.s hl,hl
 	  ld bc,vram_tiles_start
-	  add hl,bc
-	  ld d,0
-	  add hl,de
-	  ld e,64
 	  ld c,a
-	  ld b,e
-	  mlt bc
-	  ld (hl),c
+	  add hl,bc
+	  ld bc,64
+	  ld e,c
+	  mlt de
+	  ld (hl),e
 	  inc hl
-	  ld (hl),b
-	  add hl,de
-	  ld (hl),b
+	  ld (hl),d
+	  add hl,bc
+	  ld (hl),d
 	  dec hl
-	  ld (hl),c
-	  add hl,de
+	  ld (hl),e
+	  add hl,bc
+	  ld a,d
 	  add a,a
-	  jr c,_
-	  set 6,b
-_
-	  ld (hl),c
+	  cpl
+	  and c
+	  or d
+	  ld (hl),e
 	  inc hl
-	  ld (hl),b
-	  add hl,de
-	  ld (hl),b
+	  ld (hl),a
+	  add hl,bc
+	  ld (hl),a
 	  dec hl
-	  ld (hl),c
+	  ld (hl),e
 	 pop hl
 	pop bc
 	exx
+	ld a,iyl
 	ex af,af'
 	jp.s (ix)
 write_vram_pixels:
@@ -311,6 +311,7 @@ scaling_mode_smc_2 = $+1
 	 pop hl
 	pop bc
 	exx
+	ld a,iyl
 	ex af,af'
 	jp.s (ix)
 	

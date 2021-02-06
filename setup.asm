@@ -943,11 +943,16 @@ _
 	ld.sis (event_gb_address),hl
 	ex de,hl
 	call lookup_code
+	; Push the target JIT address to the Z80 stack
+	push.s ix
+	lea hl,ix
+	; Save the cycles until block end in IX
+	ld ixh,0
+	ld ixl,a
 	; Set the negative block cycle offset of the current instruction
 	neg
 	ld (z80codebase+event_cycle_count),a
 	; Save the event address and write an event handler call
-	lea hl,ix
 	ld.sis (event_address),hl
 	ld.s a,(hl)
 	ld (z80codebase+event_value),a
@@ -958,30 +963,29 @@ _
 	ld.s de,(iy-state_size+STATE_REG_DE)
 	ld.s hl,(iy-state_size+STATE_REG_HL)
 	exx
-	; Push the (remapped) GB AF to the stack
+	; Push the (remapped) GB AF to the Z80 stack
 	ld de,(iy-state_size+STATE_REG_AF)
 	ld h,flags_lut >> 8
 	ld l,e
 	ld.s e,(hl)
-	push de
-	 ; Get GB SP before we destroy IY
-	 ld.s hl,(iy-state_size+STATE_REG_SP)
+	push.s de
+	; Get GB SP before we destroy IY
+	ld.s hl,(iy-state_size+STATE_REG_SP)
 
-	 ; Set the cycle count at block end relative to the current event,
-	 ; which has been set to 1 cycle after block start
-	 ld a,(z80codebase+event_cycle_count)
-	 neg
-	 ld iyh,0
-	 ld iyl,a
-	 dec.s iy
+	; Set the cycle count at block end relative to the current event,
+	; which has been set to 1 cycle after block start
+	lea.s iy,ix-1
 
-	 ; Set the callstack limit
-	 ld a,CALL_STACK_DEPTH + 1
-	 ld i,a
-	; Pop GB AF into AF
-	pop af
-	; No need to enable interrupts here, stack bank switch handles that
-	jp.sis set_gb_stack
+	; Set the callstack limit
+	ld a,CALL_STACK_DEPTH + 1
+	ld i,a
+
+	; Put the low cycle count in A'
+	ld a,iyl
+	ex af,af'
+
+	; Set the Game Boy stack, pop GB AF, and return to the JIT code
+	jp.sis set_gb_stack_pushed
 	
 ExitEmulation:
 	ld ix,state_start+state_size

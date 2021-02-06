@@ -169,9 +169,11 @@ opgenROT:
 	
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
-	ld (hl),$28	;JR Z,$+1
+	ld (hl),$CC	;CALL Z,clear_zhn_flags
 	inc hl
-	ld (hl),RST_CLEAR_ZHN_FLAGS
+	ld (hl),clear_zhn_flags & $FF
+	inc hl
+	ld (hl),clear_zhn_flags >> 8
 	inc hl
 	ex de,hl
 	jr opgen1byte
@@ -199,7 +201,7 @@ _
 	ex de,hl
 	ld (hl),a
 	inc hl
-	ld (hl),10
+	ld (hl),11
 	inc hl
 	xor $28 ^ $C2
 	call opgen_emit_jump_swapped

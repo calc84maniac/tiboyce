@@ -389,7 +389,7 @@ wait_for_interrupt:
 	ld hl,z80codebase+rst38h
 	ld (hl),$C9	;RET
 	call.is wait_for_interrupt_stub
-	ld (hl),$DD	;LD IXL,A
+	ld (hl),$FD	;LD IYL,A
 	ex de,hl
 	ld (hl),ix
 	ret

@@ -141,6 +141,7 @@ _
 ;          BCDEHL' have been unswapped
 flush_normal:
 	ex af,af'
+	ld iyl,a
 	push bc
 	 push hl
 	  ld hl,$C3 | (schedule_event_finish << 8)	;JP schedule_event_finish
@@ -163,6 +164,7 @@ _
 	xor a
 	cp iyh
 	jr z,_
+	ld a,iyl
 	ex af,af'
 	jp.s (ix)
 _
@@ -265,6 +267,7 @@ scroll_write_DMA:
 scroll_write_no_change:
 	pop hl
 	exx
+	ld a,iyl
 	ex af,af'
 	pop.s ix
 	jp.s (ix)
@@ -304,11 +307,13 @@ render_this_frame = $+1
 	 jr z,scroll_write_BGP
 	 rra
 	 jr nc,scroll_write_WX
+	 ld a,iyl
 	 ex af,af'
 	 ld (WY_smc),a
 	 jr scroll_write_done
 	 
 scroll_write_SCY:
+	 ld a,iyl
 	 ex af,af'
 	 ld (SCY_smc),a
 	 jr scroll_write_done
@@ -360,6 +365,7 @@ scroll_write_SCX:
 	 inc a
 	 ld (SCX_smc_2),a
 scroll_write_done_swap:
+	 ld a,iyl
 	 ex af,af'
 scroll_write_done:
 	 ld.s (hl),a
@@ -583,8 +589,9 @@ _
 	 jp.sis nz,trigger_event_pushed
 	pop hl
 	exx
-	pop.s ix
+	ld a,iyl
 	ex af,af'
+	pop.s ix
 	jp.s (ix)
 	
 ; Writes to the LCD control register (LCDC).
@@ -775,6 +782,7 @@ tac_write_helper:
 return_from_write_helper:
 	pop hl
 	exx
+	ld a,iyl
 	ex af,af'
 	pop.s ix
 	jp.s (ix)
@@ -1182,7 +1190,7 @@ _
 	
 mbc_rtc_toggle_smc:
 	ld a,(z80codebase+read_cram_bank_handler_smc)
-	xor $19 ^ $94	;ADD.L IX,DE vs SUB.L A,IXH
+	xor $DD ^ $FE	;ADD.L IX,DE vs CP.L $19
 	ld (z80codebase+read_cram_bank_handler_smc),a
 	ld (z80codebase+write_cram_bank_handler_smc_1),a
 	ld (z80codebase+mem_read_any_rtc_smc),a
@@ -1227,13 +1235,13 @@ _
 	  inc h
 	  ld a,l
 	  cp $A4
-	  lea de,ix+16
+	  lea de,ix+15
 	  jr c,_
 	  inc de
 	  lea ix,ix+2
 _
 	  ld a,(de)
-	  xor $09 ^ $84	;ADD.L IX,rr vs op.L A,IXH
+	  xor $DD ^ $FE	;ADD.L IX,rr vs CP.L nn
 	  ld (de),a
 	  ld de,(ix+20)
 	  ld a,e
