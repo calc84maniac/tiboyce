@@ -834,6 +834,13 @@ _
 	ld.sis (event_counter_checker_slot_serial),hl
 _
 	
+	; Set the next audio frame sequencer counter based on DIV
+	; Low byte of this counter is always 0
+	ld a,b
+	or $0F	; $1F in double speed mode
+	inc a
+	ld (z80codebase+audio_counter+1),a
+	
 	lea hl,iy-ioregs+NR10
 	ld ix,z80codebase + audio_port_values
 	ld b,audio_port_masks - audio_port_values
@@ -845,6 +852,12 @@ _
 	inc hl
 	inc ix
 	djnz -_
+	; Check if audio is disabled in NR52
+	bit 7,(hl)
+	jr nz,_
+	ld a,$C9 ;RET (overriding PUSH AF)
+	ld (z80codebase+write_audio_disable_smc),a
+_
 	
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
@@ -1107,7 +1120,7 @@ _
 _
 	ld (ix-state_size+STATE_RAM_BANK),a
 	
-	; Save the actual audio port vales in the audio port space
+	; Save the actual audio port values in the audio port space
 	ld hl,z80codebase + audio_port_values
 	lea de,ix-ioregs+NR10
 	ld bc,audio_port_masks - audio_port_values

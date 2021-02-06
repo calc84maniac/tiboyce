@@ -734,6 +734,7 @@ div_write_helper:
 	 push de
 	  or a
 	  sbc hl,hl
+	  ld.sis (audio_counter),hl
 	  sbc hl,de
 	  ld.sis de,(div_counter)
 	  ld.sis (div_counter),hl
@@ -850,6 +851,47 @@ timer_smc_data:
 	.db 0,$02
 	.db 2,$08
 	.db 4,$20
+	
+NR52_write_helper:
+	exx
+	push hl
+	 ld hl,hram_base+NR52
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,(hl)
+	 xor c
+	 add a,a
+	 jr nc,return_from_write_helper
+	 ; Whether enabling or disabling audio, all channels are off
+	 ld a,c
+	 and $80
+	 or $70
+	 ld (hl),a
+	 add a,a
+	 jr c,NR52_write_enable
+	 ; Zero all audio registers
+	 ld hl,z80codebase+audio_port_values
+	 push hl
+	 pop de
+	 inc de
+	 ld a,b
+	 ld bc,audio_port_masks-audio_port_values-1
+	 ld (hl),b
+	 ldir
+	 ; Copy masks to CPU-visible registers
+	 inc hl
+	 ld de,hram_base+NR10
+	 ld c,NR52 - NR10
+	 ldir
+	 ld b,a
+	 ; If disabling, ignore all writes
+	 ld a,$C9-($F5-$E0)	;RET
+NR52_write_enable:
+	 ; If enabling, un-ignore all writes
+	 add a,$F5-$E0	;PUSH AF
+	 ld (z80codebase+write_audio_disable_smc),a
+	 jp return_from_write_helper
 	
 ; Inputs: DE = Game Boy address at conditional branch
 ;         IX = recompiled address after conditional branch

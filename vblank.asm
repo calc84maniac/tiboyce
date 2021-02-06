@@ -396,20 +396,19 @@ wait_for_interrupt:
 	
 frame_interrupt:
 	ld (mpLcdIcr),a
-	exx
-	push hl
-	 push bc
-	  call update_palettes
-	  call inc_real_frame_count
-	 pop bc
-	pop hl
-	exx
+	push ix
+	 push de
+	  push bc
+	   call update_palettes
+	   call inc_real_frame_count
+	  pop bc
+	 pop de
+	pop ix
 frame_excess_count = $+1
 	ld a,0
 	inc a
 _
 	ld (frame_excess_count),a
-	ld a,0
 	jp.sis po,frame_interrupt_return
 	; Revert $7F and set parity odd
 	xor $7F

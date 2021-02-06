@@ -52,12 +52,6 @@ r_event:
 	.block $38-$
 r_cycle_check:
 rst38h:
-	ld iyl,a
-	ld.lil a,(mpLcdMis)
-	or a
-	jr nz,do_frame_interrupt
-frame_interrupt_return:
-	ld a,iyl
 	inc iyh
 	ret nz
 	jp cycle_overflow_for_jump
@@ -116,9 +110,6 @@ do_pop_ports:
 do_pop_ports_smc = $
 	pop bc
 	ret
-	
-do_frame_interrupt:
-	jp.lil frame_interrupt
 	
 callstack_pop_skip:
 	jp p,callstack_pop_save
@@ -375,6 +366,7 @@ banked_jump_mismatch:
 	jp.lil banked_jump_mismatch_helper
 	
 cycle_overflow_for_jump:
+	ld iyl,a
 	pop ix
 	push hl
 	 push de
@@ -924,6 +916,100 @@ _
 	sbc hl,de
 	ex de,hl
 	ret
+
+audio_counter_checker:
+audio_counter = $+1
+	ld hl,0
+	or a
+	sbc hl,bc
+	jr z,audio_expired_handler
+	add hl,de
+	ret c
+	ex de,hl
+	sbc hl,de
+	ex de,hl
+	ret
+	
+audio_expired_handler:
+	ld.lil a,(mpLcdMis)
+	or a
+	jr nz,do_frame_interrupt
+frame_interrupt_return:
+	ld a,(NR52)
+	tst a,$0F
+	jr z,audio_expired_disabled
+	push.l bc
+	 ld h,audio_port_value_base >> 8
+	 ld b,$3F
+	 ld c,a
+	 rra
+	 jr nc,++_
+	 ld l,NR14-ioregs
+	 bit 6,(hl)
+	 jr z,++_
+	 ld l,NR11-ioregs
+	 ld a,(hl)
+	 inc a
+	 tst a,b
+	 jr nz,_
+	 dec c
+	 sub $40
+_
+	 ld (hl),a
+_
+	 bit 1,c
+	 jr z,++_
+	 ld l,NR24-ioregs
+	 bit 6,(hl)
+	 jr z,++_
+	 ld l,NR21-ioregs
+	 ld a,(hl)
+	 inc a
+	 tst a,b
+	 jr nz,_
+	 res 1,c
+	 sub $40
+_
+	 ld (hl),a
+_
+	 bit 2,c
+	 jr z,_
+	 ld l,NR34-ioregs
+	 bit 6,(hl)
+	 jr z,_
+	 ld l,NR31-ioregs
+	 inc (hl)
+	 jr nz,_
+	 res 2,c
+_
+	 bit 3,c
+	 jr z,_
+	 ld l,NR44-ioregs
+	 bit 6,(hl)
+	 jr z,_
+	 ld l,NR41-ioregs
+	 ld a,(hl)
+	 inc a
+	 and b
+	 ld (hl),a
+	 jr nz,_
+	 res 3,c
+_
+	 ld a,c
+	 ld (NR52),a
+	pop.l bc
+audio_expired_disabled:
+	ld a,b
+	add a,4096 >> 8	; Double this in double-speed mode
+	ld (audio_counter+1),a
+	sub b
+	add a,d
+	ret c
+	ld de,-4096	; Double this in double-speed mode
+	ret
+
+do_frame_interrupt:
+	jp.lil frame_interrupt
 
 serial_counter_checker:
 serial_counter = $+1
@@ -2315,33 +2401,6 @@ readSTAThandler:
 	ld a,ixl
 	ret
 	
-readNR52handler:
-	ex af,af'
-	ld iyl,a
-	call readNR52
-	ld a,ixl
-	ret
-	
-readNR52:
-	ld a,(NR52)
-	add a,a
-	ld a,$70
-	jr nc,readNR52_finish
-	ld ix,audio_port_value_base
-	push hl
-	 sbc hl,hl
-	 ld l,(ix+NR44-ioregs)
-	 add hl,hl
-	 ld l,(ix+NR34-ioregs)
-	 add hl,hl
-	 ld l,(ix+NR24-ioregs)
-	 add hl,hl
-	 ld l,(ix+NR14-ioregs)
-	 add hl,hl
-	 ld a,h
-	pop hl
-readP1_finish:
-readNR52_finish:
 	ld ixl,a
 	ld a,iyl
 	ex af,af'
@@ -2433,6 +2492,7 @@ _
 	dec a
 readLY_continue:
 	exx
+readP1_finish:
 	ld ixl,a
 	ld a,iyl
 	ex af,af'
@@ -2462,8 +2522,6 @@ mem_read_ports_always:
 	jr z,readDIV
 	cp STAT*2 & $FF
 	jr z,readSTAT
-	cp NR52*2 & $FF
-	jp z,readNR52
 mem_read_oam:
 	ld ix,(ix)
 	ld a,iyl
@@ -2843,6 +2901,28 @@ mbc_2000_denied:
 	ret
 	
 	
+write_audio_enable:
+	 or c
+	 ld (de),a
+	 ; Set the appropriate bit in NR52
+	 ld a,e
+	 and 3
+	 cp 2
+	 inc a
+	 jr c,_
+	 sub 2
+	 add a,a
+	 add a,a
+_
+	 ld c,a
+	 ld e,NR52-ioregs
+	 ld a,(de)
+	 or c
+	 ld (de),a
+	 exx
+	pop af
+	ret
+	
 get_mem_cycle_offset_swap_push:
 	exx
 get_mem_cycle_offset_push:
@@ -3135,7 +3215,7 @@ _
 	 ld a,(TMA)
 	 jr updateTIMAcontinue
 	
-	.block (-$-179)&$FF
+	.block (-$-189)&$FF
 	
 _writeSChandler:
 	ex af,af'
@@ -3164,7 +3244,15 @@ _
 	pop af
 	ret
 	
+_writeNR52handler:
+	ex af,af'
+	ld iyl,a
+_writeNR52:
+	jp.lil NR52_write_helper
+	
 mem_write_port_handler_base = $-2
+writeNR52handler:
+	jr _writeNR52handler
 writeSChandler:
 	jr _writeSChandler
 writeNR10handler:
@@ -3279,21 +3367,21 @@ mem_write_port_routines:
 write_audio:
 	ld a,iyl
 	ex af,af'
+write_audio_disable_smc = $
 	push af
 	 exx
 	 ld c,a
 	 ld e,ixl
 	 ld d,$FF
 	 ld ixh,audio_port_value_base >> 8
+	 ld (ix),c
 	 ld a,(ix + audio_port_masks - audio_port_values)
-	 ; Keep the enable bit from being reset by writes
+	 ; Handle writes to the enable bit specially
 	 cp $BF
 	 jr nz,_
-	 bit 7,(ix)
-	 jr z,_
-	 set 7,c
+	 bit 7,c
+	 jp nz,write_audio_enable
 _
-	 ld (ix),c
 	 or c
 	 ld (de),a
 	 exx
@@ -3395,6 +3483,9 @@ write_port_ignore:
 writeSC:
 	jp _writeSC
 	
+writeNR52:
+	jp _writeNR52
+	
 write_port_direct:
 	ld a,iyl
 	ex af,af'
@@ -3448,7 +3539,7 @@ write_port_direct:
 	.db write_audio - mem_write_port_routines
 	.db write_audio - mem_write_port_routines
 	.db write_audio - mem_write_port_routines
-	.db write_port_direct - mem_write_port_routines
+	.db writeNR52 - mem_write_port_routines
 	.db write_port_ignore - mem_write_port_routines
 ;28
 	.db write_port_ignore - mem_write_port_routines
@@ -3544,6 +3635,8 @@ event_counter_checker_slot_timer:
 	.dw disabled_counter_checker
 event_counter_checker_slot_serial:
 	.dw disabled_counter_checker
+event_counter_checker_slot_audio:
+	.dw audio_counter_checker
 	.dw event_counter_checkers_done
 	
 	.assume adl=1

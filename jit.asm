@@ -2111,7 +2111,7 @@ mem_write_port_handler_table:
 	.db writeNR44handler - mem_write_port_handler_base
 	.db writeNR50handler - mem_write_port_handler_base
 	.db writeNR51handler - mem_write_port_handler_base
-	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db writeNR52handler - mem_write_port_handler_base
 	.db WRITE_PORT_NO_HANDLER_IGNORE
 ;28
 	.db WRITE_PORT_NO_HANDLER_IGNORE
@@ -2947,13 +2947,8 @@ _
 	jr opgenHMEMreadroutine
 _
 	cp P1*2 & $FF
-	jr nz,_
-	ld bc,readP1handler
-	jr opgenHMEMreadroutine
-_
-	cp NR52*2 & $FF
 	jr nz,opgenHRAMread
-	ld bc,readNR52handler
+	ld bc,readP1handler
 opgenHMEMreadroutine:
 	ld (hl),$CD
 	inc hl
