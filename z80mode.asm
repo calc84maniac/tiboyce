@@ -54,7 +54,15 @@ r_cycle_check:
 rst38h:
 	inc iyh
 	ret nz
-	jp cycle_overflow_for_jump
+	ld iyl,a
+	pop ix
+	push hl
+	 push de
+	  push bc
+	   jp nc,cycle_overflow_for_jump
+	   ld c,(ix-3)
+	   ld de,(ix-7)
+	   jp.lil schedule_subblock_event_helper
 	
 do_pop_check_overflow:
 	ld c,a
@@ -366,31 +374,16 @@ banked_jump_mismatch:
 	jp.lil banked_jump_mismatch_helper
 	
 cycle_overflow_for_jump:
-	ld iyl,a
-	pop ix
-	push hl
-	 push de
-	  push bc
+	   xor a
+	   sub (ix-3)
+	   ld c,a
 	   ld b,(ix+1)
-	   ld c,(ix-3)
-	   ld a,b
-	   xor $C3
-	   jr z,_
-	   and $E7
-	   dec a
-	   jr nz,++_
-_
 	   ld de,(ix+4)
 	   ld ix,(ix+2)
 schedule_jump_event_helper_trampoline:
 	   push ix
 	    jp.lil schedule_jump_event_helper
-_
-	   ld de,(ix-7)
-	   inc ix
-	   push ix
-	    jp.lil schedule_subblock_event_helper
-	   
+	
 schedule_event_finish:
 	    ld (event_cycle_count),a
 	    ld (event_gb_address),hl
@@ -1082,11 +1075,19 @@ decode_jump_return:
 	 ld (hl),ix
 	 ld de,-5
 	 add hl,de
+	 neg
 	 ld (hl),a
 	 dec hl
-	 ld (hl),$C6	;ADD A,
+	 ld (hl),$D6	;SUB -cycles
 	 dec hl
 	 ld (hl),$08	;EX AF,AF'
+	 jr nz,decode_jump_waitloop_return
+	 ; Special case for zero cycles, because carry would be inverted
+	 ; Just do a direct jump, because cycles cannot overflow
+	 inc hl
+	 ld (hl),ix
+	 dec hl
+	 ld (hl),$C3	;JP target
 decode_jump_waitloop_return:
 	pop bc
 	ld a,c
@@ -1876,14 +1877,15 @@ ophandlerE8:
 	jp set_gb_stack
 	
 ophandlerE9:
-	ld iyl,a
+	ex af,af'
 	push hl
 	 push de
 	  push bc
 	   ex de,hl
+	   ld l,a
 	   call.il lookup_code_cached
 	   scf
-	   adc a,iyl
+	   adc a,l
 	   jr c,++_
 _
 	  pop bc
@@ -1894,9 +1896,8 @@ _
 _
 	   inc iyh
 	   jr nz,--_
-	   ld c,iyl
 	   ld iyl,a
-	   sbc a,c
+	   sbc a,l
 	   ld c,a
 	   inc de
 	   dec de
@@ -2252,9 +2253,6 @@ ophandlerF9:
 	jp set_gb_stack
 	
 ophandlerRETcond:
-	; We CALLed this to avoid starting a recompiled instruction with JP
-	inc sp
-	inc sp
 	; Increment the cycle count by 1 before returning
 	ex af,af'
 	inc a
@@ -2263,6 +2261,7 @@ ophandlerRETcond:
 	ret
 	
 ophandlerRETI:
+	ex af,af'
 	ld iyl,a
 	ld a,$A6 ;AND (HL)
 	ld (intstate_smc_1),a

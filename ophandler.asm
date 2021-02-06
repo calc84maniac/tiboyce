@@ -898,23 +898,26 @@ NR52_write_enable:
 ;         IY = cycle count at end of sub-block (>= 0)
 ;         C = cycles until end of sub-block (including conditional branch cycles)
 schedule_subblock_event_helper:
+	inc ix
+	push.s ix
 	call get_base_address
 	push hl
 	 add hl,de
 	 ld a,(hl)
-	 and $E7
-	 cp $20	;jr cond
-	 jr z,_
-	 cp $C0 ;ret cond
+	 add a,a	
+	 jr nc,_
+	 and 4
 	 jr z,++_
 	 ;jp cond
 	 inc de
 	 inc hl
 	 dec c
 _
+	 ;jr cond
 	 inc de
 	 inc hl
 _
+	 ;ret cond
 	 inc de
 	 inc hl
 	 dec c
@@ -941,36 +944,34 @@ schedule_call_event_helper:
 ;         C = cycles until end of sub-block (plus jump cycles, if applicable)
 schedule_jump_event_helper:
 	call get_base_address
-	push hl
-	 add hl,de
-	 ld a,(hl)
-	 cp b
-	 jr z,schedule_jump_event_absolute
-	 cp $18
-	 jr z,schedule_jump_event_relative
-	 bit 0,b
-	 jr nz,schedule_event_helper_resolved
+	add hl,de
+	ld a,(hl)
+	cp b
+	jr z,schedule_jump_event_absolute
+	cp $18
+	jr z,schedule_jump_event_relative
+	bit 0,b
+	jr nz,schedule_event_helper
 schedule_jump_event_relative:
-	 inc hl
-	 ld l,(hl)
-	 ld a,l
-	 rla
-	 sbc a,a
-	 ld h,a
-	 inc de
-	 inc de
-	 add.s hl,de
-	 ex de,hl
-	 jr _
+	inc hl
+	ld l,(hl)
+	ld a,l
+	rla
+	sbc a,a
+	ld h,a
+	inc de
+	inc de
+	add.s hl,de
+	ex de,hl
+	jr _
 schedule_jump_event_absolute:
-	 inc hl
-	 ld e,(hl)
-	 inc hl
-	 ld d,(hl)
-	 dec c
+	inc hl
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	dec c
 _
-	 dec c \ dec c \ dec c
-	pop hl
+	dec c \ dec c \ dec c
 	
 ; Inputs:  DE = starting Game Boy address
 ;          IX = starting recompiled address

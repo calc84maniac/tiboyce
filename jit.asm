@@ -2306,11 +2306,20 @@ cram_bank_base:
 
 	
 opgen_cycle_overflow:
+	; Special case for RET/RETI/JP HL; emit directly to prevent redundant jumps
+	ld a,c
+	xor $F9
+	jr z,_	; Exclude LD SP,HL
+	and $CF
+	jr z,++_
+_
 	push hl
 	 call opgen_emit_unconditional_jump
 	pop de
 	dec de
 	ret
+_
+	jp (ix)
 	
 _opgen3F:
 	ldi
@@ -2423,7 +2432,7 @@ opgen_emit_jump_swapped:
 	inc hl
 	ld (hl),decode_jump >> 8
 	inc hl
-	ld (hl),$38	;JR C,
+	ld (hl),$30	;JR NC,
 	inc hl
 	ld (hl),RST_CYCLE_CHECK
 	inc hl
@@ -2461,14 +2470,14 @@ _opgenRETcond:
 	call opgen_reset_cycle_count
 	dec iy
 	ld a,c
-	xor $C0 ^ $C4
-	ld (hl),a	;CALL cc,ophandlerRETcond
+	xor $C0 ^ $C2
+	ld (hl),a	;JP cc,ophandlerRETcond
 	inc hl
 	ld (hl),ophandlerRETcond & $FF
 	inc hl
 	ld (hl),ophandlerRETcond >> 8
 	inc hl
-	ld (hl),a	;CALL cc,gb_address
+	ld (hl),a	;JP cc,gb_address
 	call opgen_emit_gb_address
 	
 opgen_emit_block_bridge:
@@ -2513,8 +2522,6 @@ opgenblockend:
 	ex (sp),hl
 	ld hl,(hl)
 	ex de,hl
-	ld (hl),$08	;EX AF,AF'
-	inc hl
 	ld (hl),$C3	;JP
 _
 	inc hl
