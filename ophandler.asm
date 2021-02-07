@@ -195,14 +195,13 @@ _
 flush_mem:
 	push af
 	 push hl
-	  dec bc
-	  dec bc
-	  dec.s bc
 	  call lookup_gb_code_address
-	  neg
+	  ; All memory routines are for 1-byte, 2-cycle instructions
+	  dec de
+	  cpl
+	  dec a
 	  ld c,a
-	  sbc a,a
-	  ld b,a
+	  ld b,$FF
 	  add iy,bc
 	  jr flush_mem_finish
 	
@@ -989,6 +988,13 @@ schedule_event_helper_resolved:
 	 jr nz,schedule_event_check_ram_prefix
 schedule_event_continue:
 #ifdef 0
+	 ld a,ixh
+	 cp flush_handler >> 8
+	 jr nz,_
+	 ld a,ixl
+	 cp flush_handler & $FF
+	 jr z,++_
+_
 	 push ix
 	  push hl
 	   push de
@@ -996,14 +1002,15 @@ schedule_event_continue:
 	     lea.s bc,ix
 	     call lookup_gb_code_address
 	    pop bc
-	    cp c
-	    jr nz,$
+	    sub c
+	    call nz,validate_gb_code_address
 	    ex de,hl
 	   pop de
 	   sbc hl,de
 	   jr nz,$
 	  pop hl
 	 pop ix
+_
 #endif
 	 
 	 ld a,iyl
@@ -1034,6 +1041,26 @@ schedule_event_check_ram_prefix:
 	 sub coherency_handler >> 8
 	 jr nz,schedule_event_continue
 	 jr schedule_event_ram_prefix
+	
+#ifdef DEBUG
+validate_gb_code_address:
+	jr c,$
+	; Special case to handle NOPs, ugh
+	ld b,a
+	ld ix,opcounttable
+	call get_base_address
+	add hl,de
+_
+	ld a,(hl)
+	ld ixl,a
+	ld a,(ix)
+	sub opcycleNOP - opcycleroutines
+	jr nz,$
+	inc hl
+	inc de
+	djnz -_
+	ret
+#endif
 	
 	
 ; Inputs:  BCDEHL' are swapped

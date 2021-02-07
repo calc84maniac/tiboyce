@@ -1207,8 +1207,9 @@ opcycleROT:
 	add ix,bc
 	; 1b op, 1b rec, 1cc
 opcycle1byte:
-opcycleNOP:
 	inc ix
+	; 1b op, 0b rec, 1cc
+opcycleNOP:
 	inc de
 	ex de,hl
 	inc a
@@ -1656,23 +1657,23 @@ opcounttable:
 	
 ; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
 opcoderecsizes:
-	.db 1,3,3,1,1,1,2,4
+	.db 0,3,3,1,1,1,2,4
 	.db 7,1,3,1,1,1,2,4
-	.db 1,3,3,1,1,1,2,4
+	.db 0,3,3,1,1,1,2,4
 	.db 0,1,3,1,1,1,2,4
 	.db 19,3,3,1,1,1,2,3
 	.db 19,1,3,1,1,1,2,1
 	.db 19,5,3,3,3,3,6,1
 	.db 19,3,3,3,1,1,2,3
 	
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
+	.db 0,1,1,1,1,1,3,1
+	.db 1,0,1,1,1,1,3,1
+	.db 1,1,0,1,1,1,3,1
+	.db 1,1,1,0,1,1,3,1
+	.db 1,1,1,1,0,1,3,1
+	.db 1,1,1,1,1,0,3,1
 	.db 3,3,3,3,3,3,7,3
-	.db 1,1,1,1,1,1,3,1
+	.db 1,1,1,1,1,1,3,0
 	
 	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,3,1

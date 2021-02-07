@@ -114,13 +114,11 @@ opgen1byte_2cc:
 	dec iy
 	jr opgen1byte
 	
-opgenNOP:
-	ex de,hl
-	ld (hl),0	; NOP
 opgen_next_swap_skip:
 	ex de,hl
 opgen_next_skip:
 	inc de
+opgenNOP:
 	inc hl
 opgen_next:
 	ld bc,opgentable
