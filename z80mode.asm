@@ -1046,9 +1046,12 @@ _
 	  call.il decode_mem_helper
 	  ld (ix+1),de
 	  ld (ix),$CD
+	  ; Load the previous byte into IYL just in case this was LD (HL),n
+	  ld e,(ix-1)
+	  ld a,iyl
+	  ld iyl,e
 	 pop de
 	pop hl
-	ld a,iyl
 	ex af,af'
 	jp (ix)
 	
@@ -1611,15 +1614,6 @@ ophandler35:
 _
 	push af
 	 call mem_write_any_after_read_ixl
-	pop af
-	ret
-	
-ophandler36:
-	push af
-	 ld a,ixl
-	 ex af,af'
-	 ld iyl,a
-	 call mem_write_any_swapped
 	pop af
 	ret
 	
@@ -2733,14 +2727,19 @@ mem_write_vram:
 	jp.lil pe,write_vram_and_expand
 mem_write_bail:
 	pop ix
-	ld a,(ix-8)
-	cp RST_MEM
-	ld a,iyl
+	ld a,RST_MEM
+	cp (ix-8)
 	jr z,mem_write_bail_a
+	cp (ix-10)
+	jr z,mem_write_bail_r
+	dec ix
+mem_write_bail_r:
+	ld a,iyl
 	ex af,af'
 	pea ix-10
 	ret
 mem_write_bail_a:
+	ld a,iyl
 	ex af,af'
 	push af
 	pea ix-8

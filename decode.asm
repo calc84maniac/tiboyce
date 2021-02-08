@@ -284,7 +284,8 @@ decode_intcache_helper:
 ;   8-13,15 = ld r,(hl)
 ;   16-23 = op a,(hl)
 ;   24-29,31 = ld (hl),r
-;   14,30 = unused
+;   30 = ld (hl),nn
+;   14 = unused
 ;
 ; Memory region identifiers:
 ;   0 = HRAM ($FF80 - $FFFE)
@@ -307,7 +308,8 @@ decode_intcache_helper:
 ; Inputs:  IX = address following the RST_MEM instruction
 ;          BCDEHL = Game Boy BCDEHL
 ; Outputs: IX = address of the RST_MEM instruction
-;          DE = address of the memory access routine
+;          DE = address of the memory access routine, or flush_mem_handler
+;          When flush_mem_handler is returned, Z is set for 2-byte instructions
 ; Destroys AF,HL
 decode_mem_helper:
 	dec ix
@@ -376,74 +378,88 @@ _
 	push bc \ push hl
 	 ex de,hl
 	 ld.s d,(ix+1)
+	 ; Save on the stack in case the original memory location is overwritten
+	 push de
 	 
-	 ; Emit RET and possible post-increment/decrement
-	 ld hl,(z80codebase+memroutine_next)
-	 inc hl
-	 inc hl
-	 ld (hl),$C9	;RET
-	 ld a,e
-	 and $1C
-	 cp 4
-	 jr nz,++_
-	 ld a,e
-	 rra
-	 ld d,$77	;LD (HL),A
-	 jr nc,_
-	 ld d,$7E	;LD A,(HL)
+	  ; Emit RET and possible post-increment/decrement
+	  ld hl,(z80codebase+memroutine_next)
+	  inc hl
+	  inc hl
+	  ld (hl),$C9	;RET
+	  ld a,e
+	  and $1C
+	  cp 4
+	  jr nz,++_
+	  ld a,e
+	  rra
+	  ld d,$77	;LD (HL),A
+	  jr nc,_
+	  ld d,$7E	;LD A,(HL)
 _
-	 dec hl
-	 rra
-	 ld (hl),$23 ;INC HL
-	 jr nc,_
-	 ld (hl),$2B ;DEC HL
+	  dec hl
+	  rra
+	  ld (hl),$23 ;INC HL
+	  jr nc,_
+	  ld (hl),$2B ;DEC HL
 _
-	 dec hl
+	  dec hl
 	  
-	 ; Get register pair index (BC=-4, DE=-2, HL=0)
-	 ld a,e
-	 and $1E
-	 sub 4
-	 jr c,_
-	 xor a
+	  ; Get register pair index (BC=-4, DE=-2, HL=0)
+	  ld a,e
+	  and $1E
+	  sub 4
+	  jr c,_
+	  xor a
 _
-	 ld c,a
+	  ld c,a
 	 
-	 ld a,e
-	 rlca
-	 rlca
-	 rlca
-	 and 7
-	 jr nz,memroutine_gen_not_high
+	  ld a,e
+	  rlca
+	  rlca
+	  rlca
+	  and 7
+	  jr nz,memroutine_gen_not_high
 	 
-	 ld (hl),d
-	 dec hl
-	 ld (hl),$F1 ;POP AF
-	 dec hl
-	 ld (hl),-10
-	 dec hl
-	 ld (hl),$20 ;JR NZ,$-8
-	 dec hl
-	 ld (hl),$3C ;INC A
-	 dec hl
-	 ld a,c
-	 add a,$A4 ;AND B/D/H
-	 ld (hl),a
-	 dec hl
-	 ld (hl),$9F ;SBC A,A
-	 dec hl
-	 ld (hl),$17 ;RLA
-	 dec hl
-	 add a,$7D-$A4 ;LD A,C/E/L
-	 ld (hl),a
+	  ld (hl),d   ;opcode
+	  dec hl
+	  ld (hl),$F1 ;POP AF
+	  ld a,d
+	  cp $76
+	  jr nz,_
+	  inc hl
+	  ld (hl),$F1 ;POP AF
+	  dec hl
+	  ld (hl),$77 ;LD (HL),A
+	  dec hl
+	  ld (hl),$7D
+	  dec hl
+	  ld (hl),$FD ;LD A,IYL
+_
+	  dec hl
+	  ld (hl),-10
+	  dec hl
+	  ld (hl),$20 ;JR NZ,$-8
+	  dec hl
+	  ld (hl),$3C ;INC A
+	  dec hl
+	  ld a,c
+	  add a,$A4 ;AND B/D/H
+	  ld (hl),a
+	  dec hl
+	  ld (hl),$9F ;SBC A,A
+	  dec hl
+	  ld (hl),$17 ;RLA
+	  dec hl
+	  add a,$7D-$A4 ;LD A,C/E/L
+	  ld (hl),a
 	 
 memroutine_gen_end_push:
-	 dec hl
-	 ld (hl),$F5 ;PUSH AF
+	  dec hl
+	  ld (hl),$F5 ;PUSH AF
 memroutine_gen_end:
+	 pop af
 	 push hl
 	  dec hl
-	  ld.s a,(ix+1)
 	  ld (hl),a
 	  dec hl
 	  ld (hl),RST_MEM
@@ -466,317 +482,339 @@ _
 	ld (hl),d
 	dec h
 	ld (hl),e
+	cp $76
 	ret.l
 	
 memroutine_gen_flush:
-	call flush_cache
-	ld de,flush_mem_handler
-	jr -_
+	 ld de,flush_mem_handler
+	 jr -_
 	
 memroutine_gen_not_high:
-	 ld b,a
+	  ld b,a
 	 
-	 ; Get HL-based access instruction for BC/DE accesses
-	 ld a,e
-	 and $1C
-	 jr nz,_
-	 bit 0,e
-	 ld d,$77	;LD (HL),A
-	 jr z,_
-	 ld d,$7E	;LD A,(HL)
+	  ; Get HL-based access instruction for BC/DE accesses
+	  ld a,e
+	  and $1C
+	  jr nz,_
+	  bit 0,e
+	  ld d,$77	;LD (HL),A
+	  jr z,_
+	  ld d,$7E	;LD A,(HL)
 _
-	 ; Set carry if write instruction
-	 ld a,d
-	 sub $70
-	 sub 8
-	 
-	 djnz memroutine_gen_not_cart0
-	 jr c,memroutine_gen_write_cart
-	 
-	 call memroutine_gen_index
-	 ld de,(rom_start)
-	 ld (hl),de
-	 dec hl
-	 ld (hl),$21
-	 dec hl
-	 ld (hl),$DD
-	 dec hl
-	 ld (hl),$5B	;LD.LIL IX,ACTUAL_ROM_START
-	 dec hl
-	 ld (hl),-8
-	 dec hl
-	 ld (hl),$30	;JR NC,$-6
-	 dec hl
-	 ld (hl),$40
-	 dec hl
-	 ld (hl),$FE	;CP $40
-	 dec hl
-	 ld a,c
-	 add a,$7C	;LD A,B/D/H
-	 ld (hl),a
-	 jr memroutine_gen_end_push
+	  ; Set carry if write instruction
+	  ld a,d
+	  sub $70
+	  sub 8
+	  
+	  djnz memroutine_gen_not_cart0
+	  jr c,memroutine_gen_write_cart
+	  
+	  call memroutine_gen_index
+	  ld de,(rom_start)
+	  ld (hl),de
+	  dec hl
+	  ld (hl),$21
+	  dec hl
+	  ld (hl),$DD
+	  dec hl
+	  ld (hl),$5B	;LD.LIL IX,ACTUAL_ROM_START
+	  dec hl
+	  ld (hl),-8
+	  dec hl
+	  ld (hl),$30	;JR NC,$-6
+	  dec hl
+	  ld (hl),$40
+	  dec hl
+	  ld (hl),$FE	;CP $40
+	  dec hl
+	  ld a,c
+	  add a,$7C	;LD A,B/D/H
+	  ld (hl),a
+	  jr memroutine_gen_end_push
 	 
 memroutine_gen_write_ports:
-	 ld de,mem_write_ports
+	  ld de,mem_write_ports
 memroutine_gen_write:
-	 inc a
-	 jr z,_
-	 ld (hl),$F1	;POP AF
-	 dec hl
+	  inc a
+	  jr z,_
+	  ld (hl),$F1	;POP AF
+	  dec hl
 _
-	 ld (hl),d
-	 dec hl
-	 ld (hl),e
-	 dec hl
-	 ld (hl),$CD	;CALL routine
-	 jr z,_
-	 dec hl
-	 add a,$7F	;LD A,r
-	 ld (hl),a
-	 dec hl
-	 ld (hl),$F5	;PUSH AF
+	  ld (hl),d
+	  dec hl
+	  ld (hl),e
+	  dec hl
+	  ld (hl),$CD	;CALL routine
+	  jr z,++_
+	  dec hl
+	  inc a
+	  jr nz,_
+	  ld (hl),$7D
+	  dec hl
+	  ld a,$FD-$7E	;LD A,IYL
 _
-	 call memroutine_gen_load_ix
-	 jp memroutine_gen_end
+	  add a,$7E	;LD A,r
+	  ld (hl),a
+	  dec hl
+	  ld (hl),$F5	;PUSH AF
+_
+	  call memroutine_gen_load_ix
+	  jp memroutine_gen_end
 	 
 memroutine_gen_not_cart0:
-	 djnz memroutine_gen_not_ports
-	 jr c,memroutine_gen_write_ports
-	 
-	 dec d
-	 ld (hl),d	;Access IXL instead of (HL)
-	 ;Special case for loading into H or L
-	 ld a,d
-	 and $F0
-	 cp $60
-	 jr nz,_
-	 ld (hl),$EB	;EX DE,HL
-	 dec hl
-	 res 5,d
-	 set 4,d
-	 ld (hl),d
+	  djnz memroutine_gen_not_ports
+	  jr c,memroutine_gen_write_ports
+	  
+	  dec d
+	  ld (hl),d	;Access IXL instead of (HL)
+	  ;Special case for loading into H or L
+	  ld a,d
+	  and $F0
+	  cp $60
+	  jr nz,_
+	  ld (hl),$EB	;EX DE,HL
+	  dec hl
+	  res 5,d
+	  set 4,d
+	  ld (hl),d
 _
-	 dec hl
-	 ld (hl),$DD
-	 jr nz,_
-	 dec hl
-	 ld (hl),$EB	;EX DE,HL
+	  dec hl
+	  ld (hl),$DD
+	  jr nz,_
+	  dec hl
+	  ld (hl),$EB	;EX DE,HL
 _
-	 dec hl
-	 ld (hl),mem_read_ports >> 8
-	 dec hl
-	 ld (hl),mem_read_ports & $FF
-	 dec hl
-	 ld (hl),$CD	;CALL mem_read_ports
-	 call memroutine_gen_load_ix	;LD IX,BC/DE/HL
-	 jp memroutine_gen_end
-	 
+	  dec hl
+	  ld (hl),mem_read_ports >> 8
+	  dec hl
+	  ld (hl),mem_read_ports & $FF
+	  dec hl
+	  ld (hl),$CD	;CALL mem_read_ports
+	  call memroutine_gen_load_ix	;LD IX,BC/DE/HL
+	  jp memroutine_gen_end
+	  
 memroutine_gen_write_cart:
-	 ld de,mem_write_cart
-	 jr memroutine_gen_write
-	 
+	  ld de,mem_write_cart
+	  jr memroutine_gen_write
+	  
 memroutine_gen_write_vram:
-	 ld de,mem_write_vram
-	 jr memroutine_gen_write
-	 
+	  ld de,mem_write_vram
+	  jr memroutine_gen_write
+	  
 memroutine_gen_not_cart_bank:
-	 djnz memroutine_gen_not_vram
-	 jr c,memroutine_gen_write_vram
-	 
-	 call memroutine_gen_index
-	 ld de,vram_base
-	 ld (hl),de
-	 dec hl
-	 ld (hl),$21
-	 dec hl
-	 ld (hl),$DD
-	 dec hl
-	 ld (hl),$5B	;LD.LIL IX,vram_base
-	 ex de,hl
-	 ld hl,-9
-	 add hl,de
-	 ex de,hl
-	 dec hl
-	 ld (hl),d
-	 dec hl
-	 ld (hl),e
-	 dec hl
-	 ld (hl),$E2	;JP PO,$-6
-	 dec hl
-	 ld (hl),$20
-	 dec hl
-	 ld (hl),$D6	;SUB $20
-	 dec hl
-	 ld a,c
-	 add a,$7C	;LD A,B/D/H
-	 ld (hl),a
-	 jp memroutine_gen_end_push
-	 
-memroutine_gen_not_ports:
-	 djnz memroutine_gen_not_cart_bank
-	 jr c,memroutine_gen_write_cart
-	 
-	 call memroutine_gen_index
-	 ld de,rom_bank_base
-	 ld (hl),de
-	 dec hl
-	 ld (hl),$2A
-	 dec hl
-	 ld (hl),$DD
-	 dec hl
-	 ld (hl),$5B	;LD.LIL IX,(rom_bank_base)
-	 ex de,hl
-	 ld hl,-9
-	 add hl,de
-	 ex de,hl
-	 dec hl
-	 ld (hl),d
-	 dec hl
-	 ld (hl),e
-	 dec hl
-	 ld (hl),$E2	;JP PO,$-6
-	 dec hl
-	 ld (hl),$40
-	 dec hl
-	 ld (hl),$C6	;ADD A,$40
-	 dec hl
-	 ld a,c
-	 add a,$7C	;LD A,B/D/H
-	 ld (hl),a
-	 jp memroutine_gen_end_push
-	 
-memroutine_gen_not_vram:
-	 djnz memroutine_gen_not_cram
-	
-	 sbc a,a
-memroutine_rtc_smc_1 = $+1
-	 and 0	; 5 when RTC bank selected
-	 call memroutine_gen_index_offset
-	 ld de,cram_bank_base
-	 ld (hl),de
-memroutine_rtc_smc_2 = $
-	 jr _   ; JR C when RTC bank selected
-	 ld de,4
-	 cp 1
-	 push hl
-	  adc hl,de
-	  ld a,(hl)
-	  xor $DD ^ $FE	;ADD.L IX,rr vs CP.L nn
+	  djnz memroutine_gen_not_vram
+	  jr c,memroutine_gen_write_vram
+	  
+	  call memroutine_gen_index
+	  ld de,vram_base
+	  ld (hl),de
+	  dec hl
+	  ld (hl),$21
+	  dec hl
+	  ld (hl),$DD
+	  dec hl
+	  ld (hl),$5B	;LD.LIL IX,vram_base
+	  ex de,hl
+	  ld hl,-9
+	  add hl,de
+	  ex de,hl
+	  dec hl
+	  ld (hl),d
+	  dec hl
+	  ld (hl),e
+	  dec hl
+	  ld (hl),$E2	;JP PO,$-6
+	  dec hl
+	  ld (hl),$20
+	  dec hl
+	  ld (hl),$D6	;SUB $20
+	  dec hl
+	  ld a,c
+	  add a,$7C	;LD A,B/D/H
 	  ld (hl),a
-	 pop hl
+	  jp memroutine_gen_end_push
+	  
+memroutine_gen_not_ports:
+	  djnz memroutine_gen_not_cart_bank
+	  jr c,memroutine_gen_write_cart
+	  
+	  call memroutine_gen_index
+	  ld de,rom_bank_base
+	  ld (hl),de
+	  dec hl
+	  ld (hl),$2A
+	  dec hl
+	  ld (hl),$DD
+	  dec hl
+	  ld (hl),$5B	;LD.LIL IX,(rom_bank_base)
+	  ex de,hl
+	  ld hl,-9
+	  add hl,de
+	  ex de,hl
+	  dec hl
+	  ld (hl),d
+	  dec hl
+	  ld (hl),e
+	  dec hl
+	  ld (hl),$E2	;JP PO,$-6
+	  dec hl
+	  ld (hl),$40
+	  dec hl
+	  ld (hl),$C6	;ADD A,$40
+	  dec hl
+	  ld a,c
+	  add a,$7C	;LD A,B/D/H
+	  ld (hl),a
+	  jp memroutine_gen_end_push
+	  
+memroutine_gen_not_vram:
+	  djnz memroutine_gen_not_cram
+	  
+	  sbc a,a
+memroutine_rtc_smc_1 = $+1
+	  and 0	; 5 when RTC bank selected
+	  call memroutine_gen_index_offset
+	  ld de,cram_bank_base
+	  ld (hl),de
+memroutine_rtc_smc_2 = $
+	  jr _   ; JR C when RTC bank selected
+	  ld de,4
+	  cp 1
+	  push hl
+	   adc hl,de
+	   ld a,(hl)
+	   xor $DD ^ $FE	;ADD.L IX,rr vs CP.L nn
+	   ld (hl),a
+	  pop hl
 _
-	 dec hl
-	 ld (hl),$2A
-	 dec hl
-	 ld (hl),$DD
-	 dec hl
-	 ld (hl),$5B	;LD.LIL IX,(cram_bank_base)
-	 dec hl
-	 ld (hl),-10
-	 dec hl
-	 ld (hl),$30	;JR NC,$-8
-	 dec hl
-	 ld (hl),$20
-	 dec hl
-	 ld (hl),$FE	;CP $20
-	 dec hl
-	 ld (hl),$A0
-	 dec hl
-	 ld (hl),$D6	;SUB $A0
-	 dec hl
-	 ld a,c
-	 add a,$7C	;LD A,B/D/H
-	 ld (hl),a
-	 jp memroutine_gen_end_push
-	
+	  dec hl
+	  ld (hl),$2A
+	  dec hl
+	  ld (hl),$DD
+	  dec hl
+	  ld (hl),$5B	;LD.LIL IX,(cram_bank_base)
+	  dec hl
+	  ld (hl),-10
+	  dec hl
+	  ld (hl),$30	;JR NC,$-8
+	  dec hl
+	  ld (hl),$20
+	  dec hl
+	  ld (hl),$FE	;CP $20
+	  dec hl
+	  ld (hl),$A0
+	  dec hl
+	  ld (hl),$D6	;SUB $A0
+	  dec hl
+	  ld a,c
+	  add a,$7C	;LD A,B/D/H
+	  ld (hl),a
+	  jp memroutine_gen_end_push
+	  
 memroutine_gen_not_cram:
-	 ;We're in RAM, cool!
-	 call memroutine_gen_index
-	 ;Mirrored RAM
-	 ld de,wram_base-$2000
-	 ld a,$1E
-	 djnz _
-	 ;Unmirrored RAM
-	 ld de,wram_base
-	 ld a,$20
+	  ;We're in RAM, cool!
+	  call memroutine_gen_index
+	  ;Mirrored RAM
+	  ld de,wram_base-$2000
+	  ld a,$1E
+	  djnz _
+	  ;Unmirrored RAM
+	  ld de,wram_base
+	  ld a,$20
 _
-	 ld (hl),de
-	 dec hl
-	 ld (hl),$21
-	 dec hl
-	 ld (hl),$DD
-	 dec hl
-	 ld (hl),$5B	;LD.LIL IX,wram_base
-	 dec hl
-	 ld (hl),-10
-	 dec hl
-	 ld (hl),$30	;JR NC,$-8
-	 dec hl
-	 ld (hl),a
-	 dec hl
-	 ld (hl),$FE	;CP $1E / $20
-	 dec hl
-	 cpl
-	 and $E0
-	 ld (hl),a
-	 dec hl
-	 ld (hl),$D6	;SUB $E0 / $C0
-	 dec hl
-	 ld a,c
-	 add a,$7C	;LD A,B/D/H
-	 ld (hl),a
-	 jp memroutine_gen_end_push
+	  ld (hl),de
+	  dec hl
+	  ld (hl),$21
+	  dec hl
+	  ld (hl),$DD
+	  dec hl
+	  ld (hl),$5B	;LD.LIL IX,wram_base
+	  dec hl
+	  ld (hl),-10
+	  dec hl
+	  ld (hl),$30	;JR NC,$-8
+	  dec hl
+	  ld (hl),a
+	  dec hl
+	  ld (hl),$FE	;CP $1E / $20
+	  dec hl
+	  cpl
+	  and $E0
+	  ld (hl),a
+	  dec hl
+	  ld (hl),$D6	;SUB $E0 / $C0
+	  dec hl
+	  ld a,c
+	  add a,$7C	;LD A,B/D/H
+	  ld (hl),a
+	  jp memroutine_gen_end_push
 	
 memroutine_gen_index:
-	 xor a
+	xor a
 memroutine_gen_index_offset:
-	 ld (hl),a	;offset
-	 dec hl
-	 ld (hl),d	;opcode
-	 dec hl
-	 ld (hl),$DD	;IX prefix
-	 dec hl
-	 ld (hl),$5B	;.LIL prefix
-	 dec hl
-	 ld (hl),$F1	;POP AF
-	 dec hl
-	 ld a,c
-	 or a
-	 jr nz,_
-	 ld (hl),$EB	;EX DE,HL	(if accessing HL)
-	 dec hl
-	 ld a,-2
+	ld (hl),a	;offset
+	dec hl
+	ld (hl),d	;opcode
+	ld a,d
+	cp $76
+	jr nz,_
+	inc hl
+	ld a,(hl)
+	ld (hl),$F1	;POP AF
+	dec hl
+	ld (hl),a	;offset
+	dec hl
+	ld (hl),$77	;LD (IX),A
 _
-	 add a,a
-	 add a,a
-	 add a,a
-	 add a,$29
-	 ld (hl),a
-	 dec hl
-	 ld (hl),$DD
-	 dec hl
-	 ld (hl),$5B	;ADD.LIL IX,BC/DE/DE
-	 dec hl
-	 ld a,c
-	 or a
-	 jr nz,_
-	 ld (hl),$EB
-	 dec hl
+	dec hl
+	ld (hl),$DD	;IX prefix
+	dec hl
+	ld (hl),$5B	;.LIL prefix
+	dec hl
+	ld (hl),$F1	;POP AF
+	jr nz,_
+	ld (hl),$7D
+	dec hl
+	ld (hl),$FD	;LD A,IYL
 _
-	 dec hl
-	 dec hl
-	 ret
+	dec hl
+	ld a,c
+	or a
+	jr nz,_
+	ld (hl),$EB	;EX DE,HL	(if accessing HL)
+	dec hl
+	ld a,-2
+_
+	add a,a
+	add a,a
+	add a,a
+	add a,$29
+	ld (hl),a
+	dec hl
+	ld (hl),$DD
+	dec hl
+	ld (hl),$5B	;ADD.LIL IX,BC/DE/DE
+	dec hl
+	ld a,c
+	or a
+	jr nz,_
+	ld (hl),$EB
+	dec hl
+_
+	dec hl
+	dec hl
+	ret
 	
 memroutine_gen_load_ix:
-	 dec hl
-	 ld (hl),$E1
-	 dec hl
-	 ld (hl),$DD	;POP IX
-	 dec hl
-	 ld a,c
-	 add a,a
-	 add a,a
-	 add a,a
-	 add a,$E5	;PUSH BC/DE/HL
-	 ld (hl),a
-	 ret
+	dec hl
+	ld (hl),$E1
+	dec hl
+	ld (hl),$DD	;POP IX
+	dec hl
+	ld a,c
+	add a,a
+	add a,a
+	add a,a
+	add a,$E5	;PUSH BC/DE/HL
+	ld (hl),a
+	ret

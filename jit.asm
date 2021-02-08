@@ -2585,7 +2585,7 @@ _opgen08:
 	.dw ophandler08
 	
 _opgen36:
-	ld a,$DD	;LD IXL,nn
+	ld a,$FD	;LD IYL,nn
 	ld (de),a
 	inc de
 	ld a,$2E
@@ -2593,9 +2593,13 @@ _opgen36:
 	inc de
 	inc hl
 	ldi
-	dec hl
-	call opgenroutinecall_2cc
-	.dw ophandler36
+	ld a,RST_MEM
+	ld (de),a
+	inc de
+	ld a,$76
+	ld (de),a
+	inc de
+	jp opgen36_finish
 	
 opgenroutinecall_4cc:
 	dec iy

@@ -142,8 +142,8 @@ _
 flush_normal:
 	ex af,af'
 	ld iyl,a
-	push bc
-	 push hl
+	push hl
+	 push bc
 	  ld hl,$C3 | (schedule_event_finish << 8)	;JP schedule_event_finish
 	  ld (flush_event_smc),hl
 flush_mem_finish:
@@ -151,8 +151,8 @@ flush_mem_finish:
 	  push de
 	   call lookup_code
 	  pop de
-	 pop hl
-	pop bc
+	 pop bc
+	pop hl
 	ld.sis sp,myz80stack-2
 	ld c,a
 	exx
@@ -189,18 +189,27 @@ _
 ; Recompilation starts at the offending memory instruction.
 ;
 ; Inputs:  BC = address directly following recompiled memory instruction
+;          A = stack overflow counter
+;          Z if instruction is LD (HL),n
 ;          BCDEHL' have been swapped
 ; Outputs: JIT is flushed and execution begins at the new recompiled block
 ;          BCDEHL' have been unswapped
 flush_mem:
-	push af
-	 push hl
+	push hl
+	 push af
 	  call lookup_gb_code_address
-	  ; All memory routines are for 1-byte, 2-cycle instructions
+	  ; Most memory routines are for 1-byte, 2-cycle instructions
 	  dec de
 	  cpl
 	  dec a
 	  ld c,a
+	 pop af
+	 push af
+	  jr nz,_
+	  ; Special handling for 2-byte, 3-cycle instructions
+	  dec de
+	  dec c
+_
 	  ld b,$FF
 	  add iy,bc
 	  jr flush_mem_finish
@@ -1309,6 +1318,9 @@ _
 	  jr c,_
 	  inc de
 	  lea ix,ix+2
+	  cp $BE
+	  jr nz,_
+	  inc ix
 _
 	  ld a,(de)
 	  xor $DD ^ $FE	;ADD.L IX,rr vs CP.L nn

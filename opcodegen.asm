@@ -97,6 +97,7 @@ opgenMEM:
 	ld (de),a
 	inc de
 	ldi
+opgen36_finish:
 	inc de
 	dec iy
 	jr opgen_next_fast
