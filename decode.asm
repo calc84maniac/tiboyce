@@ -1,5 +1,5 @@
 decode_jump_helper:
-	call get_base_address
+	GET_BASE_ADDR_FAST
 	add hl,de
 	ld a,(hl)
 	cp c
@@ -79,45 +79,43 @@ decode_jump_bank_switch:
 	
 	
 decode_rst_helper:
-	push af
+	ex af,af'
+	exx
+	ld c,a
+	push bc
 	 push hl
-	  push de
-	   push bc
-	    ; Get the offset of the RST dispatch
-	    ld a,e
-	    sub dispatch_rst_00 & $FF
-	    ld d,0
-	    ld e,a
-	    ; Get a pointer to the corresponding JR offset
-	    ld hl,z80codebase + do_rst_08 - 1
-	    add hl,de
-	    srl e
-	    add hl,de
-	    ; Get the RST target address
-	    add a,a
-	    ld e,a
-	    ; Adjust the JR offset
-	    ld a,(do_rst-1) & $FF
-	    sub l
-	    ld (hl),a
-	    call lookup_code
-	   pop bc
+	  push ix
+	   ; Get the offset of the RST dispatch
+	   lea de,ix+(-(dispatch_rst_00 + $80) & $FF) - $80
+	   ld d,0
+	   ; Get a pointer to the corresponding JR offset
+	   ld hl,z80codebase + do_rst_08 - 1
+	   add hl,de
+	   ld a,e
+	   srl e
+	   add hl,de
+	   ; Get the RST target address
+	   add a,a
+	   ld e,a
+	   ; Adjust the JR offset
+	   ld a,(do_rst-1) & $FF
+	   sub l
+	   ld (hl),a
+	   call lookup_code
+	   ex (sp),ix
 	  pop hl
 	  ; Emit the cycle count
 	  add a,4
-	  ld.s (hl),a
+	  ld.s (ix+3),a
 	  ; Emit the jump target
-	  push hl
-	   inc hl
-	   inc hl
-	   ld.s (hl),ix
-	  pop de
+	  ld.s (ix+1),hl
 	 pop hl
-	pop af
-	jp.sis do_rst
+	pop bc
+	ld a,c
+	jp.sis do_rst_decoded
 	
 decode_call_helper:
-	call get_base_address
+	GET_BASE_ADDR_FAST
 	ld b,d
 	add hl,de
 	ld d,(hl)
@@ -137,7 +135,7 @@ _
 	call nc,lookup_code
 _
 	add a,6	; Taken call eats 6 cycles
-	ld b,RST_CALL
+	; Carry is reset
 	ret.l
 	
 decode_call_flush:
@@ -151,12 +149,6 @@ decode_call_bank_switch:
 	sub $40
 	cp $40
 	jr nc,decode_call_common
-	
-	pop.s hl
-	push.s hl
-	ld a,(z80codebase+curr_rom_bank)
-	inc hl
-	ld.s (hl),a
 	
 	push de
 	 ld hl,(z80codebase+memroutine_next)
@@ -186,13 +178,16 @@ decode_call_bank_switch:
 	 scf
 _
 	 call nc,lookup_code
-	 add a,6	; Taken call eats 6 cycles
+	 sub -6	; Taken call eats 6 cycles
 	 ex (sp),ix
 	pop hl
-	ld.s (ix+3),hl	;JIT target
-	ld hl,(do_rom_bank_call << 8) | $CD	; CALL do_rom_bank_call
-	ld (ix),hl
-	ld b,l	;CALL
+	ld (ix),$C3
+	ld (ix+1),hl  ;JIT target
+	ld.sis hl,(curr_rom_bank-1)
+	ld l,a
+	ld.s (ix+3),hl  ;ROM bank and taken cycle count
+	ld bc,do_rom_bank_call
+	; Carry is set
 	ret.l
 	
 banked_jump_mismatch_helper:
@@ -200,7 +195,7 @@ banked_jump_mismatch_helper:
 	 push hl
 	  ; Look up the old target
 	  ld.s de,(ix+6)
-	  call get_base_address
+	  GET_BASE_ADDR_FAST
 	  add hl,de
 	  bit 7,(hl)	; Check whether it's JP or JR
 	  inc hl
@@ -237,35 +232,44 @@ _
 	
 	
 banked_call_mismatch_helper:
-	ld.s (ix+2),a
 	push bc
-	 push hl
-	  ld.s de,(ix+3)
-	  call get_base_address
-	  add hl,de
-	  dec hl
-	  ld d,(hl)
-	  dec hl
-	  ld e,(hl)
-	  push ix
-	   call.il lookup_code_cached
-	   add a,6	; Taken call eats 6 cycles
-	   pop.s hl
-	   ld.s (hl),ix
-	   push.s hl
-	  pop ix
-	  ld.s (ix),a
-	 pop hl
+	 push de
+	  push hl
+	   ld.s (ix+4),a  ; Update bank value
+	   inc hl
+	   ld.s de,(hl)
+	   GET_BASE_ADDR_FAST
+	   add hl,de
+	   dec hl
+	   ld d,(hl)
+	   dec hl
+	   ld e,(hl)
+	   push ix
+	    call.il lookup_code_cached
+	    add a,6	; Taken call eats 6 cycles
+	    ex (sp),ix
+	   pop hl
+	   ld.s (ix+3),a  ; Update cycle count
+	   ld.s (ix+1),hl  ; Update JIT target
+	  pop hl
+	 pop de
 	pop bc
 	jp.sis banked_call_mismatch_continue
 	
 decode_intcache_helper:
-	push ix
-	 call lookup_code
-	 ; Spend 5 cycles for interrupt dispatch overhead
-	 add a,5
-	 ex (sp),ix
-	pop hl
+	push bc
+	 push de
+	  lea de,ix+(-(dispatch_rst_00 + $80) & $FF) - $80
+	  ld d,a
+	  sla e
+	  push ix
+	   call lookup_code
+	   ; Spend 5 cycles for interrupt dispatch overhead
+	   add a,5
+	   ex (sp),ix
+	  pop hl
+	 pop de
+	pop bc
 	ret.l
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
@@ -510,7 +514,8 @@ _
 	  jr c,memroutine_gen_write_cart
 	  
 	  call memroutine_gen_index
-	  ld de,(rom_start)
+rom_start_smc_1 = $+1
+	  ld de,0
 	  ld (hl),de
 	  dec hl
 	  ld (hl),$21
@@ -532,8 +537,8 @@ _
 	  ld (hl),a
 	  jr memroutine_gen_end_push
 	 
-memroutine_gen_write_ports:
-	  ld de,mem_write_ports
+memroutine_gen_write_hmem:
+	  ld de,mem_write_hmem
 memroutine_gen_write:
 	  inc a
 	  jr z,_
@@ -562,8 +567,8 @@ _
 	  jp memroutine_gen_end
 	 
 memroutine_gen_not_cart0:
-	  djnz memroutine_gen_not_ports
-	  jr c,memroutine_gen_write_ports
+	  djnz memroutine_gen_not_hmem
+	  jr c,memroutine_gen_write_hmem
 	  
 	  dec d
 	  ld (hl),d	;Access IXL instead of (HL)
@@ -585,11 +590,11 @@ _
 	  ld (hl),$EB	;EX DE,HL
 _
 	  dec hl
-	  ld (hl),mem_read_ports >> 8
+	  ld (hl),mem_read_hmem >> 8
 	  dec hl
-	  ld (hl),mem_read_ports & $FF
+	  ld (hl),mem_read_hmem & $FF
 	  dec hl
-	  ld (hl),$CD	;CALL mem_read_ports
+	  ld (hl),$CD	;CALL mem_read_hmem
 	  call memroutine_gen_load_ix	;LD IX,BC/DE/HL
 	  jp memroutine_gen_end
 	  
@@ -634,7 +639,7 @@ memroutine_gen_not_cart_bank:
 	  ld (hl),a
 	  jp memroutine_gen_end_push
 	  
-memroutine_gen_not_ports:
+memroutine_gen_not_hmem:
 	  djnz memroutine_gen_not_cart_bank
 	  jr c,memroutine_gen_write_cart
 	  

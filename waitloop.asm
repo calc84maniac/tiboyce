@@ -31,7 +31,7 @@ identify_waitloop:
 #endif
 	
 	ld (waitloop_jp_smc),de
-	call get_base_address
+	GET_BASE_ADDR_FAST
 	add hl,de
 	ld (waitloop_jr_smc),hl
 	lea de,ix

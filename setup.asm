@@ -526,14 +526,19 @@ _
 	ld iy,state_start+state_size
 	
 	ld.sis sp,myz80stack
-	ld hl,ophandlerRET
+	ld hl,ophandlerRET  ; Return handler when no cached calls are available
 	push.s hl
+	ld c,4  ; Cycle count of 4 for default return handler
+	push.s bc
+
+	ld hl,(rom_start)
+	ld (rom_start_smc_1),hl
+	ld (z80codebase+rom_start_smc_2),hl
 	
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
 	ld (z80codebase+rom_bank_check_smc_1),a
 	ld (z80codebase+rom_bank_check_smc_2),a
-	ld (z80codebase+rom_bank_check_smc_3),a
 	ld c,a
 	ld b,3
 	mlt bc
@@ -558,13 +563,15 @@ _
 	sbc hl,bc
 	ld (z80codebase+cram_base_0),hl
 	
-	ld a,(rom_bank_mask)
-	ld (z80codebase+rom_bank_mask_smc),a
-	
 	ld a,(mbc)
 	ld (z80codebase+mbc_z80),a
 	ld b,a
-	ld a,$FF	;MBC3/MBC3+RTC/MBC5
+	cp 5
+	ld a,(rom_bank_mask)  ;MBC5
+	ld (z80codebase+rom_bank_mask_smc),a
+	jr nc,_
+	sbc a,a	;MBC3/MBC3+RTC
+_
 	djnz _
 	ld a,$1F	;MBC1
 _
@@ -662,17 +669,25 @@ _
 _
 	
 	ld a,(iy-state_size+STATE_INTERRUPTS)
+	; Check value of IME
 	rra
-	jr c,_
-	ld a,$AF ;XOR A (overriding AND (HL))
+	jr c,++_
+	; Check if EI delay is active
+	rra
+	jr nc,_
+	ld hl,event_counter_checkers_ei_delay
+	ld.sis (ei_delay_event_smc),hl
+_
+	ld a,$08 ;EX AF,AF' (overriding RET)
 	ld (z80codebase+intstate_smc_1),a
+	xor a
 	ld (z80codebase+intstate_smc_2),a
 _
 	
 	; Set the initial DIV counter to one cycle in the future
 	ld hl,(iy-state_size+STATE_DIV_COUNTER)
 	inc hl
-	ld.sis (div_counter),hl
+	ld i,hl
 	push hl
 	
 	 ; Get the number of cycles from one cycle in the future until vblank
@@ -958,57 +973,46 @@ _
 	call lookup_code
 	; Push the target JIT address to the Z80 stack
 	push.s ix
-	lea hl,ix
-	; Save the cycles until block end in IX
-	ld ixh,0
-	ld ixl,a
-	; Set the negative block cycle offset of the current instruction
-	neg
-	ld (z80codebase+event_cycle_count),a
-	; Save the event address and write an event handler call
-	ld.sis (event_address),hl
-	ld.s a,(hl)
-	ld (z80codebase+event_value),a
-	ld.s (hl),RST_EVENT
 	
 	; Get the GB registers in BDEHL'
 	ld.s bc,(iy-state_size+STATE_REG_BC)
 	ld.s de,(iy-state_size+STATE_REG_DE)
 	ld.s hl,(iy-state_size+STATE_REG_HL)
 	exx
-	; Push the (remapped) GB AF to the Z80 stack
+	; Save the block cycle offset of the current instruction to C
+	ld c,a
+	; Get and remap GB AF
 	ld de,(iy-state_size+STATE_REG_AF)
 	ld h,flags_lut >> 8
 	ld l,e
 	ld.s e,(hl)
-	push.s de
+	push de
+	pop af
 	; Get GB SP before we destroy IY
 	ld.s hl,(iy-state_size+STATE_REG_SP)
 
-	; Set the cycle count at block end relative to the current event,
-	; which has been set to 1 cycle after block start
-	lea.s iy,ix-1
+	; Set the cycle count for the current event,
+	; which will occur in 1 cycle to force a reschedule
+	ld iy,$FFFF
 
-	; Set the callstack limit
-	ld a,CALL_STACK_DEPTH + 1
-	ld i,a
-
-	; Put the low cycle count in A'
-	ld a,iyl
-	ex af,af'
-
-	; Set the Game Boy stack, pop GB AF, and return to the JIT code
-	jp.sis set_gb_stack_pushed
+	; Set the Game Boy stack, dispatch interrupt if pending,
+	; and reschedule events after 1 cycle
+	jp.sis start_emulation
 	
 ExitEmulation:
 	ld ix,state_start+state_size
 	ld.sis hl,(event_gb_address)
 	ld (ix-state_size+STATE_REG_PC),hl
 	
-	exx
+	pop hl
 	ld.sis de,(sp_base_address_neg)
 	add hl,de
 	ld.s (ix-state_size+STATE_REG_SP),hl
+	
+	exx
+	push.s hl
+	push.s de
+	push.s bc
 	
 	ex af,af'
 	push af
@@ -1029,14 +1033,9 @@ ExitEmulation:
 	ldir.s
 	
 	; Calculate the DIV cycle count
-	dec bc
-	ld a,(z80codebase+event_cycle_count)
-	dec a
-	ld c,a
-	ld.sis hl,(div_counter)
-	add hl,bc
-	lea bc,iy+1
-	add hl,bc
+	ld hl,i
+	lea de,iy
+	add hl,de
 	ex de,hl
 	
 	; Save the frame-relative cycle count
@@ -1081,10 +1080,13 @@ _
 	ld (ix-ioregs+TIMA),h
 _
 	
+	; Save the interrupt state: bit 0 = IME, bit 1 = delayed EI
+	ld a,(z80codebase+intstate_smc_2)
+	cp 1
 	ld a,(z80codebase+intstate_smc_1)
-	rra
-	sbc a,a
-	inc a
+	rla
+	dec a
+	and 3
 	ld (ix-state_size+STATE_INTERRUPTS),a
 	
 	ld a,(z80codebase+curr_rom_bank)

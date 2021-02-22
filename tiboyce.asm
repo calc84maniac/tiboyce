@@ -1,8 +1,32 @@
 #define CALL_STACK_DEPTH 32
-#define CALL_STACK_ENTRY_SIZE 6
-#define INT_RETURN_STACK_SIZE 5*6
+#define CALL_STACK_ENTRY_SIZE_Z80 6
+#define CALL_STACK_ENTRY_SIZE_ADL 3
 
 #define ERROR_CATCHER (Z80Error << 8) | $C3
+
+; Gets the 24-bit base pointer for a given Game Boy address.
+; The base plus the address can be used to directly access GB memory.
+;
+; Inputs:  DE = GB address
+; Outputs: HL = base pointer
+; Destroys: F
+#macro GET_BASE_ADDR_NO_ASSERT
+	ld hl,mem_region_lut
+	ld l,d
+	ld l,(hl)
+	dec h
+	ld hl,(hl)
+#endmacro
+
+#macro GET_BASE_ADDR_FAST
+#ifdef DEBUG
+	; Assert high byte of DE is 0
+	ld hl,$FF0000
+	add hl,de
+	jr c,$
+#endif
+	GET_BASE_ADDR_NO_ASSERT
+#endmacro
 
 #macro ASSERT_NC
 #ifdef DEBUG
@@ -284,11 +308,12 @@ IE = $ffff
 z80codebase = vRam
 ; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
 myz80stack = $FE00
+; The lower bound of the call stack.
+call_stack_lower_bound = myz80stack - 4 - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80)
 ; The flags translation LUT
 flags_lut = myz80stack - 512
 ; The end of the memory routines.
 memroutine_end = flags_lut - 3
-int_return_stack = flags_lut+256+1
 
 ; The bottom of the ADL stack. Grows down from the end of palette memory.
 myADLstack = mpLcdPalette + $01FE

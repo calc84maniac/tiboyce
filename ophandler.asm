@@ -75,8 +75,8 @@ _
 _
 	ld a,$49	; Otherwise, use .lis
 _
-	ld (z80codebase+callstack_pop_compare_smc_1),a
-	ld (z80codebase+callstack_pop_compare_smc_2),a
+	ld (z80codebase+callstack_ret_pop_prefix_smc_1),a
+	ld (z80codebase+callstack_ret_pop_prefix_smc_2),a
 	; Set push jump offsets
 	ld hl,(ix+5)
 	ld a,l
@@ -90,15 +90,11 @@ _
 	sub do_push_jump_smc_5 - do_push_jump_smc_4
 	ld (z80codebase+do_push_jump_smc_5),a
 	sub do_push_and_return_jump_smc - do_push_jump_smc_5
-	; Override offset for CALL to special-case return value
-	cp do_push_ports - (do_push_and_return_jump_smc+1)
-	jr nz,_
-	ld a,do_push_and_return_ports - (do_push_and_return_jump_smc+1)
-_
 	ld (z80codebase+do_push_and_return_jump_smc),a
 	ld a,h
 	ld (z80codebase+do_push_for_call_jump_smc_1),a
-	sub do_push_for_call_jump_smc_2 - do_push_for_call_jump_smc_1
+	; Jump 1 more byte forward to skip the PUSH BC at each entry point
+	sub do_push_for_call_jump_smc_2 - do_push_for_call_jump_smc_1 - 1
 	ld (z80codebase+do_push_for_call_jump_smc_2),a
 	; Set pop jump offsets
 	ld hl,(ix+7)
@@ -120,14 +116,70 @@ _
 	ld.sis (ophandlerF1_jump_smc_2),hl
 	; Copy callstack pop overflow check
 	ld hl,(ix+10)
-	ld (z80codebase+callstack_pop_check_overflow_smc),hl
-	ld hl,(ix+13)
-	ld (z80codebase+callstack_pop_check_overflow_smc+3),hl
+	ld (z80codebase+callstack_ret_check_overflow_smc),hl
 	ld a,ixl
 	add a,a
 	ex de,hl
 	ret.l
 
+	; Propagate the bank mismatch value to the next callstack entry
+	; in the same region as the return address
+callstack_ret_bank_mismatch_helper:
+	ld c,a
+	ld h,d
+callstack_ret_skip_propagate_helper:
+	; Ensure the return address is in the $4000-$7FFF bank
+	ld a,$BF
+	cp h
+#ifdef DEBUG
+	jp po,$
+#else
+	jp po,++_
+#endif
+	; Get the pointer to the upper byte of the first GB return address
+	; Skip over the saved GB stack pointer and the return value
+	ld ix,6 - ((myADLstack & $FF) - $BF)
+	add ix,sp
+_
+	; Check if we reached the end of the callstack
+	cp ixl
+	jr z,_
+	; Check if the address is in the $4000-$7FFF range
+	cp (ix+((myADLstack & $FF) - $BF)+1)
+	lea ix,ix+CALL_STACK_ENTRY_SIZE_ADL
+	jp po,-_
+	; Get the bank mismatch value in A
+	dec sp
+	push hl
+	inc sp
+	pop af
+	; Combine the mismatch value with this entry's value
+	lea hl,ix+((myADLstack & $FF) - $BF)-3+2
+	xor (hl)
+	ld (hl),a
+_
+	ld a,c
+	ret.l
+	
+	; This is called when a CALL, RST, or interrupt occurs
+	; which exceeds the defined callstack limit.
+	; Inputs: SPL = myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL) - 3
+	;         SPS = myz80stack - 4 - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80) - 2
+	;         (SPL) = return value (to Z80 mode, 3 bytes)
+	;         (SPS) = value to preserve on Z80 callstack
+	; Outputs: SPL = myADLstack - 3
+	;          SPS = myz80stack - 4 - 2
+	;          (SPS) = preserved Z80 callstack value
+callstack_overflow_helper:
+	; For now, don't bother with special handling to preserve interrupt entries
+	ld sp,myADLstack
+	push hl
+	 pop.s hl
+	 ld.sis sp,myz80stack - 4
+	 push.s hl
+	 ld hl,(myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL) - 3)
+	 ex (sp),hl
+	ret.l
 
 ; Flushes the JIT code and recompiles anew.
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -153,12 +205,12 @@ flush_mem_finish:
 	  pop de
 	 pop bc
 	pop hl
-	ld.sis sp,myz80stack-2
+	; Flush entire call stack, including interrupt returns
+	ld sp,myADLstack
+	ld.sis sp,myz80stack-4
 	ld c,a
 	exx
 	ld (_+2),a
-	ld a,CALL_STACK_DEPTH+1
-	ld i,a
 _
 	lea iy,iy+0
 	xor a
@@ -266,7 +318,7 @@ scroll_write_DMA:
 	  ex af,af'
 	  ld d,a
 	  ex af,af'
-	  call get_base_address
+	  GET_BASE_ADDR_FAST
 	  add hl,de
 	  ld bc,$00A0
 	  ld de,hram_start
@@ -274,11 +326,7 @@ scroll_write_DMA:
 	 pop bc
 scroll_write_no_change:
 	pop hl
-	exx
-	ld a,iyl
-	ex af,af'
-	pop.s ix
-	jp.s (ix)
+	jp.sis z80_restore_swap_ret
 	
 ; Writes to an LCD scroll register (SCX,SCY,WX,WY). Also BGP and DMA.
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -378,9 +426,7 @@ scroll_write_done_swap:
 scroll_write_done:
 	 ld.s (hl),a
 	pop hl
-	exx
-	pop.s ix
-	jp.s (ix)
+	jp.sis z80_swap_ret
 	
 ; Writes to the LY compare register (LYC).
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -596,11 +642,7 @@ _
 	 and $28
 	 jp.sis nz,trigger_event_pushed
 	pop hl
-	exx
-	ld a,iyl
-	ex af,af'
-	pop.s ix
-	jp.s (ix)
+	jp.sis z80_restore_swap_ret
 	
 ; Writes to the LCD control register (LCDC).
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -698,7 +740,7 @@ _
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
 	 ; Forcibly skip to scanline 0
-	 ld.sis hl,(div_counter)
+	 ld hl,i
 	 add hl,de
 	 ex de,hl
 	 ld hl,MODE_2_CYCLES + MODE_3_CYCLES
@@ -744,11 +786,20 @@ div_write_helper:
 	  sbc hl,hl
 	  ld.sis (audio_counter),hl
 	  sbc hl,de
-	  ld.sis de,(div_counter)
-	  ld.sis (div_counter),hl
-	  or a
+	  ex de,hl
+	  ld hl,i
+	  ex de,hl
+	  ld i,hl
+	  scf
 	  sbc hl,de
 	  ex de,hl
+	  ; If bit 11 of DIV was already reset, delay audio counter
+	  bit 3,d
+	  jr z,_
+	  ld hl,4096
+	  ld.sis (audio_counter),hl
+_
+	  inc de
 	  ld.sis hl,(vblank_counter)
 	  add hl,de
 	  ld.sis (vblank_counter),hl
@@ -790,11 +841,7 @@ tac_write_helper:
 	 ld.sis (event_counter_checker_slot_timer),hl
 return_from_write_helper:
 	pop hl
-	exx
-	ld a,iyl
-	ex af,af'
-	pop.s ix
-	jp.s (ix)
+	jp.sis z80_restore_swap_ret
 _
 	 ; Get SMC data
 	 ld c,a
@@ -835,7 +882,7 @@ tima_write_helper:
 	 ld l,TIMA & $FF
 	 ld a,(hl)
 	 
-	 ld.sis hl,(div_counter)
+	 ld hl,i
 	 add hl,de
 	 
 	 cpl
@@ -908,42 +955,57 @@ NR52_write_enable:
 schedule_subblock_event_helper:
 	inc ix
 	push.s ix
-	call get_base_address
-	push hl
-	 add hl,de
-	 ld a,(hl)
-	 add a,a	
-	 jr nc,_
-	 and 4
-	 jr z,++_
-	 ;jp cond
-	 inc de
-	 inc hl
-	 dec c
+	GET_BASE_ADDR_FAST
+	ex de,hl
+	add hl,de
+	ld a,(hl)
+	add a,a	
+	jr nc,_
+	and 4
+	jr z,++_
+	;jp cond
+	inc hl
+	dec c
 _
-	 ;jr cond
-	 inc de
-	 inc hl
+	;jr cond
+	inc hl
 _
-	 ;ret cond
-	 inc de
-	 inc hl
-	 dec c
-	 dec c
-	 jr schedule_event_helper_resolved
+	;ret cond
+	inc hl
+	dec c
+	dec c
+schedule_event_helper_resolved:
+	ld a,iyl
+	sub c
+	jr nc,schedule_event_now_resolved
+	push de
+	 ld de,opcounttable
+	 ld bc,3
+	 call opcycle_first
+	 ld c,a
+	 ld a,iyl
+	 sub c
+	 ASSERT_NC
+	pop de
+	sbc hl,de
+	jp.sis schedule_event_finish
+	
+schedule_event_now_resolved:
+	sbc hl,de
+	ld a,c
+	jp.sis schedule_event_finish
 	
 ; Inputs: DE = Game Boy address at last byte of call instruction
 ;         IX = starting recompiled address
 ;         IY = cycle count at end of sub-block (>= 0)
 ;         C = cycles until end of sub-block (plus jump cycles, if applicable)
 schedule_call_event_helper:
-	call get_base_address
+	GET_BASE_ADDR_FAST
 	add hl,de
 	ld d,(hl)
 	dec hl
 	ld e,(hl)
 	jr schedule_event_helper
-	
 
 ; Inputs: DE = Game Boy address of jump instruction
 ;         IX = starting recompiled address
@@ -951,7 +1013,7 @@ schedule_call_event_helper:
 ;         B = recompiled jump opcode
 ;         C = cycles until end of sub-block (plus jump cycles, if applicable)
 schedule_jump_event_helper:
-	call get_base_address
+	GET_BASE_ADDR_FAST
 	add hl,de
 	ld a,(hl)
 	cp b
@@ -989,75 +1051,65 @@ _
 ;          IX = event recompiled address
 ;          A = event (negative) cycles to sub-block end
 schedule_event_helper:
-	call get_base_address
+	ld a,iyl
+	sub c
+	jr nc,schedule_event_now
+	GET_BASE_ADDR_FAST
 	push hl
 	 add hl,de
-schedule_event_helper_resolved:
-	 bit 7,d
-	 jr nz,schedule_event_check_ram_prefix
-schedule_event_continue:
 #ifdef 0
-	 ld a,ixh
-	 cp flush_handler >> 8
-	 jr nz,_
-	 ld a,ixl
-	 cp flush_handler & $FF
-	 jr z,++_
+	 push af
+	  ld a,ixh
+	  cp flush_handler >> 8
+	  jr nz,_
+	  ld a,ixl
+	  cp flush_handler & $FF
+	  jr z,++_
 _
-	 push ix
-	  push hl
-	   push de
-	    push bc
-	     lea.s bc,ix
-	     call lookup_gb_code_address
-	    pop bc
-	    sub c
-	    call nz,validate_gb_code_address
-	    ex de,hl
-	   pop de
-	   sbc hl,de
-	   jr nz,$
-	  pop hl
-	 pop ix
+	  push ix
+	   push hl
+	    push de
+	     push bc
+	      lea.s bc,ix
+	      call lookup_gb_code_address
+	     pop bc
+	     sub c
+	     call nz,validate_gb_code_address
+	     ex de,hl
+	    pop de
+	    sbc hl,de
+	    jr nz,$
+	   pop hl
+	  pop ix
 _
+	 pop af
 #endif
-	 
-	 ld a,iyl
-	 sub c
-	 jr nc,schedule_event_now
 	 
 	 ld de,opcounttable
 	 ld bc,3
 	 call opcycle_first
-schedule_event_now:
-	 sub iyl
-	 or a
-schedule_event_ram_prefix:
+	 ld c,a
+	 ld a,iyl
+	 sub c
+	 ASSERT_NC
 	pop de
 	sbc hl,de
+	jp.sis schedule_event_finish
+
+schedule_event_now:
+	ex de,hl
+	ld a,c
+	; This is the only code path that could target the flush handler
 flush_event_smc = $+1
 	jp.sis schedule_event_finish
 	
-schedule_event_check_ram_prefix:
-	 ld.s a,(ix)
-	 cp $CD
-	 jr nz,schedule_event_continue
-	 ld.s de,(ix+1)
-	 ld a,e
-	 cp coherency_handler & $FF
-	 jr nz,schedule_event_continue
-	 ld a,d
-	 sub coherency_handler >> 8
-	 jr nz,schedule_event_continue
-	 jr schedule_event_ram_prefix
-	
 #ifdef DEBUG
 validate_gb_code_address:
-	jr c,$
+	jp m,$
 	; Special case to handle NOPs, ugh
 	ld b,a
 	ld ix,opcounttable
-	call get_base_address
+	GET_BASE_ADDR_FAST
 	add hl,de
 _
 	ld a,(hl)
@@ -1130,28 +1182,6 @@ resolve_mem_cycle_offset_helper:
 	dec hl
 	jp.sis get_mem_cycle_offset_continue
 	
-	
-; Inputs:  BCDEHL' are swapped
-;          IX = current JIT address
-;          DE = call return GB address
-;          A = cycles taken by call
-; Outputs: BCDEHL' are swapped
-;          IX = current JIT address
-;          HL = current GB address
-;          A = NEGATIVE cycles to add for current sub-block position
-; Preserves: B
-resolve_mem_cycle_offset_for_call_helper:
-	push af
-	 call get_base_address
-	 add hl,de
-	 dec hl
-	 ld d,(hl)
-	 dec hl
-	 ld e,(hl)
-	pop af
-	add a,-6	; Sets the carry flag
-	ASSERT_C
-	.db $21	;LD HL,
 _
 	 pop bc
 	pop bc
@@ -1167,43 +1197,60 @@ _
 	jp.sis get_mem_cycle_offset_continue
 	
 ; Inputs:  BCDEHL' are swapped
-;          DE = current GB address
-;          IX = current JIT address
-;          A = NEGATIVE cycles corresponding to current sub-block position
-;          C = NEGATIVE cycles to add for current sub-block position (may differ when exiting HALT)
+;          IX = current JIT dispatch address
+;          (SP+3) = call return GB address
 ; Outputs: BCDEHL' are swapped
-;          DE = current GB address with bank information
-;          IX = current JIT address
-;          A = NEGATIVE cycles to add for current sub-block position
-; Preserves: HL,B
-;
-dispatch_int_helper:
-	exx
-int_return_sp = $+1
-	ld hl,0
-	ld b,(hl)
-	djnz _
-	scf
-	sbc hl,hl
-	ld (int_cached_return),hl
-	ld hl,z80codebase+int_return_stack
+;          IX = current JIT dispatch address
+;          HL = second byte of scratch buffer, holding target GB address
+;          A = negative cycle offset for CALL instruction
+; Preserves: B
+get_mem_cycle_offset_for_call_helper:
+	pop hl
+	pop de
+	push de
+	push hl
+	dec.s de
+	GET_BASE_ADDR_FAST
+	add hl,de
+	ASSERT_NC
+	ld d,(hl)
+	dec hl
+	ld e,(hl)
+	ld hl,z80codebase + mem_cycle_scratch
+	ld (hl),de
+	inc hl
+	ld a,-6
+	jp.sis get_mem_cycle_offset_for_call_finish
+	
+	
+mbc_change_rom_bank_helper:
+	; Propagate the bank change to the topmost rom callstack entry
+	ld c,a
+	ld ix,0 - ((myADLstack & $FF) - $BF)
+	add ix,sp
+	ld a,$BF
 _
+	cp ixl
+	jr z,_
+	cp (ix+((myADLstack & $FF) - $BF)+1)
+	lea ix,ix+CALL_STACK_ENTRY_SIZE_ADL
+	jp po,-_
+	lea hl,ix+((myADLstack & $FF) - $BF)-3+2
+	ld a,(hl)
+	xor c
 	ld (hl),a
-	ld bc,(int_cached_return)
-	inc hl
-	ld (hl),bc
-	inc hl
-	inc hl
-	inc hl
-	ld.s (hl),ix
-	inc hl
-	inc hl
-	ld (int_return_sp),hl
-	exx
-	call get_banked_address
-	ld (int_cached_return),de
-	xor a
-	jp.sis dispatch_int_continue
+_
+	ld c,3
+	mlt bc
+	ld hl,rombankLUT
+	add hl,bc
+	ld hl,(hl)
+	ld (rom_bank_base),hl
+	ld a,(z80codebase+curr_gb_stack_bank)
+	cp 3 << 5
+	jp.sis nz,mbc_2000_finish
+	pop.s hl
+	jp.sis mbc_fix_sp
 	
 mbc_rtc_latch_helper:
 	exx

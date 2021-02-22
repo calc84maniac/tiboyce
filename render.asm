@@ -234,7 +234,6 @@ write_vram_and_expand:
 	exx
 	lea de,ix
 write_vram_and_expand_swapped:
-	pop.s ix
 	push bc
 	 push hl
 	  ld hl,vram_base
@@ -283,10 +282,7 @@ write_vram_and_expand_swapped:
 	  ld (hl),e
 	 pop hl
 	pop bc
-	exx
-	ld a,iyl
-	ex af,af'
-	jp.s (ix)
+	jp.sis z80_restore_swap_ret
 write_vram_pixels:
 	  res 0,l
 	  ld hl,(hl)
@@ -310,10 +306,7 @@ scaling_mode_smc_2 = $+1
 
 	 pop hl
 	pop bc
-	exx
-	ld a,iyl
-	ex af,af'
-	jp.s (ix)
+	jp.sis z80_restore_swap_ret
 	
 scanline_do_subtile:
 	ld a,8
