@@ -2114,7 +2114,10 @@ ophandlerE8:
 	ld a,l
 	add hl,de
 	add a,e
-	call z,reset_z_flag_only
+	; Reset Z flag but preserve H/C flags and keep N flag reset.
+	ld a,$04
+	daa  ; Resets H but increases low nibble to $A if H was set.
+	daa  ; Iff low nibble is $A, sets H. Z is reset always.
 	ld a,c
 	jp set_gb_stack
 	
@@ -2469,24 +2472,18 @@ ophandlerF8:
 	 ld a,l
 	 add hl,de
 	 add a,e
-	 call z,reset_z_flag_only
+	 ; Reset Z flag but preserve H/C flags and keep N flag reset.
+	 ld a,$04
+	 daa  ; Resets H but increases low nibble to $A if H was set.
+	 daa  ; Iff low nibble is $A, sets H. Z is reset always.
 	pop de
 	ld a,ixl
 	ret
 	
-reset_z_flag_only:
-	push af
-	dec sp
-	pop af
-	res 6,a
-	push af
-	inc sp
-	pop af
-	ret
-	
-clear_zhn_flags:
-	ld iyl,0
-	inc iyl
+reset_z_flag:
+	; IYH is guaranteed to be 0 or at least 118 (for double speed frame)
+	ld iyl,iyh
+	dec iyl
 	ret
 	
 ophandlerF9:

@@ -168,11 +168,22 @@ opgenROT:
 	
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
-	ld (hl),$CC	;CALL Z,clear_zhn_flags
+	bit 4,c
+	jr nz,opgenROT_rla_rra
+	ld (hl),$37 ;SCF
 	inc hl
-	ld (hl),clear_zhn_flags & $FF
+	ld (hl),$8F ;ADC A,A
 	inc hl
-	ld (hl),clear_zhn_flags >> 8
+	ld (hl),$1F ;RRA
+	inc hl
+	ex de,hl
+	jr opgen1byte
+opgenROT_rla_rra:
+	ld (hl),$CC	;CALL Z,reset_z_flag
+	inc hl
+	ld (hl),reset_z_flag & $FF
+	inc hl
+	ld (hl),reset_z_flag >> 8
 	inc hl
 	ex de,hl
 	jr opgen1byte
