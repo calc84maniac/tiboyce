@@ -270,6 +270,9 @@ lookup_gb_finish:
 	
 lookup_gb_found_start:
 	ld a,(ix+7)
+	bit 7,d
+	ret z
+	xor a
 	ret
 
 lookup_gb_new_sub_block_end:
@@ -802,6 +805,8 @@ prepare_flush:
 	; Prevent an event from being scheduled on the flush handler
 	ld hl,$C3 | (schedule_event_finish_no_schedule << 8)	;JP schedule_event_finish_no_schedule
 	ld (flush_event_smc),hl
+	ld hl,$D2 | (schedule_event_finish_for_call_no_schedule << 8)	;JP NC,schedule_event_finish_for_call_no_schedule
+	ld (flush_event_for_call_smc),hl
 	; Dispatch to the flush handler instead of the recompiled code
 	ld ix,flush_handler
 	; Don't consume any cycles during dispatch
@@ -871,8 +876,11 @@ flush_cache:
 	
 	
 check_coherency_helper:
+	exx
+	push hl
 	ex af,af'
-	ld iyl,a
+	ld c,a
+	push bc
 	ld de,recompile_struct
 	add ix,de
 	ld hl,(ix+2)
@@ -909,18 +917,24 @@ _
 	jr nz,rerecompile
 	
 check_coherency_cycles:
+	pop bc
 	ld a,(ix+7)
-	add a,iyl
+	add a,c
 	jp.sis nc,coherency_return
 	inc iyh
 	jp.sis nz,coherency_return
 	ld iyl,a
-	ld c,(ix+7)
+	sub c
+	ld c,a
 	ld hl,(ix+2)
 	ex.s de,hl
 	pop.s ix
 	push.s ix
+#ifdef VALIDATE_SCHEDULE
+	call schedule_event_helper
+#else
 	jp schedule_event_helper
+#endif
 	
 ; Recompiles an existing RAM code block in-place.
 ;
@@ -1011,14 +1025,14 @@ coherency_flush:
 	ld de,(ix+2)
 	call flush_code
 	call lookup_code_with_bank
-	pop.s bc
-	pop.s de
-	pop.s hl
+	pop bc
+	pop hl
+	ld a,c
+	ex af,af'
+	exx
 	; Flush entire call stack, including interrupt returns
 	ld sp,myADLstack
 	ld.sis sp,myz80stack-4
-	ld a,iyl
-	ex af,af'
 	jp.s (ix)
 	
 	

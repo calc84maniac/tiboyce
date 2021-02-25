@@ -408,6 +408,10 @@ scaling_mode_smc_3 = $+1
 	
 	; Input: A=LY (A<144 unless called from vblank)
 render_scanlines:
+#ifdef DEBUG
+	cp 145
+	jr nc,$
+#endif
 myLY = $+1
 	ld c,0
 	sub c

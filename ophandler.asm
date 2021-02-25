@@ -196,8 +196,10 @@ flush_normal:
 	ld iyl,a
 	push hl
 	 push bc
-	  ld hl,$C3 | (schedule_event_finish << 8)	;JP schedule_event_finish
+	  ld hl,$C3 | (do_event_pushed << 8)	;JP do_event_pushed
 	  ld (flush_event_smc),hl
+	  ld hl,$D2 | (schedule_event_finish_for_call_now << 8)	;JP NC,schedule_event_finish_for_call
+	  ld (flush_event_for_call_smc),hl
 flush_mem_finish:
 	  call flush_code
 	  push de
@@ -209,28 +211,24 @@ flush_mem_finish:
 	ld sp,myADLstack
 	ld.sis sp,myz80stack-4
 	ld c,a
-	exx
 	ld (_+2),a
 _
 	lea iy,iy+0
 	xor a
 	cp iyh
 	jr z,_
+	exx
 	ld a,iyl
 	ex af,af'
 	jp.s (ix)
 _
-	push.s hl
-	 push.s de
-	  push.s bc
-	   push.s ix
-	    exx
-	    ld a,c
-	    push de
-	     exx
-	    pop de
-	    ld c,a
-	    jp schedule_event_helper
+	push.s ix
+	push hl
+#ifdef VALIDATE_SCHEDULE
+	call schedule_event_helper
+#else
+	jp schedule_event_helper
+#endif
 	
 ; Flushes the JIT code and recompiles anew.
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -953,8 +951,10 @@ NR52_write_enable:
 ;         IY = cycle count at end of sub-block (>= 0)
 ;         C = cycles until end of sub-block (including conditional branch cycles)
 schedule_subblock_event_helper:
-	inc ix
-	push.s ix
+#ifdef VALIDATE_SCHEDULE
+	ex (sp),hl
+#endif
+	push hl
 	GET_BASE_ADDR_FAST
 	ex de,hl
 	add hl,de
@@ -975,52 +975,90 @@ _
 	dec c
 	dec c
 schedule_event_helper_resolved:
+#ifdef VALIDATE_SCHEDULE
+	call validate_schedule_resolved
+	pop af
+#endif
 	ld a,iyl
 	sub c
 	jr nc,schedule_event_now_resolved
 	push de
-	 ld de,opcounttable
-	 ld bc,3
-	 call opcycle_first
-	 ld c,a
-	 ld a,iyl
-	 sub c
-	 ASSERT_NC
+	 push bc
+	  ld de,opcounttable
+	  ld bc,3
+	  call opcycle_first
+	 pop bc
 	pop de
+	or a
 	sbc hl,de
 	jp.sis schedule_event_finish
 	
 schedule_event_now_resolved:
 	sbc hl,de
-	ld a,c
-	jp.sis schedule_event_finish
+	ld.sis (event_gb_address),hl
+	ld iyl,a
+#ifdef DEBUG
+	ld hl,event_value
+	ld.sis (event_address),hl
+#endif
+	jp.sis do_event_pushed
 	
 ; Inputs: DE = Game Boy address at last byte of call instruction
 ;         IX = starting recompiled address
 ;         IY = cycle count at end of sub-block (>= 0)
 ;         C = cycles until end of sub-block (plus jump cycles, if applicable)
 schedule_call_event_helper:
+#ifdef VALIDATE_SCHEDULE
+	ex (sp),hl
+#endif
+	push hl
 	GET_BASE_ADDR_FAST
 	add hl,de
 	ld d,(hl)
 	dec hl
 	ld e,(hl)
-	jr schedule_event_helper
+schedule_event_helper_for_call:
+#ifdef VALIDATE_SCHEDULE
+	call validate_schedule
+	pop af
+#endif
+	ld a,iyl
+	sub c
+	; This is a code path that could target the flush handler
+flush_event_for_call_smc = $+1
+	jp.sis nc,schedule_event_finish_for_call_now
+	GET_BASE_ADDR_FAST
+	push hl
+	 add hl,de
+	 ld de,opcounttable
+	 push bc
+	  ld bc,3
+	  call opcycle_first
+	 pop bc
+	pop de
+	or a
+	sbc hl,de
+	jp.sis schedule_event_finish_for_call
+	
 
 ; Inputs: DE = Game Boy address of jump instruction
 ;         IX = starting recompiled address
 ;         IY = cycle count at end of sub-block (>= 0)
-;         B = recompiled jump opcode
+;         A = recompiled jump opcode
 ;         C = cycles until end of sub-block (plus jump cycles, if applicable)
 schedule_jump_event_helper:
+#ifdef VALIDATE_SCHEDULE
+	ex (sp),hl
+#endif
+	push hl
 	GET_BASE_ADDR_FAST
 	add hl,de
-	ld a,(hl)
-	cp b
+	cp (hl)
 	jr z,schedule_jump_event_absolute
+	rra
+	jr nc,schedule_jump_event_relative
+	ld a,(hl)
 	cp $18
-	jr z,schedule_jump_event_relative
-	bit 0,b
 	jr nz,schedule_event_helper
 schedule_jump_event_relative:
 	inc hl
@@ -1049,63 +1087,79 @@ _
 ;          C = cycles until end of sub-block
 ; Outputs: HL = event Game Boy address
 ;          IX = event recompiled address
-;          A = event (negative) cycles to sub-block end
+;          A = event cycles to sub-block end
 schedule_event_helper:
 	ld a,iyl
 	sub c
 	jr nc,schedule_event_now
+schedule_event_later:
+#ifdef VALIDATE_SCHEDULE
+	call validate_schedule
+	pop hl
+#endif
 	GET_BASE_ADDR_FAST
 	push hl
 	 add hl,de
-#ifdef 0
-	 push af
-	  ld a,ixh
-	  cp flush_handler >> 8
-	  jr nz,_
-	  ld a,ixl
-	  cp flush_handler & $FF
-	  jr z,++_
-_
-	  push ix
-	   push hl
+	 ld de,opcounttable
+	 push bc
+	  ld bc,3
+	  call opcycle_first
+	 pop bc
+	pop de
+	or a
+	sbc hl,de
+	jp.sis schedule_event_finish
+
+schedule_event_now:
+#ifdef VALIDATE_SCHEDULE
+	call validate_schedule
+	pop hl
+#endif
+	ld.sis (event_gb_address),de
+	ld iyl,a
+#ifdef DEBUG
+	ld hl,event_value
+	ld.sis (event_address),hl
+#endif
+	; This is a code path that could target the flush handler
+flush_event_smc = $+1
+	jp.sis do_event_pushed
+	
+#ifdef VALIDATE_SCHEDULE
+validate_schedule_resolved:
+	push af
+	 push ix
+	  push hl
+	   push de
+	    or a
+	    sbc hl,de
+		push hl
+		jr _
+
+validate_schedule:
+	push af
+	 push ix
+	  push hl
+	   push de
 	    push de
+_
 	     push bc
 	      lea.s bc,ix
 	      call lookup_gb_code_address
 	     pop bc
 	     sub c
-	     call nz,validate_gb_code_address
-	     ex de,hl
-	    pop de
+	     call nz,validate_schedule_nops
+	    pop hl
 	    sbc hl,de
 	    jr nz,$
-	   pop hl
-	  pop ix
-_
-	 pop af
-#endif
-	 
-	 ld de,opcounttable
-	 ld bc,3
-	 call opcycle_first
-	 ld c,a
-	 ld a,iyl
-	 sub c
-	 ASSERT_NC
-	pop de
-	sbc hl,de
-	jp.sis schedule_event_finish
+	   pop de
+	  pop hl
+	 pop ix
+	pop af
+	ret
 
-schedule_event_now:
-	ex de,hl
-	ld a,c
-	; This is the only code path that could target the flush handler
-flush_event_smc = $+1
-	jp.sis schedule_event_finish
-	
-#ifdef DEBUG
-validate_gb_code_address:
-	jp m,$
+validate_schedule_nops:
+	jr c,$
 	; Special case to handle NOPs, ugh
 	ld b,a
 	ld ix,opcounttable

@@ -224,6 +224,7 @@ _
 	   ld h,a
 	   ex (sp),ix
 	   ld.s (ix+3),hl
+	   ex de,hl
 	  pop hl
 	  ld.s (ix+1),hl
 	 pop hl
