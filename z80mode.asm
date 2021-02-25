@@ -55,7 +55,7 @@ rst38h:
 	ld iyl,a
 	pop ix
 	exx
-	jp nc,cycle_overflow_for_jump
+	jr nc,cycle_overflow_for_jump
 	ld c,(ix-3)
 	ld de,(ix-7)
 	inc ix
@@ -121,20 +121,19 @@ do_pop_hmem_smc = $
 	pop bc
 	ret
 	
-do_call_maybe_overflow:
-	inc iyh
-	jr nz,do_call_no_overflow
-	call cycle_overflow_for_call
-	jr callstack_ret
-	
-callstack_ret_bound:
-	ld a,h
-do_pop_bound_smc_4 = $+1
-	cp 0
-callstack_ret_overflow:
-	jp p,_callstack_ret_overflow
-	or a
-	jr callstack_ret_nobound
+cycle_overflow_for_jump:
+	xor a
+	sub (ix-3)
+	ld c,a
+	ld a,(ix+1)
+	ld de,(ix+4)
+	ld ix,(ix+2)
+	push ix
+#ifdef VALIDATE_SCHEDULE
+	call.il schedule_jump_event_helper
+#else
+	jp.lil schedule_jump_event_helper
+#endif
 	
 do_call:
 	pop ix
@@ -183,6 +182,12 @@ callstack_ret_no_overflow:
 	ex af,af'
 	ret
 	
+do_call_maybe_overflow:
+	inc iyh
+	jr nz,do_call_no_overflow
+	call cycle_overflow_for_call
+	jr callstack_ret
+	
 callstack_ret_stack_mismatch:
 	; Get the previous top of the stack
 	ld ix,-4
@@ -196,10 +201,6 @@ callstack_ret_stack_mismatch:
 	add a,4
 	ld c,a
 	jr do_ret_full
-	
-banked_call_stack_overflow:
-	call.il callstack_overflow_helper
-	jr banked_call_stack_overflow_continue
 	
 do_rom_bank_call:
 	ex af,af'
@@ -236,6 +237,15 @@ banked_call_mismatch_continue:
 	jr nz,do_call_no_overflow
 	call cycle_overflow_for_call
 	jr callstack_ret
+	
+callstack_ret_bound:
+	ld a,h
+do_pop_bound_smc_4 = $+1
+	cp 0
+callstack_ret_overflow:
+	jp p,_callstack_ret_overflow
+	or a
+	jr callstack_ret_nobound
 
 callstack_ret_target_mismatch:
 	ld iyl,c  ; Transfer the cycle count
@@ -294,6 +304,13 @@ do_pop_bound_smc_2 = $+1
 do_pop_for_ret_jump_smc_2 = $+1
 	jr do_pop_for_ret_overflow
 	
+banked_call_stack_overflow:
+	call.il callstack_overflow_helper
+	jr banked_call_stack_overflow_continue
+	
+banked_call_mismatch:
+	jp.lil banked_call_mismatch_helper
+	
 do_pop_for_ret_adl:
 	inc b
 	ld.l e,(hl)
@@ -311,9 +328,6 @@ do_ret_full_no_overflow:
 	exx
 	ex af,af'
 	jp (ix)
-	
-banked_call_mismatch:
-	jp.lil banked_call_mismatch_helper
 	
 callstack_ret_bank_mismatch:
 	call.il callstack_ret_bank_mismatch_helper
@@ -452,20 +466,6 @@ _
 	
 banked_jump_mismatch:
 	jp.lil banked_jump_mismatch_helper
-	
-cycle_overflow_for_jump:
-	xor a
-	sub (ix-3)
-	ld c,a
-	ld a,(ix+1)
-	ld de,(ix+4)
-	ld ix,(ix+2)
-	push ix
-#ifdef VALIDATE_SCHEDULE
-	call.il schedule_jump_event_helper
-#else
-	jp.lil schedule_jump_event_helper
-#endif
 	
 schedule_event_finish:
 	ld (event_cycle_count),a
