@@ -284,26 +284,42 @@ write_vram_and_expand_swapped:
 	pop bc
 	jp.sis z80_restore_swap_ret
 write_vram_pixels:
+	  ; Get the low and HIGH bitplanes with nibbles X and Y
 	  res 0,l
-	  ld hl,(hl)
+	  ld a,(hl)  ;A=[x][y]
+	  inc hl
+	  ld b,(hl)  ;B=[X][Y]
 	  ex de,hl
 	  res 0,l
 	  add hl,hl
 	  add hl,hl
-	  ld bc,vram_pixels_start-($8000*4)
-	  add hl,bc
-scaling_mode_smc_2 = $+1
-	  ld bc,$0001	;$0011 in double scaling mode
-	  ld a,d \ cpl \ add a,a \ ld d,a
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a \ inc hl \ sla d
-	  sbc a,a \ or c \ sla e \ jr nc,$+4 \ rlca \ adc a,b \ ld (hl),a
-
+	  ld de,vram_pixels_start-($8000*4)
+	  add hl,de
+	  ex de,hl
+	  rlca \ rlca \ rlca \ rlca  ;A=[y][x]
+	  xor b   ;A=[X^y][Y^x]
+	  ld c,a  ;C=[X^y][Y^x]
+	  and $0F ;A=[0][Y^x]
+	  xor b   ;A=[X][x]
+	  ld hl,overlapped_pixel_index_lut
+	  ld b,l  ;B=0
+	  ld l,a  ;L=[X][x]
+	  xor c   ;A=[y][Y]
+	  rrca \ rrca \ rrca \ rrca  ;A=[Y][y]
+	  ; Look up sequence of pixels for nibble X
+	  ld l,(hl)
+	  inc h
+	  ; Copy 4 pixels to cached VRAM tile data
+	  ld c,4
+	  ldir
+	  ld l,a  ;L=[Y][y]
+	  ; Look up sequence of pixels for nibble Y
+	  ld h,(overlapped_pixel_index_lut >> 8) & $FF
+	  ld l,(hl)
+	  inc h
+	  ; Copy 4 pixels to cached VRAM tile data
+	  ld c,4
+	  ldir
 	 pop hl
 	pop bc
 	jp.sis z80_restore_swap_ret

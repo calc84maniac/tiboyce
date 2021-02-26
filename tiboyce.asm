@@ -362,15 +362,26 @@ convert_palette_LUT = recompile_cache_LUT + $0200
 rombankLUT = convert_palette_LUT + 256
 rombankLUT_end = rombankLUT + (256*3)
 
+; Specifies offsets into a buffer of pixel data corresponding to the
+; input 2bpp pixel data. Note that the input has the high palette bits
+; grouped in the high nibble, and the low palette bits in the low nibble.
+overlapped_pixel_index_lut = rombankLUT_end
+
+; A table representing every possible combination of four 2bpp pixels.
+; The data is overlapped such that a unique sequence of four pixels begins
+; at each byte. Note that this means the table is 256 + 3 bytes large.
+overlapped_pixel_data = overlapped_pixel_index_lut + 256
+
 ; A list of scanline start addresses. 144*2 pointers in size.
-scanlineLUT_1 = rombankLUT_end
+scanlineLUT_1 = overlapped_pixel_data + (256 + 3)
 scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
 ; Temporary backup for 16 palette entries. 32 bytes in size.
 palette_backup = scanlineLUT_2 + (144*3)
 
 ; Preconverted digit pixels for displaying FPS quickly. 24 bytes per character, 264 bytes total.
-digits = palette_backup + 32
+; Must be 8-byte aligned.
+digits = (((palette_backup + 32) - 1) | 7) + 1
 
 romListStart = digits + 264
 

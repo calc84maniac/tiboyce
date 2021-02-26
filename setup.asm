@@ -447,6 +447,31 @@ _
 	inc b
 	ldir
 	
+	ld de,overlapped_pixel_index_lut
+	push de
+	 inc b
+	 ldir
+	pop hl
+	; Use the index data to sprinkle appropriate overlapped pixels
+_
+	ld a,l
+	and %10001000
+	sub 1
+	jr c,_
+	; The pixel data will be converted later to double scale if needed
+	rlca
+	rlca
+	and 3
+_
+	ld e,(hl)
+	ld (de),a
+	inc l
+	jr nz,--_
+	; The trailing pixel data is always color 0
+	scf
+	sbc hl,hl
+	ld (overlapped_pixel_data + 256),hl
+	
 	ld hl,convert_palette_LUT
 _
 	ld (hl),l
@@ -2452,7 +2477,6 @@ SetScalingMode:
 _	
 	ld (scaling_mode_smc_1),a
 	and $11
-	ld (scaling_mode_smc_2),a
 	ld c,a
 	dec a
 	ld b,BG_COLOR_0
@@ -2486,6 +2510,13 @@ _
 	inc hl
 	djnz -_
 	dec c
+	jr nz,-_
+
+	ld hl,overlapped_pixel_data
+_
+	ld a,(hl)
+	rld
+	inc l
 	jr nz,-_
 	
 	ld a,2
@@ -2525,6 +2556,16 @@ _
 	inc hl
 	djnz -_
 	dec c
+	jr nz,-_
+	
+	ld hl,overlapped_pixel_data
+_
+	ld a,(hl)
+	inc a
+	and $0F
+	dec a
+	ld (hl),a
+	inc l
 	jr nz,-_
 	
 	ld a,4
@@ -2728,6 +2769,27 @@ flags_lut_init:
 	.db $43,$43,$43,$43,$43,$43,$43,$43, $A0,$B0,$E0,$F0,$A0,$B0,$E0,$F0
 	.db $52,$52,$52,$52,$52,$52,$52,$52, $80,$90,$C0,$D0,$80,$90,$C0,$D0
 	.db $53,$53,$53,$53,$53,$53,$53,$53, $A0,$B0,$E0,$F0,$A0,$B0,$E0,$F0
+	
+	; Specifies offsets into a buffer of pixel data corresponding to the
+	; input 2bpp pixel data. Note that the input has the high palette bits
+	; grouped in the high nibble, and the low palette bits in the low nibble.
+overlapped_pixel_index_lut_init:
+	.db $00,$80,$81,$88,$82,$A0,$89,$A6,$83,$8B,$A1,$A9,$8A,$A8,$A7,$E8
+	.db $01,$84,$05,$8C,$11,$A2,$15,$AA,$93,$9B,$B1,$B9,$C0,$D6,$47,$E9
+	.db $02,$90,$85,$98,$06,$AE,$8D,$B6,$12,$C1,$A3,$D7,$16,$48,$AB,$EA
+	.db $09,$94,$0D,$9C,$19,$B2,$1D,$BA,$3F,$CD,$43,$E3,$4B,$ED,$4F,$F1
+	.db $03,$13,$91,$BE,$86,$A4,$99,$D4,$07,$17,$AF,$49,$8E,$AC,$B7,$EB
+	.db $21,$31,$23,$C2,$2F,$D2,$33,$D8,$25,$35,$53,$5F,$C4,$DA,$5D,$F9
+	.db $0A,$40,$95,$CA,$0E,$44,$9D,$E0,$1A,$4C,$B3,$EE,$1E,$50,$BB,$F2
+	.db $27,$C6,$2B,$CE,$37,$DC,$3B,$E4,$55,$70,$59,$F5,$61,$77,$65,$FB
+	.db $FF,$04,$10,$14,$92,$B0,$BF,$46,$7F,$87,$9F,$A5,$9A,$B8,$D5,$E7
+	.db $08,$0C,$18,$1C,$3E,$42,$4A,$4E,$8F,$97,$AD,$B5,$CC,$E2,$EC,$F0
+	.db $20,$22,$2E,$32,$24,$52,$C3,$5C,$30,$BD,$D1,$D3,$34,$5E,$D9,$F8
+	.db $26,$2A,$36,$3A,$54,$58,$60,$64,$C5,$C9,$DB,$DF,$6F,$F4,$76,$FA
+	.db $0B,$1B,$41,$4D,$96,$B4,$CB,$EF,$FE,$0F,$3D,$45,$7E,$9E,$E1,$E6
+	.db $29,$39,$57,$63,$C8,$DE,$6E,$75,$1F,$2D,$51,$5B,$BC,$D0,$F3,$F7
+	.db $28,$56,$C7,$6D,$2C,$5A,$CF,$F6,$38,$62,$DD,$74,$FD,$3C,$7D,$E5
+	.db $68,$69,$6A,$71,$6B,$79,$72,$7B,$67,$6C,$78,$7A,$66,$73,$FC,$7C
 	
 DefaultPaletteChecksumTable:
 	.db $00,$88,$16,$36,$D1,$DB,$F2,$3C,$8C,$92,$3D,$5C,$58,$C9,$3E,$70
