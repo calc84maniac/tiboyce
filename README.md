@@ -137,13 +137,11 @@ Example(GCC):
 cd <romgen dir>
 gcc romgen.c zip.c -o romgen
 ```
+The same applies to the save converter in the [tiboyce-convertsav](tiboyce-convertsav) directory.
 ```
 cd <convertsav dir>
 gcc convertsav.c lzf_c.c lzf_d.c -o convertsav
 ```
-
-
-The same applies to the save converter in the [tiboyce-convertsav](tiboyce-convertsav) directory.
 
 ## Issues / Bugs
 
