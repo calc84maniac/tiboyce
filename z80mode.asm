@@ -1624,63 +1624,70 @@ ophandler08_underflow:
 	   jr ophandler08_continue
 	
 ophandler27:
-	exx
-	ld c,a
-	; Get the DAA adjustment according to the N, H, C flags only
-	ld a,0
+	; Save input A value
+	ld iyl,a
+	; Split execution path on input carry, to extract both H and N
+	jr nc,ophandler27_no_carry
+	; Map a value based on input H and N flags:
+	;   N=0, H=0 -> $A6
+	;   N=0, H=1 -> $AA
+	;   N=1, H=0 -> $06
+	;   N=1, H=1 -> $00
+	ld a,$66
 	daa
-	; If the adjustment is 0, special-case to determine N flag
-	jr z,ophandler27_preserve_n
-	; If the adjustment is greater than 0, do addition
-	adc a,a
-	jr nc,ophandler27_add
-	; Restore adjustment value and set carry flag
-	rra
-	; If adjustment was $FA (not $A0 or $9A), output carry reset
-	jp m,ophandler27_subtract_reset_carry
-	; Otherwise, output carry set
-	; Add the adjustment to the original value (plus 1) and decrement
-	adc a,c
-	dec a
-	; If result is 0, N and Z are set, H is reset, C was set by the addition
-	jr z,_
-	; Set N and C, reset H and Z
-	scf
-	ld c,2
-	dec c
-_
-	exx
-	ret
-	
-ophandler27_preserve_n:
-	; Determine whether N was set
-	ld a,$FF
-	daa
-	rlca	; Resets H and N flags
-	jr nc,ophandler27_natural_daa
-	; N was set, use adjustment of 0
-	xor a
-ophandler27_subtract_reset_carry:
-	; Add the adjustment to the original value
-	add a,c
-	; Set N, reset H and C, update Z
-	sub 0
-	exx
-	ret
-	
-ophandler27_add:
-	; Restore the original H and C flags
+	; Invert N flag into C, and if N=0, put the H flag in H, else put it in Z
 	add a,a
-ophandler27_natural_daa:
-	; Do the natural DAA operation for addition, which is equivalent to GB
-	ld a,c
+	; Restore input A value
+	ld a,iyl
+	jr c,ophandler27_add
+	; Case for N=1, C=1
+	jr nz,_
+	; Subtract the adjustment for H=1
+	sub 6
+_
+	; Subtract the adjustment for C=1, set N flag, reset H flag, update Z flag
+	sub $60
+	ret c
+	jr z,_
+	; If Z flag need not be set, set C/N flags, reset H/Z flags
+	cp $A0
+	ret
+_
+	; If Z flag must be set, set C/N/Z flags, reset H flag
+	sub $A0
+	daa
+	ret
+	
+ophandler27_no_carry:
+	; Map a value based on input H and N flags:
+	;   N=0, H=0 -> $46
+	;   N=0, H=1 -> $4A
+	;   N=1, H=0 -> $86
+	;   N=1, H=1 -> $80
+	ld a,$E6
+	daa
+	; Put the N flag in C, and if N=0, put the H flag in H, else put it in Z
+	add a,a
+	; Restore input A value
+	ld a,iyl
+	jr c,ophandler27_sub_no_carry
+ophandler27_add:
+	; N=0, C and H were restored
 	daa
 	; Reset H and N, preserve C and Z
 	rla
 	rra
-	exx
 	ret
 	
+ophandler27_sub_no_carry:
+	; Case for N=1, C=0
+	jr nz,_
+	; Subtract the adjustment for H=1
+	sub 6
+_
+	; Set N, reset H and C, update Z
+	sub 0
+	ret
 	
 ophandler31:
 	pop ix
