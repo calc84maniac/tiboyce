@@ -280,9 +280,9 @@ waitloop_finish:
 	dec hl
 	pop de	; Pop the return address
 	pop af  ; Pop the target cycle count into A
-	pop de  ; Pop the jump cycle count into D
+	pop de  ; Pop the negative jump cycle count into D
 	; Store the target cycle count
-	add a,d
+	sub d
 	ld.s (hl),a
 	dec hl
 	dec hl

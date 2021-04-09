@@ -122,17 +122,16 @@ do_pop_hmem_smc = $
 	ret
 	
 cycle_overflow_for_jump:
-	xor a
+	ld a,-3
 	sub (ix-3)
 	ld c,a
-	ld a,(ix+1)
 	ld de,(ix+4)
 	ld ix,(ix+2)
 	push ix
 #ifdef VALIDATE_SCHEDULE
-	call.il schedule_jump_event_helper
+	call.il schedule_jump_event_helper_adjusted
 #else
-	jp.lil schedule_jump_event_helper
+	jp.lil schedule_jump_event_helper_adjusted
 #endif
 	
 do_call:
@@ -421,6 +420,7 @@ cycle_overflow_for_call:
 	push ix
 	push de
 	dec de
+	dec de
 	ld a,(ix+3)
 	sub 6
 	ld c,a
@@ -431,6 +431,38 @@ cycle_overflow_for_call:
 	jp.lil schedule_call_event_helper
 #endif
 	
+cycle_overflow_for_bridge:
+	inc iyh
+	ret nz
+	ld iyl,a
+	pop ix
+	exx
+	ld c,(ix-4)
+	ld de,(ix+4)
+	ld ix,(ix+2)
+	push ix
+	push.l hl
+#ifdef VALIDATE_SCHEDULE
+	call.il schedule_event_helper
+#else
+	jp.lil schedule_event_helper
+#endif
+	
+do_overlapped_jump:
+	ex af,af'
+	pop ix
+	add a,(ix+4)
+	jr c,++_
+_
+	ex af,af'
+	jp (ix)
+_
+	inc iyh
+	jr nz,--_
+	exx
+	ld d,(ix+4)
+	jr do_slow_jump_overflow_common
+	
 do_rom_bank_jump:
 	ex af,af'
 	exx
@@ -439,7 +471,7 @@ do_rom_bank_jump:
 rom_bank_check_smc_2 = $+1
 	ld a,0
 	ld de,(ix+3)
-	xor e
+	cp e
 	jr nz,banked_jump_mismatch
 	ld a,d
 banked_jump_mismatch_continue:
@@ -452,16 +484,26 @@ _
 _
 	inc iyh
 	jr nz,--_
+do_slow_jump_overflow_common:
 	ld iyl,a
-	ld a,(ix)
-	ld c,d
+	ld a,d
+	add a,(ix+5)
+	ld c,a
+	sub d
 	ld de,(ix+6)
+	inc de
 	ld ix,(ix+1)
 	push ix
 #ifdef VALIDATE_SCHEDULE
-	call.il schedule_jump_event_helper
+	call.il c,schedule_slow_jump_event_helper
+	dec de
+	push.l hl
+	call.il schedule_event_helper
 #else
-	jp.lil schedule_jump_event_helper
+	jp.lil c,schedule_slow_jump_event_helper
+	dec de
+	push.l hl
+	jp.lil schedule_event_helper
 #endif
 	
 banked_jump_mismatch:
@@ -1176,8 +1218,13 @@ _
 	ex af,af'
 	jp (ix)
 	
+decode_block_bridge:
+	ex af,af'
+	scf
+	.db $D2 ;JP NC,
 decode_jump:
 	ex af,af'
+	or a
 	exx
 	push.l hl
 	pop hl
@@ -1186,7 +1233,6 @@ decode_jump:
 	 inc hl
 	 inc hl
 	 inc hl
-	 ld c,(hl)
 	 inc hl
 	 ld ix,(hl)
 	 push hl
@@ -1199,22 +1245,14 @@ decode_jump_return:
 	 ld (hl),ix
 	 ld de,-5
 	 add hl,de
-	 neg
+	 sbc a,b ; Carry is set
+	 cpl
 	 ld (hl),a
 	 dec hl
 	 ld (hl),$D6	;SUB -cycles
+decode_block_bridge_finish:
 	 dec hl
 	 ld (hl),$08	;EX AF,AF'
-	 jr nz,decode_jump_waitloop_return
-	 ; Special case for zero cycles, because carry would be inverted
-	 ; Just do a direct jump, because cycles cannot overflow
-	 inc hl
-	 inc hl
-	 ld (hl),ix
-	 dec hl
-	 ld (hl),$C3	;JP target
-	 dec hl
-	 ld (hl),a  ;NOP (instructions are not allowed to begin with JP)
 decode_jump_waitloop_return:
 	pop bc
 	ld a,c
@@ -1223,6 +1261,38 @@ decode_jump_waitloop_return:
 	exx
 	ex af,af'
 	ret
+	
+decode_block_bridge_return:
+	 pop hl
+	 ld (hl),ix
+	 ld de,-5
+	 add hl,de
+	 ld (hl),$DC	;CALL C,cycle_overflow_for_bridge
+	 dec hl
+	 ld (hl),a
+	 dec hl
+	 ld (hl),$C6	;ADD A,cycles
+	 jr decode_block_bridge_finish
+	
+decode_bank_switch_return:
+	 pop hl
+	 inc hl
+	 ld (hl),b	;negative jump cycles
+	 ld b,a
+	 dec hl
+	 dec hl
+	 ld (hl),bc	;bank id / taken cycle count
+	 dec hl
+	 dec hl
+	 ld (hl),ix
+	 dec hl
+	 ld (hl),$C3	;JP target
+	 dec hl
+	 dec hl
+	 ld (hl),de
+	 dec hl
+	 ld (hl),$CD	;CALL do_xxxx_jump
+	 jr decode_jump_waitloop_return
 	
 decode_call:
 	ex (sp),hl
@@ -1489,7 +1559,19 @@ coherency_return:
 	exx
 	ex af,af'
 	ret
-	   
+
+handle_overlapped_op_1_1:
+	pop ix
+	jp.lil handle_overlapped_op_1_1_helper
+	
+handle_overlapped_op_1_2:
+	pop ix
+	jp.lil handle_overlapped_op_1_2_helper
+	
+handle_overlapped_op_2_1:
+	pop ix
+	jp.lil handle_overlapped_op_2_1_helper
+	
 do_swap:
 	inc a
 	jr nz,do_swap_generic
@@ -1786,9 +1868,8 @@ handle_waitloop_variable:
 	ex af,af'
 	exx
 	; Skip straight to the counter expiration
-	ld iy,(ix+2)
-	ld a,iyh
-	ld c,iyl
+	ld c,(ix+2)
+	ld iyl,c
 	ld iyh,0
 handle_waitloop_common:
 	ld de,(ix+6)
@@ -1803,7 +1884,6 @@ handle_waitloop_common:
 _
 	inc iyh
 	jr nz,_
-	ld a,(ix+3)
 	jr handle_waitloop_common
 	
 handle_waitloop_ly:
@@ -2119,7 +2199,7 @@ z80_swap_ret:
 	exx
 z80_ret:
 	ret
-		
+	
 ophandlerE8:
 	exx
 	ld c,a
@@ -2497,6 +2577,7 @@ do_push_generic:
 	ret
 _
 	push de
+z80_restore_c_swap_ret:
 	 ld a,c
 	 exx
 	 ex af,af'

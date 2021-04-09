@@ -409,8 +409,8 @@ gb_frame_buffer_2 = gb_frame_buffer_1 + (160*240)
 ; Grows forward into the recompiled code mapping cache (see below).
 ; Each entry is 8 bytes in size, and contains the following members:
 ;   +0: A 16-bit pointer to the start of the recompiled Z80 code block.
-;   +2: A 24-bit pointer to the first GB source opcode.
-;   +5: The 16-bit size of the GB opcode block.
+;   +2: A 24-bit banked GB address of the first source opcode.
+;   +5: The 8-bit size of the GB opcode block.
 ;   +7: The 8-bit total cycle count of the block.
 ; The address of the first unused entry is stored in (recompile_struct_end).
 ; The blocks are sorted in ascending order by Z80 block start address.

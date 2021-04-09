@@ -6,7 +6,15 @@
 #define RST_CYCLE_CHECK $C7+r_cycle_check
 
 #define RAM_PREFIX_SIZE 5
-#define MAX_CYCLES_PER_BLOCK 64
+; Define such that cycles per block (at most 4x the bytes) is at most 249.
+; This limitation is for two reasons:
+; 1) Up to 6 cycles may be combined with the block cycle count for a taken CALL
+; 2) Sub-block overflow and prefixed instruction detection when stepping through
+;    a block can be differentiated by range. Sub-block overflow gives a result
+;    no lower than -5 (aka 251), and a prefixed instruction (subtracting -1
+;    from the current cycle count gives a value no higher than 250.
+#define MAX_OPCODE_BYTES_PER_BLOCK 62
+#define MAX_BYTES_PER_OPCODE 3
 #define MAX_CACHE_FLUSHES_ALLOWED 2
 
 cache_flushes_allowed:
@@ -216,6 +224,13 @@ lookup_gb_code_address:
 	 jr nz,$
 _
 #endif
+	 ; Get the LSB of the block end for overlap detection
+	 ld a,l
+	 add a,e
+	 add a,(ix+5)
+	 inc a
+	 ld (lookup_gb_overlap_smc),a
+	 ; Get the cycle count of the first sub-block
 	 ld a,(ix+7)
 	pop ix
 	push hl
@@ -232,11 +247,11 @@ lookup_gb_found_loop:
 	  ex de,hl
 	  add hl,bc
 	  ex de,hl
-	  inc h
+	  dec h
 	  sub (hl)
 	  dec h
-	  dec h
 	  ld c,(hl)
+	  inc h
 	  inc h
 	  ex de,hl
 	  jr c,lookup_gb_new_sub_block
@@ -251,6 +266,7 @@ runtime_error_trampoline:
 #else
 	  jr nc,runtime_error
 #endif
+lookup_gb_finish_overlapped:
 	 pop bc
 lookup_gb_finish:
 	pop de
@@ -287,14 +303,17 @@ _
 	 jr lookup_gb_finish
 	
 lookup_gb_new_sub_block:
-	  bit 7,a
-	  jr z,lookup_gb_prefix
+	  cp -5
+	  jr c,lookup_gb_prefix
+	  ; Note: for an overlapped instruction, the following transformations
+	  ; may end up incorrect, but they will be discarded after the bounds check
 	  bit 2,e
 	  jr nz,_
 	  inc bc ; For RET/JR/JP, offsets are stored -1
 _
 	  add ix,bc
 	 pop bc
+	 ; This jump will not be taken for an overlapped instruction
 	 jr c,lookup_gb_new_sub_block_end
 	 push hl
 	  lea hl,ix-4 ; For RET/JR/JP, count is at -4 bytes
@@ -303,16 +322,29 @@ _
 _
 	  add hl,bc
 	  add.s a,(hl)
-	  ASSERT_C
 	 pop hl
 	 push bc
+lookup_gb_overlap_smc = $+1
 	  ld bc,0
-	  jr lookup_gb_found_loop
+	  ; Check if the end of the block was exceeded
+	  ld e,a
+	  ld a,c
+	  sub l
+	  rla
+	  ld a,e
+	  jr nc,lookup_gb_found_loop
+lookup_gb_found_overlapped:
+	  ; TODO: error checking?
+	  ; Cycle offset after instruction should always be 0
+	  xor a
+	  jr lookup_gb_finish_overlapped
 	
 lookup_gb_prefix:
 	  ; Count CB-prefixed opcode cycles
 	  sbc a,c
-	  ASSERT_NC
+	  ; If the cycle count overflowed from a CB-prefix instruction,
+	  ; this means it must have been an overlapped instruction
+	  jr c,lookup_gb_found_overlapped
 	  ld c,a
 	  dec hl
 	  ld a,(hl)
@@ -335,7 +367,6 @@ _
 	  ld a,c
 	  ld c,3
 	  jr lookup_gb_add
-	
 	
 	 ; When a match is found, load it from the cache
 lookup_code_cached_found:
@@ -484,8 +515,8 @@ internal_found_start:
 	ret
 	
 internal_found_new_subblock:
-	  bit 7,a
-	  jr z,internal_found_prefix
+	  cp -5
+	  jr c,internal_found_prefix
 	  add.s a,(ix-3)
 	  ASSERT_C
 	  bit 2,e
@@ -533,13 +564,14 @@ lookup_code_link_internal_with_bank:
 	ld hl,(ix+2)
 	bit 7,h
 	jr z,lookup_code_with_bank
+	xor a
 	; We're running from RAM, check if destination is in running block
-	or a
 	sbc hl,de
 	jr z,internal_found_start
 	jr nc,lookup_code_link_internal_with_bank_cached
-	ld bc,(ix+5)
-	dec.s bc
+	ld b,a
+	mlt bc
+	ld c,(ix+5)
 	add hl,bc
 	jr nc,lookup_code_link_internal_with_bank_cached
 	or a
@@ -552,7 +584,6 @@ lookup_code_link_internal_with_bank:
 	  GET_BASE_ADDR_NO_ASSERT
 	  add hl,de
 	  ld de,opcodesizes
-	  ld b,e
 	  ld a,(ix+7)
 	  ld ix,(ix)
 	  lea ix,ix+RAM_PREFIX_SIZE
@@ -562,13 +593,13 @@ foundloop_internal:
 	  ex de,hl
 	  ; Add recompiled instruction size
 	  dec h
+	  dec h
 	  ld c,(hl)
-	  inc h
 	  add ix,bc
 	  ; Add cycles
 	  inc h
 	  sub (hl)
-	  dec h
+	  inc h
 	  ; Add GB instruction size
 	  ld c,(hl)
 	  ex de,hl
@@ -614,6 +645,7 @@ lookup_code:
 ;          Carry is reset if at the start of a newly recompiled or RAM block
 ; Destroys AF,BC,DE,HL
 lookup_code_with_bank:
+	ld bc,0
 	push iy
 #ifdef 0
 	 push de
@@ -633,8 +665,7 @@ lookuploop:
 	 sbc hl,de
 	 jr z,lookupfoundstart
 	 jr nc,lookuploop
-	 ld bc,(ix+5)
-	 dec.s bc
+	 ld c,(ix+5)
 	 add hl,bc
 	 jr nc,lookuploop
 	 ; Don't allow jumping to the middle of a RAM block
@@ -651,7 +682,6 @@ lookuploop:
 	   GET_BASE_ADDR_FAST
 	   add hl,de
 	   ld de,opcodesizes
-	   ld b,e
 	   ld a,(ix+7)
 	   ld ix,(ix)
 lookup_found_loop:
@@ -660,13 +690,13 @@ lookup_found_loop:
 	   ex de,hl
 	   ; Add recompiled instruction size
 	   dec h
+	   dec h
 	   ld c,(hl)
-	   inc h
 	   add ix,bc
 	   ; Add cycles
 	   inc h
 	   sub (hl)
-	   dec h
+	   inc h
 	   ; Add GB instruction size
 	   ld c,(hl)
 	   ex de,hl
@@ -685,8 +715,8 @@ lookup_found_loop_finish:
 	ret
 	
 lookup_found_new_subblock:
-	   bit 7,a
-	   jr z,lookup_found_prefix
+	   cp -5
+	   jr c,lookup_found_prefix
 	   add.s a,(ix-3)
 	   ASSERT_C
 	   bit 2,e
@@ -757,6 +787,7 @@ recompile_struct_end = $+2
 	 
 	 call generate_opcodes
 	 ld a,(ix+7)
+	 or a
 	
 recompile_end_common:
 	pop iy
@@ -804,7 +835,8 @@ prepare_flush:
 	ld.sis (flush_address),hl
 	; Prevent an event from being scheduled on the flush handler
 	ld hl,$C3 | (schedule_event_finish_no_schedule << 8)	;JP schedule_event_finish_no_schedule
-	ld (flush_event_smc),hl
+	ld (flush_event_smc_1),hl
+	ld (flush_event_smc_2),hl
 	ld hl,$D2 | (schedule_event_finish_for_call_no_schedule << 8)	;JP NC,schedule_event_finish_for_call_no_schedule
 	ld (flush_event_for_call_smc),hl
 	; Dispatch to the flush handler instead of the recompiled code
@@ -839,20 +871,19 @@ recompile_ram:
 	 inc hl
 	 
 	 call generate_opcodes
-	
-	 ; Copy the GB opcodes for coherency
-	 push hl
-	  ld hl,(ix+2)
-	  inc hl
-	  dec.s hl
-	  add hl,bc
-	  ; Add in padding to avoid flushes
-	  ex de,hl
+	 
+	 ; Add in padding to avoid flushes
+	 ex de,hl
 ram_block_padding = $+1
-	  ld bc,0
-	  add hl,bc
-	  ex de,hl
-	 pop bc
+	 ld bc,0
+	 add hl,bc
+	 ex de,hl
+	 ; Copy the GB opcodes for coherency
+	 ld c,a
+	 xor a
+	 ld b,a
+	 sbc hl,bc
+	 inc bc
 	 ldir
 	 ; Complement the final byte to force the match to end here
 	 dec de
@@ -883,30 +914,34 @@ check_coherency_helper:
 	push bc
 	ld de,recompile_struct
 	add ix,de
+	ld b,e
+	ld c,(ix+5)
+	inc c
 	ld hl,(ix+2)
 	ex.s de,hl
 	GET_BASE_ADDR_FAST
 	add hl,de
 	ex de,hl
-	ld bc,(ix+5)
-	ld hl,(ix+8)
+	ld hl,i
+	ld l,(ix+8)
+	ld h,(ix+9)
 	sbc hl,bc
 check_coherency_loop:
 	ld a,(de)
 	inc de
-	cpi.s
+	cpi
 	jr nz,_
 	ld a,(de)
 	inc de
-	cpi.s
+	cpi
 	jr nz,_
 	ld a,(de)
 	inc de
-	cpi.s
+	cpi
 	jr nz,_
 	ld a,(de)
 	inc de
-	cpi.s
+	cpi
 	jr z,check_coherency_loop
 _
 	jp pe,rerecompile
@@ -969,18 +1004,13 @@ rerecompile:
 	 call generate_opcodes
 	pop iy
 	
-#ifdef DEBUG
-	ld a,h
-	cp 1
-	jr nc,$
-#endif
-	
-	push hl
-	 ; Get the address to copy the opcodes from
-	 ld l,(ix+2)
-	 ld h,(ix+3)
-	 add hl,bc
-	pop bc
+	; Get the address to copy the opcodes from
+	ld c,a
+	xor a
+	ld b,a
+	inc.s bc
+	inc hl
+	sbc hl,bc
 	
 	push hl
 	 ; Get the address to copy the opcodes to
@@ -1041,10 +1071,9 @@ coherency_flush:
 ;          HL = block start
 ; Outputs: IX = struct entry
 ;          BC = GB opcodes base address
-;          DE = block end
-;          HL = GB opcodes size
-;          A = total block cycle count
-;          Carry flag reset
+;          DE = JIT block end
+;          HL = pointer to last opcode byte
+;          A = GB opcodes size minus 1
 ; Destroys None
 generate_opcodes:
 	push hl
@@ -1056,42 +1085,56 @@ generate_opcodes:
 	 ld (opgenCONSTwrite_smc),hl
 	 dec de
 	 inc.s de
-	 GET_BASE_ADDR_FAST
+	 ld bc,opgentable + MAX_OPCODE_BYTES_PER_BLOCK
+	 ; Get memory region base address and check if region changes in next 256 bytes
+	 ld hl,mem_region_lut
+	 ld l,d
+	 inc l
+	 ld a,(hl)
+	 dec l
+	 ld l,(hl)
+	 dec h
+	 cp l
+	 ld hl,(hl)
+	 ld a,c  ;MAX_OPCODE_BYTES_PER_BLOCK
+	 jr z,++_
+	 ; On region change, clamp input boundary to 256-byte range
+	 add a,e
+	 jr nc,_
+	 xor a
+_
+	 sub e
+_
+	 ld (opgen_byte_limit_smc),a
 	 ex de,hl
 	 add hl,de
 	 ex de,hl
+	 ; Define input boundary
+	 add a,e
+	 ; Prevent crossing memory region until bound is initially reached
+	 sub MAX_BYTES_PER_OPCODE
+	 ld iyh,a
 	 ld a,l
 	 ld (opgen_base_address_smc_1),a
 	 ld a,h
 	 ld (opgen_base_address_smc_2),a
 	 ex (sp),hl
+	 ; Cycle count while recompiling is l-iyl. Start at 0.
+	 ld iyl,e
 	 ex de,hl
-	 ld bc,opgentable
-	 ld a,ixl
-	 ld (opgen_emit_jump_smc_1),a
-	 ld a,ixh
-	 ld (opgen_emit_jump_smc_2),a
-	 ; Cycle count while recompiling is hl-iy. Start at negative maximum.
-	 ld a,l
-	 add a,MAX_CYCLES_PER_BLOCK + $80
-	 ld iyl,a
+	 ld (jump_template_struct_smc),ix
 	 push ix
 	  ld ix,opgenroutines
 	  call opgen_next_fast
-	  call m,opgen_cycle_overflow
+	  call m,opgen_region_overflow
 	 pop ix
 	 ex de,hl
-	 inc hl
-	 ; Get the size of the GB opcodes and save it
-	 ld bc,(ix+2)
-	 inc bc
-	 dec.s bc
-	 or a
-	 sbc hl,bc
+	 ; Get the size of the GB opcodes (minus 1) and save it
+	 ld a,l
+	 sub (ix+2)
 	pop bc
-	sbc hl,bc
-	ld (ix+5),l
-	ld (ix+6),h
+	sub c
+	ld (ix+5),a
 	ret
 	
 #ifdef 0
@@ -1185,9 +1228,8 @@ opcycle1byte_2cc:
 	
 	; 2b op, 2b rec, 2cc
 opcycle2byte:
-	inc de
-opcycleCB_normal:
 	lea ix,ix+2
+	inc de
 	inc de
 	ex de,hl
 	add a,2
@@ -1225,29 +1267,22 @@ opcyclePOP:
 	add a,c
 	OPCYCLE_NEXT
 
-opcycleCB_bit:
-	ld a,l
-	add ix,bc
-	inc de
-	ex de,hl
-	add a,c
-	OPCYCLE_NEXT
-
 opcycleCB:
+	; Check for CB prefix or RST 00h (as opposed to NOP or CALL)
+	bit.s 1,(ix)
+	jr nz,opcycle2byte	; 2b op, 2b rec, 2cc
+	; 2b op, 3b rec,
+	add ix,bc
 	inc de
 	ld l,a
 	ld a,(de)
-	xor $46
-	and $C7
-	jr z,opcycleCB_bit	; 2b op, 3b rec, 3cc
-	and $07
+	; 3cc if second opcode byte is between $40-$7F, 4cc otherwise
+	sub $40
+	add a,$C0
 	ld a,l
-	jr nz,opcycleCB_normal	; 2b op, 2b rec, 2cc
-	; 2b op, 3b rec, 4cc
-	add ix,bc
 	inc de
 	ex de,hl
-	add a,4
+	adc a,c
 	OPCYCLE_NEXT
 
 	; 3b op, 5b rec, 4cc
@@ -1631,44 +1666,6 @@ opcoderecsizes:
 	.db 3,3,3,3,0,3,2,6
 	.db 4,3,5,3,0,0,2,6
 	
-; A table of Game Boy opcode sizes.
-opcodesizes:
-	.db 1,3,1,1,1,1,2,1
-	.db 3,1,1,1,1,1,2,1
-	.db 1,3,1,1,1,1,2,1
-	.db 2,1,1,1,1,1,2,1
-	.db 2,3,1,1,1,1,2,1
-	.db 2,1,1,1,1,1,2,1
-	.db 2,3,1,1,1,1,2,1
-	.db 2,1,1,1,1,1,2,1
-	
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
-	
-	.db 1,1,3,3,3,1,2,1
-	.db 1,1,3,2,3,3,2,1
-	.db 1,1,3,1,3,1,2,1
-	.db 1,1,3,1,3,1,2,1
-	.db 2,1,1,1,1,1,2,1
-	.db 2,1,3,1,1,1,2,1
-	.db 2,1,1,1,1,1,2,1
-	.db 2,1,3,1,1,1,2,1
-	
 ; A table of Game Boy opcode cycles. Block-ending opcodes are set to 0.
 ; Conditional branches are assumed not taken.
 ; Prefix opcodes (i.e. CB) are set to -1, for efficient detection.
@@ -1708,6 +1705,44 @@ opcodecycles:
 	.db 4,0,4,0,0,0,2,4
 	.db 3,3,2,1,0,4,2,4
 	.db 3,2,4,1,0,0,2,4
+	
+; A table of Game Boy opcode sizes.
+opcodesizes:
+	.db 1,3,1,1,1,1,2,1
+	.db 3,1,1,1,1,1,2,1
+	.db 1,3,1,1,1,1,2,1
+	.db 2,1,1,1,1,1,2,1
+	.db 2,3,1,1,1,1,2,1
+	.db 2,1,1,1,1,1,2,1
+	.db 2,3,1,1,1,1,2,1
+	.db 2,1,1,1,1,1,2,1
+	
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,1,1
+	
+	.db 1,1,3,3,3,1,2,1
+	.db 1,1,3,2,3,3,2,1
+	.db 1,1,3,1,3,1,2,1
+	.db 1,1,3,1,3,1,2,1
+	.db 2,1,1,1,1,1,2,1
+	.db 2,1,3,1,1,1,2,1
+	.db 2,1,1,1,1,1,2,1
+	.db 2,1,3,1,1,1,2,1
 	
 ; A table indexing opcode generation routines.
 ; All entry points live in a 256-byte space.
@@ -2247,21 +2282,208 @@ mem_region_lut:
 	.fill $1E, wram_mirror_unbanked_base & $FF
 	.fill $02, hmem_unbanked_base & $FF
 	
-opgen_cycle_overflow:
+block_bridge_template:
+	.assume adl=0
+	nop
+	call decode_block_bridge
+	.dw cycle_overflow_for_bridge
+	.assume adl=1
+block_bridge_template_size = $-block_bridge_template
+	
+jump_template:
+	.assume adl=0
+	call decode_jump
+	jr nc,$+1 ;RST_CYCLE_CHECK
+	ex af,af'
+jump_template_struct_smc = $+1
+	jp 0
+	.assume adl=1
+jump_template_size = $-jump_template
+	.db 0 ;padding for struct pointer write
+	
+opgen_region_overflow:
+	; Check if a memory region crossing should be handled
+opgen_byte_limit_smc = $+1
+	ld a,0
+	cp MAX_OPCODE_BYTES_PER_BLOCK
+	jr nz,opgen_cross_mem_region
 	; Special case for RET/RETI/JP HL; emit directly to prevent redundant jumps
 	ld a,c
 	xor $F9
 	jr z,_	; Exclude LD SP,HL
 	and $CF
-	jr z,++_
+	jr z,opgen_region_overflow_direct
 _
+opgen_emit_block_bridge:
+	; Emit a block bridge
 	push hl
-	 call opgen_emit_unconditional_jump
-	pop de
-	dec de
-	ret
+	 ld hl,block_bridge_template
+	 ld bc,block_bridge_template_size
+	 jr nc,_
+	 ; Memory region bridge is one byte smaller
+	 inc hl
+	 dec c
 _
+	 ldir
+	 ld c,5
+	 add hl,bc
+	 dec c
+	 ldir
+	pop hl
+	ex de,hl
+	call opgen_emit_gb_address_noinc
+	; Don't include the next opcode in the block,
+	; but still count cycles up to the next opcode
+	ld a,e
+	dec de
+	jp opgen_reset_cycle_count_any
+opgen_region_overflow_direct:
+	ld a,(bc)
+	ld ixl,a
 	jp (ix)
+	
+opgen_cross_mem_region_loop:
+	inc b
+	; Emit exactly one instruction by skipping the initial bound check
+	call opgen_next_no_bound_check
+	; Return if it was a block-ending instruction
+	ret p
+opgen_cross_mem_region:
+	; Get the low byte of PC (minus 1)
+	ld a,(opgen_base_address_smc_1)
+	cpl
+	add a,l
+	ld ixl,a
+	; If the crossing point was reached exactly, emit a bridge
+	add a,1
+	jr c,opgen_emit_block_bridge
+	; Get size of next instruction
+	dec b
+	ld a,(bc)
+	; Check if next instruction overlaps the boundary
+	add a,ixl
+	jr nc,opgen_cross_mem_region_loop
+	; Emit a memory-region-overlapping instruction
+	; Note that such an instruction is *always* 2 or 3 bytes in size
+	; Put the instruction size in BC
+	ld a,(bc)
+	ld bc,$CD
+	ex de,hl
+	ld (hl),c ;CALL
+	ld c,a
+	inc hl
+	; Check the number of bytes in the new memory region (1 or 2 bytes)
+	jr nz,++_
+	; One byte is in the new memory region
+	rra
+	jr c,_
+	; One byte is in the old memory region
+	ld (hl),handle_overlapped_op_1_1 & $FF
+	inc hl
+	ld (hl),handle_overlapped_op_1_1 >> 8
+	jr +++_
+_
+	; Two bytes are in the old memory region
+	ld (hl),handle_overlapped_op_2_1 & $FF
+	inc hl
+	ld (hl),handle_overlapped_op_2_1 >> 8
+	jr ++_
+_
+	; Two bytes are in the new memory region
+	; One byte is always in the old memory region
+	ld (hl),handle_overlapped_op_1_2 & $FF
+	inc hl
+	ld (hl),handle_overlapped_op_1_2 >> 8
+_
+	inc hl
+	; Reset the cycle count to prevent the scheduler from crossing this point
+	call opgen_reset_cycle_count
+	ex de,hl
+	; Save the current output pointer to use as the opcode pointer
+	push de
+	 ; Check the number of bytes in the old memory region
+	 ; IXL is -3 if 2 bytes, or -2 if 1 byte
+	 ld a,ixl
+	 rra
+	 ; Copy those 1 or 2 bytes
+	 jr nc,_
+	 ldi
+_
+	 ; Save the pointer to the last byte to use as the effective block end
+	 ; This is essential to include all bytes from the old memory region
+	 ; for SMC checks in RAM code, but also not cross the end of the region
+	 push hl
+	  ldi
+	  ; Now HL points precisely to the end of the old memory region,
+	  ; and DE points to the corresponding address in the copied opcode
+	  ; Update the base address to correspond to the copied opcode
+	  ld a,e
+	  ld (opgen_base_address_smc_1),a
+	  ld a,(opgen_base_address_smc_2)
+	  sub h
+	  add a,d
+	  ld (opgen_base_address_smc_2),a
+	  ; Get the MSB of the raw GB address
+	  sub d
+	  neg
+	  ; Get the base address of the new memory region
+	  ld hl,mem_region_lut
+	  ld l,a
+	  ld l,(hl)
+	  dec h
+	  ld hl,(hl)
+	  ; Get the pointer to the start of the region
+	  push bc
+	   ld c,b ;C=0
+	   ld b,a
+	   add hl,bc
+	  pop bc
+	  ; Copy the remaining opcode bytes from the new memory region
+	  ldir
+	  ; Store the address MSB after the opcode bytes
+	  ld (de),a
+	 ; Restore the pointer to the start of the copied opcode
+	 pop hl
+	 ex (sp),hl
+	 ex de,hl
+	 call opgen_emit_overlapped_opcode
+	 ; If the opcode did not end the block, emit a bridge to the next region
+	 scf
+	 call m,opgen_emit_block_bridge
+	; Restore the pointer to the end of the old memory region
+	pop de
+	ret
+	
+opgen_emit_overlapped_opcode:
+	inc hl
+	; Update the bound checker to allow a single opcode
+	ld iyh,e
+	; Start the cycle count from this opcode
+	ld iyl,e
+	; Save the cycle count immediately before the recompiled code
+	ld (opgen_last_cycle_count_smc),hl
+	inc hl
+	ex de,hl
+	; Check for CB-prefix opcode
+	ld a,(hl)
+	cp $CB
+	jr nz,_
+	; Ensure a consistent generated size for CB opcodes
+	; This allows recompilation in-place in all cases
+	inc hl
+	ld a,(hl)
+	dec hl
+	and $07
+	cp $06
+	; No adjustment for three-byte operations
+	jr z,_
+	; Emit NOP before two-byte operations
+	xor a
+	ld (de),a
+	inc de
+_
+	; Generate the opcode
+	jp opgen_next
 	
 _opgen3F:
 	ldi
@@ -2291,7 +2513,8 @@ _opgenRST:
 	inc hl
 	ld (hl),a
 	call opgen_reset_cycle_count
-	lea iy,iy-3
+	dec iyl
+	dec iyl
 	jr opgen_finish_rst
 	
 _opgenCALLcond:
@@ -2344,10 +2567,10 @@ _opgenCALL:
 opgen_finish_call:
 	inc hl
 	call opgen_reset_cycle_count
-	dec iy
 	inc de
 	inc de
 opgen_finish_rst:
+	dec iyl
 	inc de
 	inc hl
 	ld (opgen_last_cycle_count_smc),hl
@@ -2355,33 +2578,18 @@ opgen_finish_rst:
 	ex de,hl
 	jp opgen_next_fast
 
-opgen_emit_unconditional_jump:
-	ex de,hl
-opgen_emit_unconditional_jump_swapped:
-	ld a,$C3
 opgen_emit_jump_swapped:
-	ld (hl),$CD
-	inc hl
-	ld (hl),decode_jump & $FF
-	inc hl
-	ld (hl),decode_jump >> 8
-	inc hl
-	ld (hl),$30	;JR NC,
-	inc hl
-	ld (hl),RST_CYCLE_CHECK
-	inc hl
-	ld (hl),$08	;EX AF,AF'
-	inc hl
-	; Emit jump instruction
-	ld (hl),a
-	inc hl
-	; Emit block struct pointer
-opgen_emit_jump_smc_1 = $+1
-	ld (hl),0
-	inc hl
-opgen_emit_jump_smc_2 = $+1
-	ld (hl),0
-	call opgen_emit_gb_address
+	ex de,hl
+opgen_emit_jump:
+	ld a,c
+	push hl
+	 ld hl,jump_template
+	 ld bc,jump_template_size
+	 ldir
+	pop hl
+	ld c,a
+	ex de,hl
+	call opgen_emit_gb_address_noinc
 	call opgen_reset_cycle_count
 	inc de
 	ld a,c
@@ -2404,7 +2612,7 @@ _opgenRET:
 _opgenRETcond:
 	ex de,hl
 	call opgen_reset_cycle_count
-	dec iy
+	dec iyl
 	ld a,c
 	xor $C0 ^ $C2
 	ld (hl),a	;JP cc,ophandlerRETcond
@@ -2416,7 +2624,7 @@ _opgenRETcond:
 	ld (hl),a	;JP cc,gb_address
 	call opgen_emit_gb_address
 	
-opgen_emit_block_bridge:
+opgen_emit_subblock_bridge:
 	ld (hl),$08	;EX AF,AF'
 	inc hl
 	ld (hl),$C6	;ADD A,
@@ -2428,13 +2636,11 @@ opgen_emit_block_bridge:
 	ld (hl),RST_CYCLE_CHECK
 	inc hl
 	ld (hl),$08	;EX AF,AF'
-	inc hl
-	inc de
-	ex de,hl
-	jp opgen_next_fast
+	jp opgen_next_swap_skip
 	
 opgen_emit_gb_address:
 	inc hl
+opgen_emit_gb_address_noinc:
 	ld a,e
 opgen_base_address_smc_1 = $+1
 	sub 0
@@ -2475,17 +2681,17 @@ _
 	
 opgen_reset_cycle_count:
 	ld a,e
+opgen_reset_cycle_count_any:
 	sub iyl
-	add a,MAX_CYCLES_PER_BLOCK + $80
 opgen_last_cycle_count_smc = $+1
 	ld (0),a
-	add a,iyl
-	ld iyl,a
+	ld iyl,e
 	xor a
 	ret
 	
 opgenroutinecall2byte_5cc:
-	lea iy,iy-2
+	dec iyl
+	dec iyl
 opgenroutinecall2byte_3cc:
 	inc hl
 	ld a,$CD
@@ -2498,9 +2704,9 @@ opgenroutinecall2byte_3cc:
 	jp opgen2byte
 	
 opgenroutinecall1byte_4cc:
-	dec iy
+	dec iyl
 opgenroutinecall1byte_3cc:
-	dec iy
+	dec iyl
 	inc hl
 	ld a,$CD
 	ld (de),a
@@ -2543,11 +2749,11 @@ _opgen36:
 	jp opgen36_finish
 	
 opgenroutinecall_4cc:
-	dec iy
+	dec iyl
 opgenroutinecall_3cc:
-	dec iy
+	dec iyl
 opgenroutinecall_2cc:
-	dec iy
+	dec iyl
 opgenroutinecall_1cc:
 	inc hl
 	ld a,$CD
@@ -2576,7 +2782,7 @@ opgenroutinecallsplit_1cc:
 	jp opgen_next_fast
 	
 opgenCONSTwrite:
-	dec iy
+	dec iyl
 	inc.s bc
 	inc hl
 	ld c,(hl)
@@ -2694,7 +2900,7 @@ opgenHMEMwrite:
 	jr ++_
 	
 opgenFFwrite:
-	dec iy
+	dec iyl
 	inc hl
 	ld c,(hl)
 	ld b,$FF
@@ -2760,7 +2966,7 @@ opgencartread:
 	jp opgen_next_swap_skip
 	
 opgenCONSTread:
-	dec iy
+	dec iyl
 	inc.s bc
 	inc hl
 	ld c,(hl)
@@ -2868,7 +3074,7 @@ opgenHMEMread:
 	jr ++_
 	
 opgenFFread:
-	dec iy
+	dec iyl
 	inc hl
 	ld c,(hl)
 	ld b,$FF

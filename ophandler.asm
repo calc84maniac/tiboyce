@@ -197,7 +197,8 @@ flush_normal:
 	push hl
 	 push bc
 	  ld hl,$C3 | (do_event_pushed << 8)	;JP do_event_pushed
-	  ld (flush_event_smc),hl
+	  ld (flush_event_smc_1),hl
+	  ld (flush_event_smc_2),hl
 	  ld hl,$D2 | (schedule_event_finish_for_call_now << 8)	;JP NC,schedule_event_finish_for_call
 	  ld (flush_event_for_call_smc),hl
 flush_mem_finish:
@@ -211,17 +212,17 @@ flush_mem_finish:
 	ld sp,myADLstack
 	ld.sis sp,myz80stack-4
 	ld c,a
-	ld (_+2),a
+	add a,iyl
+	jr c,_
+	dec iyh
 _
-	lea iy,iy+0
-	xor a
-	cp iyh
+	inc iyh
 	jr z,_
 	exx
-	ld a,iyl
 	ex af,af'
 	jp.s (ix)
 _
+	ld iyl,a
 	push.s ix
 	push hl
 #ifdef VALIDATE_SCHEDULE
@@ -946,6 +947,239 @@ NR52_write_enable:
 	 ld (z80codebase+write_audio_disable_smc),a
 	 jp return_from_write_helper
 	
+overlapped_op_1_1_mismatch:
+	lea de,ix-7
+overlapped_op_2_1_mismatch_continue:
+	ld a,(hl)
+	lea hl,ix-3
+	ld (hl),a
+	; Recompile an overlapped instruction again
+	; Input: DE=start of overlapped handler call
+	;        HL=overlap point in copied instruction
+	;        IX=recompiled code start
+	;        C=cycle count
+opgen_overlap_rerecompile:
+	ld a,l
+	ld (opgen_base_address_smc_1),a
+	ld a,h
+	lea hl,ix-2
+	sub (hl)
+	ld (opgen_base_address_smc_2),a
+	ld ix,opgenroutines
+	push.s de
+	inc de
+	inc de
+	inc de
+	push bc
+	 push iy
+	  call opgen_emit_overlapped_opcode
+	 pop iy
+	pop bc
+	pop hl
+	jp.sis z80_restore_c_swap_ret
+	
+handle_overlapped_op_1_1_helper:
+	ex af,af'
+	exx
+	push hl
+	ld c,a
+	ld de,z80codebase+4
+	add ix,de
+	ld.s de,(ix-3)
+	ld a,e
+	ld hl,mem_region_lut
+	ld e,l ;E=0
+	ld l,d
+	ld l,(hl)
+	dec h
+	ld hl,(hl)
+	add hl,de
+	cp (hl)
+	jr nz,overlapped_op_1_1_mismatch
+	ld a,(ix-1)
+	add a,c
+	jr nc,handle_overlapped_op_done
+	inc iyh
+	jr nz,handle_overlapped_op_done
+	lea hl,ix-4
+	jr schedule_overlapped_event_helper_x_1
+	
+overlapped_op_2_1_mismatch:
+	lea de,ix-8
+	jr overlapped_op_2_1_mismatch_continue
+	
+overlapped_op_1_2_mismatch:
+	lea hl,ix-4
+	ld.s (hl),de
+	lea de,ix-8
+	jr opgen_overlap_rerecompile
+	
+handle_overlapped_op_1_2_helper:
+	ex af,af'
+	exx
+	push hl
+	ld c,a
+	ld de,z80codebase+5
+	add ix,de
+	ld.s de,(ix-3)
+	ld a,e
+	ld hl,mem_region_lut
+	ld e,l ;E=0
+	ld l,d
+	ld l,(hl)
+	dec h
+	ld hl,(hl)
+	add hl,de
+	ld de,(hl)
+	ld h,a
+	ld l,(ix-4)
+	sbc.s hl,de
+	jr nz,overlapped_op_1_2_mismatch
+	ld a,(ix-1)
+	add a,c
+	jr nc,handle_overlapped_op_done
+	inc iyh
+	jr nz,handle_overlapped_op_done
+	lea hl,ix-5
+	lea de,ix-4
+	jr schedule_overlapped_event_helper
+	
+handle_overlapped_op_2_1_helper:
+	ex af,af'
+	exx
+	push hl
+	ld c,a
+	ld de,z80codebase+5
+	add ix,de
+	ld.s de,(ix-3)
+	ld a,e
+	ld hl,mem_region_lut
+	ld e,l ;E=0
+	ld l,d
+	ld l,(hl)
+	dec h
+	ld hl,(hl)
+	add hl,de
+	cp (hl)
+	jr nz,overlapped_op_2_1_mismatch
+	ld a,(ix-1)
+	add a,c
+	jr c,_
+handle_overlapped_op_done:
+	pop hl
+	exx
+	ex af,af'
+	jp.s (ix)
+_
+	inc iyh
+	jr nz,handle_overlapped_op_done
+	lea hl,ix-5
+schedule_overlapped_event_helper_x_1:
+	lea de,ix-3
+; Inputs: HL = pointer to first byte of copied opcode
+;         DE = pointer to first overlapping byte of copied opcode
+;         IX = starting recompiled address
+;         A = cycle count at end of overlapped opcode (>= 0)
+;         C = cycle count at start of overlapped opcode (< 0)
+schedule_overlapped_event_helper:
+	push.s ix
+	ld iyl,a
+	ld a,d
+	sub (ix-2)
+	ld d,a
+	; Check for a prefixed opcode
+	ld a,(hl)
+	cp $CB
+	ld a,c
+	jr nz,schedule_event_later_resolved
+	; Prefixed overlapped opcodes are always 3 bytes recompiled
+	lea ix,ix+3
+	inc hl
+	inc hl
+	sbc hl,de
+	ld a,iyl
+	jp.sis schedule_event_finish
+
+; Inputs: DE = Game Boy address of jump instruction
+;         IX = starting recompiled address
+;         IY = cycle count at end of sub-block (>= 0)
+;         C = cycles until end of sub-block (plus jump cycles, if applicable)
+schedule_jump_event_helper:
+	dec c
+	dec c
+	dec c
+schedule_jump_event_helper_adjusted:
+#ifdef VALIDATE_SCHEDULE
+	ex (sp),hl
+#endif
+	push hl
+	GET_BASE_ADDR_FAST
+	ex de,hl
+	add hl,de
+	bit 7,(hl)
+	inc hl
+	jr nz,schedule_jump_event_absolute
+	push de
+	 ld a,(hl)
+	 inc hl
+	 ex de,hl
+	 rla
+	 sbc hl,hl
+	 rra
+	 ld l,a
+	 add hl,de
+#ifdef VALIDATE_SCHEDULE
+	pop de
+	call validate_schedule_resolved
+	pop af
+	push de
+#endif
+	 ld a,iyl
+	 sub c
+	 jr c,schedule_event_later_resolved_pushed
+	pop de
+	sbc hl,de
+schedule_event_now_unresolved:
+	ld.sis (event_gb_address),hl
+	ld iyl,a
+#ifdef DEBUG
+	ld hl,event_value
+	ld.sis (event_address),hl
+#endif
+	; This is a code path that could target the flush handler
+flush_event_smc_1 = $+1
+	jp.sis do_event_pushed
+	
+schedule_jump_event_absolute:
+	dec c
+	ld hl,(hl)
+#ifdef VALIDATE_SCHEDULE
+	inc hl
+	dec.s hl
+	ex de,hl
+	call validate_schedule
+	ex de,hl
+	pop af
+#endif
+	ld a,iyl
+	sub c
+	jr nc,schedule_event_now_unresolved
+	inc hl
+	dec.s hl
+	add hl,de
+schedule_event_later_resolved:
+	push de
+schedule_event_later_resolved_pushed:
+	 push bc
+	  ld de,opcounttable
+	  ld bc,3
+	  call opcycle_first
+	 pop bc
+	pop de
+	or a
+	sbc hl,de
+	jp.sis schedule_event_finish
+	
 ; Inputs: DE = Game Boy address at conditional branch
 ;         IX = recompiled address after conditional branch
 ;         IY = cycle count at end of sub-block (>= 0)
@@ -974,26 +1208,13 @@ _
 	inc hl
 	dec c
 	dec c
-schedule_event_helper_resolved:
 #ifdef VALIDATE_SCHEDULE
 	call validate_schedule_resolved
 	pop af
 #endif
 	ld a,iyl
 	sub c
-	jr nc,schedule_event_now_resolved
-	push de
-	 push bc
-	  ld de,opcounttable
-	  ld bc,3
-	  call opcycle_first
-	 pop bc
-	pop de
-	or a
-	sbc hl,de
-	jp.sis schedule_event_finish
-	
-schedule_event_now_resolved:
+	jr c,schedule_event_later_resolved
 	sbc hl,de
 	ld.sis (event_gb_address),hl
 	ld iyl,a
@@ -1003,83 +1224,47 @@ schedule_event_now_resolved:
 #endif
 	jp.sis do_event_pushed
 	
-; Inputs: DE = Game Boy address at last byte of call instruction
-;         IX = starting recompiled address
-;         IY = cycle count at end of sub-block (>= 0)
-;         C = cycles until end of sub-block (plus jump cycles, if applicable)
-schedule_call_event_helper:
-#ifdef VALIDATE_SCHEDULE
-	ex (sp),hl
-#endif
-	push hl
-	GET_BASE_ADDR_FAST
-	add hl,de
-	ld d,(hl)
-	dec hl
-	ld e,(hl)
-schedule_event_helper_for_call:
-#ifdef VALIDATE_SCHEDULE
-	call validate_schedule
-	pop af
-#endif
-	ld a,iyl
-	sub c
-	; This is a code path that could target the flush handler
-flush_event_for_call_smc = $+1
-	jp.sis nc,schedule_event_finish_for_call_now
-	GET_BASE_ADDR_FAST
-	push hl
-	 add hl,de
-	 ld de,opcounttable
-	 push bc
-	  ld bc,3
-	  call opcycle_first
-	 pop bc
-	pop de
-	or a
-	sbc hl,de
-	jp.sis schedule_event_finish_for_call
-	
-
-; Inputs: DE = Game Boy address of jump instruction
-;         IX = starting recompiled address
-;         IY = cycle count at end of sub-block (>= 0)
-;         A = recompiled jump opcode
-;         C = cycles until end of sub-block (plus jump cycles, if applicable)
-schedule_jump_event_helper:
-#ifdef VALIDATE_SCHEDULE
-	ex (sp),hl
-#endif
-	push hl
-	GET_BASE_ADDR_FAST
-	add hl,de
-	cp (hl)
-	jr z,schedule_jump_event_absolute
-	rra
-	jr nc,schedule_jump_event_relative
-	ld a,(hl)
-	cp $18
-	jr nz,schedule_event_helper
-schedule_jump_event_relative:
-	inc hl
+schedule_jump_event_relative_slow:
+	inc de
 	ld l,(hl)
 	ld a,l
 	rla
 	sbc a,a
 	ld h,a
-	inc de
-	inc de
 	add.s hl,de
 	ex de,hl
-	jr _
-schedule_jump_event_absolute:
-	inc hl
+	jr schedule_event_helper
+	
+schedule_jump_event_absolute_slow:
+	; Handle possibly overlapped memory region
+	ld a,(hl)
+	inc d
+	GET_BASE_ADDR_FAST
+	add hl,de
+	ld d,(hl)
+	ld e,a
+	jr schedule_event_helper
+	
+; Inputs: DE = Game Boy address of jump instruction plus 1
+;         IX = starting recompiled address
+;         IY = cycle count at end of sub-block (>= 0)
+;         A = negative cycles for taken jump (-3 for JR, -4 for JP)
+;         C = cycles until end of sub-block
+schedule_slow_jump_event_helper:
+#ifdef VALIDATE_SCHEDULE
+	ex (sp),hl
+#endif
+	push hl
+	GET_BASE_ADDR_FAST
+	add hl,de
+	rra
+	jr c,schedule_jump_event_relative_slow
+	; Check if jump target may overlap memory regions
+	inc e
+	jr z,schedule_jump_event_absolute_slow
 	ld e,(hl)
 	inc hl
 	ld d,(hl)
-	dec c
-_
-	dec c \ dec c \ dec c
 	
 ; Inputs:  DE = starting Game Boy address
 ;          IX = starting recompiled address
@@ -1122,8 +1307,56 @@ schedule_event_now:
 	ld.sis (event_address),hl
 #endif
 	; This is a code path that could target the flush handler
-flush_event_smc = $+1
+flush_event_smc_2 = $+1
 	jp.sis do_event_pushed
+	
+_
+	ld a,(hl)
+	inc d
+	GET_BASE_ADDR_FAST
+	add hl,de
+	ld e,a
+	jr _
+	
+; Inputs: DE = Game Boy address at second byte of call instruction
+;         IX = starting recompiled address
+;         IY = cycle count at end of sub-block (>= 0)
+;         C = cycles until end of sub-block (plus jump cycles, if applicable)
+schedule_call_event_helper:
+#ifdef VALIDATE_SCHEDULE
+	ex (sp),hl
+#endif
+	push hl
+	GET_BASE_ADDR_FAST
+	add hl,de
+	inc e
+	jr z,-_
+	ld e,(hl)
+	inc hl
+_
+	ld d,(hl)
+schedule_event_helper_for_call:
+#ifdef VALIDATE_SCHEDULE
+	call validate_schedule
+	pop af
+#endif
+	ld a,iyl
+	sub c
+	; This is a code path that could target the flush handler
+flush_event_for_call_smc = $+1
+	jp.sis nc,schedule_event_finish_for_call_now
+	GET_BASE_ADDR_FAST
+	push hl
+	 add hl,de
+	 ld de,opcounttable
+	 push bc
+	  ld bc,3
+	  call opcycle_first
+	 pop bc
+	pop de
+	or a
+	sbc hl,de
+	jp.sis schedule_event_finish_for_call
 	
 #ifdef VALIDATE_SCHEDULE
 validate_schedule_resolved:
@@ -1263,17 +1496,25 @@ get_mem_cycle_offset_for_call_helper:
 	pop de
 	push de
 	push hl
+	dec de
 	dec.s de
 	GET_BASE_ADDR_FAST
 	add hl,de
-	ASSERT_NC
-	ld d,(hl)
-	dec hl
-	ld e,(hl)
-	ld hl,z80codebase + mem_cycle_scratch
-	ld (hl),de
+	ld a,(hl)
 	inc hl
+	inc e
+	jr nz,_
+	inc d
+	GET_BASE_ADDR_FAST
+	add hl,de
+_
+	ld d,(hl)
+	ld hl,z80codebase + mem_cycle_scratch
+	ld (hl),a
+	inc hl
+	ld (hl),d
 	ld a,-6
+	ASSERT_NC
 	jp.sis get_mem_cycle_offset_for_call_finish
 	
 	

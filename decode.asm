@@ -1,16 +1,29 @@
 decode_jump_helper:
-	GET_BASE_ADDR_FAST
-	add hl,de
+	ld bc,recompile_struct
+	ld hl,mem_region_lut
+	ld l,d
+	jr c,decode_block_bridge_helper
+	add ix,bc
+	ld c,(hl)
+	inc l
 	ld a,(hl)
-	cp c
-	jr z,decode_absolute_jump
-	cp $18
-	jr z,decode_relative_jump
-	xor a
-	bit 0,c
-	jr nz,decode_block_linker
-decode_relative_jump:
+	dec h
+	ld l,c
+	cp l
+	ld hl,(hl)
+	add hl,de
+	jr nz,decode_jump_maybe_overlap
+decode_jump_no_overlap:
+	bit 7,(hl)
 	inc hl
+	ld b,-3 ; Taken JR cycles (negative)
+	jr z,decode_relative_jump
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	; Adjust B to taken JP cycles (negative)
+	djnz decode_jump_common ; Always jumps
+decode_relative_jump:
 	ld l,(hl)
 	ld a,l
 	rla
@@ -20,25 +33,14 @@ decode_relative_jump:
 	inc de
 	add.s hl,de
 	ex de,hl
-	ld a,3
-	jr decode_block_linker
-decode_absolute_jump:
-	inc hl
-	ld e,(hl)
-	inc hl
-	ld d,(hl)
-	ld a,4
-decode_block_linker:
-	push af
-
-	 ld bc,recompile_struct
-	 add ix,bc
-	
-	 ld a,d
-	 add a,$40
-	 jp pe,decode_jump_bank_switch
-	
 decode_jump_common:
+	; Check if the target is in a different bank than the jump instruction
+	ld hl,mem_region_lut
+	ld l,d
+	ld a,(hl)
+	cp c
+	jr nz,decode_jump_bank_switch
+	push bc
 	 push de
 	  call lookup_code_link_internal
 	 pop de
@@ -46,37 +48,95 @@ decode_jump_common:
 	  call c,identify_waitloop
 	 pop af
 	pop bc
-	add a,b
 	jp.sis decode_jump_return
-	
-decode_jump_bank_switch:
-	 ld a,(ix+3)
-	 add a,$40
-	 jp pe,decode_jump_common
-	
-	 call lookup_code_link_internal
-	pop bc
-	add a,b
+
+decode_block_bridge_helper:
+	add ix,bc
+	; Get the target memory region and check if it differs from the
+	; containing code block's memory region (which happens on overlap)
+	ld a,(hl)
+	ld l,(ix+3)
+	cp (hl)
+	jr nz,decode_jump_bank_switch ; Note: B=0 which means no cycles
+	call lookup_code_link_internal
+	jp.sis decode_block_bridge_return
+
+decode_jump_maybe_overlap:
+	; Save the base index of the next region
 	ld b,a
+	; Check if the opcode is a JR or JP
+	ld a,(hl)
+	rla
+	; Check if the jump overlaps to the next region
+	ld a,e
+	adc a,1
+	jr nc,decode_jump_no_overlap
+	; Go ahead and move D to the next region
+	inc d
+	; Recover whether it was a JR or JP
+	inc e
+	cp e
+	; Read the next byte, check if it overlapped later
+	inc hl
+	ld a,(hl)
+	; Get the base address for the next region
+	ld hl,mem_region_lut-1
+	ld l,b
+	ld hl,(hl)
+	ld b,-3 ; Taken JR cycles (negative)
+	jr z,decode_overlapped_jr
+	; Get the second immediate byte (always in the next region)
+	inc e
+	add hl,de
+	ld d,(hl)
+	jr nz,_
+	; If the first byte overlapped, get it from the next region
+	dec hl
+	ld a,(hl)
+_
+	ld e,a
+	; Adjust to taken JP cycles (negative)
+	djnz decode_slow_jump
+decode_overlapped_jr:
+	; Switch to next region unconditionally
+	add hl,de
+	; Get low byte of JR, offset from $xx01
+	ld e,(hl)
+	inc e
+	; Adjust top byte of JR target for signed offset
+	ld a,e
+	cp $81 ; Low bytes of $81 and higher mean upper byte decreases
+	jr nc,decode_overlapped_jr_backward
+decode_slow_jump:
+	; Get which memory region is being jumped to
+	ld hl,mem_region_lut
+	ld l,d
+	ld a,(hl)
+	; If the target memory region is the same as the jump instruction,
+	; just emit a normal overlapped jump with no bank checking
+	cp c
+	jr z,decode_jump_bank_switch_fixed
+decode_jump_bank_switch:
+	cp rom_bank_base & $FF
+	jr nz,decode_jump_bank_switch_fixed
+	ld hl,do_rom_bank_jump
 	ld a,(z80codebase+curr_rom_bank)
+	jr decode_jump_bank_switch_continue
+decode_overlapped_jr_backward:
+	dec d
+	; An overlapped JR jumping backward implicitly targets the same region
+decode_jump_bank_switch_fixed:
+	ld hl,do_overlapped_jump
+	; Bank id is irrelevant, so left uninitialized
+decode_jump_bank_switch_continue:
 	ld c,a
-	pop.s hl
-	dec hl
-	ld.s a,(hl)		;JP [cond,]
-	ld.s (hl),bc	;rom bank / cycle count
-	dec hl
-	dec hl
-	ld.s (hl),ix
-	dec hl
-	ld.s (hl),a		;JP [cond,]target
-	dec hl
-	ld.s (hl),do_rom_bank_jump >> 8
-	dec hl
-	ld.s (hl),do_rom_bank_jump & $FF
-	dec hl
-	ld.s (hl),$CD	;CALL do_rom_bank_jump
-	jp.sis decode_jump_waitloop_return
-	
+	push bc
+	 push hl
+	  call lookup_code_link_internal
+	 pop de
+	pop bc
+	sub b
+	jp.sis decode_bank_switch_return
 	
 decode_rst_helper:
 	ex af,af'
@@ -116,13 +176,16 @@ decode_rst_helper:
 	
 decode_call_helper:
 	GET_BASE_ADDR_FAST
-	ld b,d
 	add hl,de
-	ld d,(hl)
-	dec hl
+	ld a,(hl)
+	dec de
+	GET_BASE_ADDR_FAST
+	add hl,de
+	dec de
+	ld b,d
 	ld e,(hl)
-	ld a,b
-	xor d
+	ld d,a
+	xor b
 	and $C0
 	jr nz,decode_call_bank_switch
 decode_call_common:
@@ -195,15 +258,24 @@ banked_jump_mismatch_helper:
 	 push hl
 	  ; Look up the old target
 	  ld.s de,(ix+6)
+	  ; Save the new bank index
+	  ld c,a
+	  ; Check the number of cycles taken by the jump
+	  ld.s b,(ix+5)
+	  ld a,b
+	  or a
+	  jr z,++_
+	  inc de
 	  GET_BASE_ADDR_FAST
 	  add hl,de
-	  bit 7,(hl)	; Check whether it's JP or JR
-	  inc hl
-	  jr z,_
-	  ld e,(hl)
-	  inc hl
+	  inc de
+	  rra	; Check whether it's JP or JR
+	  jr c,_
+	  ld a,(hl)
+	  GET_BASE_ADDR_FAST
+	  add hl,de
 	  ld d,(hl)
-	  ld h,4	; Taken JP eats 4 cycles
+	  ld e,a
 	  jr ++_
 _
 	  ld a,(hl)
@@ -211,21 +283,21 @@ _
 	  rla
 	  sbc a,a
 	  ld h,a
-	  inc de
-	  inc de
 	  add.s hl,de
 	  ex de,hl
-	  ld h,3	; Taken JR eats 3 cycles
 _
 	  push ix
-	   call.il lookup_code_cached
-	   add a,h
-	   ld.sis hl,(curr_rom_bank)
-	   ld h,a
+	   push bc
+	    call.il lookup_code_cached
+	   pop de
+	   ; Calculate total cycles
+	   sub d
+	   ld d,a
 	   ex (sp),ix
-	   ld.s (ix+3),hl
-	   ex de,hl
+	   ; Save new bank index / cycles
+	   ld.s (ix+3),de
 	  pop hl
+	  ; Save new JIT target
 	  ld.s (ix+1),hl
 	 pop hl
 	pop bc
@@ -239,12 +311,20 @@ banked_call_mismatch_helper:
 	   ld.s (ix+4),a  ; Update bank value
 	   inc hl
 	   ld.s de,(hl)
+	   dec de
+	   dec.s de
 	   GET_BASE_ADDR_FAST
 	   add hl,de
-	   dec hl
+	   ld a,(hl)
+	   inc hl
+	   inc e
+	   jr nz,_
+	   inc d
+	   GET_BASE_ADDR_FAST
+	   add hl,de
+_
 	   ld d,(hl)
-	   dec hl
-	   ld e,(hl)
+	   ld e,a
 	   push ix
 	    call.il lookup_code_cached
 	    add a,6	; Taken call eats 6 cycles

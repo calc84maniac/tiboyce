@@ -18,7 +18,7 @@ opgenRST:
 	jp _opgenRST
 opgenJR:
 opgenJP:
-	jp opgen_emit_unconditional_jump
+	jp opgen_emit_jump
 opgenRET:
 	jp _opgenRET
 opgenRETcond:
@@ -99,7 +99,7 @@ opgenMEM:
 	ldi
 opgen36_finish:
 	inc de
-	dec iy
+	dec iyl
 	jr opgen_next_fast
 	
 opgenPOP:
@@ -110,9 +110,9 @@ opgenPOP:
 	ld (de),a
 	inc de
 opgen1byte_3cc:
-	dec iy
+	dec iyl
 opgen1byte_2cc:
-	dec iy
+	dec iyl
 	jr opgen1byte
 	
 opgen_next_swap_skip:
@@ -143,11 +143,12 @@ opgen1byte:
 	ldi
 opgen_next_fast:
 	ld c,(hl)
+	ld a,iyh
+	sub l
+	ret m
+opgen_next_no_bound_check:
 	ld a,(bc)
 	ld ixl,a
-	ld a,l
-	sub iyl
-	ret m
 	jp (ix)
 	
 opgenINVALID:
@@ -189,11 +190,11 @@ opgenROT_rla_rra:
 	jr opgen1byte
 	
 _opgenCB:
-	dec iy
+	dec iyl
 	ld a,(hl)
 	add a,$40
 	jp pe,_
-	dec iy
+	dec iyl
 _
 	dec de
 	xor a
@@ -213,9 +214,8 @@ _
 	inc hl
 	ld (hl),11
 	inc hl
-	xor $28 ^ $C2
 	call opgen_emit_jump_swapped
-	jp opgen_emit_block_bridge
+	jp opgen_emit_subblock_bridge
 	
 _opgenJPcond:
 	ld a,$C2 ^ $28
