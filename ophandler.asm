@@ -323,7 +323,6 @@ scroll_write_DMA:
 	  ld de,hram_start
 	  ldir
 	 pop bc
-scroll_write_no_change:
 	pop hl
 	jp.sis z80_restore_swap_ret
 	
@@ -334,7 +333,7 @@ scroll_write_no_change:
 ;
 ; Inputs:  HL = 16-bit register address
 ;          E = current scanline
-;          A' = value being written
+;          C = A' = value being written
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
 ;          (SPS) = Z80 return address
@@ -343,12 +342,6 @@ scroll_write_no_change:
 ;          AF' has been unswapped
 scroll_write_helper:
 	 ld d,a
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
-	 ld a,c
-	 cp.s (hl)
-	 jr z,scroll_write_no_change
 render_this_frame = $+1
 	 ld a,1
 	 or a
@@ -434,7 +427,7 @@ scroll_write_done:
 ; Triggers a GB interrupt if LY already matches the new LYC value,
 ; but only if LYC is changing.
 ;
-; Inputs:  A' = value being written
+; Inputs:  C = A' = value being written
 ;          A = cycles into scanline
 ;          E = current scanline
 ;          (SPS) = Z80 return address
@@ -447,19 +440,14 @@ lyc_write_helper:
 	 bit 6,(hl)
 	 ld l,LYC - ioregs
 	 jr z,scroll_write_done_swap
-	 ld c,a
-	 ex af,af'
 	 ld d,a
-	 ex af,af'
-	 ; If writing the same value, don't adjust any event schedules
+	 ; Get the old value before overwriting it
 	 ld a,(hl)
-	 cp d
-	 jr z,scroll_write_done_swap
-	 ld (hl),d
+	 ld (hl),c
 lyc_update_helper:
 	 ; If the old value is an invalid line number, possibly enable LYC counter checking
 	 cp SCANLINES_PER_FRAME
-	 ld a,d
+	 ld a,c
 	 jr c,_
 	 cp SCANLINES_PER_FRAME
 	 jr nc,scroll_write_done_swap
@@ -474,20 +462,20 @@ _
 	 jr nc,_
 	 daa
 _
-	 ld d,a
+	 ld c,a
 	 
 	 ; Scanline 153 changes to scanline 0 after 2 cycles for LYC purposes
 	 ld a,e
 	 cp 9
 	 jr nz,_
-	 ld a,c
+	 ld a,d
 	 cp 2<<1
 	 sbc a,a
 	 inc a
 	 add a,e
 _
 	 ; Trigger an interrupt if setting the current scanline
-	 cp d
+	 cp c
 	 jr nz,_
 	 ld l,IF - ioregs
 	 set 1,(hl)
@@ -498,20 +486,19 @@ _
 	 ; If the current scanline is prior to the scheduled scanline, schedule
 	 ; relative to this frame instead of next frame
 	 jr nc,_
-	 push de
-	  ld de,-CYCLES_PER_FRAME
-	  add hl,de
-	 pop de
+	 ld de,-CYCLES_PER_FRAME
+	 add hl,de
 _
 	 ; Adjust scanline 0 if necessary
-	 ld a,d
+	 ld a,c
 	 cp 10
 	 jr nz,_
-	 dec d
+	 dec a
 	 ; TODO: Double-speed mode should increase by 4
 	 inc hl
 	 inc hl
 _
+	 ld d,a
 	 ld e,CYCLES_PER_SCANLINE
 	 mlt de
 	 add hl,de
@@ -631,7 +618,7 @@ stat_write_helper_no_change:
 	 bit 6,d
 	 jr z,_
 	 ld hl,hram_base + LYC
-	 ld d,(hl)
+	 ld c,(hl)
 	 ld a,SCANLINES_PER_FRAME
 	 jp lyc_update_helper
 _
@@ -1413,56 +1400,57 @@ _
 	
 ; Inputs:  BCDEHL' are swapped
 ;          IX = current JIT address
-;          HLC = desired trampoline opcodes
+;          HLA = desired trampoline opcodes
 ; Outputs: BCDEHL' are swapped
 ;          IX = current JIT address
-;          HL = current GB address
-;          A = NEGATIVE cycles to add for current sub-block position
-; Preserves: B
+;          HL = pointer to emitted cycle offset
+; Preserves: BC
 ;	
 resolve_mem_cycle_offset_helper:
 	push bc
-	 push hl
-	  lea bc,ix
-	  push bc
-	   call lookup_gb_code_address
-	   push de
-	    ld hl,(z80codebase+memroutine_next)
-	    ld de,-6
-	    add hl,de	;Sets C flag
-	    ; Check if enough room for trampoline
-	    ex de,hl
-	    ld hl,(recompile_struct_end)
-	    ld hl,(hl)
-	    sbc hl,de	;Carry is set
-	    ex de,hl
-	   pop de
-	  pop ix
-	  jr nc,_
-	  ld (z80codebase+memroutine_next),hl
-	  ; Emit the error catcher
-	  ld bc,ERROR_CATCHER
+	 push af
+	  push hl
+	   lea bc,ix
+	   push bc
+	    call lookup_gb_code_address
+	    push de
+	     ld hl,(z80codebase+memroutine_next)
+	     ld de,-6
+	     add hl,de	;Sets C flag
+	     ; Check if enough room for trampoline
+	     ex de,hl
+	     ld hl,(recompile_struct_end)
+	     ld hl,(hl)
+	     sbc hl,de	;Carry is set
+	     ex de,hl
+	    pop de
+	   pop ix
+	   jr nc,_
+	   ld (z80codebase+memroutine_next),hl
+	   ; Emit the error catcher
+	   ld bc,ERROR_CATCHER
+	   ld (hl),bc
+	   inc hl
+	   inc hl
+	   inc hl
+	   ; Emit the Game Boy address
+	   ld (hl),de
+	   inc hl
+	   inc hl
+	   ; Emit the block cycle offset
+	   ld (hl),a
+	   inc hl
+	   ; Overwrite the JIT code with a call to the trampoline
+	   ld.s (ix-2),hl
+	   ld.s (ix-3),$CD
+	  pop bc
+	  ; Emit the trampoline code
 	  ld (hl),bc
 	  inc hl
 	  inc hl
-	  inc hl
-	  ; Emit the Game Boy address
-	  ld (hl),de
-	  inc hl
-	  inc hl
-	  ; Emit the block cycle offset
-	  ld (hl),a
-	  inc hl
-	  ; Overwrite the JIT code with a call to the trampoline
-	  ld.s (ix-2),hl
-	  ld.s (ix-3),$CD
-	 pop bc
-	 ; Emit the trampoline code
-	 ld (hl),bc
-	 inc hl
-	 inc hl
+	 pop af
+	 ld (hl),a
 	pop bc
-	ld (hl),c
 	; Return the trampoline pointer minus 1
 	dec hl
 	dec hl
@@ -1470,6 +1458,7 @@ resolve_mem_cycle_offset_helper:
 	jp.sis get_mem_cycle_offset_continue
 	
 _
+	  pop bc
 	 pop bc
 	pop bc
 	scf
@@ -1490,7 +1479,7 @@ _
 ;          IX = current JIT dispatch address
 ;          HL = second byte of scratch buffer, holding target GB address
 ;          A = negative cycle offset for CALL instruction
-; Preserves: B
+; Preserves: BC
 get_mem_cycle_offset_for_call_helper:
 	pop hl
 	pop de

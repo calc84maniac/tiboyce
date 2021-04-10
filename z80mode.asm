@@ -2829,8 +2829,8 @@ _
 	jr readP1_finish
 	
 readSTAT:
-	call get_mem_cycle_offset_swap_push
-	 call get_scanline_from_cycle_offset
+	exx
+	call get_mem_scanline_offset
 	 ld d,a
 	 ld hl,STAT
 	 ld a,(hl)
@@ -2871,8 +2871,7 @@ readLY:
 	ld a,(LCDC)
 	add a,a
 	jr nc,readLY_force0
-	call get_mem_cycle_offset_push
-	 call get_scanline_from_cycle_offset
+	 call get_mem_scanline_offset
 	pop.l hl
 	ld d,a
 	ld a,e
@@ -3388,13 +3387,13 @@ resolve_get_mem_cycle_offset_call:
 	cp (ix-3)
 	jr z,resolve_mem_cycle_offset_prefix
 	; If not, the JIT code is a routine call, so we emit a jump to the original call target
-	ld c,h
+	ld a,h
 	ld h,l
 	ld l,$C3
 	.db $CA	;JP Z,
 resolve_mem_cycle_offset_prefix:
 	; For a prefixed bitwise operation, we emit the two-byte operation followed by a RET
-	ld c,$C9
+	ld a,$C9
 	jp.lil resolve_mem_cycle_offset_helper
 
 get_mem_cycle_offset_for_branch:
@@ -3475,9 +3474,33 @@ get_scanline_overflow:
 	sbc hl,de
 	jr get_scanline_from_cycle_count
 	
+get_mem_scanline_offset_if_changed_lyc:
+	exx
+	ex af,af'
+	ld c,a
+	ex af,af'
+	ld a,(LYC)
+	cp c
+	jr nz,get_mem_scanline_offset
+	.db $20 ; JR NZ,
+get_mem_scanline_offset_no_change_ix:
+	pop de   ; Pop return address
+	pop de   ; Pop pushed value of IX
+	exx
+	ld a,iyl
+	ex af,af'
+	ret
 	
+get_mem_scanline_offset_if_changed_ix:
+	exx
+	ex af,af'
+	ld c,a
+	ex af,af'
+	ld a,(ix)
+	cp c
+	jr z,get_mem_scanline_offset_no_change_ix
 get_mem_scanline_offset:
-	call get_mem_cycle_offset_swap_push
+	call get_mem_cycle_offset_push
 	
 ; Inputs: DE = (negative) cycles until target
 ;         May be non-negative if target falls within an instruction
@@ -3506,16 +3529,17 @@ scanline_cycle_count_cache = $+1
 	ld de,0
 	xor a
 	sbc hl,de
+	inc a
 	cp h
-	jr nz,++_
+	jr c,get_scanline_from_cycle_count_full
 	ld a,l
 scanline_index_cache = $+1
 	ld de,(CYCLES_PER_SCANLINE<<1) * 256 + 0
+	jr z,++_
 	cp d
 	ret c
+_
 	sub d
-	cp d
-	jr nc,_
 	inc e
 	ex de,hl
 get_scanline_from_cycle_count_finish:
@@ -3525,8 +3549,13 @@ get_scanline_from_cycle_count_finish:
 	ld (scanline_cycle_count_cache),hl
 	ret
 _
-	mlt de
-_
+	cp (CYCLES_PER_SCANLINE<<1) * 2 - 256
+	jr c,--_
+	sub d
+	inc e
+	jr --_
+	
+get_scanline_from_cycle_count_full:
 	add hl,de
 	
 	; Algorithm adapted from Improved division by invariant integers
@@ -3786,7 +3815,7 @@ write_scroll_swap:
 	ld iyl,a
 write_scroll:
 	push ix
-	 call get_mem_scanline_offset
+	 call get_mem_scanline_offset_if_changed_ix
 	pop hl
 	jp.lil scroll_write_helper
 	
@@ -3818,6 +3847,7 @@ writeSTAThandler:
 	ex af,af'
 	ld iyl,a
 writeSTAT:
+	exx
 	call get_mem_scanline_offset
 	jp.lil stat_write_helper
 	
@@ -3825,7 +3855,7 @@ writeLYChandler:
 	ex af,af'
 	ld iyl,a
 writeLYC:
-	call get_mem_scanline_offset
+	call get_mem_scanline_offset_if_changed_lyc
 	jp.lil lyc_write_helper
 	
 writeTIMAhandler:
