@@ -132,6 +132,8 @@ _
 	inc hl
 	; Message display
 	inc hl
+	; Adjust colors
+	inc hl
 	
 	; Key configuration
 	ld ix,key_smc_turbo
@@ -242,7 +244,7 @@ _
 	ld c,(ix+2)
 _
 	; Input:  BC = palette offset, DE = output ptr
-	; Output: DE = next output ptr, BC = 0
+	; Output: DE = next output ptr, BC = 0-255
 LoadSinglePalette:
 	ld hl,(ArcBase)
 	add hl,bc
@@ -250,6 +252,30 @@ LoadSinglePalette:
 	add hl,bc
 	ld bc,8
 	ldir
+	ld c,a
+	ld a,(AdjustColors)
+	or a
+	ld a,c
+	ret z
+	push de
+	 ld hl,-8
+	 add hl,de
+	 ld b,4
+_
+	 push bc
+	  push hl
+	   ld hl,(hl)
+	   call adjust_color
+	   ex de,hl
+	  pop hl
+	  ld (hl),e
+	  inc hl
+	  ld (hl),d
+	  inc hl
+	 pop bc
+	 djnz -_
+	pop de
+	ld a,c
 	ret
 	
 ItemSelectCmd:
@@ -868,6 +894,7 @@ OptionList:
 	.dw OptionTurboMode+1
 	.dw OptionScalingType+1
 	.dw OptionMessageDisplay+1
+	.dw OptionAdjustColors+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -940,7 +967,7 @@ LoadRomNoRomsText:
 	.db "No ROMs found!",0
 	
 GraphicsMenu:
-	.db 9
+	.db 10
 	.db 5,12,"Graphics Options",0
 	.db "",0
 	.db ITEM_OPTION,6, 60,1,"Scaling mode: %-10s",0
@@ -958,8 +985,10 @@ GraphicsMenu:
 	.db ITEM_OPTION,10, 140,1,"Message display: %-3s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
 	.db ITEM_OPTION,3, 160,1,"Palette selection: %-10s",0
+	.db "Off: Use specified colors directly.\n On: Adjust to emulate a GBC display.",0
+	.db ITEM_OPTION,11, 170,1,"Adjust colors: %-3s",0
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 180,1,"Back",0
+	.db ITEM_LINK,0, 190,1,"Back",0
 	
 ControlsMenu:
 	.db 14
@@ -1022,6 +1051,7 @@ OptionAutoSaveState:
 OptionDST:
 OptionSkinDisplay:
 OptionMessageDisplay:
+OptionAdjustColors:
 	.db 2
 	.db "off",0
 	.db "on",0

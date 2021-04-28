@@ -1078,8 +1078,8 @@ palette_obj1_colors:
 	
 	.echo "User RAM code size: ", $ - userMem
 	
-	; Pad to an odd number of bytes
-	.block (~$) & 1
+	; Pad to an even number of bytes
+	.block (-$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -1127,6 +1127,9 @@ ScalingType:
 	.db 1
 ; Message display (0=Off, 1=On)
 MessageDisplay:
+	.db 1
+; Adjust colors (0=Off, 1=On)
+AdjustColors:
 	.db 1
 	
 ; Number of key bytes

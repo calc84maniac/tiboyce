@@ -897,3 +897,113 @@ setup_menu_palette:
 	ld (mpLcdPalette+29),hl
 	ld hl,(current_buffer)
 	AJUMP(Set4BitWindowAny)
+	
+; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.
+;
+; Input:  HL = 15-bit color
+; Output: HL = 15-bit color (adjusted)
+; Destroys: AF, BC, DE
+;
+; Uses a modification of an algorithm from https://byuu.net/video/color-emulation/:
+;   R = min(30, (r * 13 + g *  2 + b *  1) >> 4);
+;   G = min(30, (         g * 12 + b *  4) >> 4);
+;   B = min(30, (r *  3 + g *  2 + b * 11) >> 4);
+;
+; To make the algorithm simpler, the combination portion is split into two parts:
+;   B,G,R = (b,g,r * 12) >> 4 = b,g,r - (b,g,r >> 2);
+;
+;   R += (r * 1 + g * 2 + b *  1) >> 4;
+;   G += b >> 2;
+;   B += (r * 3 + g * 2 + b * -1) >> 4;
+;
+adjust_color:
+	; D = r
+	ld a,l
+	and %00011111
+	ld d,a
+	
+	; BC = bgr >> 2
+	ld b,h
+	ld a,l
+	srl b \ rra
+	srl b \ rra
+	ld c,a
+	
+	; A = g * 2
+	rrca
+	rrca
+	and %00111110
+	; A += r
+	add a,d
+	; A += b
+	add a,b
+	; A >>= 1
+	rra
+	; E = (r + g*2 + b) >> 1
+	ld e,a
+	
+	; A += (r*2) >> 1
+	add a,d
+	; A -= (b*2) >> 1
+	sub b
+	; A = (A >> 3) << 2
+	rra
+	and %11111100
+	; D = ((r*3 + g*2 - b) >> 4) << 2
+	; This is the offset to add to the blue component
+	ld d,a
+	
+	; E = ((b >> 2) << 5) | (E >> 3)
+	; These are the offsets to add to the green and red components
+	ld a,e
+	rrca
+	rrca
+	rrca
+	rrca
+	xor h
+	and %10001111
+	xor h
+	rlca
+	ld e,a
+
+	; Mask out the upper two bits for each component of (bgr >> 2)
+	ld a,b
+	and %00011100
+	ld b,a
+	ld a,c
+	and %11100111
+	ld c,a
+	; Subtract (bgr >> 2)
+	sbc hl,bc
+	; Add remaining adjustments
+	add hl,de
+	
+	; Clamp all color components of 31 to 30
+	; Check if lower 5 bits (red component) were all 1
+	ld a,l
+	cpl
+	and %00011111
+	jr nz,_
+	; If so, clear the low bit (and set the low bit of A for the following)
+	dec l
+	inc a
+_
+	; Set lower 5 bits to 1 and get high 3 bits
+	xor l
+	; Check if low 3 bits of green component are all 1
+	inc a
+	ld a,h
+	cpl
+	jr nz,_
+	; Check if high 2 bits of green component were also all 1
+	tst a,%00000011
+	jr nz,_
+	; If so, clear the low bit of the green component
+	res 5,l
+_
+	; Check if the bits of the blue component were all 1
+	and %01111100
+	ret nz
+	; If so, clear the low bit of the blue component
+	res 2,h
+	ret
