@@ -4,6 +4,8 @@ decode_jump_helper:
 	ld l,d
 	jr c,decode_block_bridge_helper
 	add ix,bc
+	; Save original opcode in B
+	ld b,a
 	ld c,(hl)
 	inc l
 	ld a,(hl)
@@ -13,17 +15,32 @@ decode_jump_helper:
 	ld hl,(hl)
 	add hl,de
 	jr nz,decode_jump_maybe_overlap
-decode_jump_no_overlap:
-	bit 7,(hl)
-	inc hl
+	; Check whether original opcode was JR or JP
+	bit 7,b
 	ld b,-3 ; Taken JR cycles (negative)
 	jr z,decode_relative_jump
+decode_absolute_jump:
+	; Check if the actual opcode byte is HALT (if so, this is the HALT bug)
+	bit 7,(hl)
+	inc hl
 	ld e,(hl)
 	inc hl
 	ld d,(hl)
+	; In the case of the HALT bug, always emit a slow jump
+	jr z,decode_slow_jump_for_jp
 	; Adjust B to taken JP cycles (negative)
 	djnz decode_jump_common ; Always jumps
+	
+decode_jump_no_overlap:
+	; Recover whether it was a JR or JP
+	scf
+	sbc a,e
+	ld b,-3 ; Taken JR cycles (negative)
+	jr nz,decode_absolute_jump
 decode_relative_jump:
+	; No special handling is needed for the HALT bug in this path,
+	; since a HALT opcode will be detected as a JR (top bit reset)
+	inc hl
 	ld l,(hl)
 	ld a,l
 	rla
@@ -52,21 +69,27 @@ decode_jump_common:
 
 decode_block_bridge_helper:
 	add ix,bc
+	; Place (negative) number of extra cycles in B
+	cpl
+	inc a
+	ld b,a
 	; Get the target memory region and check if it differs from the
 	; containing code block's memory region (which happens on overlap)
 	ld a,(hl)
 	ld l,(ix+3)
 	cp (hl)
-	jr nz,decode_jump_bank_switch ; Note: B=0 which means no cycles
+	jr nz,decode_jump_bank_switch
+	; If there's no overlap but extra cycles are present, emit a slow jump
+	inc b
+	djnz decode_jump_bank_switch_fixed
 	call lookup_code_link_internal
 	jp.sis decode_block_bridge_return
 
 decode_jump_maybe_overlap:
+	; Check if the opcode is a JR or JP
+	sla b
 	; Save the base index of the next region
 	ld b,a
-	; Check if the opcode is a JR or JP
-	ld a,(hl)
-	rla
 	; Check if the jump overlaps to the next region
 	ld a,e
 	adc a,1
@@ -95,6 +118,7 @@ decode_jump_maybe_overlap:
 	ld a,(hl)
 _
 	ld e,a
+decode_slow_jump_for_jp:
 	; Adjust to taken JP cycles (negative)
 	djnz decode_slow_jump
 decode_overlapped_jr:
@@ -136,6 +160,11 @@ decode_jump_bank_switch_continue:
 	 pop de
 	pop bc
 	sub b
+	bit 1,b
+	; If B is 0, -3, or -4, it represents actual jump cycles
+	jp.sis z,decode_bank_switch_return
+	; If B is -1 or -2, it represents jump cycles minus 1
+	inc a
 	jp.sis decode_bank_switch_return
 	
 decode_rst_helper:
@@ -261,23 +290,32 @@ banked_jump_mismatch_helper:
 	  ; Save the new bank index
 	  ld c,a
 	  ; Check the number of cycles taken by the jump
+	  ; -4 is JP, -3 is JR, -2 is untaken JP, -1 is untaken JR or RET, 0 is a bridge
 	  ld.s b,(ix+5)
 	  ld a,b
 	  or a
-	  jr z,++_
+	  jr z,banked_jump_mismatch_resolved
+	  add a,2
+	  jr c,banked_jump_mismatch_untaken
 	  inc de
 	  GET_BASE_ADDR_FAST
 	  add hl,de
 	  inc de
-	  rra	; Check whether it's JP or JR
-	  jr c,_
+	  ; Check whether it's JP or JR
+	  inc a
+	  jr z,banked_jump_mismatch_jr
 	  ld a,(hl)
 	  GET_BASE_ADDR_FAST
 	  add hl,de
 	  ld d,(hl)
 	  ld e,a
-	  jr ++_
-_
+	  jr banked_jump_mismatch_resolved
+	  
+banked_jump_mismatch_untaken:
+	  ; Decrement to get the actual negative cycle count
+	  djnz banked_jump_mismatch_resolved
+	  
+banked_jump_mismatch_jr:
 	  ld a,(hl)
 	  ld l,a
 	  rla
@@ -285,7 +323,7 @@ _
 	  ld h,a
 	  add.s hl,de
 	  ex de,hl
-_
+banked_jump_mismatch_resolved:
 	  push ix
 	   push bc
 	    call.il lookup_code_cached
@@ -352,6 +390,15 @@ decode_intcache_helper:
 	 pop de
 	pop bc
 	ret.l
+	
+decode_halt_helper:
+	push hl
+	 ex af,af'
+	 ld c,a
+	 push bc
+	  call lookup_code
+	 pop bc
+	 jp.sis decode_halt_continue
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
 ; followed inline by the opcode byte in question (and one padding byte).

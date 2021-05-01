@@ -491,17 +491,14 @@ do_slow_jump_overflow_common:
 	ld c,a
 	sub d
 	ld de,(ix+6)
-	inc de
 	ld ix,(ix+1)
 	push ix
 #ifdef VALIDATE_SCHEDULE
 	call.il c,schedule_slow_jump_event_helper
-	dec de
 	push.l hl
 	call.il schedule_event_helper
 #else
 	jp.lil c,schedule_slow_jump_event_helper
-	dec de
 	push.l hl
 	jp.lil schedule_event_helper
 #endif
@@ -703,8 +700,8 @@ event_cycle_count = $+2
 	ld iyl,0
 	sub iyl
 	ld c,a
-	ASSERT_NC
 do_event_pushed:
+	ASSERT_NC
 #ifdef DEBUG
 	inc iyh
 	dec iyh
@@ -713,8 +710,9 @@ do_event_pushed:
 	push bc
 
 	 ; Check scheduled events
-	 ld hl,i
 	 ld (event_save_sp),sp
+event_expired_halt_loop:
+	 ld hl,i
 event_expired_loop:
 ei_delay_event_smc = $+1
 	 ld sp,event_counter_checkers
@@ -734,6 +732,10 @@ event_expired_more_events:
 	 or a
 	 jr event_expired_loop
 
+cpu_continue_halt:
+	 ld iy,0
+	 jr event_expired_halt_loop
+
 event_counter_checkers_done:
 	 ld h,b
 	 ld l,c
@@ -751,6 +753,7 @@ event_not_expired:
 	and (hl)
 intstate_smc_2 = $+1
 	jr nz,trigger_interrupt
+cpu_halted_smc = $
 	ld a,iyl
 	add a,c
 	jr c,event_maybe_reschedule
@@ -759,6 +762,13 @@ event_no_reschedule:
 	exx
 	ex af,af'
 	ret
+	
+cpu_exit_halt_no_interrupt:
+	xor a
+	ld (intstate_smc_2),a
+	ld hl,$7DFD ; LD A,IYL
+	ld (cpu_halted_smc),hl
+	jr cpu_halted_smc
 	
 start_emulation:
 	call set_gb_stack
@@ -788,6 +798,9 @@ trigger_int_callstack_overflow:
 	push.l hl
 	jr trigger_int_selected
 	
+cpu_exit_halt_trigger_interrupt:
+	ld de,$7DFD ; LD A,IYL
+	ld (cpu_halted_smc),de
 trigger_interrupt:
 	rrca
 	jr c,trigger_vblank
@@ -846,8 +859,7 @@ event_gb_address = $+1
 	ld (intstate_smc_2),a
 	; Get number of cycles to be taken, and check if zero
 	or (ix+3)
-cpu_halted_smc = $
-	jr z,decode_intcache  ; Replaced with JR exit_halt when halted
+	jr z,decode_intcache
 dispatch_int_decoded:
 	add a,iyl
 	jr c,dispatch_int_maybe_overflow
@@ -886,27 +898,6 @@ cycle_overflow_for_rst_or_int:
 	jp.lil schedule_event_helper_for_call
 #endif
 	
-exit_halt:
-	; Undo SMC for halted state
-	ld hl,((decode_intcache - (cpu_halted_smc+2)) << 8) | $28 ;JR Z,decode_intcache
-	ld (cpu_halted_smc),hl
-	; Get the address of the HALT
-	pop hl
-	inc hl
-	inc hl
-	inc hl
-	; Get the new number of cycles for RET (removing the HALT itself)
-	ld c,(hl)
-	inc bc \ inc bc \ inc bc  ; Preserve Z flag
-	; Advance JIT address past HALT
-	inc hl
-	inc hl
-	inc hl
-	push hl
-	; Advance GB address past HALT
-	inc de
-	; Return to interrupt dispatch if cycles to take were non-zero
-	jr nz,dispatch_int_decoded
 decode_intcache:
 	; A = 0
 	call.il decode_intcache_helper
@@ -1233,10 +1224,12 @@ decode_jump:
 	 inc hl
 	 inc hl
 	 inc hl
-	 inc hl
 	 ld ix,(hl)
+	 ld (hl),$C3 ;JP
+	 inc hl
 	 push hl
 	  inc hl
+	  ld a,(hl)
 	  inc hl
 	  ld de,(hl)
 	  jp.lil decode_jump_helper
@@ -1278,10 +1271,10 @@ decode_bank_switch_return:
 	 pop hl
 	 inc hl
 	 ld (hl),b	;negative jump cycles
-	 ld b,a
 	 dec hl
+	 ld (hl),a  ;taken cycle count
 	 dec hl
-	 ld (hl),bc	;bank id / taken cycle count
+	 ld (hl),c	;bank id
 	 dec hl
 	 dec hl
 	 ld (hl),ix
@@ -2083,56 +2076,103 @@ _
 	inc sp
 	ret
 	
-ophandler76:
+decode_halt:
 	pop ix
+	pea ix-2
+	exx
+	ld de,(ix+3)
+	jp.lil decode_halt_helper
+decode_halt_continue:
+	pop hl
+	ld (hl),ophandler_halt & $FF
+	inc hl
+	ld (hl),ophandler_halt >> 8
+	inc hl
+	push hl
+	ld (hl),a
+	inc hl
+	ld (hl),ix
+	ld a,ixh
+	cp flush_handler >> 8
+	jr nz,_
+	ld a,ixl
+	cp flush_handler & $FF
+	jr nz,_
+	; If the JIT needs to be flushed, flush at the HALT address itself
+	pop hl
+	ld de,(ix+flush_address-flush_handler)
+	dec de
+	jp.lil flush_for_halt
+ophandler_halt:
 	ex af,af'
 	exx
 	push.l hl
 	ld c,a
+_
 	ld hl,IF
 	ld a,(hl)
 	ld l,h
 	and (hl)
+	ld hl,intstate_smc_2
 	jr z,haltspin
-	; Halt is being exited naturally
-	; Reset halted state
-	ld hl,((decode_intcache - (cpu_halted_smc+2)) << 8) | $28 ;JR Z,decode_intcache
-	ld (cpu_halted_smc),hl
+	; If interrupts are enabled, go straight to the event handler
+	; without setting up the SMC for halt spinning
+	; This can only happen as the result of an EI delay slot,
+	; so the cycle counter is guaranteed to go from -1 to 0
+	ld a,(hl)
+	or a
+	jr nz,haltnospin
+	; Emulate HALT bug in this case
+	pop ix
 	; Advance to after the HALT
-	lea ix,ix+3
-	; Count cycles for the next sub-block
-	ld a,(ix-3)
+	lea ix,ix+6
+	; Count cycles for the bugged instruction
+	ld a,(ix-1)
 	add a,c
-	jr c,ophandler76_maybe_overflow
-ophandler76_no_overflow:
+	jr c,ophandler_halt_maybe_overflow
+ophandler_halt_no_overflow:
 	pop.l hl
 	exx
 	ex af,af'
 	jp (ix)
 haltspin:
-	; Set instruction cycle offset of 0
-	ld c,a
 	; Set halted state
-	ld hl,((exit_halt - (cpu_halted_smc+2)) << 8) | $18 ;JR exit_halt
-	ld (cpu_halted_smc),hl
-	; Set GB address to HALT itself
-	ld hl,(ix+1)
-	dec hl
+	ld a,(hl)
+	sub trigger_interrupt - cpu_exit_halt_trigger_interrupt
+	jr nc,_
+	xor (cpu_exit_halt_trigger_interrupt - trigger_interrupt) ^ (cpu_exit_halt_no_interrupt - cpu_halted_smc)
+_
+	ld (hl),a
+	inc hl
+	ld (hl),$18 ;JR cpu_continue_halt
+	inc hl
+	ld (hl),cpu_continue_halt - (cpu_halted_smc + 2)
+haltnospin:
+	pop hl
+	; Set instruction cycle offset
+	ld c,(hl)
+	inc hl
+	; Push JIT address after HALT
+	ld de,(hl)
+	push de
+	inc hl
+	inc hl
+	; Set GB address to after HALT
+	ld hl,(hl)
 	ld (event_gb_address),hl
 	; Set remaining cycles to 0
 	ld iy,0
-	; Push JIT address of HALT itself
-	pea ix-3
 	jp do_event_pushed
 	
-ophandler76_maybe_overflow:
+ophandler_halt_maybe_overflow:
 	inc iyh
-	jr nz,ophandler76_no_overflow
+	jr nz,ophandler_halt_no_overflow
 	ld iyl,a
-	; Carry is set, we subtract out the cycle for the HALT itself
+	; Carry is set, subtract out the cycle for the HALT itself
 	sbc a,c
 	ld c,a
-	ld de,(ix-2)
+	ld de,(ix-3)
+	dec de
 	push ix
 #ifdef VALIDATE_SCHEDULE
 	call.il schedule_event_helper
@@ -2934,6 +2974,7 @@ mem_read_bail:
 	pop ix
 	ld a,iyl
 	ex af,af'
+	push af
 	pea ix-8
 	ret
 	

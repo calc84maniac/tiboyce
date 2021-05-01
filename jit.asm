@@ -318,7 +318,7 @@ _
 	 push hl
 	  lea hl,ix-4 ; For RET/JR/JP, count is at -4 bytes
 	  jr z,_
-	  inc hl  ; For CALL/RST/HALT, count is at -3 bytes
+	  inc hl  ; For CALL/RST, count is at -3 bytes
 _
 	  add hl,bc
 	  add.s a,(hl)
@@ -344,7 +344,8 @@ lookup_gb_prefix:
 	  sbc a,c
 	  ; If the cycle count overflowed from a CB-prefix instruction,
 	  ; this means it must have been an overlapped instruction
-	  jr c,lookup_gb_found_overlapped
+	  ; This path is also taken if we reached a HALT
+	  jr c,lookup_gb_found_overlapped_or_halt
 	  ld c,a
 	  dec hl
 	  ld a,(hl)
@@ -367,6 +368,34 @@ _
 	  ld a,c
 	  ld c,3
 	  jr lookup_gb_add
+
+lookup_gb_found_overlapped_or_halt:
+	  ; Check if the opcode was a HALT or not
+	  inc a
+	  jr nz,lookup_gb_found_overlapped
+	  ; If it was a HALT, get the bugged instruction byte
+	  dec hl
+	  dec hl
+	  ld e,(hl)
+	  dec hl
+	  ; Check if at the start of the bugged instruction
+	  ld c,9
+	  add ix,bc
+	  jr nc,_
+	 ; Get the cycle count of the bugged instruction
+	 pop bc
+	 dec bc
+	 ld.s a,(bc)
+	 inc bc
+	 dec a
+	 jr lookup_gb_finish
+_
+	  ; If not, determine the address after the bugged instruction
+	  ld a,(de)
+	  ld c,a
+	  add hl,bc
+	  ; Cycle count will be 0
+	  jr lookup_gb_found_overlapped
 	
 	 ; When a match is found, load it from the cache
 lookup_code_cached_found:
@@ -520,7 +549,7 @@ internal_found_new_subblock:
 	  add.s a,(ix-3)
 	  ASSERT_C
 	  bit 2,e
-	  jr nz,_ ; For CALL/RST/HALT, offsets are normal
+	  jr nz,_ ; For CALL/RST, offsets are normal
 	  inc ix  ; For RET/JR/JP, offsets are stored -1
 _
 	  add hl,bc
@@ -531,6 +560,8 @@ _
 internal_found_prefix:
 	  ; Count CB-prefixed opcode cycles
 	  sbc a,c
+	  ; If we're stepping past a HALT, then continue
+	  jr c,foundloop_internal_continue
 	  bit.s 1,(ix-2)
 	  jr nz,foundloop_internal_continue
 	  inc ix
@@ -720,7 +751,7 @@ lookup_found_new_subblock:
 	   add.s a,(ix-3)
 	   ASSERT_C
 	   bit 2,e
-	   jr nz,_ ; For CALL/RST/HALT, offsets are normal
+	   jr nz,_ ; For CALL/RST, offsets are normal
 	   inc ix  ; For RET/JR/JP, offsets are stored -1
 _
 	   add hl,bc
@@ -734,6 +765,8 @@ recompile_trampoline:
 lookup_found_prefix:
 	   ; Count CB-prefixed opcode cycles
 	   sbc a,c
+	   ; If we're stepping past a HALT, then continue
+	   jr c,lookup_found_continue
 	   bit.s 1,(ix-2)
 	   jr nz,lookup_found_continue
 	   inc ix
@@ -1317,6 +1350,19 @@ opcycle08:
 	add a,5
 	OPCYCLE_NEXT
 	
+	; Bugged halt instruction
+opcycleHALT:
+	; Dispatch to the bugged instruction without incrementing the pointer
+	ex de,hl
+	inc d
+	inc hl
+	ld e,(hl)
+	dec hl
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+	
 	; Invalid opcodes within a sub-block
 opcycleINVALID:
 opcycleJR:
@@ -1329,7 +1375,6 @@ opcycleRET:
 opcycleRETcond:
 opcycleRETI:
 opcycleRST:
-opcycle76:
 opcycleE9:
 	jp runtime_error
 
@@ -1472,7 +1517,7 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 	.db opcycleMEM - opcycleroutines
-	.db opcycle76 - opcycleroutines
+	.db opcycleHALT - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 ;78
 	.db opcycle1byte - opcycleroutines
@@ -1645,7 +1690,7 @@ opcoderecsizes:
 	.db 1,1,1,0,1,1,3,1
 	.db 1,1,1,1,0,1,3,1
 	.db 1,1,1,1,1,0,3,1
-	.db 3,3,3,3,3,3,6,3
+	.db 3,3,3,3,3,3,1,3
 	.db 1,1,1,1,1,1,3,0
 	
 	.db 1,1,1,1,1,1,3,1
@@ -1668,7 +1713,7 @@ opcoderecsizes:
 	
 ; A table of Game Boy opcode cycles. Block-ending opcodes are set to 0.
 ; Conditional branches are assumed not taken.
-; Prefix opcodes (i.e. CB) are set to -1, for efficient detection.
+; Prefix opcodes (i.e. CB) and HALT are set to -1, for efficient detection.
 opcodecycles:
 	.db 1,3,2,2,1,1,2,1
 	.db 5,2,2,2,1,1,2,1
@@ -1685,7 +1730,7 @@ opcodecycles:
 	.db 1,1,1,1,1,1,2,1
 	.db 1,1,1,1,1,1,2,1
 	.db 1,1,1,1,1,1,2,1
-	.db 2,2,2,2,2,2,1,2
+	.db 2,2,2,2,2,2,-1,2
 	.db 1,1,1,1,1,1,2,1
 	
 	.db 1,1,1,1,1,1,2,1
@@ -1707,6 +1752,8 @@ opcodecycles:
 	.db 3,2,4,1,0,0,2,4
 	
 ; A table of Game Boy opcode sizes.
+; The HALT opcode defaults to 3 bytes, to include the following opcode bytes
+; for any instruction that could be affected by the HALT bug.
 opcodesizes:
 	.db 1,3,1,1,1,1,2,1
 	.db 3,1,1,1,1,1,2,1
@@ -1723,7 +1770,7 @@ opcodesizes:
 	.db 1,1,1,1,1,1,1,1
 	.db 1,1,1,1,1,1,1,1
 	.db 1,1,1,1,1,1,1,1
-	.db 1,1,1,1,1,1,1,1
+	.db 1,1,1,1,1,1,3,1
 	.db 1,1,1,1,1,1,1,1
 	
 	.db 1,1,1,1,1,1,1,1
@@ -2295,8 +2342,8 @@ jump_template:
 	call decode_jump
 	jr nc,$+1 ;RST_CYCLE_CHECK
 	ex af,af'
-jump_template_struct_smc = $+1
-	jp 0
+jump_template_struct_smc = $
+	.dw 0
 	.assume adl=1
 jump_template_size = $-jump_template
 	.db 0 ;padding for struct pointer write
@@ -2317,6 +2364,7 @@ _
 opgen_emit_block_bridge:
 	; Emit a block bridge
 	push hl
+opgen_emit_block_bridge_pushed:
 	 ld hl,block_bridge_template
 	 ld bc,block_bridge_template_size
 	 jr nc,_
@@ -2327,11 +2375,12 @@ _
 	 ldir
 	 ld c,5
 	 add hl,bc
-	 dec c
+	 ld c,jump_template_size - 5
 	 ldir
 	pop hl
 	ex de,hl
-	call opgen_emit_gb_address_noinc
+	ld (hl),c ; Default to 0 cycles, if not overwritten by the cycle count
+	call opgen_emit_gb_address
 	; Don't include the next opcode in the block,
 	; but still count cycles up to the next opcode
 	ld a,e
@@ -2485,17 +2534,6 @@ _
 	; Generate the opcode
 	jp opgen_next
 	
-_opgen3F:
-	ldi
-	ex de,hl
-	; Reset H and N flags, preserve Z and C flags
-	ld (hl),$17	;RLA
-	inc hl
-	ld (hl),$1F	;RRA
-	inc hl
-	ex de,hl
-	jp opgen_next_fast
-	
 _opgenRST:
 	ex de,hl
 	ld (hl),$CD
@@ -2578,8 +2616,6 @@ opgen_finish_rst:
 	ex de,hl
 	jp opgen_next_fast
 
-opgen_emit_jump_swapped:
-	ex de,hl
 opgen_emit_jump:
 	ld a,c
 	push hl
@@ -2589,7 +2625,8 @@ opgen_emit_jump:
 	pop hl
 	ld c,a
 	ex de,hl
-	call opgen_emit_gb_address_noinc
+	ld (hl),c
+	call opgen_emit_gb_address
 	call opgen_reset_cycle_count
 	inc de
 	ld a,c
@@ -2622,6 +2659,12 @@ _opgenRETcond:
 	ld (hl),ophandlerRETcond >> 8
 	inc hl
 	ld (hl),a	;JP cc,gb_address
+	; If block is ending, combine the subblock and end-of-block bridges
+	; Also avoid emitting the redundant Game Boy address
+	ld a,e
+	sub iyh
+	rla
+	jr nc,opgen_emit_subblock_combined_bridge
 	call opgen_emit_gb_address
 	
 opgen_emit_subblock_bridge:
@@ -2638,9 +2681,22 @@ opgen_emit_subblock_bridge:
 	ld (hl),$08	;EX AF,AF'
 	jp opgen_next_swap_skip
 	
+opgen_emit_subblock_combined_bridge:
+	inc de
+	; Subtract 1 from the cycle count, will be readjusted at decode time
+	inc iyl
+	ex de,hl
+	push hl
+	 ; Place the cycle count of the untaken branch in the associated info
+	 ld hl,8
+	 add hl,de
+	 ld (opgen_last_cycle_count_smc),hl
+	 ; Emit the slower bridge that preserves the associated info
+	 scf
+	 jp opgen_emit_block_bridge_pushed
+	
 opgen_emit_gb_address:
 	inc hl
-opgen_emit_gb_address_noinc:
 	ld a,e
 opgen_base_address_smc_1 = $+1
 	sub 0
@@ -2688,6 +2744,61 @@ opgen_last_cycle_count_smc = $+1
 	ld iyl,e
 	xor a
 	ret
+	
+_opgen76:
+	ex de,hl
+	ld (hl),$CD
+	inc hl
+	ld (hl),decode_halt & $FF
+	inc hl
+	ld (hl),decode_halt >> 8
+	inc hl
+	; The next three bytes will be decoded to the cycle count and JIT address
+	; of the non-bugged continuation block
+	inc hl
+	inc hl
+	; Emit the address following the HALT instruction
+	inc de
+	call opgen_emit_gb_address
+	; Read the first byte of the bugged instruction
+	ld a,(de)
+	ld c,a
+	; Reset the cycle count at the start of the HALT
+	dec de
+	call opgen_reset_cycle_count
+	ld (opgen_last_cycle_count_smc),hl
+	inc hl
+	; Update the bound checker to allow a single opcode
+	ld iyh,e
+	; Disable any memory region crossing logic after the opcode is emitted
+	ld a,MAX_OPCODE_BYTES_PER_BLOCK
+	ld (opgen_byte_limit_smc),a
+	dec iyl ; Include one extra cycle for the HALT instruction
+	ex de,hl
+	; Generate the opcode
+	ld a,(bc)
+	ld ixl,a
+	; Check if we need to special-case a copy of the first opcode byte
+	sub opgen_next_fast & $FF
+	add a,opgen_next_fast - opgen76
+	jr nc,_
+	; If the bugged opcode is a HALT, it will bug eternally
+	; To avoid infinite code generation, instead we emit an invalid opcode
+	jr z,opgenblockend_invalid
+	; For opgen3byte_low, increment the B register
+	and 1
+	add a,b
+	ld b,a
+	; Write the first byte manually
+	ld a,c
+	ld (de),a
+	inc de
+	inc hl
+	; Adjust the entry point
+	; For opgen3byte_low, this causes an AND B to be executed, which is harmless
+	lea ix,ix+2
+_
+	jp (ix)
 	
 opgenroutinecall2byte_5cc:
 	dec iyl
@@ -2740,12 +2851,7 @@ _opgen36:
 	inc de
 	inc hl
 	ldi
-	ld a,RST_MEM
-	ld (de),a
-	inc de
-	ld a,$76
-	ld (de),a
-	inc de
+	ld c,$76
 	jp opgen36_finish
 	
 opgenroutinecall_4cc:
@@ -2763,22 +2869,6 @@ opgenroutinecall_1cc:
 	ldi
 	ldi
 	pop hl
-	jp opgen_next_fast
-	
-opgenroutinecallsplit_1cc:
-	ld a,$CD
-	ld (de),a
-	inc de
-	ex (sp),hl
-	ldi
-	ldi
-	pop hl
-	ex de,hl
-	call opgen_reset_cycle_count
-	ld (opgen_last_cycle_count_smc),hl
-	inc de
-	call opgen_emit_gb_address
-	ex de,hl
 	jp opgen_next_fast
 	
 opgenCONSTwrite:

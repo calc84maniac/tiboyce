@@ -193,8 +193,9 @@ callstack_overflow_helper:
 ;          BCDEHL' have been unswapped
 flush_normal:
 	ex af,af'
-	ld iyl,a
+	ld c,a
 	push hl
+flush_for_halt:
 	 push bc
 	  ld hl,$C3 | (do_event_pushed << 8)	;JP do_event_pushed
 	  ld (flush_event_smc_1),hl
@@ -211,8 +212,7 @@ flush_mem_finish:
 	; Flush entire call stack, including interrupt returns
 	ld sp,myADLstack
 	ld.sis sp,myz80stack-4
-	ld c,a
-	add a,iyl
+	add a,c
 	jr c,_
 	dec iyh
 _
@@ -223,6 +223,8 @@ _
 	jp.s (ix)
 _
 	ld iyl,a
+	sub c
+	ld c,a
 	push.s ix
 	push hl
 #ifdef VALIDATE_SCHEDULE
@@ -253,16 +255,18 @@ flush_mem:
 	  dec de
 	  cpl
 	  dec a
-	  ld c,a
-	 pop af
-	 push af
-	  jr nz,_
-	  ; Special handling for 2-byte, 3-cycle instructions
-	  dec de
-	  dec c
+	 pop bc
+	 bit 6,c
+	 jr z,_
+	 ; Special handling for 2-byte, 3-cycle instructions
+	 dec de
+	 dec a
 _
-	  ld b,$FF
-	  add iy,bc
+	 add a,iyl
+	 ld c,a
+	 push bc
+	  jr c,flush_mem_finish
+	  dec iyh
 	  jr flush_mem_finish
 	
 	
@@ -1180,7 +1184,7 @@ schedule_subblock_event_helper:
 	ex de,hl
 	add hl,de
 	ld a,(hl)
-	add a,a	
+	add a,a
 	jr nc,_
 	and 4
 	jr z,++_
@@ -1235,17 +1239,21 @@ schedule_jump_event_absolute_slow:
 ; Inputs: DE = Game Boy address of jump instruction plus 1
 ;         IX = starting recompiled address
 ;         IY = cycle count at end of sub-block (>= 0)
-;         A = negative cycles for taken jump (-3 for JR, -4 for JP)
-;         C = cycles until end of sub-block
+;         A = negative cycles for jump
+;  (-1 for untaken JR/RET, -2 for untaken JP, -3 for taken JR, -4 for taken JP)
+;         C = cycles until end of sub-block (plus 1 for non-taken jump)
 schedule_slow_jump_event_helper:
 #ifdef VALIDATE_SCHEDULE
 	ex (sp),hl
 #endif
 	push hl
+	add a,2
+	jr c,schedule_bridge_event_slow
+	inc.s de
 	GET_BASE_ADDR_FAST
 	add hl,de
-	rra
-	jr c,schedule_jump_event_relative_slow
+	inc a
+	jr z,schedule_jump_event_relative_slow
 	; Check if jump target may overlap memory regions
 	inc e
 	jr z,schedule_jump_event_absolute_slow
@@ -1282,6 +1290,11 @@ schedule_event_later:
 	sbc hl,de
 	jp.sis schedule_event_finish
 
+schedule_bridge_event_slow:
+	dec c
+	ld a,iyl
+	sub c
+	jr c,schedule_event_later
 schedule_event_now:
 #ifdef VALIDATE_SCHEDULE
 	call validate_schedule

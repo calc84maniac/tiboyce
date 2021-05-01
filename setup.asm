@@ -693,6 +693,7 @@ _
 	ld (z80codebase+mbc1_ram_smc),a
 _
 	
+	ld de,z80codebase+intstate_smc_2
 	ld a,(iy-state_size+STATE_INTERRUPTS)
 	; Check value of IME
 	rra
@@ -706,7 +707,24 @@ _
 	ld a,$08 ;EX AF,AF' (overriding RET)
 	ld (z80codebase+intstate_smc_1),a
 	xor a
-	ld (z80codebase+intstate_smc_2),a
+	ld (de),a
+_
+	
+	; Check if CPU is halted
+	ld a,(iy-state_size+STATE_CPU_MODE)
+	or a
+	jr z,++_
+	; Adjust intstate_smc_2 and cpu_halted_smc
+	ex de,hl
+	ld a,(hl)
+	;cpu_halted_smc = (JR cpu_continue_halt)
+	ld de,((cpu_continue_halt - (cpu_halted_smc + 2)) << 16) | ($18 << 8) | (trigger_interrupt - cpu_exit_halt_trigger_interrupt)
+	sub e
+	jr nc,_
+	xor (cpu_exit_halt_trigger_interrupt - trigger_interrupt) ^ (cpu_exit_halt_no_interrupt - cpu_halted_smc)
+_
+	ld e,a
+	ld (hl),de
 _
 	
 	; Set the initial DIV counter to one cycle in the future
@@ -1106,13 +1124,20 @@ _
 _
 	
 	; Save the interrupt state: bit 0 = IME, bit 1 = delayed EI
-	ld a,(z80codebase+intstate_smc_2)
-	cp 1
+	ld hl,(z80codebase+intstate_smc_2)
+	ld a,l
+	cp cpu_exit_halt_no_interrupt - intstate_smc_2
 	ld a,(z80codebase+intstate_smc_1)
 	rla
 	dec a
 	and 3
 	ld (ix-state_size+STATE_INTERRUPTS),a
+	
+	; Set CPU mode, 0 = running, 1 = halted
+	xor a
+	add hl,hl
+	rla
+	ld (ix-state_size+STATE_CPU_MODE),a
 	
 	ld a,(z80codebase+curr_rom_bank)
 	ld (ix-state_size+STATE_ROM_BANK),a

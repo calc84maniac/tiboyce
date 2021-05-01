@@ -46,9 +46,6 @@ opgen35:
 opgen39:
 	call opgenroutinecall_2cc
 	.dw ophandler39
-opgen76:
-	call opgenroutinecallsplit_1cc
-	.dw ophandler76
 opgenC5:
 	call opgenroutinecall_4cc
 	.dw ophandlerC5
@@ -93,12 +90,15 @@ opgenRETI:
 	.dw ophandlerRETI
 	
 opgenMEM:
-	ld a,RST_MEM
-	ld (de),a
-	inc de
-	ldi
+	inc hl
 opgen36_finish:
-	inc de
+	ex de,hl
+	ld (hl),RST_MEM
+	inc hl
+	ld (hl),c
+	inc hl
+	inc hl
+	ex de,hl
 	dec iyl
 	jr opgen_next_fast
 	
@@ -113,17 +113,24 @@ opgen1byte_3cc:
 	dec iyl
 opgen1byte_2cc:
 	dec iyl
-	jr opgen1byte
+	ld a,c
+	ld (de),a
+	inc de
+opgenNOP:
+	inc hl
+	jr opgen_next_fast
 	
 opgen_next_swap_skip:
 	ex de,hl
 opgen_next_skip:
 	inc de
-opgenNOP:
 	inc hl
 opgen_next:
 	ld bc,opgentable
 	jr opgen_next_fast
+	
+opgen76:
+	jp _opgen76
 	
 opgenCB:
 	ldi
@@ -152,9 +159,9 @@ opgen_next_no_bound_check:
 	jp (ix)
 	
 opgenINVALID:
-	jr _opgenINVALID
+	jp opgenblockend_invalid
 opgen3F:
-	jp _opgen3F
+	jr _opgen3F
 opgenJRcond:
 	jr _opgenJRcond
 opgenJPcond:
@@ -170,24 +177,27 @@ opgenROT:
 	.echo "Opgen routine size: ", $ - opgenroutines
 	
 	bit 4,c
-	jr nz,opgenROT_rla_rra
-	ld (hl),$37 ;SCF
-	inc hl
-	ld (hl),$8F ;ADC A,A
-	inc hl
-	ld (hl),$1F ;RRA
-	inc hl
-	ex de,hl
-	jr opgen1byte
-opgenROT_rla_rra:
+	jr z,opgenROT_rlca_rrca
 	ld (hl),$CC	;CALL Z,reset_z_flag
 	inc hl
 	ld (hl),reset_z_flag & $FF
 	inc hl
 	ld (hl),reset_z_flag >> 8
+	jr _
+opgenROT_rlca_rrca:
+	ld (hl),$37 ;SCF
 	inc hl
+	ld (hl),$8F ;ADC A,A
+opgen3F_finish:
+	inc hl
+	ld (hl),$1F ;RRA
+_
+	inc hl
+	ld (hl),c
+	inc hl
+	inc de
 	ex de,hl
-	jr opgen1byte
+	jr opgen_next_fast
 	
 _opgenCB:
 	dec iyl
@@ -205,22 +215,30 @@ _
 	inc de
 	jr opgen1byte
 	
+_opgen3F:
+	ex de,hl
+	ld (hl),c
+	; Reset H and N flags, preserve Z and C flags
+	ld c,$17	;RLA
+	jr opgen3F_finish
+	
 _opgenJRcond:
 	ld a,$20 ^ $28
 _
 	xor c
-	ex de,hl
-	ld (hl),a
-	inc hl
-	ld (hl),11
-	inc hl
-	call opgen_emit_jump_swapped
-	jp opgen_emit_subblock_bridge
+	ld (de),a
+	inc de
+	ld a,11
+	ld (de),a
+	inc de
+	call opgen_emit_jump
+	ld a,e
+	sub iyh
+	jp m,opgen_emit_subblock_bridge
+	; If block is ending, combine the subblock and end-of-block bridges
+	jp opgen_emit_subblock_combined_bridge
 	
 _opgenJPcond:
 	ld a,$C2 ^ $28
 	jr -_
-	
-_opgenINVALID:
-	jp opgenblockend_invalid
 	

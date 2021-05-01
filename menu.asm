@@ -257,24 +257,23 @@ LoadSinglePalette:
 	or a
 	ld a,c
 	ret z
-	push de
-	 ld hl,-8
-	 add hl,de
-	 ld b,4
+	ld hl,-8
+	add hl,de
+	ld b,4
 _
-	 push bc
-	  push hl
-	   ld hl,(hl)
-	   call adjust_color
-	   ex de,hl
-	  pop hl
-	  ld (hl),e
-	  inc hl
-	  ld (hl),d
-	  inc hl
-	 pop bc
-	 djnz -_
-	pop de
+	push bc
+	 push hl
+	  ld hl,(hl)
+	  call adjust_color
+	  ex de,hl
+	 pop hl
+	 ld (hl),e
+	 inc hl
+	 ld (hl),d
+	 inc hl
+	pop bc
+	djnz -_
+	ex de,hl
 	ld a,c
 	ret
 	
