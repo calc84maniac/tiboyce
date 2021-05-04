@@ -1602,15 +1602,14 @@ _
 	ld a,ixh
 	ret
 do_swap_hl:
-	call mem_read_any_before_write
-	rrca
-	rrca
-	rrca
-	rrca
-	or a
 	ex af,af'
 	push af
-	 ex af,af'
+	 call mem_read_any_before_write
+	 rrca
+	 rrca
+	 rrca
+	 rrca
+	 or a
 	 call mem_write_any_after_read
 	pop ix
 	ld a,ixh
@@ -2396,7 +2395,7 @@ ophandlerF5:
 	push af
 	pop de
 	ld d,flags_lut >> 8
-	set 3,e
+	; Bit 3 of F was set by the previous pop af
 	ld a,(de)
 	ld d,c
 	ld e,a
@@ -3347,12 +3346,10 @@ write_audio_enable:
 	 ld a,e
 	 and 3
 	 cp 2
-	 inc a
-	 jr c,_
-	 sub 2
+	 adc a,1
 	 add a,a
-	 add a,a
-_
+	 daa
+	 rra
 	 ld c,a
 	 ld e,NR52-ioregs
 	 ld a,(de)
