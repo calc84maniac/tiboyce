@@ -1550,42 +1550,27 @@ _
 	jp.sis mbc_fix_sp
 	
 mbc_rtc_latch_helper:
-	exx
-	ex af,af'
-	ld c,a
-	ex af,af'
-mbc_rtc_last_latch = $+1
-	ld a,0
-	cpl
-	and c
-	rra
-	jr nc,_
-	push bc
-	 call update_rtc
-	 ld ix,z80codebase+rtc_latched
-	 ld bc,(ix+5)
-	 ld a,c
-	 and $3F
-	 ld c,a
-	 ld a,b
-	 and $3F
-	 ld b,a
-	 ld (ix),bc
-	 ld bc,(ix+7)
-	 ld a,c
-	 and $1F
-	 ld c,a
-	 ld (ix+2),bc
-	 ld a,(ix+9)
-	 and $C1
-	 ld (ix+4),a
-	pop bc
-_
+	call c,update_rtc_always
+	ld ix,z80codebase+rtc_latched
+	ld bc,(ix+5)
 	ld a,c
-	and 1
-	ld (mbc_rtc_last_latch),a
-	exx
-	jp.sis mbc_6000_denied
+	and $3F
+	ld c,a
+	ld a,b
+	and $3F
+	ld b,a
+	ld (ix),bc
+	ld bc,(ix+7)
+	ld a,c
+	and $1F
+	ld c,a
+	ld (ix+2),bc
+	ld a,(ix+9)
+	and $C1
+	ld (ix+4),a
+	ld a,mbc_6000_denied - (mbc_rtc_latch_smc+1)
+	ld (z80codebase+mbc_rtc_latch_smc),a
+	jp.sis mbc_6000_finish
 	
 mbc_rtc_helper:
 	ld a,(cram_bank_base+2)
@@ -1603,6 +1588,11 @@ _
 	ld ix,z80codebase+rtc_latched
 	jp.sis mbc_ram_any
 _
+	ld ix,(cram_bank_base)
+	ld a,(ix)
+	cp (ix+5)
+	jr nz,mbc_rtc_mark_latch_dirty
+mbc_rtc_mark_latch_dirty_continue:	
 	bit 3,c
 	jr nz,--_
 	call mbc_rtc_toggle_smc
@@ -1610,6 +1600,10 @@ _
 	ld b,$60
 	jp.sis mbc_ram
 	
+mbc_rtc_mark_latch_dirty:
+	xor a
+	ld (z80codebase+mbc_rtc_latch_smc),a
+	jr mbc_rtc_mark_latch_dirty_continue
 	
 mbc_rtc_toggle_smc:
 	ld a,(z80codebase+read_cram_bank_handler_smc)
@@ -1692,6 +1686,8 @@ update_rtc:
 	; Early out if the timer has not changed since last update
 	bit 0,(ix-mpRtcSecondCount+mpRtcIntStatus)
 	ret z
+	xor a
+	ld (z80codebase+mbc_rtc_latch_smc),a
 _
 	push hl
 	 push de

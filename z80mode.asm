@@ -3102,11 +3102,6 @@ mem_write_any_cram_smc_2 = $+3
 	ld.l (ix),a
 	ret
 	
-mem_write_any_cart:
-	push hl
-	pop ix
-	jr mem_write_cart_always
-	
 mem_write_any_wram_mirror:
 	ld.lil ix,wram_base-$2000
 	jr mem_write_any_finish
@@ -3137,6 +3132,11 @@ mem_write_oam_swapped:
 	ex af,af'
 	ld (ix),a
 	ret
+
+mem_write_any_cart:
+	push hl
+	pop ix
+	jr mem_write_cart_always
 
 ophandlerE2:
 	ld ixh,$FF
@@ -3192,6 +3192,24 @@ mem_write_bail_a:
 	pea ix-8
 	ret
 	
+mbc_rtc_latch:
+	ld.lil a,(cram_bank_base+2)
+	cp z80codebase>>16
+	jr nz,_
+	ld.lil ix,(cram_bank_base)
+	ld a,(ix)
+	cp (ix+5)
+	jr z,_
+	xor a
+	ld (mbc_rtc_latch_smc),a
+_
+	ld.lil a,(mpRtcIntStatus)
+	rra
+mbc_rtc_latch_smc = $+1
+	jr nc,$+2 ;mbc_6000_denied
+	push bc
+	 jp.lil mbc_rtc_latch_helper
+	
 	;IX=GB address, A=data, preserves AF, destroys F'
 mem_write_cart:
 	ex af,af'
@@ -3212,7 +3230,7 @@ mem_write_cart_always:
 mbc_6000:
 	ld a,(mbc_z80)
 	cp 4 ;MBC3+RTC
-	jr z,++_
+	jr z,mbc_rtc_latch
 	dec a
 	jr nz,mbc_6000_denied
 	ex af,af'
@@ -3230,9 +3248,6 @@ mbc_0000:
 	ld a,iyl
 	ex af,af'
 	ret
-	
-_
-	jp.lil mbc_rtc_latch_helper
 	
 mbc_4000:
 	push bc
@@ -3289,6 +3304,7 @@ mbc_fix_sp:
 	 exx
 mbc_no_fix_sp:
 mbc_4000_denied:
+mbc_6000_finish:
 	pop bc
 	ld a,iyl
 	ex af,af'

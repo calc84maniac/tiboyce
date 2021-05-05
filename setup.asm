@@ -686,9 +686,8 @@ _
 	ld (cram_bank_base),hl
 	
 	ld a,(iy-state_size+STATE_MBC_MODE)
-	and 1
-	ld (mbc_rtc_last_latch),a
-	jr z,_
+	rra
+	jr nc,_
 	ld a,$20 ;JR NZ (overriding JR Z)
 	ld (z80codebase+mbc1_ram_smc),a
 _
@@ -1142,14 +1141,9 @@ _
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
 	; Save the current MBC mode
-	ld a,(cram_size)
-	or a
-	ld a,(mbc_rtc_last_latch)
-	jr nz,_
 	ld a,(z80codebase+mbc1_ram_smc)
 	sub $28
 	rlca
-_
 	and 1
 	ld (ix-state_size+STATE_MBC_MODE),a
 	
