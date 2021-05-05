@@ -1573,7 +1573,7 @@ mbc_rtc_latch_helper:
 	jp.sis mbc_6000_finish
 	
 mbc_rtc_helper:
-	ld a,(cram_bank_base+2)
+	ld a,(z80codebase+cram_actual_bank_base+2)
 	cp z80codebase>>16
 	jr z,++_
 	bit 3,c
@@ -1588,7 +1588,7 @@ _
 	ld ix,z80codebase+rtc_latched
 	jp.sis mbc_ram_any
 _
-	ld ix,(cram_bank_base)
+	ld ix,(z80codebase+cram_actual_bank_base)
 	ld a,(ix)
 	cp (ix+5)
 	jr nz,mbc_rtc_mark_latch_dirty

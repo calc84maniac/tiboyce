@@ -683,9 +683,14 @@ setup_ram_bank:
 	ld hl,(z80codebase+cram_base_0)
 _
 	add hl,bc
-	ld (cram_bank_base),hl
+	ld (z80codebase+cram_actual_bank_base),hl
 	
 	ld a,(iy-state_size+STATE_MBC_MODE)
+	bit 1,a
+	jr z,_
+	ld hl,mpZeroPage
+_
+	ld (cram_bank_base),hl
 	rra
 	jr nc,_
 	ld a,$20 ;JR NZ (overriding JR Z)
@@ -1141,21 +1146,26 @@ _
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
 	; Save the current MBC mode
+	ld a,(cram_bank_base+2)
+	add a,1
+	sbc hl,hl
 	ld a,(z80codebase+mbc1_ram_smc)
 	sub $28
-	rlca
-	and 1
+	ld l,a
+	add hl,hl
+	ld a,h
+	and 3
 	ld (ix-state_size+STATE_MBC_MODE),a
 	
 	; Save the currently mapped RAM bank
-	ld a,(cram_bank_base+2)
+	ld a,(z80codebase+cram_actual_bank_base+2)
 	cp z80codebase >> 16
 	jr nz,_
-	ld a,(cram_bank_base)
+	ld a,(z80codebase+cram_actual_bank_base)
 	sub (rtc_latched-8)&$FF
 	jr ++_
 _
-	ld a,(cram_bank_base+1)
+	ld a,(z80codebase+cram_actual_bank_base+1)
 	ld hl,(z80codebase+cram_base_0)
 	sub h
 	rlca
@@ -2759,7 +2769,8 @@ regs_init:
 	.dw $0000 ; Divisor cycle counter
 	.db $01 ; Cart ROM bank
 	.db $00 ; Cart RAM bank
-	.db $00 ; MBC mode
+	.db $02 ; MBC mode
+	.db $00 ; CPU mode
 	
 	
 hmem_init:

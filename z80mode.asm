@@ -3193,10 +3193,10 @@ mem_write_bail_a:
 	ret
 	
 mbc_rtc_latch:
-	ld.lil a,(cram_bank_base+2)
+	ld a,(cram_actual_bank_base+2)
 	cp z80codebase>>16
 	jr nz,_
-	ld.lil ix,(cram_bank_base)
+	ld ix,(cram_actual_bank_base)
 	ld a,(ix)
 	cp (ix+5)
 	jr z,_
@@ -3244,71 +3244,22 @@ mbc_6000:
 _
 	ld (mbc1_ram_smc),a
 mbc_6000_denied:
-mbc_0000:
 	ld a,iyl
 	ex af,af'
 	ret
 	
-mbc_4000:
+mbc_0000:
 	push bc
-	 ld b,$60
 	 ex af,af'
 	 ld c,a
 	 ex af,af'
-mbc_z80 = $+1
-	 ld a,0
-	 dec a	; Check for MBC1
-	 jr nz,_
-mbc1_ram_smc = $
-	 jr z,mbc_ram
 	 ld a,c
-	 rrca
-	 rrca
-	 rrca
-	 jr mbc_4000_continue
-_
-	 srl a
-	 jr nc,mbc_ram ; MBC3 or MBC5
-	 jp.lil nz,mbc_rtc_helper ; MBC3+RTC
-	 jr mbc_4000_denied ; MBC2
-mbc_ram:
-cram_size_smc = $
-	 or a
-	 sbc a,a
-	 and c
-	 rrca
-	 rrca
-	 rrca
-	 and b
-	 ld b,a
-	 ld c,0
-cram_base_0 = $+3
+	 cp $0A
+cram_actual_bank_base = $+3
 	 ld.lil ix,0
-mbc_ram_any:
-	 add.l ix,bc
-	 ld.lil (cram_bank_base),ix
-	 ; See if SP is pointing into the swapped bank
-	 ld a,(curr_gb_stack_bank)
-	 cp 5 << 5
-	 jr nz,mbc_no_fix_sp
-mbc_fix_sp:
-	 ; If so, update it
-	 exx
-	 push bc
-	  ld bc,(sp_base_address_neg)
-	  add hl,bc
-	  call.il set_gb_stack_bounds_helper
-	  ex de,hl
-	  add.l hl,bc
-	 pop bc
-	 exx
-mbc_no_fix_sp:
-mbc_4000_denied:
-mbc_6000_finish:
-	pop bc
-	ld a,iyl
-	ex af,af'
-	ret
+	 jr z,mbc_ram_protect
+	 ld.lil ix,mpZeroPage
+	 jr mbc_ram_protect
 	
 mbc_2000:
 	push bc
@@ -3353,6 +3304,73 @@ mbc_zero_page_override:
 	; When setting the high bits, this is ignored by the masking below
 	inc a
 	jr mbc_zero_page_continue
+	
+mbc_4000:
+	push bc
+	 ld b,$60
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+mbc_z80 = $+1
+	 ld a,0
+	 dec a	; Check for MBC1
+	 jr nz,_
+mbc1_ram_smc = $
+	 jr z,mbc_ram
+	 ld a,c
+	 rrca
+	 rrca
+	 rrca
+	 jr mbc_4000_continue
+_
+	 srl a
+	 jr nc,mbc_ram ; MBC3 or MBC5
+	 jp.lil nz,mbc_rtc_helper ; MBC3+RTC
+	 jr mbc_4000_denied ; MBC2
+mbc_ram:
+cram_size_smc = $
+	 or a
+	 sbc a,a
+	 and c
+	 rrca
+	 rrca
+	 rrca
+	 and b
+	 ld b,a
+	 ld c,0
+cram_base_0 = $+3
+	 ld.lil ix,0
+mbc_ram_any:
+	 add.l ix,bc
+	 ld.lil (z80codebase+cram_actual_bank_base),ix
+	 ; If RAM is currently protected, don't remap
+	 ld.lil a,(cram_bank_base+2)
+	 inc a
+	 jr z,mbc_no_fix_sp
+mbc_ram_protect:
+	 ld.lil (cram_bank_base),ix
+	 ; See if SP is pointing into the swapped bank
+	 ld a,(curr_gb_stack_bank)
+	 cp 5 << 5
+	 jr nz,mbc_no_fix_sp
+mbc_fix_sp:
+	 ; If so, update it
+	 exx
+	 push bc
+	  ld bc,(sp_base_address_neg)
+	  add hl,bc
+	  call.il set_gb_stack_bounds_helper
+	  ex de,hl
+	  add.l hl,bc
+	 pop bc
+	 exx
+mbc_no_fix_sp:
+mbc_4000_denied:
+mbc_6000_finish:
+	pop bc
+	ld a,iyl
+	ex af,af'
+	ret
 	
 	
 write_audio_enable:
