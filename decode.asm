@@ -112,7 +112,7 @@ decode_jump_maybe_overlap:
 	inc e
 	add hl,de
 	ld d,(hl)
-	jr nz,_
+	jr z,_
 	; If the first byte overlapped, get it from the next region
 	dec hl
 	ld a,(hl)
