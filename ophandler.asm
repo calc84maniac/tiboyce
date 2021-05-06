@@ -454,7 +454,7 @@ lyc_update_helper:
 	 ld a,c
 	 jr c,_
 	 cp SCANLINES_PER_FRAME
-	 jr nc,scroll_write_done_swap
+	 jp.sis nc,trigger_event_already_triggered
 	 ld ix,lyc_counter_checker
 	 ld.sis (event_counter_checker_slot_LYC),ix
 _
@@ -662,13 +662,7 @@ lcdc_write_helper:
 	 ex af,af'
 	 xor (hl)
 	 ld c,a
-	 bit 0,c
-	 jr z,_
-	 ld a,(LCDC_0_smc)
-	 xor $39 ^ $31	;ADD.SIS HL,SP \ LD.SIS SP,HL vs LD.SIS SP,$F940
-	 ld (LCDC_0_smc),a
-_
-	 bit 1,c
+	 and $06
 	 jr z,_
 	 ld a,(render_this_frame)
 	 or a
@@ -677,6 +671,15 @@ _
 	   call nz,sprite_catchup
 	  pop de
 	 pop bc
+_
+	 bit 0,c
+	 jr z,_
+	 ld a,(LCDC_0_smc)
+	 xor $39 ^ $31	;ADD.SIS HL,SP \ LD.SIS SP,HL vs LD.SIS SP,$F940
+	 ld (LCDC_0_smc),a
+_
+	 bit 1,c
+	 jr z,_
 	 ld a,(LCDC_1_smc)
 	 xor $0E ^ $C9	;LD C,myspriteLY vs RET
 	 ld (LCDC_1_smc),a
@@ -695,7 +698,6 @@ _
 	 ld a,(LCDC_2_smc_3)
 	 xor $80 ^ $81	;RES 0,B vs RES 0,C
 	 ld (LCDC_2_smc_3),a
-	
 _
 	 bit 3,c
 	 jr z,_
