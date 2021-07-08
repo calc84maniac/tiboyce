@@ -1670,10 +1670,7 @@ LoadROMLoop:
 	pop de
 	ld a,ERROR_FILE_MISSING
 	ret c
-	push hl
-	 add hl,hl
-	pop hl
-	jr nc,LoadROMPageLoop
+	jr nz,LoadROMPageLoop
 	call Arc_Unarc_Safe
 	ld a,ERROR_NOT_ENOUGH_ARCHIVE
 	ret c
@@ -2036,28 +2033,29 @@ _
 	AJUMP(LoadRAMAny)
 	
 	
+	; Returns: C set if not found
+	;          Otherwise, HL=data pointer, BC=data size, Z set if in RAM
 LookUpAppvar:
 	call _Mov9ToOP1
 	call _chkFindSym
 	ret c
 GetDataSection:
-	ex de,hl
 	; Check if in RAM
-	push hl
-	 add hl,hl
-	pop hl
-	ld bc,9
-	jr c,_
+	call _ChkInRam
+	ex de,hl
+	ld bc,0
+	jr z,_
+	ld c,9
 	add hl,bc
 	ld c,(hl)
-	add hl,bc
 	inc hl
 _
+	; Reset carry but preserve Z flag
+	add hl,bc
 	ld c,(hl)
 	inc hl
 	ld b,(hl)
 	inc hl
-	or a
 	ret
 	
 	

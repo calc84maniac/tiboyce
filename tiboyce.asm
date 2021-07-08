@@ -142,6 +142,7 @@ _DelVarArc = $021434
 _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
 _DivHLByA = $021D90
+_ChkInRam = $021F98
 _FindFreeArcSpot = $022078
 
 ; RAM addresses used
