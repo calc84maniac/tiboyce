@@ -5,6 +5,7 @@ _InsertMem = $020514
 _ErrNotEnoughMem = $02072C
 _ErrCustom1 = $02120C
 _Arc_Unarc = $021448
+_ChkInRam = $021F98
 OP1 = $D005F8
 tSymPtr1 = $D0257B
 asm_prgm_size = $D0118C
@@ -47,6 +48,8 @@ ErrorStartText:
 	.db "Invalid",0
 	.db "Missing",0
 	
+AppvarInRam:
+	call _Arc_Unarc
 LookUpAppvar:
 	ld hl,ExeName
 	push hl
@@ -56,16 +59,9 @@ LookUpAppvar:
 	pop hl
 	ld bc,9
 	jr c,ErrorMissing
-	; Check if in RAM
+	call _ChkInRam
+	jr z,AppvarInRam
 	ex de,hl
-	push hl
-	 add hl,hl
-	pop hl
-	jr nc,AppvarFound
-	call _Arc_Unarc
-	jr LookUpAppvar
-	
-AppvarFound:
 	add hl,bc
 	ld c,(hl)
 	add hl,bc

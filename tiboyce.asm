@@ -521,13 +521,10 @@ ArcPtr:
 Arc_Unarc_Safe:
 	call _chkFindSym
 	ret c
-	ex de,hl
-	; Check if in RAM
-	push hl
-	 add hl,hl
-	pop hl
-	jr nc,++_
+	call _ChkInRam
+	jr nz,++_
 	; If archiving, check if there is a free spot in archive
+	ex de,hl
 	ld hl,(hl)
 	ld a,c
 	add a,12
@@ -608,7 +605,7 @@ GetRomDescriptionByIndex:
 	; Input: IY=ROM list entry
 	; Output: HL=Description string start
 	;         IX=ROM pointer
-	;         BC=11
+	;         BC=12
 	;         A, DE, IY are preserved
 GetRomDescription:
 	ld ix,(iy)
@@ -616,18 +613,19 @@ GetRomDescription:
 	ld h,(ix+3)
 	ld l,(ix+4)
 	
-	; Check if in RAM
-	push hl
-	 add hl,hl
-	pop hl
-	ld bc,9
+	; Check if in RAM, also decrementing by 1 if in RAM
+	ld bc,-ramStart
+	add hl,bc
+	sbc hl,bc
+	; Ensure top 16 bits of BC are 0
+	inc.s bc
 	jr c,_
+	ld c,9
 	add hl,bc
 	ld c,(hl)
 	add hl,bc
-	inc hl
 _
-	ld c,11
+	ld c,1+11
 	add hl,bc
 	ret
 	
