@@ -4,7 +4,8 @@
 ; It finishes rendering the current frame and updates palettes and key inputs.
 ; In addition, it handles frame synchronization and frameskip logic.
 ;
-; Inputs:  None
+; Inputs:  BC = current DIV time
+;          DE = (negative) cycles until next PPU event
 ; Outputs: None
 ; Destroys AF,HL
 vblank_helper:
@@ -21,17 +22,17 @@ frame_emulated_count = $+1
 	ld (frame_emulated_count),hl
 	
 	; Update real frame count if expired
-	;push de
+	push de
 	 push ix
 	  push bc
 	   push iy
 	    ; Finish rendering, if applicable
-	    ld a,(render_this_frame)
-	    or a
-	    jp z,skip_this_frame
+	    ld a,(z80codebase+updateSTAT_enable_catchup_smc)
+	    rra
+	    jp nc,skip_this_frame
 	    
 	    ; Finish rendering the frame
-	    ld a,144
+	    ld a,143 ; Carry is set, so treat as LY=144
 	    call render_scanlines
 	    
 	    ; Display sprites
@@ -169,10 +170,16 @@ frameskip_value_smc = $+1
 	    jr nc,_
 	    ld (hl),a
 _
-	    ld a,1
+	    ld a,$4F-$7E
 frameskip_end:
-	    ld (render_this_frame),a
-	  
+	    ;LD R,A if frame should be rendered, otherwise RSMIX
+	    add a,$7E
+	    ld (z80codebase+updateSTAT_enable_catchup_smc),a
+	    ld (z80codebase+updateSTAT_full_enable_catchup_smc),a
+	    ld (z80codebase+ppu_mode0_enable_catchup_smc),a
+	    ld (z80codebase+ppu_mode2_enable_catchup_smc),a
+	    ld (z80codebase+ppu_lyc_enable_catchup_smc),a
+	    
 	    ; Get keys
 	    scf
 	    sbc hl,hl
@@ -302,25 +309,8 @@ _
 	   pop iy
 	  pop bc
 	 pop ix
-	;pop de
-
-	; Trigger VBLANK
-	ld hl,hram_base+LCDC
-	bit 7,(hl)
-	jr z,_
-	inc hl
-	bit 4,(hl)
-	ld l,IF & $FF
-	set 0,(hl)
-	jr z,_
-	set 1,(hl)
-_
-	ld hl,CYCLES_PER_FRAME
-	add hl,bc
-	ld.sis (vblank_counter),hl
-	ld de,-CYCLES_PER_FRAME
-	pop.s hl
-	jp.s (hl)
+	pop de
+	jp.sis ppu_scheduled
 	
 	; Input: IX = mpKeypadGrp0
 	; Output: L = new state
@@ -438,6 +428,8 @@ _
 	add a,(vram_tiles_start >> 8) & $FF
 	ld (window_tile_ptr+1),a
 	xor a
+	; Disable rendering catchup during vblank (or LCD off)
+	ld r,a
 	ld (window_tile_offset),a
 	ld (myLY),a
 	ld (myspriteLY),a

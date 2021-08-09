@@ -714,17 +714,30 @@ do_event_pushed:
 event_expired_halt_loop:
 	 ld hl,i
 event_expired_loop:
-ei_delay_event_smc = $+1
 	 ld sp,event_counter_checkers
 
 	 ld b,h
 	 ld c,l
-vblank_counter = $+1
+ppu_counter = $+1
 	 ld de,0
+	 adc hl,de
+	 ret z
+	 ex de,hl
+ppu_scheduled:
+	 inc sp
+	 inc sp
+audio_counter_checker:
+audio_counter = $+1
+	 ld hl,0
+	 or a
+	 sbc hl,bc
+	 jp z,audio_expired_handler
+	 add hl,de
+	 ret c
+	 ex de,hl
 	 sbc hl,de
 	 ex de,hl
-	 ret nz
-	 jp.lil vblank_helper
+	 ret
 
 event_expired_more_events:
 	 or a
@@ -736,6 +749,18 @@ cpu_continue_halt:
 	 ld iy,0
 	 jr event_expired_halt_loop
 
+schedule_ei_delay:
+	 ; Force an event after one GB cycle
+	 ld de,-1
+	 ; Overwrite the function pointer with the following code,
+	 ; which will run after the one GB cycle elapses
+	 call event_counter_checkers_done
+schedule_ei_delay_startup:
+	 ; Enable interrupts
+	 ld a,trigger_interrupt - (intstate_smc_2 + 1)
+	 ld (intstate_smc_2),a
+	 ; Restore the default counter checker end pointer
+	 call event_counter_checkers_done
 event_counter_checkers_done:
 	 ld h,b
 	 ld l,c
@@ -876,7 +901,7 @@ dispatch_int_maybe_overflow:
 	ld hl,callstack_reti
 	push hl
 	; Reset carry
-	or a	
+	or a
 cycle_overflow_for_rst_or_int:
 	ld iyl,a
 	dec b
@@ -905,125 +930,329 @@ decode_intcache:
 	ld (ix+3),a
 	jr dispatch_int_decoded
 	
-lyc_counter_checker:
-lyc_counter = $+1
-	ld hl,0
-	or a
-	sbc hl,bc
-	jr z,lyc_expired_handler
+ppu_expired_mode2_line_0:
+	ld a,$FF
+	ld (ppu_mode2_LY),a
+	ld hl,ppu_expired_mode2
+	push hl
+	inc sp
+	inc sp
+	; Check if LYC is 0
+	ld hl,LYC
+	add a,(hl)
+	ld l,STAT & $FF
+	; Check for mode 1 blocking
+	bit 4,(hl)
+	jr nz,ppu_mode2_blocked
+	; Check for LYC blocking
+	jr c,ppu_expired_mode2
+	bit 6,(hl)
+	jr nz,ppu_mode2_blocked
+ppu_expired_mode2:
+	; Request STAT interrupt
+	ld hl,IF
+	set 1,(hl)
+	ld l,STAT & $FF
+ppu_mode2_blocked:
+	; Set mode 2
+	ld a,(hl)
+	and $F8
+	or 2
+	ld (hl),a
+	; Allow catch-up rendering if this frame is not skipped
+ppu_mode2_enable_catchup_smc = $+1
+	ld r,a
+	ld l,-MODE_2_CYCLES
 	add hl,de
-	ret c
+	ld (nextupdatecycle_STAT),hl
+	ld hl,-CYCLES_PER_SCANLINE
 	ex de,hl
-	sbc hl,de
-	ex de,hl
-	ret
+	add hl,de
+	ld (nextupdatecycle_LY),hl
+	ld (ppu_counter),hl
+ppu_mode2_LY = $+1
+	ld a,0
+	inc a
+	ld (ppu_mode2_LY),a
+	ld (LY),a
+ppu_mode2_event_line = $+1
+	cp 0
+	jp nz,audio_counter_checker
+	ld hl,STAT
+	; Check whether vblank should be scheduled immediately
+	cp 143
+	jr z,ppu_mode2_prepare_vblank
+	; Set next line event to vblank
+	ld a,143
+	ld (ppu_mode2_event_line),a
+	; Set LYC coincidence bit
+	set 2,(hl)
+	; Block mode 2 interrupt after LYC coincidence, if enabled
+	bit 6,(hl)
+	jp z,audio_counter_checker
+	call ppu_scheduled
 	
-lyc_expired_handler:
-	ld hl,LCDC
-	bit 7,(hl)
+ppu_expired_mode2_lyc_blocking:
+	ld hl,ppu_expired_mode2
+	push hl
+	inc sp
+	inc sp
+	ld hl,STAT
+	jr ppu_mode2_blocked
+	
+ppu_expired_mode0_line_0:
+	xor a
+	ld (ppu_mode0_LY),a
+	ld hl,LYC
+	or (hl)
+	jr z,ppu_expired_mode0_lyc_match
+	ld hl,ppu_expired_mode0
+	push hl
+	inc sp
+	inc sp
+ppu_expired_mode0:
+	; Request STAT interrupt
+	ld hl,IF
+	set 1,(hl)
+	; Set mode 0
+	ld l,STAT & $FF
+	ld a,(hl)
+	and $F8
+	ld (hl),a
+ppu_mode0_blocked:
+	; Allow catch-up rendering if this frame is not skipped
+ppu_mode0_enable_catchup_smc = $+1
+	ld r,a
+	ld l,-MODE_0_CYCLES
+	add hl,de
+	ld (nextupdatecycle_STAT),hl
+	ld (nextupdatecycle_LY),hl
+	ld hl,-CYCLES_PER_SCANLINE
+	ex de,hl
+	add hl,de
+	ld (ppu_counter),hl
+ppu_mode0_LY = $+1
+	ld a,0
+	ld (LY),a
+	inc a
+	ld (ppu_mode0_LY),a
+ppu_mode0_event_line = $+1
+	cp 0
+	jp nz,audio_counter_checker
+	; Check whether vblank should be scheduled immediately
+	cp 144
+	jr z,ppu_mode0_prepare_vblank
+	call ppu_scheduled
+	
+ppu_expired_mode0_lyc_match:
+	ld hl,ppu_expired_mode0
+	push hl
+	inc sp
+	inc sp
+	; Set next line event to vblank
+	ld a,144
+	ld (ppu_mode0_event_line),a
+	; Set mode 0 and LYC coincidence bit
+	ld hl,STAT
+	and $F8
+	or 4
+	ld (hl),a
+	; Block mode 0 interrupt during LYC coincidence, if enabled
+	bit 6,a
+	jr nz,ppu_mode0_blocked
+	; Request STAT interrupt
+	ld l,IF & $FF
+	set 1,(hl)
+	jr ppu_mode0_blocked
+	
+ppu_mode2_prepare_vblank:
+	; Check if LYC matches during active video
+	ld a,(LYC)
+	cp 143
+	jr c,_
+	jr nz,ppu_expired_pre_vblank
+	; If LYC is on line 143, set coincidence bit
+	set 2,(hl)
+_
+	; Set next line event to LYC
+	ld (ppu_mode2_event_line),a
+	jr ppu_expired_pre_vblank
+	
+ppu_mode0_prepare_vblank:
+	; Reset scheduled time and offset
+	sbc hl,de
+	ld e,-MODE_0_CYCLES
+	add hl,de
+	ld (ppu_counter),hl
+	; Check if LYC matches during active video
+	ld a,(LYC)
+	cp 144
+	jr nc,ppu_expired_pre_vblank
+	; Set next line event to LYC
+	ld (ppu_mode0_event_line),a
+	jr ppu_expired_pre_vblank
+	
+ppu_expired_lyc_mode2:
+	; Set LY to LYC
+	ld hl,LYC
+	ld a,(hl)
+	dec hl
+	ld (hl),a
+	; Set STAT to mode 2 with LY=LYC bit set
+	ld l,STAT & $FF
+	ld a,(hl)
+	or $07
+	dec a
+	ld (hl),a
+	; Allow catch-up rendering if this frame is not skipped
+ppu_lyc_enable_catchup_smc = $+1
+	ld r,a
+	; Set LY/STAT caches
+	ld l,-MODE_2_CYCLES
+	add hl,de
+	ld (nextupdatecycle_STAT),hl
+	ld hl,-CYCLES_PER_SCANLINE
+	add hl,de
+	ld (nextupdatecycle_LY),hl
+	; Set interrupt bit, if LYC interrupt is enabled
+	bit 6,a
 	jr z,_
 	ld l,IF & $FF
 	set 1,(hl)
 _
+	; Set next scheduled time to vblank
+	ld hl,(vblank_counter)
+	add hl,de
+	ex de,hl
+	or a
+	sbc hl,de
+	ld (ppu_counter),hl
+	add hl,bc
+	ex de,hl
+ppu_expired_pre_vblank:
+	call ppu_scheduled
+	
+ppu_expired_vblank:
+	; Set LY to 144
+	ld hl,LY
+	ld a,144
+	ld (hl),a
+	; Check for either a LYC match or an LYC block
+	inc hl
+	sub (hl)
+	sub 2
+	inc a
+	ld l,STAT & $FF
+	ld a,(hl)
+	jr c,ppu_vblank_lyc_close_match
+	; Set mode 1
+	and $F8
+	inc a
+	ld (hl),a
+	ld l,IF & $FF
+	; Check for mode 1 interrupt enable
+	bit 4,a
+	jr nz,ppu_vblank_mode1_int
+ppu_vblank_stat_int_continue:
+	; Always trigger vblank interrupt
+	set 0,(hl)
+	; Set next LY/STAT update to scanline 145
+	ld l,-CYCLES_PER_SCANLINE
+	add hl,de
+	ld (nextupdatecycle_LY),hl
+	ld (nextupdatecycle_STAT),hl
+ppu_expired_lcd_off:
+	; Set the next vblank start time
 	ld hl,CYCLES_PER_FRAME
 	add hl,bc
-	ld (lyc_counter),hl
-	; Special case, DE cannot exceed -CYCLES_PER_FRAME so this cannot replace it
-	ret
+	ld (vblank_counter),hl
+	; Set the next event time and handler
+ppu_post_vblank_event_offset = $+1
+	ld hl,-CYCLES_PER_FRAME
+	ex de,hl
+	add hl,de
+	ld (ppu_counter),hl
+ppu_post_vblank_event_handler = $+1
+	ld hl,ppu_expired_vblank
+	push hl
+	jp.lil vblank_helper
 	
-stat_counter_checker_single:
-stat_counter = $+1
+ppu_vblank_lyc_close_match:
+	jr nz,ppu_vblank_lyc_match
+	; LYC=143 case
+	; Set mode 1
+	and $F8
+	inc a
+	ld (hl),a
+	ld l,IF & $FF
+	; Check for mode 1 interrupt enable
+	bit 4,a
+	jr z,ppu_vblank_stat_int_continue
+	; Check for STAT block
+	bit 6,a
+	jr nz,ppu_vblank_stat_int_continue
+ppu_vblank_mode1_int:
+	; Check for mode 0 block
+	bit 3,a
+	jr nz,ppu_vblank_stat_int_continue
+	; Trigger STAT interrupt
+	set 1,(hl)
+	jr ppu_vblank_stat_int_continue
+	
+ppu_vblank_lyc_match:
+	; LYC=144 case
+	; Set mode 1 with LY=LYC bit
+	and $F8
+	or 5
+	ld (hl),a
+	ld l,IF & $FF
+	; Check for mode 0 block
+	bit 3,a
+	jr nz,ppu_vblank_stat_int_continue
+	; Check for either mode 1 or LY=LYC interrupt enable
+	and $50
+	jr z,ppu_vblank_stat_int_continue
+	; Trigger STAT interrupt
+	set 1,(hl)
+	jr ppu_vblank_stat_int_continue
+	
+ppu_expired_lyc_mode1:
+	; Set LY to LYC
+	ld hl,LYC
+	ld a,(hl)
+	dec hl
+	ld (hl),a
+	; Set STAT to mode 1 with LY=LYC bit set
+	ld l,STAT & $FF
+	ld a,(hl)
+	and $F8
+	or $05
+	ld (hl),a
+	; Set LY/STAT caches
+ppu_lyc_scanline_length_smc = $+1
+	ld l,-CYCLES_PER_SCANLINE
+	add hl,de
+	ld (nextupdatecycle_LY),hl
+	ld (nextupdatecycle_STAT),hl
+	; Prepare next event
+ppu_post_mode1_lyc_event_handler = $+1
 	ld hl,0
-	or a
-	sbc hl,bc
-	jr nz,stat_not_expired_single
-	ld hl,IF
-	set 1,(hl)
-	ld hl,stat_line_count
-	dec (hl)
-	jr z,stat_counter_single_skip_vblank
-	ld hl,CYCLES_PER_SCANLINE
-	add hl,bc
-	ld (stat_counter),hl
-	or a
-	sbc hl,bc
-	add hl,de
-	ret c
-	ld de,-CYCLES_PER_SCANLINE
-	ret
-	
-stat_counter_single_skip_vblank:
-	ld (hl),144
-	ld hl,CYCLES_PER_SCANLINE * 11
-	add hl,bc
-	ld (stat_counter),hl
-	ld hl,CYCLES_PER_SCANLINE * 11
-	add hl,de
-	ret c
-	ld de,-(CYCLES_PER_SCANLINE * 11)
-	ret
-	
-stat_not_expired_single:
-	add hl,de
-	ret c
-	ex de,hl
-	sbc hl,de
-	ex de,hl
-	ret
-	
-stat_line_count:
-	.db 144
-	
-stat_mode0_expired_handler:
-	ld hl,IF
-	set 1,(hl)
-	ld hl,stat_line_count
-	dec (hl)
-	jr z,stat_counter_double_skip_vblank
-	ld hl,MODE_0_CYCLES
-stat_update_line_counter_double:
-	call stat_double_swap_modes
-stat_counter_checker_mode2:
-	ld hl,(stat_counter)
-	or a
-	sbc hl,bc
-	jr nz,stat_not_expired_double
-	ld hl,IF
-	set 1,(hl)
-	ld hl,MODE_2_CYCLES + MODE_3_CYCLES
-	call stat_double_swap_modes
-stat_counter_checker_mode0:
-	ld hl,(stat_counter)
-	or a
-	sbc hl,bc
-	jr z,stat_mode0_expired_handler
-stat_not_expired_double:
-	add hl,de
-	ret c
-	ex de,hl
-	sbc hl,de
-	ex de,hl
-	ret
-
-stat_double_swap_modes:
+	push hl
 	inc sp
 	inc sp
-	add hl,bc
-	ld (stat_counter),hl
-	or a
-	sbc hl,bc
+ppu_post_mode1_lyc_event_offset = $+1
+	ld hl,0
 	add hl,de
-	ret c
-	ex de,hl
-	sbc hl,de
-	ex de,hl
-	ret
+	ld (ppu_counter),hl
+	; Check if LY=LYC interrupt is enabled and not blocked by mode 1 interrupt
+	and $D0
+	add a,a
+	jp po,audio_counter_checker
+	; If so, trigger LYC interrupt
+	ld hl,IF
+	set 1,(hl)
+	jp audio_counter_checker
 	
-stat_counter_double_skip_vblank:
-	ld (hl),144
-	ld hl,CYCLES_PER_SCANLINE * 10 + MODE_0_CYCLES
-	jr stat_update_line_counter_double
-
 timer_counter_checker:
 timer_counter = $+1
 	ld hl,0
@@ -1057,19 +1286,6 @@ _
 	ld (timer_counter),hl
 	or a
 	sbc hl,bc
-	add hl,de
-	ret c
-	ex de,hl
-	sbc hl,de
-	ex de,hl
-	ret
-
-audio_counter_checker:
-audio_counter = $+1
-	ld hl,0
-	or a
-	sbc hl,bc
-	jr z,audio_expired_handler
 	add hl,de
 	ret c
 	ex de,hl
@@ -1853,112 +2069,105 @@ sp_base_address_neg = $+1
 	ret
 	
 handle_waitloop_stat:
-	jr handle_waitloop_stat
-	
-handle_waitloop_variable:
 	pop ix
 	ex af,af'
 	exx
-	; Skip straight to the counter expiration
-	ld c,(ix+2)
-	ld iyl,c
-	ld iyh,0
+	ld de,(nextupdatecycle_STAT)
+	; Add the next jump cycles, and don't skip anything if expired
+	ld c,(ix+4)
+	add a,c
+	jr nc,handle_waitloop_common
+_
+	inc iyh
+	jr nz,handle_waitloop_common
+	jr handle_waitloop_overflow
+	
+handle_waitloop_ly:
+	pop ix
+	ex af,af'
+	exx
+	ld de,(nextupdatecycle_LY)
+	; Add the next jump cycles, and don't skip anything if expired
+	ld c,(ix+4)
+	add a,c
+	jr c,-_
 handle_waitloop_common:
+	push.l hl
+	; Get the current number of cycles until the next LY update
+	ld hl,i
+	add hl,de
+	ld d,iyh
+	ld e,a
+	add hl,de
+	; If the update has already passed or is not cached, don't skip
+	inc h
+	jr nz,handle_waitloop_finish
+	; Subtract the cached cycle offset of the LY load
+	;ld hl,(ix+4)
+	;inc hl
+	;ld hl,(hl)
+	;dec hl
+	;sub (hl)
+	ld h,(ix+3)
+	; Choose the smaller absolute value of the cycle counter
+	; and the remaining scanline cycles
+	inc d
+	jr nz,_
+	cp l
+	jr nc,handle_waitloop_skip_to_expiration
+_
+	; Skip as many full loops as possible until the update time is reached
+	ld a,l
+_
+	add a,h
+	jr nc,-_
+	sub l
+	; Add in the cycles, which may overflow if the update time and
+	; cycle expiration time are in the same block
+	add a,e
+	jr nc,handle_waitloop_finish
+	inc iyh
+	jr z,handle_waitloop_overflow_pop
+handle_waitloop_finish:
+	pop.l hl
+	exx
+	ex af,af'
+	jp (ix)
+	
+	; Skip as many full loops as possible until the cycle count expires
+handle_waitloop_skip_to_expiration:
+	add a,h
+	jr nc,handle_waitloop_skip_to_expiration
+	inc iyh
+handle_waitloop_overflow_pop:
+	pop.l hl
+handle_waitloop_overflow:
+	ld iyl,a
+handle_waitloop_variable_finish:
 	ld de,(ix+6)
-	ld ix,(ix+4)
+	ld ix,(ix+1)
 	push ix
 #ifdef VALIDATE_SCHEDULE
 	call.il schedule_jump_event_helper
 #else
 	jp.lil schedule_jump_event_helper
 #endif
-	
-_
-	inc iyh
-	jr nz,_
-	jr handle_waitloop_common
-	
-handle_waitloop_ly:
+
+handle_waitloop_variable:
 	pop ix
 	ex af,af'
 	exx
-	; Add the next jump cycles, but preserve the original count
-	ld c,(ix+2)
-	ld d,iyh
-	ld e,a
-	add a,c
-	ld iyl,a
-	jr c,-_
-_
-	push.l hl
-	; Get the current scanline cycle count
-	call get_scanline_from_cycle_offset
-	ld d,a
-	; Adjust the cycle offset for the start of LY=0,
-	; to avoid skipping from LY=153 to the middle of LY=0
-	ld a,e
-	cp 9
-	jr nz,_
-	ld a,d
-	sub 1<<1
-	jr c,_
-	ld d,a
-_
-	; Get the cached cycle offset of the LY load
-	ld hl,(ix+4)
-	inc hl
-	ld hl,(hl)
-	dec hl
-	ld a,(hl)
-	; Convert this to the (negative) cycles passed since the LY read
-	sub c
-	ld h,(ix)
-	add a,h
-	cpl
-	add a,a ; NOP this out in double-speed mode
-	; Apply the negative count to the scanline offset
-	add a,d
-	; If the result is negative, the scanline already changed
-	; since the last read, so don't skip any loops
-	jr nc,handle_waitloop_ly_finish
-	sub CYCLES_PER_SCANLINE<<1
-	rra ; NOP this out in double-speed mode
-	; Choose the smaller absolute value of the cycle counter
-	; and the remaining scanline cycles
-	inc iyh
-	jr nz,_
-	cp iyl
-	jr nc,_
-	ld a,iyl
-_
-	ld l,a
-	; Skip as many full loops as possible without exceeding the cycle count
-_
-	add a,h
-	jr nc,-_
-	sub h
-	sub l
-	; Add in the cycles (this cannot overflow because of the counter limit)
-	add a,iyl
-	jr c,_
-	dec iyh
-	.db $DA ;JP C,
-handle_waitloop_ly_finish:
-	ld a,iyl
-_
-	pop.l hl
-	exx
-	ex af,af'
-	ld ix,(ix+4)
-	jp (ix)
+	; Skip straight to the counter expiration
+	ld c,(ix+4)
+	ld iyl,c
+	ld iyh,0
+	jr handle_waitloop_variable_finish
 
 ophandlerEI_delay_expired:
 	; An event is scheduled for the current cycle, so we have to delay the
 	; actual enabling of the IME flag.
-	ld hl,event_counter_checkers_ei_delay
-	ld (ei_delay_event_smc),hl
-	ld de,schedule_ei_delay
-	ld (hl),de
+	ld hl,schedule_ei_delay
+	ld (event_counter_checkers_ei_delay),hl
 ophandlerEI_no_interrupt:
 	pop.l hl
 	exx
@@ -2053,26 +2262,6 @@ _
 	dec a
 	ld iyh,a
 	ex af,af'
-	ret
-	
-	
-schedule_ei_delay:
-	; Force an event after one GB cycle
-	ld de,-1
-	; Overwrite the function pointer with the following code,
-	; which will run after the one GB cycle elapses
-	call _
-schedule_ei_delay_startup:
-	; Restore the default counter checker pointer
-	ld (ei_delay_event_smc),sp
-	; Enable interrupts
-	ld a,trigger_interrupt - (intstate_smc_2 + 1)
-	ld (intstate_smc_2),a
-	ret
-_
-	; Return to the next counter checker
-	inc sp
-	inc sp
 	ret
 	
 decode_halt:
@@ -2182,6 +2371,7 @@ ophandler_halt_maybe_overflow:
 trigger_event:
 	exx
 	push.l hl
+reschedule_event_PPU:
 trigger_event_pushed:
 	 ; Get the cycle offset, GB address, and JIT address after the current opcode
 	 call get_mem_cycle_offset
@@ -2384,8 +2574,8 @@ ophandlerF3:
 	 ld hl,intstate_smc_2
 	 ld (hl),0
 	 ; Disable any delayed EI
-	 ld hl,event_counter_checkers
-	 ld (ei_delay_event_smc),hl
+	 ld hl,event_counter_checkers_done
+	 ld (event_counter_checkers_ei_delay),hl
 	pop hl
 	ret
 	
@@ -2820,39 +3010,36 @@ readDIVhandler:
 readTIMAhandler:
 	ex af,af'
 	ld iyl,a
-	call readTIMA
-	ld a,ixl
+	call updateTIMA
+	pop.l hl
+	exx
+	ld a,iyl
+	ex af,af'
+	ld a,(TIMA)
 	ret
 	
 readLYhandler:
 	ex af,af'
 	ld iyl,a
-	call readLY
-	ld a,ixl
+	call updateLY
+	pop.l hl
+	exx
+	ld a,iyl
+	ex af,af'
+	ld a,(LY)
 	ret
 	
 readSTAThandler:
 	ex af,af'
 	ld iyl,a
-	call readSTAT
-	ld a,ixl
+	exx
+	call updateSTAT
+	pop.l hl
+	exx
+	ld a,iyl
+	ex af,af'
+	ld a,(STAT)
 	ret
-	
-readSTAT_vblank:
-	 daa
-	 cp (hl)
-	 jr z,readSTAT_mode1
-	 res 2,c
-	 jr readSTAT_mode1
-	
-readLY_maybeforce0:
-	ld a,d
-	rra
-	cp 1
-	jr c,readLY_noforce0
-readLY_force0:
-	xor a
-	jr readLY_continue
 	
 readP1:
 	ld a,(P1)
@@ -2869,62 +3056,20 @@ _
 	
 readSTAT:
 	exx
-	call get_mem_scanline_offset
-	 ld d,a
-	 ld hl,STAT
-	 ld a,(hl)
-	 or $87
-	 ld c,a
-	 dec hl
-	 bit 7,(hl)
-	 jr z,readSTAT_mode0
-	 ld l,LYC & $FF
-	 ld a,e
-	 sub 10
-	 jr c,readSTAT_vblank
-	 cp (hl)
-	 jr z,_
-	 res 2,c
-_
-	 ld a,d
-	 sub MODE_2_CYCLES<<1
-	 jr c,readSTAT_mode2
-	 sub MODE_3_CYCLES<<1
-	 jr c,readSTAT_mode3
-readSTAT_mode0:
-	 dec c
-readSTAT_mode1:
-	 dec c
-readSTAT_mode2:
-	 dec c
-readSTAT_mode3:
-	 ld ixl,c
+	call updateSTAT
 	pop.l hl
 	exx
+	ld ix,(STAT)
+readP1_finish:
 	ld a,iyl
 	ex af,af'
 	ret
 	
 readLY:
-	exx
-	ld a,(LCDC)
-	add a,a
-	jr nc,readLY_force0
-	 call get_mem_scanline_offset
+	call updateLY
 	pop.l hl
-	ld d,a
-	ld a,e
-	sub 9
-	jr z,readLY_maybeforce0
-	jr nc,_
-readLY_noforce0:
-	daa
-_
-	dec a
-readLY_continue:
 	exx
-readP1_finish:
-	ld ixl,a
+	ld ix,(LY)
 	ld a,iyl
 	ex af,af'
 	ret
@@ -2962,9 +3107,9 @@ mem_read_oam:
 	
 readTIMA:
 	call updateTIMA
-	 ld ixl,a
 	pop.l hl
 	exx
+	ld ix,(TIMA)
 	ld a,iyl
 	ex af,af'
 	ret
@@ -3393,14 +3538,21 @@ write_audio_enable:
 	pop af
 	ret
 	
+	; This cannot be implemented as a mixed-mode call; get_mem_cycle_offset
+	; relies on the ADL stack having only one pushed value
+lcd_enable_helper:
+	call get_mem_cycle_offset
+	jp.lil do_lcd_enable
+	
 get_mem_cycle_offset_swap_push:
 	exx
 get_mem_cycle_offset_push:
 	push.l hl
 
 ; Inputs: IY = current block cycle base
-;         I = number of empty call stack entries
-;         (bottom of stack) = JIT return address
+;         (SPL) = saved HL'
+;         SPL = top of callstack cache - 3
+;         (bottom of short stack) = JIT return address
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
 ;          May be positive if target lies within an instruction
@@ -3542,20 +3694,16 @@ mem_cycle_scratch:
 	.dw 0
 	.db 0
 	
-get_scanline_overflow:
-	sbc hl,de
-	jr get_scanline_from_cycle_count
-	
-get_mem_scanline_offset_if_changed_lyc:
+updateSTAT_if_changed_lyc:
 	exx
 	ex af,af'
 	ld c,a
 	ex af,af'
 	ld a,(LYC)
 	cp c
-	jr nz,get_mem_scanline_offset
+	jr nz,updateSTAT
 	.db $20 ; JR NZ,
-get_mem_scanline_offset_no_change_ix:
+updateSTAT_no_change_ix:
 	pop de   ; Pop return address
 	pop de   ; Pop pushed value of IX
 	exx
@@ -3563,117 +3711,394 @@ get_mem_scanline_offset_no_change_ix:
 	ex af,af'
 	ret
 	
-get_mem_scanline_offset_if_changed_ix:
+updateSTAT_if_changed_ix:
 	exx
 	ex af,af'
 	ld c,a
 	ex af,af'
 	ld a,(ix)
 	cp c
-	jr z,get_mem_scanline_offset_no_change_ix
-get_mem_scanline_offset:
-	call get_mem_cycle_offset_push
-	
-; Inputs: DE = (negative) cycles until target
-;         May be non-negative if target falls within an instruction
-; Outputs: A = cycle count within scanline (as if running in double-speed mode)
-;          E = scanline index relative to vblank
-;              (0-9 during vblank, 10-153 during frame)
-; Destroys: D, HL
-get_scanline_from_cycle_offset:
-	ld hl,i
+	jr z,updateSTAT_no_change_ix
+updateSTAT:
+	push.l hl
+	; Get the value of DIV at the end of the JIT block
+updateSTAT_disable_smc = $
+	ld hl,i ; Replaced with RET when LCD is disabled
+	lea de,iy
 	add hl,de
-	ld de,(vblank_counter)
-	xor a
-	sbc hl,de
-	ld de,CYCLES_PER_FRAME
-	add hl,de
-	jr nc,get_scanline_overflow
-	
-; Inputs: HL = cycle count within frame
-; Outputs: A = cycle count within scanline (as if running in double-speed mode)
-;          E = scanline index relative to vblank
-;              (0-9 during vblank, 10-153 during frame)
-; Destroys: D, HL
-get_scanline_from_cycle_count:
-	add hl,hl
-scanline_cycle_count_cache = $+1
+	; Quickly test to see if STAT is valid during the entire block
+nextupdatecycle_STAT = $+1
 	ld de,0
-	xor a
-	sbc hl,de
-	inc a
-	cp h
-	jr c,get_scanline_from_cycle_count_full
-	ld a,l
-scanline_index_cache = $+1
-	ld de,(CYCLES_PER_SCANLINE<<1) * 256 + 0
-	jr z,++_
-	cp d
-	ret c
-_
-	sub d
-	inc e
-	ex de,hl
-get_scanline_from_cycle_count_finish:
-	ld e,l
-	ld (scanline_index_cache),hl
-	mlt hl
-	ld (scanline_cycle_count_cache),hl
-	ret
-_
-	cp (CYCLES_PER_SCANLINE<<1) * 2 - 256
-	jr c,--_
-	sub d
-	inc e
-	jr --_
-	
-get_scanline_from_cycle_count_full:
-	add hl,de
-	
-	; Algorithm adapted from Improved division by invariant integers
-	; To make things simpler, a pre-normalized divisor is used, and the dividend
-	; and remainder are scaled and descaled according to the normalization factor
-	; This should also make it trivial to support GBC double-speed mode in the
-	; future where the normalized divisor will be the actual divisor
-	ld d,65535 / (CYCLES_PER_SCANLINE<<1) - 256
-	ld e,h
-	mlt de
-	ld a,l
 	add hl,de
 	inc h
-	ld e,h
-	ld d,CYCLES_PER_SCANLINE<<1
-	mlt de
-	sub e
-	cp l
-	ld l,h
-	ld h,CYCLES_PER_SCANLINE<<1
-	jr c,_
-	jr z,_
-	dec l
-	add a,h
-	jr c,get_scanline_from_cycle_count_finish
-	; Unlikely condition (allow redundant compare)
+	ret z
+	; If STAT may be invalid, get the exact DIV value
+	push de
+	 call get_mem_cycle_offset
+	 ld hl,i
+	 add hl,de
+	pop de
+	ex de,hl
+	; Check if it's still valid
+	add hl,de
+	inc h
+	ret z
+	dec h
+	jr nz,updateSTAT_full
+	; Now check to see if we are within one scanline after the update time
+	; This limitation is needed to ensure the LY update time is still valid
+	ld a,l
+	cp CYCLES_PER_SCANLINE
+	jr nc,updateSTAT_full
+	ld a,(STAT)
+	ld h,a
+	and 3
+	srl a
+	jr z,updateSTAT_mode0_mode1
+	ld a,l
+	jr c,updateSTAT_mode3
+updateSTAT_mode2:
+	; Check if we're currently in mode 3
+	inc h
+	sub MODE_3_CYCLES
+	jr c,updateSTAT_mode3
+updateSTAT_mode3:
+	; Check if we're currently in mode 0
+	dec h
+	dec h
+	dec h
+	sub MODE_0_CYCLES
+	ld l,a
+	; Allow rendering catch-up after leaving mode 3, unless this frame is skipped
+	ld a,h
+updateSTAT_enable_catchup_smc = $+1
+	ld r,a
+	jr c,updateSTAT_finish
+updateSTAT_mode0_mode1:
+	; Update LY if it hasn't already been by an external LY read
+	push de
+	 push hl
+	  ld hl,(nextupdatecycle_LY)
+	  ex de,hl
+	  add hl,de
+	  ld a,h
+	  or a
+	  call z,updateLY_from_STAT
+	  ; Check LYC coincidence
+	  ld hl,(LY)
+	  ld a,l
+	  cp h
+	 pop hl
+	 res 2,h
+	 jr nz,_
+	 set 2,h
 _
-	cp h
-	jr c,get_scanline_from_cycle_count_finish
-	; Unlikely condition
-	inc l
-	sub h
+	pop de
+	dec a
+	cp 143
+	jr nc,updateSTAT_maybe_mode1
+	; Check if we're currently in mode 2
+	inc h
+updateSTAT_mode1_exit:
+	inc h
+	ld a,l
+	sub MODE_2_CYCLES
+	jr nc,updateSTAT_mode2
+	ld l,a
+	ld a,h
+updateSTAT_finish:
+	ld (STAT),a
+	ld h,$FF
+	add hl,de
+	ld (nextupdatecycle_STAT),hl
+	ret
+	
+updateSTAT_maybe_mode1:
+	; Special-case line 0 to see if vblank was exited
+	inc a
+	jr nz,updateSTAT_mode1
+	; Check if LY update kept STAT in mode 1 or changed it to mode 0
+	ld a,(STAT)
+	rra
+	jr nc,updateSTAT_mode1_exit
+updateSTAT_mode1:
+	; Save LYC coincidence bit and ensure mode 1 is set
+	ld a,h
+	or 1
+	ld (STAT),a
+	; Set STAT update time to LY update time
+	ld hl,(nextupdatecycle_LY)
+	ld (nextupdatecycle_STAT),hl
+	ret
+	
+get_scanline_past_vblank:
+	ld de,((SCANLINES_PER_FRAME-1)<<8) | (CYCLES_PER_SCANLINE<<1)
+	add hl,de
 	jr get_scanline_from_cycle_count_finish
 	
+; Inputs: HL-DE = current value of DIV
+; Outputs: (LY) = current value of LY
+;          (STAT) = current value of STAT
+;          (nextupdatecycle_LY) = negated cycle count of next LY update
+;          (nextupdatecycle_STAT) = negated cycle count of next STAT update
+; Destroys: AF, DE, HL, IX
+updateSTAT_full:
+	; Get negative DIV, the starting point for update times
+	ex de,hl
+	or a
+	sbc hl,de
+	push hl
+	 ; Subtract from the vblank time, to get cycles until vblank
+vblank_counter = $+1
+	 ld de,0
+	 add hl,de
+	 ; Decrement by 1, for cycles until the cycle before vblank
+	 dec hl
+	 ; Normalize the divisor and also check if the current cycle is past vblank
+	 add hl,hl
+	 jr c,get_scanline_past_vblank
+	
+get_scanline_from_cycle_count:
+	 ; Algorithm adapted from Improved division by invariant integers
+	 ; To make things simpler, a pre-normalized divisor is used, and the dividend
+	 ; and remainder are scaled and descaled according to the normalization factor
+	 ; This should also make it trivial to support GBC double-speed mode in the
+	 ; future where the normalized divisor will be the actual divisor
+	 ld d,65535 / (CYCLES_PER_SCANLINE<<1) - 256
+	 ld e,h
+	 mlt de
+	 ex de,hl
+	 add hl,de
+	 ld d,h
+	 inc h
+	 ld a,l
+	 ld l,256-(CYCLES_PER_SCANLINE<<1)
+	 mlt hl
+	 add hl,de
+	 cp l
+	 ld a,l
+	 jr c,++_
+	 inc d
+	 sub CYCLES_PER_SCANLINE<<1
+	 jr c,get_scanline_from_cycle_count_finish
+	 ; Unlikely condition
+	 ld l,a
+_
+	 inc d
+	 jr get_scanline_from_cycle_count_finish
+_
+	 add a,CYCLES_PER_SCANLINE<<1
+	 jr nc,--_ ; Unlikely condition
+	 ld l,a
+get_scanline_from_cycle_count_finish:
+	 ; Scanline number (backwards from last before vblank) is in D,
+	 ; and cycle offset (backwards from last scanline cycle) is in L
+	 ld a,143
+	 sub d
+	pop de
+	jr c,updateSTAT_full_vblank
+	; Scanline is during active video
+	ld ixh,a
+	xor a
+	ld ixl,a
+	; Get the (negative) cycles until the next scanline
+	dec a
+	; Allow rendering catch-up outside of vblank, if this frame isn't skipped
+updateSTAT_full_enable_catchup_smc = $+1
+	ld r,a
+	ld h,a
+	xor l
+	rrca ;NOP this out in double-speed
+	ld l,a
+	; Add to the negative DIV count
+	add hl,de
+	ld (nextupdatecycle_LY),hl
+	; Determine the STAT mode and the cycles until next update
+	; Check if during mode 0
+	ld l,a
+	add a,MODE_0_CYCLES
+	jr c,_
+	; Check if during mode 3
+	ld l,a
+	lea ix,ix+3
+	add a,MODE_3_CYCLES
+	jr c,_
+	; During mode 2
+	ld l,a
+	dec ixl
+_
+	ld h,$FF
+	add hl,de
+	ld (nextupdatecycle_STAT),hl
+updateSTAT_full_finish:
+	; Write value of LY
+	ld a,ixh
+	ld hl,LY
+	ld (hl),a
+	; Check for LYC coincidence
+	inc hl
+	cp (hl)
+	jr nz,_
+	lea ix,ix+4
+_
+	; Write low bits of STAT
+	ld l,STAT & $FF
+	ld a,(hl)
+	and $F8
+	or ixl
+	ld (hl),a
+	ret
+	
+updateSTAT_full_restore:
+	sub l
+	ld l,a
+updateSTAT_full_trampoline:
+	jr updateSTAT_full
+	
+updateSTAT_full_vblank:
+	; Set mode 1 unconditionally
+	ld ixl,1
+	; Get the actual scanline, and check whether it's the final line
+	inc a
+	add a,SCANLINES_PER_FRAME - 1
+	ld ixh,a
+	jr nc,updateSTAT_full_last_scanline
+	; Get the (negative) cycles until the next scanline
+	sbc a,a
+	ld h,a
+	xor l
+	rrca ; NOP this out in double-speed mode
+_
+	ld l,a
+_
+	; Add to the negative DIV count
+	add hl,de
+	; This will be used for both the next LY and STAT update times
+	; Since during vblank, STAT must still be updated for LY=LYC
+	ld (nextupdatecycle_LY),hl
+	ld (nextupdatecycle_STAT),hl
+	jr updateSTAT_full_finish
+	
+updateSTAT_full_last_scanline:
+	; On the final line, set LY to 0 after the first cycle
+	ld h,$FF
+	ld a,l
+	cpl
+	rrca
+	ld l,a
+	add a,CYCLES_PER_SCANLINE - 1
+	jr nc,--_
+	ld ixh,0
+	jr -_
+	
+updateSTAT_full_for_setup:
+	call updateSTAT_full
+	ret.l
+	
+updateLY:
+	exx
+	push.l hl
+	; Get the value of DIV at the end of the JIT block
+updateLY_disable_smc = $
+	ld hl,i ; Replaced with RET when LCD is disabled
+	lea de,iy
+	add hl,de
+	; Quickly test to see if LY is valid during the entire block
+nextupdatecycle_LY = $+1
+	ld de,0
+	add hl,de
+	inc h
+	ret z
+	; If LY may be invalid, get the exact DIV value
+	push de
+	 call get_mem_cycle_offset
+	 ld hl,i
+	 add hl,de
+	pop de
+	; Check if it's still valid
+	add hl,de
+	inc h
+	ret z
+	; Now check to see if we are within one scanline after the update time
+	dec h
+	jr nz,updateSTAT_full_trampoline
+updateLY_from_STAT:
+	ld a,l
+	ld l,-CYCLES_PER_SCANLINE
+	add a,l
+	jr c,updateSTAT_full_restore
+	; If so, advance to the next scanline directly
+	dec h
+	add hl,de
+	ld e,a
+	ld (nextupdatecycle_LY),hl
+	ld hl,LY
+	ld a,(hl)
+	inc (hl)
+	dec a
+	cp SCANLINES_PER_FRAME-3
+	ret c
+	; Special cases for advancing from lines 0, 152, and 153
+	; Note that the STAT mode is always 1 during vblank, and always not 1
+	; outside of vblank; this allows differentiating between the two halves
+	; of line 0 (vblank and active video) without tracking additional state.
+	; However, the mode value is not used outside of updateLY unless the STAT
+	; cache is also valid.
+	jr z,updateLY_from_line_152
+	inc a
+	jr z,updateLY_from_line_0
+	; If LY was 153, check whether to exit vblank
+	ld a,e
+	ld de,1
+	; Always advance to line 0
+	ld (hl),d
+	add a,e
+	jr nc,updateLY_to_line_0_vblank
+	; Exit vblank (setting mode 0) and schedule forward to line 1 change
+	ld l,STAT & $FF
+	dec (hl)
+	ld de,1-CYCLES_PER_SCANLINE
+updateLY_to_line_0_vblank:
+	; Line 0 node 1 duration is one cycle less than originally scheduled
+updateLY_to_line_153:
+	; Keep line 153 and schedule backward to line 0 change
+	ld hl,(nextupdatecycle_LY)
+	add hl,de
+	ld (nextupdatecycle_LY),hl
+	ret
+	
+updateLY_from_line_152:
+	; If LY was 152, check whether to proceed to line 0
+	ld a,e
+	ld de,CYCLES_PER_SCANLINE=1
+	add a,e
+	jr nc,updateLY_to_line_153
+	; Advance to line 0 in mode 1, keeping original schedule
+	ld (hl),d
+	ret
+
+updateLY_from_line_0:
+	; If the PPU is no longer in vblank, keep line 1 advancement
+	ld a,(STAT)
+	dec a
+	ld e,a
+	and 3
+	ret nz
+	; Return to line 0 and exit vblank (arbitrarily setting mode 0)
+	ld (hl),a
+	ld l,STAT & $FF
+	ld (hl),e
+	ret
 	
 ; Output: BCDEHL' are swapped
 ;         (SPL) = saved HL'
 ;         DE = current cycle offset
-;         A = current TIMA value
 ;         (TIMA) updated to current value
 ;         Interrupts are disabled
 updateTIMA:
 	call get_mem_cycle_offset_swap_push
 	 ld a,(TAC)
 	 and 4
-	 ld a,(TIMA)
 	 ret z
 	 ld hl,i
 	 ld a,b
@@ -3887,18 +4312,15 @@ write_scroll_swap:
 	ld iyl,a
 write_scroll:
 	push ix
-	 call get_mem_scanline_offset_if_changed_ix
-	pop hl
-	jp.lil scroll_write_helper
+	 call updateSTAT_if_changed_ix
+	 jp.lil scroll_write_helper
 	
 writeLCDChandler:
 	ex af,af'
 	ld iyl,a
 writeLCDC:
-	call get_mem_cycle_offset_swap_push
-	push de
-	 call get_scanline_from_cycle_offset
-	pop hl
+	exx
+	call updateSTAT
 	jp.lil lcdc_write_helper
 	
 writeTAChandler:
@@ -3920,14 +4342,14 @@ writeSTAThandler:
 	ld iyl,a
 writeSTAT:
 	exx
-	call get_mem_scanline_offset
+	call updateSTAT
 	jp.lil stat_write_helper
 	
 writeLYChandler:
 	ex af,af'
 	ld iyl,a
 writeLYC:
-	call get_mem_scanline_offset_if_changed_lyc
+	call updateSTAT_if_changed_lyc
 	jp.lil lyc_write_helper
 	
 writeTIMAhandler:
@@ -4123,19 +4545,14 @@ render_save_sps:
 	
 	; One word of stack space for sprite rendering during vblank
 	.dw 0
-event_counter_checkers_ei_delay:
-	.dw schedule_ei_delay_startup
 event_counter_checkers:
-event_counter_checker_slot_LYC:
-	.dw disabled_counter_checker
-event_counter_checker_slot_STAT:
-	.dw disabled_counter_checker
+event_counter_checker_slot_PPU:
+	.dw ppu_expired_vblank
 event_counter_checker_slot_timer:
 	.dw disabled_counter_checker
 event_counter_checker_slot_serial:
 	.dw disabled_counter_checker
-event_counter_checker_slot_audio:
-	.dw audio_counter_checker
+event_counter_checkers_ei_delay:
 	.dw event_counter_checkers_done
 	
 	.assume adl=1

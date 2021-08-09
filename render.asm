@@ -422,19 +422,42 @@ scaling_mode_smc_3 = $+1
 	ldir
 	jp render_scanline_next
 	
-	; Input: A=LY (A<144 unless called from vblank)
+; Catches up the renderer before changing an LCD register.
+; Must be called only if the current frame is being rendered.
+;
+; Inputs:  (LY) = current scanline (0-143)
+;          (STAT) = current mode (0, 2, 3)
+;          AF' has been swapped
+;          BCDEHL' have been swapped
+; Outputs: Scanlines rendered if applicable
+; Destroys: AF, DE, HL, IX
+render_catchup:
+	; Disable catch-up until at least one more scanline passes
+	ld a,(hram_base+STAT)
+	cpl
+	ld r,a
+	; Set carry if in hblank
+	rra
+	rra
+	; Get value of LY
+	ld a,(hram_base+LY)
+	; Input: A=LY, should always be <=144
+	;        Carry set if in hblank (i.e. the current scanline is finished)
 render_scanlines:
 #ifdef DEBUG
-	cp 145
-	jr nc,$
+	push af
+	 adc a,256-145
+	 jr c,$
+	pop af
 #endif
 myLY = $+1
-	ld c,0
-	sub c
-	ret c
-	ret z
-	ld b,a
-	push ix
+	ld l,0
+	sbc a,l
+	ASSERT_NC
+	ret z ; Just in case catch-up was enabled early (e.g. by an LYC interrupt)
+	push bc
+	 ld b,a
+	 ld c,l
 	 push iy
 scanlineLUT_ptr = $+2
 	  ld iy,0
@@ -529,7 +552,7 @@ render_scanline_next:
 	  ld mb,a
 	  ld.sis sp,(render_save_sps)
 	 pop iy
-	pop ix
+	pop bc
 	ret
 	
 palettecodesize = $-mpLcdPalette

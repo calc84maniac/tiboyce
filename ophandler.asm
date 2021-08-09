@@ -270,30 +270,6 @@ _
 	  jr flush_mem_finish
 	
 	
-; Catches up the renderer before changing an LCD register.
-; Must be called only if the current frame is being rendered.
-;
-; Inputs:  E = current scanline
-;          AF' has been swapped
-;          BCDEHL' have been swapped
-; Outputs: Scanlines rendered if applicable
-; Destroys: AF, DE
-render_catchup:
-	ld a,(hram_base+LCDC)
-	add a,a
-	ret nc
-	ld a,d
-	cp (MODE_2_CYCLES + MODE_3_CYCLES)<<1
-	ld a,e
-	sbc a,9
-	ret c
-	push bc
-	 push hl
-	  call render_scanlines
-	 pop hl
-	pop bc
-	ret
-	
 ; Catches up sprite rendering before changing sprite state.
 ; Must be called only if render_catchup has already been called.
 ;
@@ -313,9 +289,9 @@ sprite_catchup:
 scroll_write_DMA:
 	 push bc
 	  ; Render the existing OAM data if applicable
-	  ld a,(render_this_frame)
-	  or a
-	  call nz,sprite_catchup
+	  ld a,(z80codebase+updateSTAT_enable_catchup_smc)
+	  rra
+	  call c,sprite_catchup
 	  ; Copy 160 bytes from the specified source address to OAM
 	  ld de,0
 	  ex af,af'
@@ -335,21 +311,19 @@ scroll_write_DMA:
 ;
 ; Catches up the renderer before writing, and then applies SMC to renderer.
 ;
-; Inputs:  HL = 16-bit register address
-;          E = current scanline
+; Inputs:  (LY), (STAT) = current PPU state
 ;          C = A' = value being written
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
-;          (SPS) = Z80 return address
+;          (SPS) = 16-bit register address
+;          (SPS+2) = Z80 return address
 ;          (SPL) = saved HL'
 ; Outputs: Scanlines rendered if applicable, SMC applied, value written
 ;          AF' has been unswapped
 scroll_write_helper:
-	 ld d,a
-render_this_frame = $+1
-	 ld a,1
-	 or a
-	 call nz,render_catchup
+	 ld a,r
+	 call m,render_catchup
+	 pop.s hl
 	 ld a,l
 	 sub SCX - ioregs
 	 jr c,scroll_write_SCY
@@ -375,9 +349,9 @@ scroll_write_BGP:
 	 ld.s a,(hl)
 	 cp c
 	 jr z,scroll_write_done_swap
-	 ld a,(render_this_frame)
-	 or a
-	 jr z,scroll_write_done_swap
+	 ld a,(z80codebase+updateSTAT_enable_catchup_smc)
+	 rra
+	 jr nc,scroll_write_done_swap
 	 push bc
 	  push hl
 	   call sprite_catchup
@@ -424,6 +398,11 @@ scroll_write_done:
 	pop hl
 	jp.sis z80_swap_ret
 	
+lyc_write_0:	
+	; Special case for line 0, thanks silly PPU hardware
+	ld de,-(CYCLES_PER_SCANLINE * 9 + 1)
+	jr lyc_write_continue
+	
 ; Writes to the LY compare register (LYC).
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
@@ -432,207 +411,371 @@ scroll_write_done:
 ; but only if LYC is changing.
 ;
 ; Inputs:  C = A' = value being written
-;          A = cycles into scanline
-;          E = current scanline
+;          (LY), (STAT) = current PPU state
 ;          (SPS) = Z80 return address
 ;          (SPL) = saved HL'
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
-	 ; If LYC interrupts are disabled, update the value and return
-	 ld hl,hram_base + STAT
-	 bit 6,(hl)
-	 ld l,LYC - ioregs
-	 jr z,scroll_write_done_swap
-	 ld d,a
-	 ; Get the old value before overwriting it
-	 ld a,(hl)
+	 ; Set the new value of LYC
+	 ld hl,hram_base+LYC
 	 ld (hl),c
-lyc_update_helper:
-	 ; If the old value is an invalid line number, possibly enable LYC counter checking
-	 cp SCANLINES_PER_FRAME
+	 ; Calculate the new LYC cycle offset (from vblank)
 	 ld a,c
-	 jr c,_
-	 cp SCANLINES_PER_FRAME
-	 jp.sis nc,trigger_event_already_triggered
-	 ld ix,lyc_counter_checker
-	 ld.sis (event_counter_checker_slot_LYC),ix
-_
-	 cp SCANLINES_PER_FRAME
-	 jr nc,lyc_write_helper_disable_checker
-	 
-	 ; Convert LYC to vblank-relative range
-	 sbc a,143	; Sets half-carry flag
-	 jr nc,_
+	 or a
+	 jr z,lyc_write_0
+	 add a,10
+	 ld e,a
+	 ; Wrap vblank lines to the 0-9 range
 	 daa
-_
-	 ld c,a
-	 
-	 ; Scanline 153 changes to scanline 0 after 2 cycles for LYC purposes
-	 ld a,e
-	 cp 9
-	 jr nz,_
-	 ld a,d
-	 cp 2<<1
-	 sbc a,a
-	 inc a
-	 add a,e
-_
-	 ; Trigger an interrupt if setting the current scanline
-	 cp c
-	 jr nz,_
-	 ld l,IF - ioregs
-	 set 1,(hl)
-_
-	 
-	 ; Set new target
-	 ld.sis hl,(vblank_counter)
-	 ; If the current scanline is prior to the scheduled scanline, schedule
-	 ; relative to this frame instead of next frame
 	 jr nc,_
-	 ld de,-CYCLES_PER_FRAME
-	 add hl,de
+	 ld e,a
 _
-	 ; Adjust scanline 0 if necessary
-	 ld a,c
-	 cp 10
-	 jr nz,_
-	 dec a
-	 ; TODO: Double-speed mode should increase by 4
-	 inc hl
-	 inc hl
-_
-	 ld d,a
-	 ld e,CYCLES_PER_SCANLINE
+	 ; Multiply by -CYCLES_PER_SCANLINE
+	 ; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
+	 ; in that particular case (vblank collision is special-cased)
+	 xor a
+	 sub e
+	 ld d,256-CYCLES_PER_SCANLINE
 	 mlt de
-	 add hl,de
-	 ld.sis (lyc_counter),hl
+	 add a,d
+	 ld d,a
+lyc_write_continue:
+	 ld (lyc_cycle_offset),de
+lyc_write_disable_smc = $
+	 ; Check if LY=LYC
+	 dec hl
+	 ld a,c
+	 cp (hl)
+	 ; Set or reset the LYC coincidence bit in STAT
+	 ld l,STAT & $FF
+	 ld c,(hl)
+	 res 2,c
+	 ld d,c
+	 jr nz,_
+	 set 2,c
+	 ; If LYC interrupts are enabled, handle interrupt blocking logic
+	 bit 6,c
+	 jr z,_
+	 ; Transform mode into interrupt source mask:
+	 ; 0 -> $08, 1 -> $10, 2 -> $24, 3 -> $00
+	 ld a,d
+	 inc a
+	 and 3
+	 add a,a
+	 add a,a
+	 daa
+	 add a,a
+	 ; Check if any enabled interrupt modes block the interrupt
+	 ; Note that bit 2 has been reset, so bit $04 will be ignored
+	 and d
+	 jr nz,_
+	 ; Set the LYC coincidence bit and IF STAT bit
+	 ld (hl),c
+	 ld l,IF & $FF
+	 set 1,(hl)
+	 ; Check if the IE STAT bit is set
+	 ld l,h
+	 bit 1,(hl)
+	 jr z,++_
+	 ; Perform STAT scheduling updates
+	 call stat_setup
+	 ; Trigger a new event immediately
 	 jp.sis trigger_event_pushed
-	
-lyc_write_helper_disable_checker:
-	 ld hl,disabled_counter_checker
-	 ld.sis (event_counter_checker_slot_LYC),hl
-	 jp.sis trigger_event_pushed
-	
-	
+_
+	 ld (hl),c
+_
+	 
+	 ; Perform STAT scheduling updates
+	 call stat_setup
+	 ; Reschedule the current PPU event
+	 jp.sis reschedule_event_PPU
+	 
+stat_lyc_write_no_reschedule:
+	 jp.sis trigger_event_already_triggered
+	 
 stat_write_helper:
 	 ld hl,hram_base + STAT
-	 ld c,a
 	 ex af,af'
 	 ld d,a
 	 ex af,af'
 	 ld a,(hl)
-	 ld (hl),d
+	 ld c,a
 	 ; Save changed mode interrupt bits
 	 xor d
-	 push af
-	  ; Check for newly set mode interrupt bits
-	  and d
-	  and $38
-	  jr z,stat_write_no_interrupt
-	  ld l,a
-	  ld a,e
-	  cp 10
-	  jr nc,_
-	  bit 4,l
-	  jr z,stat_write_no_interrupt
-	  jr stat_write_set_interrupt
-_
-	  ld a,c
-	  bit 5,l
-	  jr z,_
-	  cp MODE_2_CYCLES<<1
-	  jr c,stat_write_set_interrupt
-_
-	  bit 3,l
-	  jr z,stat_write_no_interrupt
-	  cp (MODE_2_CYCLES + MODE_3_CYCLES)<<1
-	  jr c,stat_write_no_interrupt
-stat_write_set_interrupt:
-	  ld l,IF & $FF
-	  set 1,(hl)
-stat_write_no_interrupt:
-	 pop af
-	 push af
-	  and $28
-	  jr z,stat_write_helper_no_change
-	  ld ix,disabled_counter_checker
-	  ld a,d
-	  and $28
-	  jr z,stat_write_helper_set_checker
-	  push de
-	   ld ix,stat_counter_checker_mode0
-	   ld a,(MODE_2_CYCLES + MODE_3_CYCLES)<<1 - 1
-	   cp c
-	   inc a
-	   jr nc,_
-	   bit 5,d
-	   jr nz,++_
-	   jr +++_
-_
-	   bit 3,d
-	   jr nz,++_
-_
-	   lea ix,ix-stat_counter_checker_mode0+stat_counter_checker_mode2
-	   xor a
-	   scf
-_
-	   ld d,a
-	   ; Calculate the cycle offset relative to vblank
-	   ld a,SCANLINES_PER_FRAME
-	   sbc a,e
-	   jr nz,_
-	   ld (z80codebase + stat_line_count),a
-	   ld a,d
-	   ld de,-(CYCLES_PER_SCANLINE * 10)
-	   jr +++_
-_
-	   cp 144
-	   jr c,_
-	   ld a,144
-_
-	   ld (z80codebase + stat_line_count),a
-	   ld e,a
-	   ld a,d
-	   ld d,CYCLES_PER_SCANLINE
-	   mlt de
-_
-	   ld.sis hl,(vblank_counter)
-	   add a,l
-	   ld l,a
-	   jr nc,_
-	   inc h
-	   or a
-_
-	   sbc hl,de
-	   ld.sis (stat_counter),hl
-	  pop de
-	  ld a,d
-	  cpl
-	  and $28
-	  jr z,stat_write_helper_set_checker
-	  ld ix,stat_counter_checker_single
-stat_write_helper_set_checker:
-	  ld.sis (event_counter_checker_slot_STAT),ix
-stat_write_helper_no_change:
-	
-	 pop af
-	 bit 6,a
-	 jr z,++_
-	 bit 6,d
+	 ld e,a
+	 ; Update writable bits in STAT
+	 and $87
+	 xor d
+	 ld (hl),a
+	 ; Transform coincidence flag and mode into interrupt mask
+stat_write_disable_smc = $
+	 rrca
+	 rrca
+	 add a,$40
+	 and $C1
+	 daa
+	 rra
+	 rra
+	 rra
+	 and $78
+	 ; Check if interrupt condition was already true
+	 tst a,c
+	 jr nz,_
+	 ; If not, this write can cause an interrupt to trigger
+	 ; Emulate DMG STAT write bug by just checking if any source is enabled
+	 or a ; Replace with AND D for GBC emulation, to check against new bits
 	 jr z,_
-	 ld hl,hram_base + LYC
-	 ld c,(hl)
-	 ld a,SCANLINES_PER_FRAME
-	 jp lyc_update_helper
-_
-	 ld hl,disabled_counter_checker
-	 ld.sis (event_counter_checker_slot_LYC),hl
-_
+	 ; If so, set IF STAT bit
+	 ld l,IF & $FF
+	 set 1,(hl)
+	 ; Check if IE STAT bit is set
+	 ld l,h
+	 bit 1,(hl)
+	 jr z,_
+	 ; Handle changes to mode 0 and mode 2 interrupt bits
+	 ld a,e
 	 and $28
-	 jp.sis nz,trigger_event_pushed
-	pop hl
-	jp.sis z80_restore_swap_ret
+	 call nz,stat_setup
+	 ; Trigger a new event immediately
+	 jp.sis trigger_event_pushed
+_
+	 ; Handle changes to mode 0 and mode 2 interrupt bits
+	 ld a,e
+	 and $28
+	 jr z,stat_lyc_write_no_reschedule
+	 call stat_setup
+	 ; Reschedule the current PPU event
+	 jp.sis reschedule_event_PPU
+	
+do_lcd_disable:
+	; Set STAT mode 0 and LY=0
+	ld hl,hram_base+STAT
+	ld a,(hl)
+	and $FC
+	ld (hl),a
+	ld l,LY & $FF
+	xor a
+	ld (hl),a
+	
+	; Disable cache updates for STAT and LY registers
+	ld a,$C9 ;RET
+	ld (z80codebase+updateSTAT_disable_smc),a
+	ld (z80codebase+updateLY_disable_smc),a
+	
+	; Disable interrupt and rescheduling effects for LYC and STAT writes
+	ld hl,(stat_lyc_write_no_reschedule - (lyc_write_disable_smc+2))<<8 | $18 ;JR
+	ld (lyc_write_disable_smc), hl
+	ld h,stat_lyc_write_no_reschedule - (stat_write_disable_smc+2)
+	ld (stat_write_disable_smc),hl
+	 
+	; Update PPU scheduler to do events once per "frame"
+	ld ix,z80codebase+ppu_expired_lcd_off
+	ld hl,-CYCLES_PER_FRAME
+	ld.sis (ppu_post_vblank_event_handler),ix
+	ld.sis (ppu_post_vblank_event_offset),hl
+	jr stat_setup_next_vblank_lcd_off
+	
+stat_setup_hblank:
+	ld ix,z80codebase+ppu_expired_mode0_line_0
+	ld (ix-ppu_expired_mode0_line_0+ppu_mode0_event_line),144
+	ex de,hl
+	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
+	; Check if LYC match is during vblank
+	cp 144
+	call nc,stat_setup_lyc_mode1_filter
+	ld.sis (ppu_post_vblank_event_handler),ix
+	ld.sis (ppu_post_vblank_event_offset),hl
+	ld ix,z80codebase+ppu_expired_mode0
+	; If currently in mode 1, schedule the first post-vblank event
+	ld a,c
+	and 3
+	cp 1
+	jr z,stat_setup_hblank_post_vblank
+	; Get LY and add 1 if hblank has been reached
+	ld a,e
+	adc a,0
+	; If the result is 0, schedule the first post-vblank event
+	jr z,stat_setup_hblank_post_vblank
+	; If during hblank of line 143, schedule vblank
+	cp 144
+	jr z,stat_setup_next_vblank
+	ld c,a
+	; Determine the cycle time of next hblank
+	cp e
+	ld a,d
+	; Normally, schedule before the end of the current scanline
+	ld de,MODE_0_CYCLES
+	jr z,_
+	; For hblank, schedule in the next scanline
+	dec d
+	ld e,-(MODE_2_CYCLES + MODE_3_CYCLES)
+_
+	ld.sis hl,(nextupdatecycle_LY)
+	add hl,de
+	; Set the current line with the adjusted LY
+	ld (ix-ppu_expired_mode0+ppu_mode0_LY),c
+	; If LYC < adjusted LY, keep vblank as next event line 
+	cp c
+	jr c,stat_setup_done_trampoline
+	; If LYC == adjusted LY, update entry point and keep vblank as next event
+	jr z,stat_setup_hblank_lyc_match
+	; If LYC > adjusted LY and LYC < 144. update the event line
+	cp 144
+	jr nc,stat_setup_done
+	ld (ix-ppu_expired_mode0+ppu_mode0_event_line),a
+	jr stat_setup_done
+	
+stat_setup_hblank_trampoline:
+	jr stat_setup_hblank
+	
+stat_setup_hblank_post_vblank:
+	ld ix,z80codebase+ppu_expired_mode0_line_0
+	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
+	jr stat_setup_next_from_vblank
+	
+stat_setup_hblank_lyc_match:
+	lea ix,ix-ppu_expired_mode0+ppu_expired_mode0_lyc_match
+	jr stat_setup_done
+	
+stat_setup_lyc_vblank:
+	; The next event from vblank is vblank, unless LYC is during mode 1
+	ex de,hl
+	ld hl,-CYCLES_PER_FRAME
+	call nz,stat_setup_lyc_mode1_filter
+	ld.sis (ppu_post_vblank_event_handler),ix
+	ld.sis (ppu_post_vblank_event_offset),hl
+stat_setup_next_vblank:
+	; The next event from now is vblank
+	ld ix,z80codebase+ppu_expired_vblank
+stat_setup_next_vblank_lcd_off:
+	or a
+	sbc hl,hl
+	ld.sis de,(vblank_counter)
+	sbc hl,de
+stat_setup_done_trampoline:
+	jr stat_setup_done
+	
+	; Input: C = current value of STAT
+stat_setup_c:
+	ld d,c
+	; Input: D = current writable bits of STAT, C = current read-only bits of STAT
+stat_setup:
+	ld ix,z80codebase+ppu_expired_vblank
+	; Get the line to match, but treat offscreen lines as vblank match
+	ld.sis hl,(LY)
+	ld a,h
+	cp 154
+	jr c,_
+	ld h,144
+	ld a,h
+_
+	dec a
+	; Check if hblank interrupt is enabled (blocks OAM)
+	bit 3,d
+	jr nz,stat_setup_hblank_trampoline
+	; Check if OAM interrupt is enabled
+	bit 5,d
+	jr nz,stat_setup_oam
+	; Check if LYC match is at or during vblank
+	cp 143
+	jr nc,stat_setup_lyc_vblank
+	; Check if LY >= LYC
+	cp l
+	ld a,l
+	; The next event from vblank is LYC (mode 2)
+	lea ix,ix-ppu_expired_vblank+ppu_expired_lyc_mode2
+	ld.sis (ppu_post_vblank_event_handler),ix
+	ld hl,(lyc_cycle_offset)
+	ld.sis (ppu_post_vblank_event_offset),hl
+	jr nc,stat_setup_next_from_vblank
+	; Check if LY < 144
+	cp 144
+	jr c,stat_setup_next_vblank
+stat_setup_next_from_vblank:
+	; The next event from now is relative to start of vblank
+	ld.sis de,(vblank_counter)
+	sbc hl,de
+	; Offset is from start of vblank, so adjust back to previous vblank
+	ld de,CYCLES_PER_FRAME
+	add hl,de
+stat_setup_done:
+	ld.sis (ppu_counter),hl
+	ld.sis (event_counter_checker_slot_PPU),ix
+	ret
+	
+stat_setup_oam:
+	ld ix,z80codebase+ppu_expired_mode2_line_0
+	ld (ix-ppu_expired_mode2_line_0+ppu_mode2_event_line),143
+	ex de,hl
+	ld hl,-(CYCLES_PER_SCANLINE * 10)
+	; Check if LYC match is during vblank
+	cp 144
+	call nc,stat_setup_lyc_mode1_filter
+	ld.sis (ppu_post_vblank_event_handler),ix
+	ld.sis (ppu_post_vblank_event_offset),hl
+	; If LY is 143, schedule vblank
+	ld a,e
+	cp 143
+	jr z,stat_setup_next_vblank
+	ld ix,z80codebase+ppu_expired_mode2
+	; If currently in mode 1, schedule the first post-vblank event
+	ld a,c
+	dec a
+	and 3
+	jr z,stat_setup_oam_post_vblank
+	; Set the current line to LY and get the time for the next event
+	ld (ix-ppu_expired_mode2+ppu_mode2_LY),e
+	ld.sis hl,(nextupdatecycle_LY)
+	; If LYC < LY, keep vblank as next event line
+	ld a,d
+	cp e
+	jr c,stat_setup_done
+	; If LYC == LY, update entry point and keep vblank as next event
+	jr z,stat_setup_oam_lyc_blocking
+	; If LYC > LY and LYC < 143, update the event line
+	cp 143
+	jr nc,stat_setup_done
+	ld (ix-ppu_expired_mode2+ppu_mode2_event_line),a
+	jr stat_setup_done
+	
+stat_setup_oam_post_vblank:
+	lea ix,ix-ppu_expired_mode2+ppu_expired_mode2_line_0
+	ld hl,-(CYCLES_PER_SCANLINE * 10)
+	jr stat_setup_next_from_vblank
+	
+stat_setup_oam_lyc_blocking:
+	lea ix,ix-ppu_expired_mode2+ppu_expired_mode2_lyc_blocking
+	jr stat_setup_done
+	
+	; Input: A=LYC-1, L=LY, HL=event cycle offset, IX=event handler, carry reset
+	; Output: HL=new event cycle offset, IX=new event handler,
+	;         unless the PPU is currently between vblank and LYC,
+	;         in which case this call does not actually return.
+stat_setup_lyc_mode1_filter:
+	; Record the filtered event handler and offset to follow LYC
+	ld.sis (ppu_post_mode1_lyc_event_handler),ix
+	push de
+lyc_cycle_offset = $+1
+	 ld de,0
+	 ASSERT_NC
+	 sbc hl,de
+	 ld.sis (ppu_post_mode1_lyc_event_offset),hl
+	 ex de,hl
+	pop de
+	; The next event from vblank is LYC (mode 1)
+	ld ix,z80codebase+ppu_expired_lyc_mode1
+	; Return if LY >= LYC (unless LYC=0)
+	cp e
+	ret c
+	; Return if LY < 144
+	ld a,e
+	cp 144
+	ret c
+	; The next event from now is LYC (mode 1)
+	pop de
+	jp stat_setup_next_from_vblank
+	
 	
 ; Writes to the LCD control register (LCDC).
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -640,8 +783,7 @@ _
 ; Catches up the renderer before writing, and then applies SMC to renderer.
 ;
 ; Inputs:  A' = value being written
-;          HL = current cycle offset (negative)
-;          E = current scanline
+;          (LY), (STAT) = current PPU state
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
 ;          (SPS) = Z80 return address
@@ -650,11 +792,8 @@ _
 ;          AF' has been unswapped
 ;          BCDEHL' have been unswapped
 lcdc_write_helper:
-	 ld d,a
-	 ld a,(render_this_frame)
-	 or a
-	 call nz,render_catchup
-	 ex de,hl
+	 ld a,r
+	 call m,render_catchup
 	 ld hl,hram_base+LCDC
 	 ld a,(hl)
 	 ex af,af'
@@ -664,12 +803,10 @@ lcdc_write_helper:
 	 ld c,a
 	 and $06
 	 jr z,_
-	 ld a,(render_this_frame)
-	 or a
+	 ld a,(z80codebase+updateSTAT_enable_catchup_smc)
+	 rra
 	 push bc
-	  push de
-	   call nz,sprite_catchup
-	  pop de
+	  call c,sprite_catchup
 	 pop bc
 _
 	 bit 0,c
@@ -731,45 +868,65 @@ _
 	 ld a,(LCDC_7_smc)
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
-	 ; Forcibly skip to scanline 0
+	 jp.sis po,lcd_enable_helper
+	 
+	 ; Disable the LCD
+	 call do_lcd_disable
+	 jp.sis reschedule_event_PPU
+	 
+do_lcd_enable:
+	 ; Enable cache updates for STAT and LY registers
+	 ld a,$ED ;LD HL,I
+	 ld (z80codebase+updateSTAT_disable_smc),a
+	 ld (z80codebase+updateLY_disable_smc),a
+	
+	 ; Enable interrupt and rescheduling effects for LYC and STAT writes
+	 .db $21 ;ld hl,
+	  dec hl
+	  ld a,c
+	  cp (hl)
+	 ld (lyc_write_disable_smc), hl
+	 .db $21 ;ld hl,
+	  rrca
+	  rrca
+	  .db $C6 ;add a,
+	 ld (stat_write_disable_smc),hl
+	 
+	 ; Get the value of DIV
 	 ld hl,i
 	 add hl,de
 	 ex de,hl
-	 ld hl,MODE_2_CYCLES + MODE_3_CYCLES
-	 ld a,(hram_base+STAT)
-	 ld c,a
-	 ld a,144
-	 ld (z80codebase + stat_line_count),a
-	 xor a
-	 bit 5,c
-	 jr z,++_
-	 bit 3,c
-	 jr z,_
-	 ld hl,stat_counter_checker_mode2
-	 ld.sis (event_counter_checker_slot_STAT),hl
-_
-	 sbc hl,hl
-_
-	 add hl,de
-	 ld.sis (stat_counter),hl
+	 ; Schedule vblank relative to now
 	 ld hl,CYCLES_PER_SCANLINE * 144
 	 add hl,de
 	 ld.sis (vblank_counter),hl
-	 ld hl,(hram_base+LYC)
-	 cp l
-	 ld h,CYCLES_PER_SCANLINE
-	 mlt hl
-	 jr nz,++_
-	 bit 6,c
-	 jr z,_
-	 ld hl,hram_base+IF
-	 set 1,(hl)
+	 
+	 ; Check if LYC=0
+	 ld hl,hram_base+LYC
+	 ld a,(hl)
+	 or a
+	 ; Set STAT mode 2
+	 ld l,STAT & $FF
+	 ld c,(hl)
+	 set 1,c
+	 ; Set LY=LYC coincidence bit (based on LY being 0)
+	 res 2,c
+	 jr nz,_
+	 set 2,c
 _
-	 ld hl,CYCLES_PER_SCANLINE * 153 + 2
-_
+	 ld (hl),c
+	 
+	 ; Set LY and STAT cache times for line 0, mode 2
+	 ld l,-CYCLES_PER_SCANLINE
+	 sbc hl,de
+	 ld.sis (nextupdatecycle_LY),hl
+	 ld de,MODE_0_CYCLES + MODE_3_CYCLES
 	 add hl,de
-	 ld.sis (lyc_counter),hl
-	 jp.sis trigger_event_pushed
+	 ld.sis (nextupdatecycle_STAT),hl
+	 
+	 ; Update PPU scheduler based on current value of STAT
+	 call stat_setup_c
+	 jp.sis reschedule_event_PPU
 	
 	
 div_write_helper:
@@ -780,29 +937,32 @@ div_write_helper:
 	  sbc hl,de
 	  ex de,hl
 	  ld hl,i
-	  ex de,hl
-	  ld i,hl
-	  scf
+	  or a
 	  sbc hl,de
 	  ex de,hl
+	  ld i,hl
 	  ; If bit 11 of DIV was already reset, delay audio counter
 	  bit 3,d
-	  jr z,_
+	  jr nz,_
 	  ld hl,4096
 	  ld.sis (audio_counter),hl
 _
-	  inc de
 	  ld.sis hl,(vblank_counter)
-	  add hl,de
+	  or a
+	  sbc hl,de
 	  ld.sis (vblank_counter),hl
-	  ld.sis hl,(lyc_counter)
+	  ld.sis hl,(ppu_counter)
 	  add hl,de
-	  ld.sis (lyc_counter),hl
-	  ld.sis hl,(stat_counter)
+	  ld.sis (ppu_counter),hl
+	  ld.sis hl,(nextupdatecycle_STAT)
 	  add hl,de
-	  ld.sis (stat_counter),hl
+	  ld.sis (nextupdatecycle_STAT),hl
+	  ld.sis hl,(nextupdatecycle_LY)
+	  add hl,de
+	  ld.sis (nextupdatecycle_LY),hl
 	  ld.sis hl,(serial_counter)
-	  add hl,de
+	  or a
+	  sbc hl,de
 	  ld.sis (serial_counter),hl
 	 pop de
 	 jr tima_write_helper

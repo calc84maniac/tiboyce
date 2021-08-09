@@ -705,8 +705,8 @@ _
 	; Check if EI delay is active
 	rra
 	jr nc,_
-	ld hl,event_counter_checkers_ei_delay
-	ld.sis (ei_delay_event_smc),hl
+	ld hl,schedule_ei_delay_startup
+	ld.sis (event_counter_checkers_ei_delay),hl
 _
 	ld a,$08 ;EX AF,AF' (overriding RET)
 	ld (z80codebase+intstate_smc_1),a
@@ -733,119 +733,59 @@ _
 	
 	; Set the initial DIV counter to one cycle in the future
 	ld hl,(iy-state_size+STATE_DIV_COUNTER)
-	inc hl
-	ld i,hl
 	push hl
+	 inc hl
+	 ld i,hl
+	 ex de,hl
+	
+	 ; Calculate the LYC cycle offset (from vblank)
+	 ld a,(iy-ioregs+LYC)
+	 ; Special case for line 0, thanks silly PPU hardware
+	 ld hl,-(CYCLES_PER_SCANLINE * 9 + 1)
+	 or a
+	 jr z,++_
+	 add a,10
+	 ld l,a
+	 ; Wrap vblank lines to the 0-9 range
+	 daa
+	 jr nc,_
+	 ld l,a
+_
+	 ; Multiply by -CYCLES_PER_SCANLINE
+	 ; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
+	 ; in that particular case (vblank collision is special-cased)
+	 xor a
+	 sub l
+	 ld h,256-CYCLES_PER_SCANLINE
+	 mlt hl
+	 ; This should always reset carry
+	 add a,h
+	 ld h,a
+_
+	 ld (lyc_cycle_offset),hl
 	
 	 ; Get the number of cycles from one cycle in the future until vblank
 	 ld hl,CYCLES_PER_SCANLINE * 144
-	 ld de,(iy-state_size+STATE_FRAME_COUNTER)
-	 inc.s de
-	 or a
-	 sbc hl,de
+	 ld bc,(iy-state_size+STATE_FRAME_COUNTER)
+	 inc.s bc
+	 ASSERT_NC
+	 sbc hl,bc
 	 jr nc,_
 	 ld bc,CYCLES_PER_FRAME
 	 add hl,bc
 _
+	 ; Add to the DIV counter
+	 add hl,de
+	 ld.sis (vblank_counter),hl
+	
+	 ; Update LY and STAT caches based on DIV and vblank counters
+	 ; Note that HL-DE == DIV as required for updateSTAT_full
+	 call.is updateSTAT_full_for_setup
+	 ; Update PPU scheduler state based on LY and STAT caches
+	 ld c,(iy-ioregs+STAT)
+	 call stat_setup_c
+	; Restore original DIV counter
 	pop bc
-	; Add to the DIV counter
-	add hl,bc
-	ld.sis (vblank_counter),hl
-	
-	; Set the LYC counter if needed
-	bit 6,(iy-ioregs+STAT)
-	jr z,+++_
-	ld a,(iy-ioregs+LYC)
-	cp SCANLINES_PER_FRAME
-	jr nc,+++_
-	; Get the number of cycles from one cycle in the future until LYC match
-	ld hl,CYCLES_PER_SCANLINE * 153 + 2
-	or a
-	jr z,_
-	ld l,a
-	ld h,CYCLES_PER_SCANLINE
-	mlt hl
-_
-	sbc hl,de
-	jr nc,_
-	push bc
-	 ld bc,CYCLES_PER_FRAME
-	 add hl,bc
-	pop bc
-_
-	; Add to the DIV counter (plus 1)
-	add hl,bc
-	ld.sis (lyc_counter),hl
-	ld hl,lyc_counter_checker
-	ld.sis (event_counter_checker_slot_LYC),hl
-_
-	
-	; Get the current scanline and cycle offset
-	dec de
-	ld hl,-CYCLES_PER_SCANLINE
-	ex de,hl
-	ld a,$FF
-_
-	inc a
-	add hl,de
-	jr c,-_
-	sbc hl,de
-	ld h,a
-	
-	; Set the STAT counter if needed
-	ld a,(iy-ioregs+STAT)
-	and $28
-	jr z,setup_no_stat
-	ld ix,stat_counter_checker_mode0
-	ld e,a
-	ld a,l
-	add a,-(MODE_2_CYCLES + MODE_3_CYCLES)
-	jr nc,_
-	sub MODE_0_CYCLES	;sets carry
-	bit 5,e
-	jr nz,++_
-	add a,-(MODE_2_CYCLES + MODE_3_CYCLES)	;sets carry
-	jr +++_
-_
-	bit 3,e
-	jr nz,++_
-	add a,-MODE_0_CYCLES	;sets carry
-_
-	lea ix,ix-stat_counter_checker_mode0+stat_counter_checker_mode2
-_
-	; Calculate the number of cycles until the next STAT event
-	cpl
-	ld l,a
-	; Calculate the STAT line counter
-	ld a,143
-	sbc a,h
-	ld h,0
-	jr nc,_
-	; If spanning vblank, add up to 10 scanlines
-	add a,11
-	ld d,a
-	ld a,e
-	ld e,CYCLES_PER_SCANLINE
-	mlt de
-	add hl,de
-	ld e,a
-	ld a,143
-_
-	inc a
-	ld (z80codebase + stat_line_count),a
-	; Add to the DIV counter (plus 1)
-	add hl,bc
-	ld.sis (stat_counter),hl
-	ld a,e
-	cp $28
-	jr z,_
-	ld ix,stat_counter_checker_single
-_
-	ld.sis (event_counter_checker_slot_STAT),ix
-setup_no_stat:
-	
-	; Return to original DIV counter
-	dec bc
 	
 	; Initialize timer values
 	ld a,(iy-ioregs+TAC)
@@ -926,6 +866,9 @@ _
 	jr c,_
 	ld a,$20 ;JR NZ (overriding JR Z)
 	ld (LCDC_7_smc),a
+	push hl
+	 call do_lcd_disable
+	pop hl
 _
 	add hl,hl
 	add hl,hl

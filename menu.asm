@@ -11,8 +11,12 @@
 
 ApplyConfiguration:
 	; Display next frame always
-	ld a,1
-	ld (render_this_frame),a
+	ld a,$4F ;LD R,A
+	ld (z80codebase+updateSTAT_enable_catchup_smc),a
+	ld (z80codebase+updateSTAT_full_enable_catchup_smc),a
+	ld (z80codebase+ppu_mode0_enable_catchup_smc),a
+	ld (z80codebase+ppu_mode2_enable_catchup_smc),a
+	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
 	
 	; Frameskip value
 	ld hl,FrameskipValue

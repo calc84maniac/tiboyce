@@ -250,9 +250,9 @@ waitloop_identified:
 	pop bc
 #endif
 	
-	; Don't do anything with STAT waits
+	; Don't do anything with TIMA waits
 	ld a,c
-	add a,$FFFF - STAT
+	add a,$FFFF - TIMA
 	and b
 	inc a
 	ret z
@@ -275,9 +275,6 @@ waitloop_variable:
 waitloop_finish:
 	; Get the end of the recompiled code to overwrite
 	pop.s hl
-	ld.s (hl),ix
-	dec hl
-	dec hl
 	pop de	; Pop the return address
 	pop af  ; Pop the target cycle count into A
 	pop de  ; Pop the negative jump cycle count into D
@@ -285,11 +282,16 @@ waitloop_finish:
 	sub d
 	ld.s (hl),a
 	dec hl
-	dec hl
 	; Store the length of the loop in cycles
 waitloop_length_smc = $+1
 	add a,0
 	ld.s (hl),a
+	; Store the target jump
+	dec hl
+	dec hl
+	ld.s (hl),ix
+	dec hl
+	ld.s (hl),$C3   ;JP target
 	dec hl
 	dec hl
 	ld.s (hl),bc
