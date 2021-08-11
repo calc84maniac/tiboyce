@@ -401,6 +401,8 @@ scroll_write_done:
 lyc_write_0:	
 	; Special case for line 0, thanks silly PPU hardware
 	ld de,-(CYCLES_PER_SCANLINE * 9 + 1)
+	ld a,1-CYCLES_PER_SCANLINE
+	ld (z80codebase+ppu_lyc_scanline_length_smc),a
 	jr lyc_write_continue
 	
 ; Writes to the LY compare register (LYC).
@@ -424,19 +426,24 @@ lyc_write_helper:
 	 ld a,c
 	 or a
 	 jr z,lyc_write_0
+	 ld d,-CYCLES_PER_SCANLINE
 	 add a,10
 	 ld e,a
 	 ; Wrap vblank lines to the 0-9 range
 	 daa
 	 jr nc,_
 	 ld e,a
+	 ; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
+	 add a,-9
+	 sbc a,a
+	 or d
+	 ld (z80codebase+ppu_lyc_scanline_length_smc),a
 _
 	 ; Multiply by -CYCLES_PER_SCANLINE
 	 ; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
 	 ; in that particular case (vblank collision is special-cased)
 	 xor a
 	 sub e
-	 ld d,256-CYCLES_PER_SCANLINE
 	 mlt de
 	 add a,d
 	 ld d,a
@@ -492,7 +499,8 @@ _
 	 jp.sis reschedule_event_PPU
 	 
 stat_lyc_write_no_reschedule:
-	 jp.sis trigger_event_already_triggered
+	 pop hl
+	jp.sis z80_restore_swap_ret
 	 
 stat_write_helper:
 	 ld hl,hram_base + STAT
@@ -868,7 +876,7 @@ _
 	 ld a,(LCDC_7_smc)
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
-	 jp.sis po,lcd_enable_helper
+	 jp.sis pe,lcd_enable_helper
 	 
 	 ; Disable the LCD
 	 call do_lcd_disable

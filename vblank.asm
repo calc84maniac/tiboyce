@@ -28,11 +28,11 @@ frame_emulated_count = $+1
 	   push iy
 	    ; Finish rendering, if applicable
 	    ld a,(z80codebase+updateSTAT_enable_catchup_smc)
-	    rra
-	    jp nc,skip_this_frame
+	    and 1
+	    jp z,skip_this_frame
 	    
 	    ; Finish rendering the frame
-	    ld a,143 ; Carry is set, so treat as LY=144
+	    ld a,144 ; Carry is reset, so treat as LY=144
 	    call render_scanlines
 	    
 	    ; Display sprites
@@ -121,6 +121,7 @@ NoSpeedDisplay:
 	    call nz,do_scale_fill
 	
 	    ; Signify frame was rendered
+	    xor a
 	    scf
 skip_this_frame:
 

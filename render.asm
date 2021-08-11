@@ -453,8 +453,8 @@ render_scanlines:
 myLY = $+1
 	ld l,0
 	sbc a,l
-	ASSERT_NC
-	ret z ; Just in case catch-up was enabled early (e.g. by an LYC interrupt)
+	ret z
+	ret c
 	push bc
 	 ld b,a
 	 ld c,l

@@ -742,27 +742,35 @@ _
 	 ld a,(iy-ioregs+LYC)
 	 ; Special case for line 0, thanks silly PPU hardware
 	 ld hl,-(CYCLES_PER_SCANLINE * 9 + 1)
+	 ld c,1-CYCLES_PER_SCANLINE
 	 or a
 	 jr z,++_
+	 ld h,-CYCLES_PER_SCANLINE
 	 add a,10
 	 ld l,a
 	 ; Wrap vblank lines to the 0-9 range
 	 daa
 	 jr nc,_
 	 ld l,a
+	 ; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
+	 add a,-9
+	 sbc a,a
+	 or h
+	 ld c,a
 _
 	 ; Multiply by -CYCLES_PER_SCANLINE
 	 ; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
 	 ; in that particular case (vblank collision is special-cased)
 	 xor a
 	 sub l
-	 ld h,256-CYCLES_PER_SCANLINE
 	 mlt hl
 	 ; This should always reset carry
 	 add a,h
 	 ld h,a
 _
 	 ld (lyc_cycle_offset),hl
+	 ld a,c
+	 ld (z80codebase+ppu_lyc_scanline_length_smc),a
 	
 	 ; Get the number of cycles from one cycle in the future until vblank
 	 ld hl,CYCLES_PER_SCANLINE * 144
@@ -779,10 +787,12 @@ _
 	 ld.sis (vblank_counter),hl
 	
 	 ; Update LY and STAT caches based on DIV and vblank counters
-	 ; Note that HL-DE == DIV as required for updateSTAT_full
 	 call.is updateSTAT_full_for_setup
+	 ; Ensure top bit of STAT is set, for compatibility with old save states
+	 or $80
+	 ld.s (hl),a
 	 ; Update PPU scheduler state based on LY and STAT caches
-	 ld c,(iy-ioregs+STAT)
+	 ld c,a
 	 call stat_setup_c
 	; Restore original DIV counter
 	pop bc

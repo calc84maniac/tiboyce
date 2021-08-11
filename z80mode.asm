@@ -1054,6 +1054,7 @@ ppu_expired_mode0_lyc_match:
 	ld (ppu_mode0_event_line),a
 	; Set mode 0 and LYC coincidence bit
 	ld hl,STAT
+	ld a,(hl)
 	and $F8
 	or 4
 	ld (hl),a
@@ -1107,6 +1108,12 @@ ppu_expired_lyc_mode2:
 	; Allow catch-up rendering if this frame is not skipped
 ppu_lyc_enable_catchup_smc = $+1
 	ld r,a
+	; Set interrupt bit, if LYC interrupt is enabled
+	bit 6,a
+	jr z,_
+	ld l,IF & $FF
+	set 1,(hl)
+_
 	; Set LY/STAT caches
 	ld l,-MODE_2_CYCLES
 	add hl,de
@@ -1114,12 +1121,6 @@ ppu_lyc_enable_catchup_smc = $+1
 	ld hl,-CYCLES_PER_SCANLINE
 	add hl,de
 	ld (nextupdatecycle_LY),hl
-	; Set interrupt bit, if LYC interrupt is enabled
-	bit 6,a
-	jr z,_
-	ld l,IF & $FF
-	set 1,(hl)
-_
 	; Set next scheduled time to vblank
 	ld hl,(vblank_counter)
 	add hl,de
@@ -1242,6 +1243,7 @@ ppu_post_mode1_lyc_event_handler = $+1
 	inc sp
 ppu_post_mode1_lyc_event_offset = $+1
 	ld hl,0
+	ex de,hl
 	add hl,de
 	ld (ppu_counter),hl
 	; Check if LY=LYC interrupt is enabled and not blocked by mode 1 interrupt
@@ -3050,9 +3052,13 @@ readP1:
 	and ixl 
 _
 	bit 5,a
-	jr nz,readP1_finish
+	jr nz,_
 	and ixh
-	jr readP1_finish
+_
+	ld ixl,a
+	ld a,iyl
+	ex af,af'
+	ret
 	
 readSTAT:
 	exx
@@ -3761,7 +3767,7 @@ updateSTAT_mode2:
 	; Check if we're currently in mode 3
 	inc h
 	sub MODE_3_CYCLES
-	jr c,updateSTAT_mode3
+	jr c,updateSTAT_finish
 updateSTAT_mode3:
 	; Check if we're currently in mode 0
 	dec h
@@ -3773,7 +3779,7 @@ updateSTAT_mode3:
 	ld a,h
 updateSTAT_enable_catchup_smc = $+1
 	ld r,a
-	jr c,updateSTAT_finish
+	jr c,updateSTAT_finish_fast
 updateSTAT_mode0_mode1:
 	; Update LY if it hasn't already been by an external LY read
 	push de
@@ -3805,8 +3811,9 @@ updateSTAT_mode1_exit:
 	sub MODE_2_CYCLES
 	jr nc,updateSTAT_mode2
 	ld l,a
-	ld a,h
 updateSTAT_finish:
+	ld a,h
+updateSTAT_finish_fast:
 	ld (STAT),a
 	ld h,$FF
 	add hl,de
@@ -3822,9 +3829,12 @@ updateSTAT_maybe_mode1:
 	rra
 	jr nc,updateSTAT_mode1_exit
 updateSTAT_mode1:
+	; Disable catch-up rendering in case of vblank overflow
+	xor a
+	ld r,a
 	; Save LYC coincidence bit and ensure mode 1 is set
-	ld a,h
-	or 1
+	inc a
+	or h
 	ld (STAT),a
 	; Set STAT update time to LY update time
 	ld hl,(nextupdatecycle_LY)
@@ -3832,6 +3842,7 @@ updateSTAT_mode1:
 	ret
 	
 get_scanline_past_vblank:
+	ld r,a ; Disable catchup rendering when overflowing to vblank
 	ld de,((SCANLINES_PER_FRAME-1)<<8) | (CYCLES_PER_SCANLINE<<1)
 	add hl,de
 	jr get_scanline_from_cycle_count_finish
@@ -3844,8 +3855,9 @@ get_scanline_past_vblank:
 ; Destroys: AF, DE, HL, IX
 updateSTAT_full:
 	; Get negative DIV, the starting point for update times
-	ex de,hl
-	or a
+	xor a
+	sbc hl,hl
+updateSTAT_full_for_LY:
 	sbc hl,de
 	push hl
 	 ; Subtract from the vblank time, to get cycles until vblank
@@ -3949,11 +3961,13 @@ _
 	ld (hl),a
 	ret
 	
-updateSTAT_full_restore:
+updateSTAT_full_for_LY_restore:
 	sub l
 	ld l,a
-updateSTAT_full_trampoline:
-	jr updateSTAT_full
+updateSTAT_full_for_LY_trampoline:
+	ex de,hl
+	xor a
+	jr updateSTAT_full_for_LY
 	
 updateSTAT_full_vblank:
 	; Set mode 1 unconditionally
@@ -4021,12 +4035,12 @@ nextupdatecycle_LY = $+1
 	ret z
 	; Now check to see if we are within one scanline after the update time
 	dec h
-	jr nz,updateSTAT_full_trampoline
+	jr nz,updateSTAT_full_for_LY_trampoline
 updateLY_from_STAT:
 	ld a,l
 	ld l,-CYCLES_PER_SCANLINE
 	add a,l
-	jr c,updateSTAT_full_restore
+	jr c,updateSTAT_full_for_LY_restore
 	; If so, advance to the next scanline directly
 	dec h
 	add hl,de
