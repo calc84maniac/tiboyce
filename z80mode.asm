@@ -3766,20 +3766,20 @@ nextupdatecycle_STAT = $+1
 updateSTAT_mode2:
 	; Check if we're currently in mode 3
 	inc h
-	sub MODE_3_CYCLES
-	jr c,updateSTAT_finish
+	add a,-MODE_3_CYCLES
+	jr nc,updateSTAT_finish
 updateSTAT_mode3:
 	; Check if we're currently in mode 0
 	dec h
 	dec h
 	dec h
-	sub MODE_0_CYCLES
+	add a,-MODE_0_CYCLES
 	ld l,a
 	; Allow rendering catch-up after leaving mode 3, unless this frame is skipped
 	ld a,h
 updateSTAT_enable_catchup_smc = $+1
 	ld r,a
-	jr c,updateSTAT_finish_fast
+	jr nc,updateSTAT_finish_fast
 updateSTAT_mode0_mode1:
 	; Update LY if it hasn't already been by an external LY read
 	push de
@@ -3788,7 +3788,13 @@ updateSTAT_mode0_mode1:
 	  ex de,hl
 	  add hl,de
 	  ld a,h
-	  or a
+#ifdef DEBUG
+	  rla
+	  sbc a,a
+	  xor h
+	  jr nz,$
+#endif
+	  or h
 	  call z,updateLY_from_STAT
 	  ; Check LYC coincidence
 	  ld hl,(LY)
@@ -3808,15 +3814,15 @@ _
 updateSTAT_mode1_exit:
 	inc h
 	ld a,l
-	sub MODE_2_CYCLES
-	jr nc,updateSTAT_mode2
-	ld l,a
+	add a,-MODE_2_CYCLES
+	jr c,updateSTAT_mode2
 updateSTAT_finish:
+	ld l,a
 	ld a,h
 updateSTAT_finish_fast:
 	ld (STAT),a
 	ld h,$FF
-	add hl,de
+	sbc hl,de
 	ld (nextupdatecycle_STAT),hl
 	ret
 	
