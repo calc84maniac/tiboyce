@@ -1151,8 +1151,8 @@ ppu_expired_vblank:
 	inc a
 	ld (hl),a
 	ld l,IF & $FF
-	; Check for mode 1 interrupt enable
-	bit 4,a
+	; Check for mode 1 or mode 2 interrupt enable
+	tst a,$30
 	jr nz,ppu_vblank_mode1_int
 ppu_vblank_stat_int_continue:
 	; Always trigger vblank interrupt
@@ -1186,8 +1186,8 @@ ppu_vblank_lyc_close_match:
 	inc a
 	ld (hl),a
 	ld l,IF & $FF
-	; Check for mode 1 interrupt enable
-	bit 4,a
+	; Check for mode 1 or mode 2 interrupt enable
+	tst a,$30
 	jr z,ppu_vblank_stat_int_continue
 	; Check for STAT block
 	bit 6,a
@@ -1210,8 +1210,8 @@ ppu_vblank_lyc_match:
 	; Check for mode 0 block
 	bit 3,a
 	jr nz,ppu_vblank_stat_int_continue
-	; Check for either mode 1 or LY=LYC interrupt enable
-	and $50
+	; Check for either mode 1, mode 2, or LY=LYC interrupt enable
+	and $70
 	jr z,ppu_vblank_stat_int_continue
 	; Trigger STAT interrupt
 	set 1,(hl)
@@ -1247,9 +1247,9 @@ ppu_post_mode1_lyc_event_offset = $+1
 	add hl,de
 	ld (ppu_counter),hl
 	; Check if LY=LYC interrupt is enabled and not blocked by mode 1 interrupt
-	and $D0
-	add a,a
-	jp po,audio_counter_checker
+	xor $40
+	and $50
+	jp nz,audio_counter_checker
 	; If so, trigger LYC interrupt
 	ld hl,IF
 	set 1,(hl)
@@ -3530,8 +3530,8 @@ write_audio_enable:
 	 ; Set the appropriate bit in NR52
 	 ld a,e
 	 and 3
-	 cp 2
-	 adc a,1
+	 add a,-2
+	 adc a,3
 	 add a,a
 	 daa
 	 rra

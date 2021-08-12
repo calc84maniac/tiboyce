@@ -939,24 +939,16 @@ _
 	
 div_write_helper:
 	 push de
-	  or a
-	  sbc hl,hl
-	  ld.sis (audio_counter),hl
-	  sbc hl,de
-	  ex de,hl
 	  ld hl,i
-	  or a
-	  sbc hl,de
+	  add hl,de
 	  ex de,hl
-	  ld i,hl
 	  ; If bit 11 of DIV was already reset, delay audio counter
-	  bit 3,d
-	  jr nz,_
-	  ld hl,4096
-	  ld.sis (audio_counter),hl
-_
+	  ld a,d
+	  cpl
+	  add a,a
+	  and $10 ;4096 >> 8
+	  ld (z80codebase+audio_counter+1),a
 	  ld.sis hl,(vblank_counter)
-	  or a
 	  sbc hl,de
 	  ld.sis (vblank_counter),hl
 	  ld.sis hl,(ppu_counter)
@@ -969,11 +961,31 @@ _
 	  add hl,de
 	  ld.sis (nextupdatecycle_LY),hl
 	  ld.sis hl,(serial_counter)
-	  or a
+	  xor a
 	  sbc hl,de
 	  ld.sis (serial_counter),hl
+	  ; Update timer schedule, with logic to cause an instant TIMA increment
+	  ; if the specified bit of DIV is moving from 1 to 0
+	  ld d,a
+	  ld a,(hram_base+TIMA)
+	  cpl
+	  ld l,a
+	  ld a,(writeTIMA_smc)
+	  ld h,a
+	  ; Only if the old bit of DIV is 0, add to the scheduled time
+	  ; In effect, if the bit was 1, this schedules the next increment immediately
+	  and e
+	  xor h
+	  ld e,a
+	  mlt hl
+	  add.s hl,de
+	  add hl,hl
+	  ld.sis (timer_counter),hl
 	 pop de
-	 jr tima_write_helper
+	 sbc hl,hl
+	 sbc hl,de
+	 ld i,hl
+	 jp.sis trigger_event_pushed
 	
 ; Writes to the GB timer control (TAC).
 ; Does not use a traditional call/return, must be jumped to directly.
