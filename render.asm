@@ -234,16 +234,16 @@ write_vram_and_expand:
 	exx
 	lea de,ix
 write_vram_and_expand_swapped:
-	push bc
-	 push hl
+	push hl
+	 push bc
 	  ld hl,vram_base
 	  add hl,de
 	  ex af,af'
 	  ld (hl),a
 	  ex af,af'
 	  ld a,d
-	  sub $98
-	  jr c,write_vram_pixels
+	  add a,256-$98
+	  jr nc,write_vram_pixels
 	  ld d,(hl)
 	  ld h,a
 	  ld a,e
@@ -280,20 +280,39 @@ write_vram_and_expand_swapped:
 	  ld (hl),a
 	  dec hl
 	  ld (hl),e
-	 pop hl
-	pop bc
+	 pop bc
+	pop hl
 	jp.sis z80_restore_swap_ret
+write_vram_catchup:
+	 push bc
+	  ; Disable the normal return to z80 mode by using a false jump condition
+	  ld a,$EA ;JP PE,
+	  ld (write_vram_catchup_smc),a
+	  ; Carry is set, which forces the written value to have bit 0 reset
 write_vram_pixels:
-	  ; Get the low and HIGH bitplanes with nibbles X and Y
-	  res 0,l
-	  ld a,(hl)  ;A=[x][y]
-	  inc hl
-	  ld b,(hl)  ;B=[X][Y]
+	  ; Check if writing to the same slice as the last write
+	  set 0,l
+write_vram_last_slice = $+1
+	  ld de,0
+	  sbc hl,de
+	  ; If equivalent, clear the last write slice
+	  jr z,_
+	  ; Otherwise, save the currently written slice
+	  add hl,de
+_
+	  ld (write_vram_last_slice),hl
+	  ; If the last slice was cleared, defer pixel generation
+	  bit 0,e
+	  jr z,write_vram_defer_pixels
+	  ; Write pixels from the last slice
 	  ex de,hl
-	  res 0,l
+	  ; Get the HIGH and low bitplanes with nibbles X and Y
+	  ld b,(hl)  ;B=[X][Y]
+	  dec hl
+	  ld a,(hl)  ;A=[x][y]
 	  add hl,hl
 	  add hl,hl
-	  ld de,vram_pixels_start-($8000*4)
+	  ld de,vram_pixels_start-((vram_start*4) & $FFFFFF)
 	  add hl,de
 	  ex de,hl
 	  rlca \ rlca \ rlca \ rlca  ;A=[y][x]
@@ -320,9 +339,14 @@ write_vram_pixels:
 	  ; Copy 4 pixels to cached VRAM tile data
 	  ld c,4
 	  ldir
-	 pop hl
-	pop bc
-	jp.sis z80_restore_swap_ret
+write_vram_defer_pixels:
+	 pop bc
+	pop hl
+write_vram_catchup_smc = $+1
+	jp.sis z80_restore_swap_ret ;Replaced with JP PE when catching up
+	ld a,$C3 ;JP
+	ld (write_vram_catchup_smc),a
+	jp (hl)
 	
 scanline_do_subtile:
 	ld a,8
@@ -458,6 +482,10 @@ myLY = $+1
 	push bc
 	 ld b,a
 	 ld c,l
+	 ; Handle any deferred VRAM writes
+	 ld a,(write_vram_last_slice)
+	 rra
+	 call c,write_vram_catchup
 	 push iy
 scanlineLUT_ptr = $+2
 	  ld iy,0
