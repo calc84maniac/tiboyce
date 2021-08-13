@@ -32,7 +32,7 @@ frame_emulated_count = $+1
 	    jp z,skip_this_frame
 	    
 	    ; Finish rendering the frame
-	    ld a,144 ; Carry is reset, so treat as LY=144
+	    ld a,144
 	    call render_scanlines
 	    
 	    ; Display sprites

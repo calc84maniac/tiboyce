@@ -345,10 +345,7 @@ scroll_write_SCY:
 	 jr scroll_write_done
 	
 scroll_write_BGP:
-	 ; Only do things if BGP is changing
-	 ld.s a,(hl)
-	 cp c
-	 jr z,scroll_write_done_swap
+	 ; Only do things if the current frame is being rendered
 	 ld a,(z80codebase+updateSTAT_enable_catchup_smc)
 	 rra
 	 jr nc,scroll_write_done_swap

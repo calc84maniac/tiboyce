@@ -457,28 +457,27 @@ scaling_mode_smc_3 = $+1
 ; Destroys: AF, DE, HL, IX
 render_catchup:
 	; Disable catch-up until at least one more scanline passes
-	ld a,(hram_base+STAT)
+	ld hl,hram_base+STAT
+	ld a,(hl)
 	cpl
 	ld r,a
-	; Set carry if in hblank
-	rra
-	rra
-	; Get value of LY
-	ld a,(hram_base+LY)
+	; Set A to 1 if in hblank, 0 otherwise
+	rrca
+	and l ;$41
+	; Get value of LY, plus 1 if in hblank
+	ld l,LY & $FF
+	add a,(hl)
 	; Input: A=LY, should always be <=144
-	;        Carry set if in hblank (i.e. the current scanline is finished)
 render_scanlines:
 #ifdef DEBUG
-	push af
-	 adc a,256-145
-	 jr c,$
-	pop af
+	cp 145
+	jr nc,$
 #endif
 myLY = $+1
 	ld l,0
-	sbc a,l
+	sub l
 	ret z
-	ret c
+	ASSERT_NC
 	push bc
 	 ld b,a
 	 ld c,l
