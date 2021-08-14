@@ -2076,7 +2076,7 @@ handle_waitloop_stat:
 	exx
 	ld de,(nextupdatecycle_STAT)
 	; Add the next jump cycles, and don't skip anything if expired
-	ld c,(ix+4)
+	ld c,(ix+5)
 	add a,c
 	jr nc,handle_waitloop_common
 _
@@ -2090,29 +2090,29 @@ handle_waitloop_ly:
 	exx
 	ld de,(nextupdatecycle_LY)
 	; Add the next jump cycles, and don't skip anything if expired
-	ld c,(ix+4)
+	ld c,(ix+5)
 	add a,c
 	jr c,-_
 handle_waitloop_common:
 	push.l hl
-	; Get the current number of cycles until the next LY update
+	; Get the current number of cycles until the next register update
 	ld hl,i
 	add hl,de
 	ld d,iyh
 	ld e,a
 	add hl,de
+	; Offset to the read time to allow extra skips as needed
+	ld a,l
+	add a,(ix+3)
+	ld l,a
 	; If the update has already passed or is not cached, don't skip
-	inc h
+	sbc a,a
+	cp h
+	ld a,e
 	jr nz,handle_waitloop_finish
-	; Subtract the cached cycle offset of the LY load
-	;ld hl,(ix+4)
-	;inc hl
-	;ld hl,(hl)
-	;dec hl
-	;sub (hl)
-	ld h,(ix+3)
+	ld h,(ix+4)
 	; Choose the smaller absolute value of the cycle counter
-	; and the remaining scanline cycles
+	; and the remaining cycles until register change
 	inc d
 	jr nz,_
 	cp l
@@ -2160,7 +2160,7 @@ handle_waitloop_variable:
 	ex af,af'
 	exx
 	; Skip straight to the counter expiration
-	ld c,(ix+4)
+	ld c,(ix+5)
 	ld iyl,c
 	ld iyh,0
 	jr handle_waitloop_variable_finish
@@ -2460,7 +2460,7 @@ ophandlerE9:
 	pop de
 	ld c,a
 	push bc
-     call.il lookup_code_cached
+	 call.il lookup_code_cached
 	pop bc
 	scf
 	adc a,c

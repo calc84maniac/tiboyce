@@ -81,25 +81,29 @@ waitloop_found_uncond_jump:
 	jr waitloop_identified_trampoline
 	
 waitloop_found_read_1:
-	; Use 8-bit immediate as read address
-	ld b,$FF
+	; Use 8-bit immediate as HRAM read address
 	ld c,(hl)
+	; Set -1 for read in 3rd cycle
+	ld a,-1
 	; Consume immediate value
 	inc hl
-	jr waitloop_find_data_op
+	; Z flag is set from earlier comparison
+	jr waitloop_resolve_read
 	
 waitloop_found_read_2:
 	; Use 16-bit immediate as read address
 	ld c,(hl)
 	inc hl
-	ld b,(hl)
-waitloop_try_next_target_loop:
+	; Set Z flag if read is HRAM
+	ld a,$FF
+	cp (hl)
+	inc hl
+	; Set -2 for read in fourth cycle, and preserve Z flag
+	rla
 	; Consume 2 more bytes of recompiled code
 	inc de
 	inc de
-	; Consume immediate value
-	inc hl
-	jr waitloop_find_data_op
+	jr waitloop_resolve_read
 	
 waitloop_found_read_bc:
 	exx
@@ -121,16 +125,29 @@ waitloop_found_read_bitwise:
 	; Parse this opcode as a data op
 	dec hl
 	inc de
-	
+	; Adjust the read cycle forward by 1
+	scf
 waitloop_found_read_hl:
-	exx	
+	exx
 	; Use HL as read address
 	push hl
 waitloop_found_read_rr:
 	 ; Use stack value as read address
 	 exx
 	pop bc
-waitloop_find_data_op:
+	; Set A to 0 for read in 2nd cycle, -1 for read in 3rd cycle
+	sbc a,a
+	; Set Z flag if read is HRAM
+	inc b
+waitloop_resolve_read:
+	; Save the read cycle offset
+	ld b,a
+	; Put the waitloop variable type in C, or return if invalid
+	; 0 = RAM-like variable, $41 = STAT, $44 = LY
+	call z,waitloop_resolve_read_hram
+	ret z
+	xor b
+	ld c,a
 	; Consume first byte of recompiled code
 	inc de
 waitloop_find_data_op_again_loop:
@@ -197,16 +214,26 @@ waitloop_jp_smc = $+1
 	ret nz
 waitloop_try_next_target:
 	push hl
-	 ld hl,15-9
+	 ex de,hl
+	 ld de,15-9
 	 add hl,de
 	 ld a,(waitloop_length_smc)
-	 add a,(hl)
+	 add.s a,(hl)
 	 ld (waitloop_length_smc),a
+	 ld e,(19+1)-15
+	 add hl,de
 	 ex de,hl
 	pop hl
-	inc de
-	inc de
-	jr waitloop_try_next_target_loop
+	inc hl
+	jr waitloop_find_data_op_again_loop
+	
+waitloop_find_data_op_again:
+	ld a,e
+	sub 7
+	ld e,a
+	jr nc,waitloop_find_data_op_again_loop
+	dec d
+	jr waitloop_find_data_op_again_loop
 	
 waitloop_found_jr:
 	; Validate the JR target address
@@ -229,14 +256,6 @@ _
 	jr z,waitloop_try_next_target
 	ret
 	
-waitloop_find_data_op_again:
-	ld a,e
-	sub 7
-	ld e,a
-	jr nc,waitloop_find_data_op_again_loop
-	dec d
-	jr waitloop_find_data_op_again_loop
-	
 waitloop_identified:
 #ifdef DEBUG
 	push bc
@@ -250,29 +269,6 @@ waitloop_identified:
 	pop bc
 #endif
 	
-	; Don't do anything with TIMA waits
-	ld a,c
-	add a,$FFFF - TIMA
-	and b
-	inc a
-	ret z
-	
-	; Choose handler based on variable accessed
-	inc b
-	jr nz,waitloop_variable
-	ld a,c
-	cp STAT & $FF
-	jr z,waitloop_stat
-	cp LY & $FF
-	jr nz,waitloop_variable
-	ld bc,handle_waitloop_ly
-	jr waitloop_finish
-waitloop_stat:
-	ld bc,handle_waitloop_stat
-	jr waitloop_finish
-waitloop_variable:
-	ld bc,handle_waitloop_variable
-waitloop_finish:
 	; Get the end of the recompiled code to overwrite
 	pop.s hl
 	pop de	; Pop the return address
@@ -280,11 +276,19 @@ waitloop_finish:
 	pop de  ; Pop the negative jump cycle count into D
 	; Store the target cycle count
 	sub d
+	inc hl
 	ld.s (hl),a
 	dec hl
 	; Store the length of the loop in cycles
 waitloop_length_smc = $+1
 	add a,0
+	ld.s (hl),a
+	dec hl
+	; Store the cycle offset of the variable read from the end of the loop
+	add a,d
+	add a,b
+	cpl
+	add a,2
 	ld.s (hl),a
 	; Store the target jump
 	dec hl
@@ -294,7 +298,40 @@ waitloop_length_smc = $+1
 	ld.s (hl),$C3   ;JP target
 	dec hl
 	dec hl
+	; Choose handler based on variable accessed
+	ld a,c
+	or a
+	ld bc,handle_waitloop_variable
+	jr z,_
+	ld bc,handle_waitloop_ly
+	rra
+	jr nc,_
+	ld bc,handle_waitloop_stat
+_
 	ld.s (hl),bc
 	dec hl
 	ld.s (hl),$CD	;CALL handler
 	jp.sis decode_jump_waitloop_return
+	
+waitloop_resolve_read_hram:
+	; Fast return for HRAM, treat as normal variable
+	bit 7,c
+	ret nz
+	; Check for special registers
+	ld a,c
+	; Allow LY and STAT
+	cp LY & $FF
+	jr z,_
+	cp STAT & $FF
+	jr z,_
+	; Disallow DIV and TIMA
+	cp DIV & $FF
+	ret z
+	cp TIMA & $FF
+	; Treat everything else as a normal variable
+	ld a,b
+	ret
+_
+	; Resets Z flag
+	xor b
+	ret
