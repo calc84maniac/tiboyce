@@ -239,12 +239,15 @@ write_vram_and_expand_swapped:
 	  ld hl,vram_base
 	  add hl,de
 	  ex af,af'
-	  ld (hl),a
+	  ld c,a
 	  ex af,af'
+	  ld a,(hl)
+	  cp c
+	  jr z,write_vram_no_change
+	  ld (hl),c
 	  ld a,d
 	  add a,256-$98
 	  jr nc,write_vram_pixels
-	  ld d,(hl)
 	  ld h,a
 	  ld a,e
 	  and $E0
@@ -254,32 +257,33 @@ write_vram_and_expand_swapped:
 	  add hl,hl
 	  add hl,hl
 	  add.s hl,hl
-	  ld bc,vram_tiles_start
-	  ld c,a
-	  add hl,bc
-	  ld bc,64
-	  ld e,c
-	  mlt de
-	  ld (hl),e
+	  ld de,vram_tiles_start
+	  ld e,a
+	  add hl,de
+	  ld de,64
+	  ld b,e
+	  mlt bc
+	  ld (hl),c
 	  inc hl
-	  ld (hl),d
-	  add hl,bc
-	  ld (hl),d
+	  ld (hl),b
+	  add hl,de
+	  ld (hl),b
 	  dec hl
-	  ld (hl),e
-	  add hl,bc
-	  ld a,d
+	  ld (hl),c
+	  add hl,de
+	  ld a,b
 	  add a,a
 	  cpl
-	  and c
-	  or d
-	  ld (hl),e
+	  and e
+	  or b
+	  ld (hl),c
 	  inc hl
 	  ld (hl),a
-	  add hl,bc
+	  add hl,de
 	  ld (hl),a
 	  dec hl
-	  ld (hl),e
+	  ld (hl),c
+write_vram_no_change:
 	 pop bc
 	pop hl
 	jp.sis z80_restore_swap_ret
