@@ -595,6 +595,7 @@ stat_setup_hblank:
 	; If currently in mode 1, schedule the first post-vblank event
 	ld a,c
 	and 3
+lcd_on_stat_setup_mode_smc = $+1
 	cp 1
 	jr z,stat_setup_hblank_post_vblank
 	; Get LY and add 1 if hblank has been reached
@@ -706,6 +707,7 @@ stat_setup_next_from_vblank:
 	add hl,de
 stat_setup_done:
 	ld.sis (ppu_counter),hl
+lcd_on_stat_setup_event_smc = $+3
 	ld.sis (event_counter_checker_slot_PPU),ix
 	ret
 	
@@ -897,12 +899,24 @@ do_lcd_enable:
 	  .db $C6 ;add a,
 	 ld (stat_write_disable_smc),hl
 	 
+	 ; Set up special handling for transitioning from fake mode 0
+	 ld a,$5B ;.LIL prefix
+	 ld (z80codebase+lcd_on_STAT_restore),a
+	 ld a,lcd_on_STAT_handler - (lcd_on_updateSTAT_smc + 1)
+	 ld (z80codebase+lcd_on_updateSTAT_smc),a
+	 xor a
+	 ld (lcd_on_stat_setup_mode_smc),a
+	 ld hl,($C9 << 16) | lcd_on_ppu_event_checker
+	 ld (lcd_on_stat_setup_event_smc),hl
+	 ld hl,lcd_on_STAT_handler
+	 ld.sis (event_counter_checker_slot_PPU),hl
+	 
 	 ; Get the value of DIV
 	 ld hl,i
 	 add hl,de
 	 ex de,hl
-	 ; Schedule vblank relative to now
-	 ld hl,CYCLES_PER_SCANLINE * 144
+	 ; Schedule vblank relative to now (minus 1 cycle because the LCD is wack)
+	 ld hl,(CYCLES_PER_SCANLINE * 144) - 1
 	 add hl,de
 	 ld.sis (vblank_counter),hl
 	 
@@ -910,19 +924,28 @@ do_lcd_enable:
 	 ld hl,hram_base+LYC
 	 ld a,(hl)
 	 or a
-	 ; Set STAT mode 2
 	 ld l,STAT & $FF
-	 ld c,(hl)
-	 set 1,c
-	 ; Set LY=LYC coincidence bit (based on LY being 0)
+	 ld a,(hl)
+	 ld c,a
+	 ; Set/reset LY=LYC coincidence bit (based on LY being 0)
 	 res 2,c
 	 jr nz,_
 	 set 2,c
+	 ; Check if coincidence bit transitioned from 0 to 1
+	 ; and LYC interrupt bit was set
+	 xor l ;$41
+	 and $44
 _
+	 ; Leave mode as 0, even though it's really mode 2
 	 ld (hl),c
-	 
-	 ; Set LY and STAT cache times for line 0, mode 2
-	 ld l,-CYCLES_PER_SCANLINE
+	 jr nz,_
+	 ld l,IF & $FF
+	 set 1,(hl)
+_
+	  
+	 ; Set LY and STAT cache times for line 0, mode 2 (fake mode 0)
+	 ; This is reduced by 1 cycle because of course it is
+	 ld l,1-CYCLES_PER_SCANLINE
 	 sbc hl,de
 	 ld.sis (nextupdatecycle_LY),hl
 	 ld de,MODE_0_CYCLES + MODE_3_CYCLES
@@ -933,6 +956,21 @@ _
 	 call stat_setup_c
 	 jp.sis reschedule_event_PPU
 	
+lcd_on_STAT_restore_helper:
+	ld a,$C9
+	ld (z80codebase+lcd_on_STAT_restore),a
+	ld a,updateSTAT_mode0_mode1 - (lcd_on_updateSTAT_smc + 1)
+	ld (z80codebase+lcd_on_updateSTAT_smc),a
+	ld a,1
+	ld (lcd_on_stat_setup_mode_smc),a
+	push hl
+	 ld hl,($C9 << 16) | event_counter_checker_slot_PPU
+	 ld (lcd_on_stat_setup_event_smc),hl
+	 ; If this is called from the PPU event, it overwrites the return address
+	 ld.sis hl,(lcd_on_ppu_event_checker)
+	 ld.sis (event_counter_checker_slot_PPU),hl
+	pop hl
+	jp.sis z80_ret
 	
 div_write_helper:
 	 push de

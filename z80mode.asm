@@ -930,6 +930,18 @@ decode_intcache:
 	ld (ix+3),a
 	jr dispatch_int_decoded
 	
+ppu_mode2_line_0_lyc_match:
+	; The LYC match bit was already set by the scheduled LYC event
+	; Just transition from mode 1 to mode 2
+	inc a
+	ld (hl),a
+	; Check for mode 1 or LYC blocking
+	tst a,$50
+	jr nz,ppu_mode2_continue
+	ld l,IF & $FF
+	set 1,(hl)
+	jr ppu_mode2_continue
+	
 ppu_expired_mode2_line_0:
 	ld a,$FF
 	ld (ppu_mode2_LY),a
@@ -941,13 +953,11 @@ ppu_expired_mode2_line_0:
 	ld hl,LYC
 	add a,(hl)
 	ld l,STAT & $FF
+	ld a,(hl)
+	jr nc,ppu_mode2_line_0_lyc_match
 	; Check for mode 1 blocking
-	bit 4,(hl)
-	jr nz,ppu_mode2_blocked
-	; Check for LYC blocking
-	jr c,ppu_expired_mode2
-	bit 6,(hl)
-	jr nz,ppu_mode2_blocked
+	bit 4,a
+	jr nz,ppu_mode2_blocked_fast
 ppu_expired_mode2:
 	; Request STAT interrupt
 	ld hl,IF
@@ -956,9 +966,11 @@ ppu_expired_mode2:
 ppu_mode2_blocked:
 	; Set mode 2
 	ld a,(hl)
+ppu_mode2_blocked_fast:
 	and $F8
 	or 2
 	ld (hl),a
+ppu_mode2_continue:
 	; Allow catch-up rendering if this frame is not skipped
 ppu_mode2_enable_catchup_smc = $+1
 	ld r,a
@@ -3717,6 +3729,14 @@ updateSTAT_no_change_ix:
 	ex af,af'
 	ret
 	
+	; Handle transition from fake mode 0 on LCD startup
+lcd_on_STAT_handler:
+	call lcd_on_STAT_restore
+	inc h
+	inc h
+	ld a,l
+	jr updateSTAT_mode2
+	
 updateSTAT_if_changed_ix:
 	exx
 	ex af,af'
@@ -3760,6 +3780,7 @@ nextupdatecycle_STAT = $+1
 	ld h,a
 	and 3
 	srl a
+lcd_on_updateSTAT_smc = $+1
 	jr z,updateSTAT_mode0_mode1
 	ld a,l
 	jr c,updateSTAT_mode3
@@ -3965,7 +3986,10 @@ _
 	and $F8
 	or ixl
 	ld (hl),a
-	ret
+lcd_on_STAT_restore:
+	ret ; Replaced with .LIL prefix
+	.db $C3
+	.dl lcd_on_STAT_restore_helper
 	
 updateSTAT_full_for_LY_restore:
 	sub l
@@ -4564,6 +4588,7 @@ render_save_sps:
 	.dw 0
 	
 	; One word of stack space for sprite rendering during vblank
+lcd_on_ppu_event_checker:
 	.dw 0
 event_counter_checkers:
 event_counter_checker_slot_PPU:
