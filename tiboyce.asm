@@ -367,25 +367,40 @@ rombankLUT_end = rombankLUT + (256*3)
 ; Specifies offsets into a buffer of pixel data corresponding to the
 ; input 2bpp pixel data. Note that the input has the high palette bits
 ; grouped in the high nibble, and the low palette bits in the low nibble.
+; Must be 256-byte aligned.
 overlapped_pixel_index_lut = rombankLUT_end
 
 ; A table representing every possible combination of four 2bpp pixels.
 ; The data is overlapped such that a unique sequence of four pixels begins
 ; at each byte. Note that this means the table is 256 + 3 bytes large.
+; Must be 256-byte aligned and directly follow the LUT.
 overlapped_pixel_data = overlapped_pixel_index_lut + 256
-
-; A list of scanline start addresses. 144*2 pointers in size.
-scanlineLUT_1 = overlapped_pixel_data + (256 + 3)
-scanlineLUT_2 = scanlineLUT_1 + (144*3)
-
-; Temporary backup for 16 palette entries. 32 bytes in size.
-palette_backup = scanlineLUT_2 + (144*3)
 
 ; Preconverted digit pixels for displaying FPS quickly. 24 bytes per character, 264 bytes total.
 ; Must be 8-byte aligned.
-digits = (((palette_backup + 32) - 1) | 7) + 1
+digits = (((overlapped_pixel_data + (256 + 3)) - 1) | 7) + 1
 
-romListStart = digits + 264
+; Temporary backup for 16 palette entries. 32 bytes in size.
+palette_backup = digits + 264
+
+; Queue for BGP writes during a frame. 192+1 bytes in size.
+; Stored in a compressed format, with either:
+;   Byte 0 = Number of scanlines, Byte 1 = BGP value for all scanlines
+;   Byte 0 = Number of scanlines (N) + 144, Bytes 1-N = BGP values per scanline
+; Must end at a 256-byte aligned address.
+BGP_write_queue = (((palette_backup + 32) + 192) | 255) - 192
+
+; Tracks the frequency of each BGP value as they are queued.
+; The BGP value with the highest frequency will use the native palette.
+; Must be 256-byte aligned and directly follow the queue.
+BGP_frequencies = BGP_write_queue + 192
+
+; A list of scanline start addresses. 144*2 pointers in size.
+scanlineLUT_1 = BGP_frequencies + 256
+scanlineLUT_2 = scanlineLUT_1 + (144*3)
+
+; A list of VAT entries for found ROM files. 256 pointers in size.
+romListStart = scanlineLUT_2 + (144*3)
 
 ; A fake tile filled with Game Boy color 0. 64 bytes in size.
 ; Used when BG tilemap is disabled.

@@ -478,6 +478,15 @@ _
 	inc l
 	jr nz,-_
 	
+	ld hl,BGP_frequencies
+_
+	ld (hl),b
+	inc l
+	jr nz,-_
+	dec h
+	ld l,BGP_write_queue & $FF
+	ld (hl),$FF
+	
 	ld hl,vram_start
 	ld de,vram_pixels_start
 	ld c,$0C
@@ -2674,7 +2683,7 @@ lcdSettings4Bit:
 	; LcdTiming0
 	.db $38,$03,$9C,$1F
 	; LcdTiming1
-	.db $3F,$09,$89,$04
+	.db $3F,$01,$8F,$00
 	; LcdTiming2
 	.db $00,$78,$EF,$00
 	; LcdCtrl
@@ -2694,7 +2703,7 @@ lcdSettings8Bit:
 	; LcdTiming0
 	.db $44,$03,$04,$0D
 	; LcdTiming1
-	.db $4F,$08,$F0,$00
+	.db $4F,$00,$F2,$00
 	; LcdTiming2
 	.db $02,$78,$1F,$01
 	; LcdCtrl

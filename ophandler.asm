@@ -306,7 +306,7 @@ scroll_write_DMA:
 	pop hl
 	jp.sis z80_restore_swap_ret
 	
-; Writes to an LCD scroll register (SCX,SCY,WX,WY). Also BGP and DMA.
+; Writes to an LCD scroll register (SCX,SCY,WX,WY). Also OBP0, OBP1, and DMA.
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
 ; Catches up the renderer before writing, and then applies SMC to renderer.
@@ -328,11 +328,11 @@ scroll_write_helper:
 	 sub SCX - ioregs
 	 jr c,scroll_write_SCY
 	 jr z,scroll_write_SCX
-	 sub BGP - SCX
-	 jr c,scroll_write_DMA
-	 jr z,scroll_write_BGP
-	 rra
-	 jr nc,scroll_write_WX
+	 sub DMA - SCX
+	 jr z,scroll_write_DMA
+	 sub WY - DMA
+	 jr c,scroll_write_OBP
+	 jr nz,scroll_write_WX
 	 ld a,iyl
 	 ex af,af'
 	 ld (WY_smc),a
@@ -344,7 +344,7 @@ scroll_write_SCY:
 	 ld (SCY_smc),a
 	 jr scroll_write_done
 	
-scroll_write_BGP:
+scroll_write_OBP:
 	 ; Only do things if the current frame is being rendered
 	 ld a,(z80codebase+updateSTAT_enable_catchup_smc)
 	 rra
@@ -352,14 +352,8 @@ scroll_write_BGP:
 	 push bc
 	  push hl
 	   call sprite_catchup
-mypaletteLY = $+1
-	   ld c,0
-	   ld (mypaletteLY),a
-	   sub c
-scanlineLUT_palette_ptr = $+2
-	   ld ix,0
-	   call nz,convert_palette
-	   ld (scanlineLUT_palette_ptr),ix
+	   ; To-do: set up OAM palette conversion
+	   call convert_palette
 	  pop hl
 	 pop bc
 	 jr scroll_write_done_swap
@@ -394,6 +388,87 @@ scroll_write_done:
 	 ld.s (hl),a
 	pop hl
 	jp.sis z80_swap_ret
+	
+; Tracks a list of writes to the BGP register.
+; Also tracks which value is held by BGP for the largest number of scanlines.
+BGP_write_helper:
+	 ld hl,hram_base+STAT
+	 ; If rendering is caught up, query most recently rendered line
+	 ld a,r
+	 rla
+	 ld a,(myLY)
+	 jr nc,_
+	 ; Otherwise, calculate from LY/STAT
+	 ld a,(hl)
+	 cpl
+	 ; Set A to 1 if in hblank, 0 otherwise
+	 rrca
+	 and l ;$41
+	 ; Get value of LY, plus 1 if in hblank
+	 ld l,LY & $FF
+	 add a,(hl)
+_
+	 ld d,a
+	 ld l,BGP & $FF
+	 ; Check how many lines passed since the last write
+mypaletteLY = $+1
+	 sub 0
+	 jr z,scroll_write_done_swap
+	 ld e,(hl)
+	 ld (hl),c
+BGP_write_queue_next = $+1
+	 ld hl,BGP_write_queue
+	 ld c,a
+	 dec a
+	 jr nz,BGP_write_multiple_lines
+	 ld a,l
+BGP_write_queue_literal_start = $+1
+	 ld l,0
+	 ; Increment the old literal run length, and check for overflow
+	 inc (hl)
+	 jr nz,_
+	 ; Restore the length and start a new literal here
+	 dec (hl)
+	 ld l,a
+	 ld (hl),144
+	 ld (BGP_write_queue_literal_start),a
+	 inc a
+_
+	 ld l,a
+	 ; Emit the BGP value
+	 ld (hl),e
+	 inc a
+	 jr BGP_write_finish
+BGP_write_multiple_lines:
+	 ; Emit the number of lines (minus 1)
+	 ld (hl),a
+	 inc l
+	 ld (hl),e
+	 inc l
+	 ; Set no literal run active
+	 ld (hl),$FF
+	 ld a,l
+	 ld (BGP_write_queue_literal_start),a
+BGP_write_finish:
+	 ; Save the address of the next queue entry
+	 ld (BGP_write_queue_next),a
+	 ; Save the current line
+	 ld a,d
+	 ld (mypaletteLY),a
+	 ; Track the maximum number of lines per BGP value
+	 inc h
+	 ld l,e
+	 ld a,(hl)
+	 add a,c
+	 ld (hl),a
+	pop hl
+BGP_max_frequency = $+1
+	cp 0
+	jp.sis c,z80_restore_swap_ret
+	ld (BGP_max_frequency),a
+	ld a,e
+	ld (BGP_max_value),a
+	jp.sis z80_restore_swap_ret
 	
 lyc_write_0:	
 	; Special case for line 0, thanks silly PPU hardware
@@ -496,7 +571,7 @@ _
 	 jp.sis reschedule_event_PPU
 	 
 stat_lyc_write_no_reschedule:
-	 pop hl
+	pop hl
 	jp.sis z80_restore_swap_ret
 	 
 stat_write_helper:

@@ -2090,7 +2090,7 @@ opgentable:
 mem_write_port_handler_table:
 	.db writeIEhandler - mem_write_port_handler_base
 ;00
-	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db writeP1handler - mem_write_port_handler_base
 	.db WRITE_PORT_NO_HANDLER_DIRECT
 	.db writeSChandler - mem_write_port_handler_base
 	.db WRITE_PORT_NO_HANDLER_IGNORE
@@ -2171,8 +2171,8 @@ mem_write_port_handler_table:
 	.db writeDMAhandler - mem_write_port_handler_base
 	.db writeBGPhandler - mem_write_port_handler_base
 ;48
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db writeOBP0handler - mem_write_port_handler_base
+	.db writeOBP1handler - mem_write_port_handler_base
 	.db writeWYhandler - mem_write_port_handler_base
 	.db writeWXhandler - mem_write_port_handler_base
 mem_write_port_handler_table_end:
@@ -3190,13 +3190,8 @@ _
 	jr opgenHMEMreadroutine
 _
 	cp STAT*2 & $FF
-	jr nz,_
-	ld bc,readSTAThandler
-	jr opgenHMEMreadroutine
-_
-	cp P1*2 & $FF
 	jr nz,opgenHRAMread
-	ld bc,readP1handler
+	ld bc,readSTAThandler
 opgenHMEMreadroutine:
 	ld (hl),$CD
 	inc hl

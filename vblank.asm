@@ -35,11 +35,14 @@ frame_emulated_count = $+1
 	    ld a,144
 	    call render_scanlines
 	    
-	    ; Display sprites
+	    ; Draw sprites and do palette conversion, if the LCD is enabled
 	    ld a,(hram_base+LCDC)
 	    rla
-	    call c,draw_sprites
-	
+	    jr nc,_
+	    call draw_sprites
+	    call convert_palette
+_
+	    
 preservedAreaHeight = $+1
 	    ld a,0
 	    or a
@@ -120,8 +123,8 @@ NoSpeedDisplay:
 	    or a
 	    call nz,do_scale_fill
 	
-	    ; Signify frame was rendered
 	    xor a
+	    ; Signify frame was rendered
 	    scf
 skip_this_frame:
 
@@ -182,8 +185,6 @@ frameskip_end:
 	    ld (z80codebase+ppu_lyc_enable_catchup_smc),a
 	    
 	    ; Get keys
-	    scf
-	    sbc hl,hl
 	    ld ix,mpKeypadGrp0
 
 key_smc_turbo:
@@ -201,54 +202,54 @@ turbo_skip_toggle:
 	    xor 8
 	    ld (turbo_keypress_smc),a
 _
-	   
+	    
+	    ld a,$FF
 key_smc_right:
 	    bit 2,(ix+7*2)	;Right
 	    jr z,_
-	    dec l
+	    dec a
 _
 key_smc_left:
 	    bit 1,(ix+7*2)	;Left
 	    jr z,_
-	    bit 0,l
-	    set 0,l
-	    jr z,_
-	    res 1,l
+	    rlca
+	    xor 2
 _
 key_smc_up:
 	    bit 3,(ix+7*2)	;Up
 	    jr z,_
-	    res 2,l
+	    res 2,a
 _
 key_smc_down:
 	    bit 0,(ix+7*2)	;Down
 	    jr z,_
-	    bit 2,l
-	    set 2,l
-	    jr z,_
-	    res 3,l
+	    sub 4
+	    xor 8
+	    set 2,a
 _
+	    ld (z80codebase+keys_low),a
+	    ld a,$FF
 key_smc_a:
 	    bit 5,(ix+1*2)	;2ND
 	    jr z,_
-	    dec h
+	    dec a
 _
 key_smc_b:
 	    bit 7,(ix+2*2)	;ALPHA
 	    jr z,_
-	    res 1,h
+	    res 1,a
 _
 key_smc_select:
 	    bit 7,(ix+3*2)	;X,T,0,n
 	    jr z,_
-	    res 2,h
+	    res 2,a
 _
 key_smc_start:
 	    bit 6,(ix+1*2)	;MODE
 	    jr z,_
-	    res 3,h
+	    res 3,a
 _
-	    ld.sis (keys),hl
+	    ld (z80codebase+keys_high),a
 
 key_smc_menu:
 	    bit 6,(ix+6*2)	;CLEAR
@@ -422,19 +423,26 @@ _
 	ld (scanlineLUT_sprite_ptr),hl
 	ld (scanlineLUT_palette_ptr),hl
 	ld hl,(hram_base+BGP)
+	ld a,(BGP_max_value)
+	ld l,a
 	ld (curr_palettes),hl
+	; Clear the frequency count for the native BGP value
+	ld hl,BGP_frequencies
+	ld l,a
 	ld a,(hram_base+LCDC)
 	rrca
 	and $20
 	add a,(vram_tiles_start >> 8) & $FF
 	ld (window_tile_ptr+1),a
 	xor a
+	ld (hl),a
 	; Disable rendering catchup during vblank (or LCD off)
 	ld r,a
 	ld (window_tile_offset),a
 	ld (myLY),a
 	ld (myspriteLY),a
 	ld (mypaletteLY),a
+	ld (BGP_max_frequency),a
 swap_buffers:
 	ld de,(current_display)
 	ld hl,(current_buffer)
@@ -792,33 +800,138 @@ update_palettes_smc = $+2
 	ret
 	
 convert_palette:
+	; Do setup for the final stretch of scanlines,
+	; adding it to the queue but always run-length encoded
+	ld hl,(BGP_write_queue_next)
+	ld a,(BGP_max_frequency)
+	ld b,a
+	ld a,(mypaletteLY)
 	ld c,a
-	call convert_palette_setup
-convert_palette_row_loop:
-	ld hl,(ix)
-convert_palette_any_row:
-	ld b,160 / 4
-convert_palette_pixel_loop:
-	ld e,(hl)
-	ld a,(de)
+	ld a,(hram_base+BGP)
+	ld d,a
+	; Get the number of lines in the final stretch
+	ld a,(myLY)
+	ld e,a
+	sub c
+	ld c,l
+	; If zero, don't add anything to the queue
+	jr z,++_
+	; If all 144 lines have the same palette take an early-out
+	; The queue is guaranteed empty at this point, so just set the palette
+	cp 144
+	jr nc,_
+	; Add the line count (minus 1) and palette value to the queue
+	dec a
 	ld (hl),a
-	inc hl
-	ld e,(hl)
-	ld a,(de)
+	inc l
+	ld (hl),d
+	inc l
+	ld c,l
+	; Add the line count to the frequency for this palette value
+	inc h
+	ld l,d
+	ASSERT_C
+	adc a,(hl)
 	ld (hl),a
-	inc hl
-	ld e,(hl)
-	ld a,(de)
-	ld (hl),a
-	inc hl
-	ld e,(hl)
-	ld a,(de)
-	ld (hl),a
-	inc hl
-	djnz convert_palette_pixel_loop
-	lea ix,ix+3
-	dec c
-	jr nz,convert_palette_row_loop
+	dec h
+	; If the frequency is greater than the previous max, set the new max
+	cp b
+_
+	; Set the new palette LY value
+	ld a,e
+	ld (mypaletteLY),a
+	jr c,_
+	ld a,d
+	ld (BGP_max_value),a
+_
+	; Consume from the start of the queue
+	ld l,BGP_write_queue & $FF
+	ld a,c
+	cp l
+	ret z
+scanlineLUT_palette_ptr = $+2
+	ld ix,0
+	ld b,0
+convert_palette_loop:
+	push af
+	 ; Check whether this is run-length or literal run of BGP values
+	 ld a,(hl)
+	 inc l
+	 cp 144
+	 jr nc,convert_multiple_palettes
+	 ; Save the number of scanlines to iterate
+	 inc a
+	 ld c,a
+	 ; Get the BGP value
+	 ld e,(hl)
+	 inc l
+	 ; If it's the native palette value, skip conversion
+	 ld a,(BGP_max_value)
+	 cp e
+	 jr z,_
+	 push hl
+	  ; Clear the frequency for this value
+	  inc h
+	  ld l,e
+	  ld (hl),b
+	  ; Set up palette conversion LUT
+	  call convert_palette_setup
+	  ; Convert all scanlines
+convert_palette_multiple_row_loop:
+	  ld hl,(ix)
+	  call convert_palette_row
+	  lea ix,ix+3
+	  dec c
+	  jr nz,convert_palette_multiple_row_loop
+	 pop hl
+	 jr convert_palette_loop_continue
+_
+	 ; Advance the scanline LUT pointer by the number of lines
+	 ld b,3
+	 mlt bc
+	 add ix,bc
+	 jr convert_palette_loop_continue
+	 
+convert_multiple_palettes:
+	 ; Get the number of literal BGP values to parse
+	 sub 143
+	 ld c,a
+convert_multiple_palettes_row_loop:
+	 ; Get the BGP value
+	 ld e,(hl)
+	 inc l
+	 ; If it's the native palette value, skip conversion
+BGP_max_value = $+1
+	 ld a,0
+	 cp e
+	 jr z,_
+	 push hl
+	  ; Clear the frequency for this value
+	  inc h
+	  ld l,e
+	  ld (hl),b
+	  ; Set up palette conversion LUT
+	  call convert_palette_setup
+	  ; Convert this scanline
+	  ld hl,(ix)
+	  call convert_palette_row
+	 pop hl
+_
+	 lea ix,ix+3
+	 dec c
+	 jr nz,convert_multiple_palettes_row_loop
+convert_palette_loop_continue:
+	 ; Check if the end of the queue was reached
+	pop af
+	cp l
+	jr nz,convert_palette_loop
+	ld (scanlineLUT_palette_ptr),ix
+	; Clear the queue
+	ld l,BGP_write_queue & $FF
+	ld (hl),$FF
+	ld (BGP_write_queue_next),hl
+	ld a,l
+	ld (BGP_write_queue_literal_start),a
 	ret
 	
 convert_palette_setup:
@@ -826,7 +939,7 @@ convert_palette_setup:
 	or a
 	ld hl,convert_palette_LUT + $23
 	ld b,4
-	ld a,(hram_base+BGP)
+	ld a,e
 	jr z,convert_palette_setup_noscale
 _
 	rlca
@@ -864,15 +977,17 @@ _
 	ret
 	
 convert_palette_for_menu:
+	; Get the current native BGP palette
+	ld a,(curr_palettes)
+	ld e,a
 	call convert_palette_setup
 	
 	ld hl,(mpLcdBase)
-	ld bc,240*256+1
+	ld c,240
 _
-	push bc
-	 call convert_palette_any_row
-	pop bc
-	djnz -_
+	call convert_palette_row
+	dec c
+	jr nz,-_
 	ret
 	
 setup_menu_palette:

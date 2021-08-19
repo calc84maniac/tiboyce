@@ -432,6 +432,29 @@ scanline_unrolled_smc = $+1
 render_save_spl = $+1
 	ld sp,0
 	ret
+	
+convert_palette_row:
+	ld b,160 / 4
+convert_palette_pixel_loop:
+	ld e,(hl)
+	ld a,(de)
+	ld (hl),a
+	inc hl
+	ld e,(hl)
+	ld a,(de)
+	ld (hl),a
+	inc hl
+	ld e,(hl)
+	ld a,(de)
+	ld (hl),a
+	inc hl
+	ld e,(hl)
+	ld a,(de)
+	ld (hl),a
+	inc hl
+	djnz convert_palette_pixel_loop
+	ret
+	
 cursorcodesize = $-mpLcdCursorImg
 	.org cursorcode+cursorcodesize
 	

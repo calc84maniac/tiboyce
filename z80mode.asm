@@ -3007,13 +3007,6 @@ read_cram_bank_handler_smc = $+1
 	exx
 	ret
 	
-readP1handler:
-	ex af,af'
-	ld iyl,a
-	call readP1
-	ld a,ixl
-	ret
-	
 readDIVhandler:
 	ex af,af'
 	ld iyl,a
@@ -3055,30 +3048,12 @@ readSTAThandler:
 	ld a,(STAT)
 	ret
 	
-readP1:
-	ld a,(P1)
-	or $CF
-	ld ix,(keys)
-	bit 4,a
-	jr nz,_
-	and ixl 
-_
-	bit 5,a
-	jr nz,_
-	and ixh
-_
-	ld ixl,a
-	ld a,iyl
-	ex af,af'
-	ret
-	
 readSTAT:
 	exx
 	call updateSTAT
 	pop.l hl
 	exx
 	ld ix,(STAT)
-readP1_finish:
 	ld a,iyl
 	ex af,af'
 	ret
@@ -3107,7 +3082,6 @@ mem_read_ports_always:
 	ld a,ixl
 	add a,a
 	jr c,mem_read_hram
-	jr z,readP1
 	cp TIMA*2 & $FF
 	jr z,readTIMA
 	cp LY*2 & $FF
@@ -3713,11 +3687,12 @@ mem_cycle_scratch:
 	.db 0
 	
 updateSTAT_if_changed_lyc:
+	ld a,(LYC)
+updateSTAT_if_changed_any:
 	exx
 	ex af,af'
 	ld c,a
 	ex af,af'
-	ld a,(LYC)
 	cp c
 	jr nz,updateSTAT
 	.db $20 ; JR NZ,
@@ -4178,7 +4153,7 @@ _
 	 ld a,(TMA)
 	 jr updateTIMAcontinue
 	
-	.block (-$-189)&$FF
+	.block (-$-249)&$FF
 	
 _writeSC:
 	ld a,iyl
@@ -4207,6 +4182,41 @@ _
 	pop af
 	ret
 	
+_writeP1:
+	ld a,iyl
+	ex af,af'
+_writeP1handler:
+	push af
+	 or $CF
+	 bit 4,a
+	 jr nz,_
+keys_low = $+1
+	 and $FF
+_
+	 bit 5,a
+	 jr nz,_
+keys_high = $+1
+	 and $FF
+_
+	 ld (P1),a
+	pop af
+	ret
+	
+_writeDIVhandler:
+	ex af,af'
+	ld iyl,a
+_writeDIV:
+	call updateTIMA
+	jp.lil div_write_helper
+	
+_writeBGPhandler:
+	ex af,af'
+	ld iyl,a
+_writeBGP:
+	ld a,(BGP)
+	call updateSTAT_if_changed_any
+	jp.lil BGP_write_helper
+	
 _writeNR52handler:
 	ex af,af'
 	ld iyl,a
@@ -4214,10 +4224,16 @@ _writeNR52:
 	jp.lil NR52_write_helper
 	
 mem_write_port_handler_base = $-2
-writeNR52handler:
-	jr _writeNR52handler
 writeSChandler:
 	jr _writeSChandler
+writeP1handler:
+	jr _writeP1handler
+writeDIVhandler:
+	jr _writeDIVhandler
+writeBGPhandler:
+	jr _writeBGPhandler
+writeNR52handler:
+	jr _writeNR52handler
 writeNR10handler:
 	call write_audio_handler
 	.db NR10 - ioregs
@@ -4299,10 +4315,14 @@ writeDMAhandler:
 	ld ix,DMA
 	jr write_scroll_swap
 	
-writeBGPhandler:
-	ld ix,BGP
+writeOBP0handler:
+	ld ix,OBP0
 	jr write_scroll_swap
-
+	
+writeOBP1handler:
+	ld ix,OBP1
+	jr write_scroll_swap
+	
 writeIEhandler:
 	push af
 	 ex af,af'
@@ -4374,13 +4394,6 @@ writeTAC:
 	call updateTIMA
 	jp.lil tac_write_helper
 	
-writeDIVhandler:
-	ex af,af'
-	ld iyl,a
-writeDIV:
-	call updateTIMA
-	jp.lil div_write_helper
-	
 writeSTAThandler:
 	ex af,af'
 	ld iyl,a
@@ -4443,11 +4456,20 @@ write_port_ignore:
 	ex af,af'
 	ret
 	
+writeP1:
+	jp _writeP1
+	
 writeSC:
 	jp _writeSC
 	
+writeDIV:
+	jp _writeDIV
+	
 writeNR52:
 	jp _writeNR52
+	
+writeBGP:
+	jp _writeBGP
 	
 write_port_direct:
 	ld a,iyl
@@ -4460,7 +4482,7 @@ write_port_direct:
 
 	.db writeIE - mem_write_port_routines
 ;00
-	.db write_port_direct - mem_write_port_routines
+	.db writeP1 - mem_write_port_routines
 	.db write_port_direct - mem_write_port_routines
 	.db writeSC - mem_write_port_routines
 	.db write_port_ignore - mem_write_port_routines
@@ -4539,10 +4561,10 @@ write_port_direct:
 	.db write_port_ignore - mem_write_port_routines
 	.db writeLYC - mem_write_port_routines
 	.db write_scroll - mem_write_port_routines
-	.db write_scroll - mem_write_port_routines
+	.db writeBGP - mem_write_port_routines
 ;48
-	.db write_port_direct - mem_write_port_routines
-	.db write_port_direct - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
+	.db write_scroll - mem_write_port_routines
 	.db write_scroll - mem_write_port_routines
 	.db write_scroll - mem_write_port_routines
 	
