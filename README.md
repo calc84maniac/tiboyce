@@ -45,7 +45,7 @@ To convert save files between PC and AppVar formats, see the [Converting Save Fi
 
 ## Running the emulator
 
-`If you are running OS v5.5 or newer, you will need to jailbreak your TI. The best way to do that is via https://github.com/YvanTT/arTIfiCE.`
+*If you are running OS v5.5 or newer, you will need to jailbreak your TI. The best way to do that is via https://github.com/YvanTT/arTIfiCE.*
 
 Send the `TIBOYCE.8xp` and `TIBoyDat.8xv` files to the calculator. Optionally also send the `TIBoySkn.8xv` file which contains a skin image.
 
