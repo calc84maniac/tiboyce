@@ -739,8 +739,8 @@ int main(int argc, char **argv) {
 			return 1;
 		}
 		char checksum_str[11];
-		sprintf(checksum_str, "%08x\r\n", checksum);
-		if (zip_entry_write(zip, checksum_str, 10) < 0)
+		int checksum_str_len = sprintf(checksum_str, "%x\r\n", checksum);
+		if (zip_entry_write(zip, checksum_str, checksum_str_len) < 0)
 		{
 			zip_entry_close(zip);
 			write_error("_CHECKSUM", zip);
