@@ -724,6 +724,7 @@ stat_setup_lyc_vblank:
 	ex de,hl
 	ld hl,-CYCLES_PER_FRAME
 	call nz,stat_setup_lyc_mode1_filter
+stat_setup_next_vblank_post_vblank:
 	ld.sis (ppu_post_vblank_event_handler),ix
 	ld.sis (ppu_post_vblank_event_offset),hl
 stat_setup_next_vblank:
@@ -766,13 +767,14 @@ _
 	ld a,l
 	; The next event from vblank is LYC (mode 2)
 	lea ix,ix-ppu_expired_vblank+ppu_expired_lyc_mode2
-	ld.sis (ppu_post_vblank_event_handler),ix
 	ld hl,(lyc_cycle_offset)
-	ld.sis (ppu_post_vblank_event_offset),hl
-	jr nc,stat_setup_next_from_vblank
+	jr nc,stat_setup_next_from_vblank_post_vblank
 	; Check if LY < 144
 	cp 144
-	jr c,stat_setup_next_vblank
+	jr c,stat_setup_next_vblank_post_vblank
+stat_setup_next_from_vblank_post_vblank:
+	ld.sis (ppu_post_vblank_event_handler),ix
+	ld.sis (ppu_post_vblank_event_offset),hl
 stat_setup_next_from_vblank:
 	; The next event from now is relative to start of vblank
 	ld.sis de,(vblank_counter)
@@ -856,7 +858,7 @@ lyc_cycle_offset = $+1
 	ret c
 	; The next event from now is LYC (mode 1)
 	pop de
-	jp stat_setup_next_from_vblank
+	jp stat_setup_next_from_vblank_post_vblank
 	
 	
 ; Writes to the LCD control register (LCDC).
