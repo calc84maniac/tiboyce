@@ -81,9 +81,8 @@ _
 	 push bc
 	  ld a,(hl)
 	  ACALL(LoadPalettes)
-	  ld hl,(curr_palettes)
-	  ld c,(6*2)+2
-	  call update_palettes_partial
+	  ld de,mpLcdPalette + (3*2)
+	  call update_palettes_obp_only
 	 pop bc
 	pop hl
 	
@@ -205,7 +204,8 @@ _
 	ret
 	
 	; Input: A = palette index
-	; Destroys: AF,BC,DE,HL,IX
+	; Output: BC = 0
+	; Destroys: AF,DE,HL,IX
 LoadPalettes:
 	ld ix,(ArcBase)
 	ld bc,PaletteIndex
@@ -219,14 +219,14 @@ LoadPalettes:
 	
 	; Load BG
 	ld a,e
-	ld de,palette_bg_colors
+	ld de,overlapped_bg_palette_colors
+	ld c,(ix+2)
+	ACALL(LoadSinglePalette)
 	push de
-	 ld c,(ix+2)
-	 ACALL(LoadSinglePalette)
-	pop hl
-	push de
+	 ex de,hl
+	 ld l,bg_palette_colors & $FF
 	 ld de,mpLcdPalette + (BG_COLOR_0 * 2)
-	 ld c,8
+	 ld c,4*2
 	 ldir
 	pop de
 	
@@ -247,38 +247,53 @@ _
 	jr c,_
 	ld c,(ix+2)
 _
-	; Input:  BC = palette offset, DE = output ptr
-	; Output: DE = next output ptr, BC = 0-255
+	; Input:  BC = palette offset, DE = output table ptr
+	; Output: DE = next output table ptr, BC = 0
 LoadSinglePalette:
-	ld hl,(ArcBase)
-	add hl,bc
-	ld bc,PaletteDictionary
-	add hl,bc
-	ld bc,8
-	ldir
-	ld c,a
-	ld a,(AdjustColors)
-	or a
-	ld a,c
-	ret z
-	ld hl,-8
-	add hl,de
-	ld b,4
-_
-	push bc
-	 push hl
-	  ld hl,(hl)
-	  call adjust_color
+	push af
+	 push ix
+	  ld hl,(ArcBase)
+	  add hl,bc
+	  ld bc,PaletteDictionary
+	  add hl,bc
+	  ld ix,overlapped_palette_index_lut
+load_single_palette_input_loop:
+	  push hl
+	   ld hl,(hl)
+	   push de
+	    ld a,(AdjustColors)
+		or a
+	    call nz,adjust_color
+	   pop de
+	   ld c,l
+	   ld b,h
+	   ld a,$3F
+load_single_palette_output_loop:
+	   sbc hl,hl
+	   ld l,(ix)
+	   add hl,de
+	   ld (hl),c
+	   inc hl
+	   ld (hl),b
+	   lea ix,ix+4
+	   cp ixl
+	   jr nc,load_single_palette_output_loop
+	  pop hl
+	  inc hl
+	  inc hl
+	  lea ix,ix-$40+1
+	  ld a,ixl
+	  and 4
+	  jr z,load_single_palette_input_loop
+	  ld hl,64 * 2
+	  push hl
+	  pop bc
+	  add hl,de
 	  ex de,hl
-	 pop hl
-	 ld (hl),e
-	 inc hl
-	 ld (hl),d
-	 inc hl
-	pop bc
-	djnz -_
-	ex de,hl
-	ld a,c
+	  ld c,a
+	  ldir
+	 pop ix
+	pop af
 	ret
 	
 ItemSelectCmd:

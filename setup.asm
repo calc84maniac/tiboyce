@@ -451,22 +451,26 @@ _
 	push de
 	 inc b
 	 ldir
+	 ex (sp),hl
+	 ; Use the index data to sprinkle appropriate overlapped pixels
+_
+	 ld a,l
+	 and %10001000
+	 sub 1
+	 jr c,_
+	 ; The pixel data will be converted later to double scale if needed
+	 rlca
+	 rlca
+	 and 3
+_
+	 ld e,(hl)
+	 ld (de),a
+	 inc l
+	 jr nz,--_
 	pop hl
-	; Use the index data to sprinkle appropriate overlapped pixels
-_
-	ld a,l
-	and %10001000
-	sub 1
-	jr c,_
-	; The pixel data will be converted later to double scale if needed
-	rlca
-	rlca
-	and 3
-_
-	ld e,(hl)
-	ld (de),a
-	inc l
-	jr nz,--_
+	ld de,overlapped_palette_index_lut
+	ld c,$40
+	ldir
 	; The trailing pixel data is always color 0
 	scf
 	sbc hl,hl
@@ -956,22 +960,15 @@ _
 	ld (WX_smc_1),a
 _
 	
-	call swap_buffers
-	; Initialize the scanline LUT pointer to what prepare_next_frame expects
-	ld a,h
+	; Determine the scanline LUT pointer based on the initial framebuffer
+	ld a,(current_display+1)
 	cp (gb_frame_buffer_1 >> 8) & $FF
 	ld hl,scanlineLUT_2
-	jr nz,_
-	sbc hl,hl
-_
-	ld (scanlineLUT_ptr),hl
-	call prepare_next_frame
+	call prepare_next_frame_for_setup
 	
 	ACALL(IdentifyDefaultPalette)
 	ACALL(ApplyConfiguration)
 	ACALL(SetScalingMode)
-	ld hl,(curr_palettes)
-	call update_palettes_always
 	
 	call flush_code_reset_padding
 
@@ -2462,7 +2459,7 @@ SetScalingMode:
 	ld a,$33
 	jr nz,_
 	ld a,$3
-_	
+_
 	ld (scaling_mode_smc_1),a
 	and $11
 	ld c,a
@@ -2509,6 +2506,10 @@ _
 	
 	ld a,2
 	ACALL(generate_digits)
+	
+	ld hl,mpLcdPalette + (15*2)
+	ld (update_palettes_bgp0_smc),hl
+	call update_palettes
 	
 Set4BitWindow:
 	ld hl,(current_display)
@@ -2558,6 +2559,10 @@ _
 	
 	ld a,4
 	ACALL(generate_digits)
+	
+	ld hl,mpLcdPalette + (255*2)
+	ld (update_palettes_bgp0_smc),hl
+	call update_palettes
 	
 	ld a,(SkinDisplay)
 	rra
@@ -2675,7 +2680,7 @@ customHardwareSettings:
 	;mpKeypadScanMode
 	.db 3
 	;mpLcdImsc
-	.db 4
+	.db 8
 	;mpRtcCtrl
 	.db $83
 	
@@ -2741,6 +2746,13 @@ hmem_init:
 	.db $91,0,$00,$00,0,$00,$FF,$FC,$FF,$FF,$00,$00,$FF
 hmem_init_size = $ - hmem_init
 	
+	; Used to convert between flag register formats.
+	; When bit 3 is reset, converts from Game Boy F to ez80 F.
+	; When bit 3 is set, converts from ez80 F to Game Boy F.
+	; Note that bit 3 is always set in the ez80 F register, since operations
+	; that affect flags do not modify bits 3, it's used as an optimization.
+	; Care must be taken with AF/AF' swaps to ensure the correct F register
+	; is used to store flags, even if "all" flags are affected by an operation.
 flags_lut_init:
 	.db $08,$08,$08,$08,$08,$08,$08,$08, $00,$10,$40,$50,$00,$10,$40,$50
 	.db $09,$09,$09,$09,$09,$09,$09,$09, $20,$30,$60,$70,$20,$30,$60,$70
@@ -2779,6 +2791,15 @@ overlapped_pixel_index_lut_init:
 	.db $29,$39,$57,$63,$C8,$DE,$6E,$75,$1F,$2D,$51,$5B,$BC,$D0,$F3,$F7
 	.db $28,$56,$C7,$6D,$2C,$5A,$CF,$F6,$38,$62,$DD,$74,$FD,$3C,$7D,$E5
 	.db $68,$69,$6A,$71,$6B,$79,$72,$7B,$67,$6C,$78,$7A,$66,$73,$FC,$7C
+	
+	; Specifies offsets into a buffer of palette data corresponding to the
+	; input 2bpp palette indices. Note that this is only used for colors 1-3,
+	; because BG color 0 is special-cased and this can be used for BG+sprites.
+overlapped_palette_index_lut_init:
+	.db $00,$06,$0C,$7E,$04,$16,$24,$36,$0A,$4A,$2A,$3C,$10,$30,$1E,$7C
+	.db $02,$18,$2C,$12,$14,$46,$56,$44,$22,$54,$66,$60,$34,$5A,$42,$50
+	.db $08,$26,$3E,$20,$1A,$48,$62,$52,$28,$64,$70,$6E,$3A,$5E,$74,$6C
+	.db $0E,$38,$4C,$32,$2E,$58,$68,$5C,$40,$1C,$72,$76,$4E,$6A,$78,$7A
 	
 DefaultPaletteChecksumTable:
 	.db $00,$88,$16,$36,$D1,$DB,$F2,$3C,$8C,$92,$3D,$5C,$58,$C9,$3E,$70

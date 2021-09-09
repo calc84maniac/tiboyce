@@ -188,6 +188,7 @@ mpLcdImsc = $E3001C
 mpLcdRis = $E30020
 mpLcdMis = $E30024
 mpLcdIcr = $E30028
+mpLcdCurr = $E3002C
 mpLcdPalette = $E30200
 mpLcdCursorImg = $E30800
 
@@ -393,10 +394,30 @@ BGP_write_queue = (((palette_backup + 32) + 192) | 255) - 192
 ; Tracks the frequency of each BGP value as they are queued.
 ; The BGP value with the highest frequency will use the native palette.
 ; Must be 256-byte aligned and directly follow the queue.
-BGP_frequencies = BGP_write_queue + 192
+BGP_frequencies = BGP_write_queue + 192 + 1
+
+; Specifies offsets into a buffer of color data corresponding to the
+; input 2bpp palette data. Note that the input is a BGP, OBP0, or OBJ1
+; value shifted right by 2, and identifies three 16-bit colors.
+; Must be 256-byte aligned (and currently, follow BGP_frequencies).
+overlapped_palette_index_lut = BGP_frequencies + 256
+
+; Tables representing every possible combination of three 16-bit colors.
+; The data is overlapped such that a unique sequence of three colors begins
+; at each word. Note that this means each table is (64 + 2) * 2 bytes large.
+; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
+; at the offset corresponding to palette %100100, which is $1A.
+; The tables must directly follow each other in the order BGP, OBP0, OBP1.
+; Also, BGP and OBP1 tables must not cross a 256-byte boundary.
+overlapped_bg_palette_colors = overlapped_palette_index_lut + $40
+bg_palette_colors = overlapped_bg_palette_colors + $1A
+overlapped_obp0_palette_colors = overlapped_bg_palette_colors + ((64 + 2) * 2)
+obp0_palette_colors = overlapped_obp0_palette_colors + $1A
+overlapped_obp1_palette_colors = overlapped_obp0_palette_colors + ((64 + 2) * 2)
+obp1_palette_colors = overlapped_obp1_palette_colors + $1A
 
 ; A list of scanline start addresses. 144*2 pointers in size.
-scanlineLUT_1 = BGP_frequencies + 256
+scanlineLUT_1 = overlapped_obp1_palette_colors + ((64 + 2) * 2)
 scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
 ; A list of VAT entries for found ROM files. 256 pointers in size.
@@ -1064,24 +1085,6 @@ originalLcdSettings:
 	.db 239
 	; Number of frames to wait
 	.db 1
-	
-; Current palette color sources (must be in this order).
-; Correspond to colors 0-3 in sequence.
-palette_bg_colors:
-	.dw $0421 * 31 + $8000
-	.dw $0421 * 21 + $8000
-	.dw $0421 * 10
-	.dw $0421 * 0
-palette_obj0_colors:
-	.dw $0421 * 31 + $8000
-	.dw $0421 * 21 + $8000
-	.dw $0421 * 10
-	.dw $0421 * 0
-palette_obj1_colors:
-	.dw $0421 * 31 + $8000
-	.dw $0421 * 21 + $8000
-	.dw $0421 * 10
-	.dw $0421 * 0
 	
 ; These files are loaded into RAM.
 	#include "jit.asm"

@@ -40,7 +40,9 @@ frame_emulated_count = $+1
 	    rla
 	    jr nc,_
 	    call draw_sprites
+	    call sync_frame_flip
 	    call convert_palette
+	    call sync_frame_flip
 _
 	    
 preservedAreaHeight = $+1
@@ -118,10 +120,16 @@ NoSpeedDisplay:
 	
 	    ; Swap buffers
 	    call prepare_next_frame
-	    ld (mpLcdBase),hl
+	    ld hl,mpLcdImsc
+	    ld a,(hl)
+	    xor $04
+	    ld l,mpLcdMis & $FF
+	    or (hl)
+	    call z,do_frame_flip
 	    ld a,(ScalingMode)
 	    or a
 	    call nz,do_scale_fill
+	    call sync_frame_flip
 	
 	    xor a
 	    ; Signify frame was rendered
@@ -141,20 +149,16 @@ turbo_active = $+1
 	    jr nc,frame_sync_later
 frame_sync_loop:
 	    push hl
-	     ld de,$000800
-	     call wait_for_interrupt
-	     call update_palettes
-	     ld hl,mpLcdIcr
-	     ld (hl),4
-	     call inc_real_frame_count
+	     call sync_frame_flip_wait
 	    pop hl
-	    inc (hl)
+	    xor a
+	    cp (hl)
 	    jr nz,frame_sync_loop
 frame_sync_later:
 	    ; Set Z
 	    xor a
 no_frame_sync:
-	  
+	    
 	    ; Handle frameskip logic
 	    ; At this point A=0, Z holds auto state
 	    ex de,hl
@@ -259,8 +263,6 @@ key_smc_menu:
 	     ACALL(emulator_menu_ingame)
 	    pop af
 	    ex af,af'
-	    ld hl,(curr_palettes)
-	    call update_palettes_always
 	    ACALL(SetScalingMode)
 	    call reset_preserved_area
 	    jr keys_done
@@ -372,10 +374,10 @@ ack_and_wait_for_interrupt:
 ; Inputs:  DE = interrupt source mask to wait on
 ;          Interrupts are disabled
 ; Outputs: Original interrupt mask is restored
-; Destroys IX,DE,HL
+; Destroys BC,DE,HL
 wait_for_interrupt:
 	ld hl,mpIntEnable
-	ld ix,(hl)
+	ld bc,(hl)
 	ld (hl),de
 	ex de,hl
 	ld hl,z80codebase+rst38h
@@ -383,160 +385,96 @@ wait_for_interrupt:
 	call.is wait_for_interrupt_stub
 	ld (hl),$FD	;LD IYL,A
 	ex de,hl
-	ld (hl),ix
+	ld (hl),bc
 	ret
 	
 frame_interrupt:
-	ld (mpLcdIcr),a
-	push ix
-	 push de
-	  push bc
-	   call update_palettes
-	   call inc_real_frame_count
-	  pop bc
-	 pop de
-	pop ix
-frame_excess_count = $+1
-	ld a,0
-	inc a
-_
-	ld (frame_excess_count),a
-	jp.sis po,frame_interrupt_return
-	; Revert $7F and set parity odd
-	xor $7F
-	jr -_
+	push de
+	 push bc
+	  ld hl,mpLcdMis
+	  call sync_frame_flip_always
+	 pop bc
+	pop de
+	jp.sis frame_interrupt_return
 	
 ; Prepares to render the next frame.
-; This swaps the current buffer and resets internal render variables.
+; This swaps the current buffer, resets internal render variables,
+; and prepares the current palette pointers.
 ;
 ; Inputs:  None
-; Outputs: HL = old framebuffer
-;          A = 0
+; Destroys: AF, DE, HL
 prepare_next_frame:
+	; Swap buffers
+	ld de,(current_display)
+	ld hl,(current_buffer)
+	ld (current_display),hl
+	ld (current_buffer),de
 	ld hl,(scanlineLUT_ptr)
 	ld a,l
 	cp scanlineLUT_2 & $FF
+prepare_next_frame_for_setup:
 	jr z,_
 	ld hl,scanlineLUT_1
-	ld (scanlineLUT_ptr),hl
 _
+	ld (scanlineLUT_ptr),hl
 	ld (scanlineLUT_sprite_ptr),hl
 	ld (scanlineLUT_palette_ptr),hl
-	ld hl,(hram_base+BGP)
-	ld a,(BGP_max_value)
-	ld l,a
-	ld (curr_palettes),hl
-	; Clear the frequency count for the native BGP value
-	ld hl,BGP_frequencies
-	ld l,a
 	ld a,(hram_base+LCDC)
 	rrca
 	and $20
 	add a,(vram_tiles_start >> 8) & $FF
 	ld (window_tile_ptr+1),a
-	xor a
-	ld (hl),a
 	; Disable rendering catchup during vblank (or LCD off)
+	xor a
 	ld r,a
 	ld (window_tile_offset),a
 	ld (myLY),a
 	ld (myspriteLY),a
 	ld (mypaletteLY),a
 	ld (BGP_max_frequency),a
-swap_buffers:
-	ld de,(current_display)
-	ld hl,(current_buffer)
-	ld (current_display),hl
-	ld (current_buffer),de
-	ret
-	
-	
-inc_real_frame_count:
-	ld hl,emulatorMessageDuration
-	ld a,(hl)
-	or a
-	jr z,_
-	dec a
-	ld (hl),a
-	jr nz,_
-	ld (emulatorMessageText),a
-	call reset_preserved_area
-_
-frame_real_count = $+1
-	ld a,0
-	add a,1
-	daa
-	ld (frame_real_count),a
-	ret nc
-	ld hl,(frame_emulated_count)
-	ld de,perf_digits+3
-	ld a,l
-	ld (low_perf_digits_smc),a
-	and $0F
-	ld (de),a
-	dec de
-	xor l
-	rrca
-	rrca
-	rrca
-	rrca
-	ld (de),a
-	dec de
-	ld a,h
-	ld (high_perf_digits_smc),a
-	and $0F
-	ld (de),a
-	dec de
-	xor h
-	rrca
-	rrca
-	rrca
-	rrca
-	ld (de),a
-	sbc hl,hl
-	ld (frame_emulated_count),hl
-	;FALLTHROUGH
-	
-reset_preserved_area:
-	or a
-	sbc hl,hl
-	
-	; H = height, L = width / 2
-	; Height must be a multiple of 5 plus-or-minus 1, or fullscreen mode will mess up
-set_preserved_area:
-	ld a,h
-	ld (preservedAreaHeight),a
-	or a
-	jr z,set_no_preserved_area
-	ld h,$FF
-	inc a
-_
-	inc h
-	sub 5
-	jr nc,-_
-	ld a,h
-	ld (scale_offset_preserve_smc_1),a
-	ld a,(ScalingMode)
-	or a
-	ld a,l
-	jr nz,_
+	; Make the next rendering operation sync with frame flip,
+	; if the frame flip hasn't happened yet
+	ld hl,sync_frame_flip_or_wait
+	ld (render_scanlines_wait_smc),hl
+	; Clear the frequency count for the native BGP value
+	ld a,(BGP_max_value)
+	ld hl,BGP_frequencies
+	ld l,a
+	ld de,$3F
+	ld (hl),d
+	; Get the indices for each palette type
+	and 3
 	add a,a
-_
-	ld (preservedAreaWidth),a
-	cpl
-	add a,161
-	ld (preserve_copy_smc),a
-	ld (scale_offset_preserve_smc_2),a
-	ld hl,scale_offset_preserve
-	jr _
-set_no_preserved_area:
-	ld hl,scale_offset
-_
-	ld (do_scale_fill_smc),hl
+	add a,bg_palette_colors & $FF
+	ld (update_palettes_bgp0_index),a
+	inc h
+	srl l
+	srl l
+	ld a,(hl)
+	add a,overlapped_bg_palette_colors & $FF
+	ld (update_palettes_bgp123_index),a
+	ld a,(hram_base+OBP1)
+	rrca
+	rrca
+	and e
+	ld l,a
+	ld a,(hl)
+	add a,overlapped_obp1_palette_colors & $FF
+	ld (update_palettes_obp1_index),a
+	ld a,(hram_base+OBP0)
+	rrca
+	rrca
+	and e
+	ld l,a
+	ld e,(hl)
+	ld l,overlapped_obp0_palette_colors & $FF
+	add hl,de
+	ld (update_palettes_obp0_ptr),hl
 	ret
 	
 	
 do_scale_fill:
+	ld hl,(current_display)
 	ld ix,160
 	ld a,(ScalingType)
 	ld b,a
@@ -743,61 +681,172 @@ display_digit_smc_3 = $+1
 	jr nz,-_
 	ret
 
-; Update the host LCD palettes based on the currently set GB palettes.
-; No operation if the GB palettes have not changed since this was last called.
-;
-; Uses the palette_XXX_colors arrays as the source colors for each type.
-;
-; Destroys AF,DE,HL,IX
-update_palettes:
-curr_palettes = $+1
-	ld hl,$FFFFFF
-old_palettes = $+1
-	ld de,$FFFFFF
-	or a
-	sbc hl,de
-	ret z
-	add hl,de
-	ld (old_palettes),hl
-	; Input: Palettes in HL
-update_palettes_always:
-	ld c,(9*2) + 3
-update_palettes_partial:
-	ld de,mpLcdPalette + (9*2)-1
-	ld ix,palette_obj1_colors+1+8
-update_palettes_next_loop:
-	lea ix,ix-8
-	ld b,4
-update_palettes_loop:
-	xor a
-	add hl,hl
-	adc a,a
-	add hl,hl
-	adc a,a
-	add a,a
-	djnz _
-	dec c
-	jr nz,update_palettes_next_loop
-	; Early out for partial update
-	inc e
-	ret nz
-	ld de,mpLcdPalette + (256*2)-1
-	scf
-_
-	ld (update_palettes_smc),a
+sync_frame_flip_or_wait:
+	ld hl,mpLcdMis
+	ld a,$08
+	cp (hl)
+	jr z,sync_frame_flip_always
+	ld l,mpLcdRis & $FF
+	and (hl)
+	jr z,sync_frame_flip_wait
+	ld l,mpLcdIcr & $FF
+	ld (hl),a
+sync_frame_flip_inc_wait:
+	call inc_real_frame_count
+sync_frame_flip_wait:
+	ld de,$000800
+	ld hl,mpLcdImsc
+	ld (hl),d
 	push hl
-update_palettes_smc = $+2
-	 lea hl,ix
-	 ldd
-	 ldd
+	 call wait_for_interrupt
 	pop hl
-	jr nc,update_palettes_loop
-	ex de,hl
-	inc hl
-	ld de,mpLcdPalette + (16*2)-2
-	ldi
-	ldi
+	ld (hl),$04
+	ld l,mpLcdIcr & $FF
+	ld (hl),$0C
+	jr do_sync_frame_flip
+	
+sync_frame_flip:
+	ld hl,mpLcdMis
+	ld a,(hl)
+	or a
+	ret z
+sync_frame_flip_always:
+	xor $0C
+	ld (mpLcdImsc),a
+	cp (hl)
+	ld l,mpLcdIcr & $FF
+	ld (hl),$0C
+	jr z,inc_real_frame_count
+	and l ;$28
+	ret nz
+do_sync_frame_flip:
+	call inc_real_frame_count
+
+; Update the host LCD palettes based on the currently set GB palettes.
+;
+; Uses the overlapped_palette_colors tables as the source colors for each type.
+;
+; Destroys AF,BC,DE,HL
+do_frame_flip:
+	ld hl,sync_frame_flip
+	ld (render_scanlines_wait_smc),hl
+	ld hl,(current_display)
+	ld (mpLcdBase),hl
+update_palettes:
+update_palettes_bgp0_index = $+1
+	ld hl,bg_palette_colors
+update_palettes_bgp0_smc = $+1
+	ld de,mpLcdPalette + (255*2)
+	ld bc,2
+	ldir
+update_palettes_bgp123_index = $+1
+	ld l,overlapped_bg_palette_colors & $FF
+	ld d,mpLcdPalette >> 8 & $FF
+	ld e,c
+	ld c,3*2
+	ldir
+update_palettes_obp_only:
+update_palettes_obp0_ptr = $+1
+	ld hl,overlapped_obp0_palette_colors
+	ld c,e
+	ldir
+update_palettes_obp1_index = $+1
+	ld hl,overlapped_obp1_palette_colors
+	ld c,3*2
+	ldir
 	ret
+	
+	
+inc_real_frame_count:
+frame_excess_count = $+1
+	ld a,0
+	inc a
+	jp pe,_
+	ld (frame_excess_count),a
+_
+	ld hl,emulatorMessageDuration
+	ld a,(hl)
+	or a
+	jr z,_
+	dec a
+	ld (hl),a
+	jr nz,_
+	ld (emulatorMessageText),a
+	call reset_preserved_area
+_
+frame_real_count = $+1
+	ld a,0
+	add a,1
+	daa
+	ld (frame_real_count),a
+	ret nc
+	ld hl,(frame_emulated_count)
+	ld de,perf_digits+3
+	ld a,l
+	ld (low_perf_digits_smc),a
+	and $0F
+	ld (de),a
+	dec de
+	xor l
+	rrca
+	rrca
+	rrca
+	rrca
+	ld (de),a
+	dec de
+	ld a,h
+	ld (high_perf_digits_smc),a
+	and $0F
+	ld (de),a
+	dec de
+	xor h
+	rrca
+	rrca
+	rrca
+	rrca
+	ld (de),a
+	sbc hl,hl
+	ld (frame_emulated_count),hl
+	;FALLTHROUGH
+	
+reset_preserved_area:
+	or a
+	sbc hl,hl
+	
+	; H = height, L = width / 2
+	; Height must be a multiple of 5 plus-or-minus 1, or fullscreen mode will mess up
+set_preserved_area:
+	ld a,h
+	ld (preservedAreaHeight),a
+	or a
+	jr z,set_no_preserved_area
+	ld h,$FF
+	inc a
+_
+	inc h
+	sub 5
+	jr nc,-_
+	ld a,h
+	ld (scale_offset_preserve_smc_1),a
+	ld a,(ScalingMode)
+	or a
+	ld a,l
+	jr nz,_
+	add a,a
+_
+	ld (preservedAreaWidth),a
+	cpl
+	add a,161
+	ld (preserve_copy_smc),a
+	ld (scale_offset_preserve_smc_2),a
+	ld hl,scale_offset_preserve
+	jr _
+set_no_preserved_area:
+	ld hl,scale_offset
+_
+	ld (do_scale_fill_smc),hl
+	ret
+	
 	
 convert_palette:
 	; Do setup for the final stretch of scanlines,
@@ -978,11 +1027,11 @@ _
 	
 convert_palette_for_menu:
 	; Get the current native BGP palette
-	ld a,(curr_palettes)
+	ld a,(BGP_max_value)
 	ld e,a
 	call convert_palette_setup
 	
-	ld hl,(mpLcdBase)
+	ld hl,(current_display)
 	ld c,240
 _
 	call convert_palette_row
@@ -1009,7 +1058,7 @@ setup_menu_palette:
 ; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.
 ;
 ; Input:  HL = 15-bit color
-; Output: HL = 15-bit color (adjusted)
+; Output: HL = 15-bit color (adjusted), carry clear
 ; Destroys: AF, BC, DE
 ;
 ; Uses a modification of an algorithm from https://byuu.net/video/color-emulation/:

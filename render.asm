@@ -508,6 +508,10 @@ myLY = $+1
 	push bc
 	 ld b,a
 	 ld c,l
+	 push bc
+render_scanlines_wait_smc = $+1
+	  call sync_frame_flip
+	 pop bc
 	 ; Handle any deferred VRAM writes
 	 ld a,(write_vram_last_slice)
 	 rra
@@ -518,6 +522,7 @@ scanlineLUT_ptr = $+2
 	  ld.sis (render_save_sps),sp
 	  ld a,vram_tiles_start >> 16
 	  ld mb,a
+	  or a
 	  ld hl,-6
 	  add hl,sp
 	  ld (render_save_spl),hl
@@ -606,6 +611,7 @@ render_scanline_next:
 	  ld mb,a
 	  ld.sis sp,(render_save_sps)
 	 pop iy
+	 call sync_frame_flip
 	pop bc
 	ret
 	
