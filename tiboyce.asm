@@ -179,6 +179,8 @@ textInverse = 3		;1=display inverse bit-map
 ; 84+CE IO definitions
 mpFlashWaitStates = $E00005
 
+mpShaData = $E10010
+
 mpLcdTiming0 = $E30000
 mpLcdTiming1 = $E30004
 mpLcdTiming2 = $E30008

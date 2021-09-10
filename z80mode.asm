@@ -4572,18 +4572,27 @@ audio_port_value_base:
 	.block 1
 	
 rtc_latched:
-	.db 0	;seconds
-	.db 0	;minutes
-	.db 0	;hours
-	.dw 0	;days
+try_unlock_sha:
+	; 5 bytes of code, will be overwritten by RTC init
+	in0 a,($06)
+	ret.l z
+	;.db 0	;seconds
+	;.db 0	;minutes
+	;.db 0	;hours
+	;.dw 0	;days
 rtc_current:
-	.db 0	;seconds
-	.db 0	;minutes
-	.db 0	;hours
-	.dw 0	;days
+	; 5 bytes of code, will be overwritten by RTC init
+	set 2,a
+	out0 ($06),a
+	;.db 0	;seconds
+	;.db 0	;minutes
+	;.db 0	;hours
+	;.dw 0	;days
 rtc_last:
-	.db 0   ;seconds
-	.db 0   ;minutes
+	; 2 bytes of code, will be overwritten by RTC init
+	ret.l
+	;.db 0   ;seconds
+	;.db 0   ;minutes
 	.db 0   ;hours
 	.dw 0   ;days
 	

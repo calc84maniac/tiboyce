@@ -928,6 +928,8 @@ convert_palette_loop:
 	  ; Convert all scanlines
 convert_palette_multiple_row_loop:
 	  ld hl,(ix)
+	  ld b,convert_palette_row_loop_count
+convert_palette_row_smc_1 = $+1
 	  call convert_palette_row
 	  lea ix,ix+3
 	  dec c
@@ -963,6 +965,8 @@ BGP_max_value = $+1
 	  call convert_palette_setup
 	  ; Convert this scanline
 	  ld hl,(ix)
+	  ld b,convert_palette_row_loop_count
+convert_palette_row_smc_2 = $+1
 	  call convert_palette_row
 	 pop hl
 _
@@ -1034,6 +1038,8 @@ convert_palette_for_menu:
 	ld hl,(current_display)
 	ld c,240
 _
+	ld b,convert_palette_row_loop_count
+convert_palette_row_smc_3 = $+1
 	call convert_palette_row
 	dec c
 	jr nz,-_

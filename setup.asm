@@ -568,6 +568,21 @@ _
 	push.s hl
 	ld c,4  ; Cycle count of 4 for default return handler
 	push.s bc
+	
+	; Copy palette conversion code to SHA hardware, if possible
+	APTR(sha_code)
+	ld de,mpShaData
+	ld c,sha_code_size
+	call.is try_unlock_sha
+	ldir
+	jr nz,_
+	; If the model is too new, execute from cached Flash instead
+	ld c,sha_code_size - sha_code_entry_offset
+	sbc hl,bc
+	ld (convert_palette_row_smc_1),hl
+	ld (convert_palette_row_smc_2),hl
+	ld (convert_palette_row_smc_3),hl
+_
 
 	ld hl,(rom_start)
 	ld (rom_start_smc_1),hl
@@ -2667,6 +2682,30 @@ default_palette_found:
 	ld a,(hl)
 	ld (default_palette),a
 	ret
+	
+	; Convert 15 pixels per loop, running at 1 wait state
+sha_code:
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	ld e,(hl) \ ld a,(de) \ ld (hl),a \ inc hl
+	djnz sha_code
+	ret
+sha_code_size = $ - sha_code
+sha_code_entry_offset = (15 - (160 % 15)) * 4
+convert_palette_row = mpShaData + sha_code_entry_offset
+convert_palette_row_loop_count = (160 / 15) + 1
 	
 customHardwareSettings:
 	;mpIntEnable
