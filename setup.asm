@@ -976,8 +976,9 @@ _
 _
 	
 	; Determine the scanline LUT pointer based on the initial framebuffer
-	ld a,(current_display+1)
-	cp (gb_frame_buffer_1 >> 8) & $FF
+	ld de,(current_buffer)
+	ld a,d
+	cp (gb_frame_buffer_2 >> 8) & $FF
 	ld hl,scanlineLUT_2
 	call prepare_next_frame_for_setup
 	
@@ -2460,14 +2461,6 @@ SetLcdSettingsFast:
 	ld (mpLcdCtrl),hl
 	ret
 	
-Set8BitWindow:
-	ld hl,(current_buffer)
-	ACALL(Set4BitWindowAny)
-	APTR(lcdSettings8Bit)
-	ex de,hl
-	ld hl,(current_display)
-	jr SetLcdSettingsTrampoline
-	
 SetScalingMode:
 	ld a,(ScalingMode)
 	or a
@@ -2522,6 +2515,8 @@ _
 	ld a,2
 	ACALL(generate_digits)
 	
+	ld hl,-160*240
+	ld (frame_dma_size_smc),hl
 	ld hl,mpLcdPalette + (15*2)
 	ld (update_palettes_bgp0_smc),hl
 	call update_palettes
@@ -2533,7 +2528,6 @@ Set4BitWindowAny:
 	 APTR(lcdSettings4Bit)
 	 ex de,hl
 	pop hl
-SetLcdSettingsTrampoline:
 	AJUMP(SetLcdSettings)
 	
 SetNoScalingMode:
@@ -2575,6 +2569,8 @@ _
 	ld a,4
 	ACALL(generate_digits)
 	
+	ld hl,-160*144
+	ld (frame_dma_size_smc),hl
 	ld hl,mpLcdPalette + (255*2)
 	ld (update_palettes_bgp0_smc),hl
 	call update_palettes
@@ -2628,7 +2624,13 @@ no_skin:
 	ld (hl),BLACK_BYTE
 	ld bc,160*240-1
 	ldir
-	AJUMP(Set8BitWindow)
+Set8BitWindow:
+	ld hl,(current_buffer)
+	ACALL(Set4BitWindowAny)
+	APTR(lcdSettings8Bit)
+	ex de,hl
+	ld hl,(current_display)
+	AJUMP(SetLcdSettings)
 	
 IdentifyDefaultPalette:
 	ld ix,(rom_start)

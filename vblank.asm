@@ -120,12 +120,7 @@ NoSpeedDisplay:
 	
 	    ; Swap buffers
 	    call prepare_next_frame
-	    ld hl,mpLcdImsc
-	    ld a,(hl)
-	    xor $04
-	    ld l,mpLcdMis & $FF
-	    or (hl)
-	    call z,do_frame_flip
+	    call do_frame_flip
 	    ld a,(ScalingMode)
 	    or a
 	    call nz,do_scale_fill
@@ -436,6 +431,11 @@ _
 	; if the frame flip hasn't happened yet
 	ld hl,sync_frame_flip_or_wait
 	ld (render_scanlines_wait_smc),hl
+	; Get the negative end-of-buffer pointer
+frame_dma_size_smc = $+1
+	ld hl,0
+	sbc hl,de
+	ld (frame_flip_end_check_smc),hl
 	; Clear the frequency count for the native BGP value
 	ld a,(BGP_max_value)
 	ld hl,BGP_frequencies
@@ -682,56 +682,43 @@ display_digit_smc_3 = $+1
 	ret
 
 sync_frame_flip_or_wait:
-	ld hl,mpLcdMis
-	ld a,$08
-	cp (hl)
-	jr z,sync_frame_flip_always
-	ld l,mpLcdRis & $FF
-	and (hl)
-	jr z,sync_frame_flip_wait
-	ld l,mpLcdIcr & $FF
-	ld (hl),a
-sync_frame_flip_inc_wait:
-	call inc_real_frame_count
+	ld a,(mpLcdMis)
+	or a
+	call nz,inc_real_frame_count
+	ld hl,(mpLcdCurr)
+	ld de,(frame_flip_end_check_smc)
+	add hl,de
+	jr c,do_frame_flip_always
 sync_frame_flip_wait:
 	ld de,$000800
-	ld hl,mpLcdImsc
-	ld (hl),d
-	push hl
-	 call wait_for_interrupt
-	pop hl
-	ld (hl),$04
-	ld l,mpLcdIcr & $FF
-	ld (hl),$0C
-	jr do_sync_frame_flip
+	ld a,d
+	call wait_for_interrupt
+	jr sync_frame_flip_always
 	
 sync_frame_flip:
-	ld hl,mpLcdMis
-	ld a,(hl)
+	ld a,(mpLcdMis)
 	or a
 	ret z
 sync_frame_flip_always:
-	xor $0C
-	ld (mpLcdImsc),a
-	cp (hl)
-	ld l,mpLcdIcr & $FF
-	ld (hl),$0C
-	jr z,inc_real_frame_count
-	and l ;$28
-	ret nz
-do_sync_frame_flip:
 	call inc_real_frame_count
 
+do_frame_flip:
+	ld hl,(mpLcdCurr)
+frame_flip_end_check_smc = $+1
+	ld de,0
+	add hl,de
+	ret nc
+do_frame_flip_always:
+	ld (frame_flip_end_check_smc),hl
+	ld hl,(current_display)
+	ld (mpLcdBase),hl
+	ld hl,sync_frame_flip
+	ld (render_scanlines_wait_smc),hl
 ; Update the host LCD palettes based on the currently set GB palettes.
 ;
 ; Uses the overlapped_palette_colors tables as the source colors for each type.
 ;
 ; Destroys AF,BC,DE,HL
-do_frame_flip:
-	ld hl,sync_frame_flip
-	ld (render_scanlines_wait_smc),hl
-	ld hl,(current_display)
-	ld (mpLcdBase),hl
 update_palettes:
 update_palettes_bgp0_index = $+1
 	ld hl,bg_palette_colors
@@ -756,8 +743,8 @@ update_palettes_obp1_index = $+1
 	ldir
 	ret
 	
-	
 inc_real_frame_count:
+	ld (mpLcdIcr),a
 frame_excess_count = $+1
 	ld a,0
 	inc a
