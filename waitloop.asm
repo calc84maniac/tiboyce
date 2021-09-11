@@ -61,6 +61,8 @@ identify_waitloop:
 	jr z,waitloop_found_read_bc
 	cp $1A		;LD A,(DE)
 	jr z,waitloop_found_read_de
+	cp $F2		;LD A,($FF00+C)
+	jr z,waitloop_found_read_c
 	and $C7
 	cp $46		;LD r,(HL)
 	ret nz
@@ -116,6 +118,16 @@ waitloop_found_read_de:
 	; Use DE as read address
 	push de
 	 jr waitloop_found_read_rr
+
+waitloop_found_read_c:
+	; Use C as HRAM read address
+	exx
+	ld a,c
+	exx
+	ld c,a
+	; Set 0 for read in 2nd cycle, and set Z flag to indicate HRAM
+	xor a
+	jr waitloop_resolve_read
 	
 waitloop_found_read_bitwise:
 	ld a,(hl)
