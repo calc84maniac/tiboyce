@@ -123,6 +123,7 @@ BLUE_BYTE = BLUE*$11
 _sprintf = $0000BC
 _GetFieldSizeFromType = $00030C
 _FindField = $000314
+_boot_InitializeHardware = $000384
 _OSHeader = $020000
 _Mov9ToOP1 = $020320
 _MemChk = $0204FC

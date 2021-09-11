@@ -108,6 +108,10 @@ _
 	ex de,hl
 	ld (hl),de
 	
+	; Reinitialize hardware, this is slightly slow but should return SPI to a
+	; known state on Python Edition models.
+	call _boot_InitializeHardware
+	
 	ld hl,GlobalErrorHandler
 	call _PushErrorHandler
 	
