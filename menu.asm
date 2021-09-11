@@ -217,7 +217,7 @@ LoadPalettes:
 	mlt bc
 	add ix,bc
 	
-	; Load BG
+	; Load BGP
 	ld a,e
 	ld de,overlapped_bg_palette_colors
 	ld c,(ix+2)
@@ -230,7 +230,7 @@ LoadPalettes:
 	 ldir
 	pop de
 	
-	; Load OBJ0
+	; Load OBP0
 	ld c,(ix)
 	bit 5,a
 	jr nz,_
@@ -238,7 +238,12 @@ LoadPalettes:
 _
 	ACALL(LoadSinglePalette)
 	
-	; Load OBJ1
+	; Copy OBP0 colors 2 and 3 before OBP1 (which starts with color 0)
+	ld hl,obp0_palette_colors + (2*2)
+	ld c,2*2
+	ldir
+	
+	; Load OBP1
 	ld c,(ix+1)
 	rlca
 	jr c,_

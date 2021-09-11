@@ -284,7 +284,7 @@ sprite_catchup:
 	ld (myspriteLY),a
 	ld hl,(scanlineLUT_ptr)
 	ld (scanlineLUT_sprite_ptr),hl
-	ret
+	jp sync_frame_flip
 	
 scroll_write_DMA:
 	 push bc
@@ -345,15 +345,17 @@ scroll_write_SCY:
 	 jr scroll_write_done
 	
 scroll_write_OBP:
-	 ; Only do things if the current frame is being rendered
-	 ld a,(z80codebase+updateSTAT_enable_catchup_smc)
-	 rra
-	 jr nc,scroll_write_done_swap
+	 ; Only do things if at least one scanline has been rendered
+	 ld a,(myLY)
+	 or a
+	 jr z,scroll_write_done_swap
 	 push bc
 	  push hl
 	   call sprite_catchup
-	   ; To-do: set up OAM palette conversion
-	   call convert_palette
+	   ; Set up OBP palette conversion if this is the first time,
+	   ; or do palette conversions if not
+convert_palette_obp_smc_enable = $+1
+	   call convert_palette_obp_do_smc
 	  pop hl
 	 pop bc
 	 jr scroll_write_done_swap

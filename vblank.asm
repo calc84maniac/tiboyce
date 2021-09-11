@@ -42,7 +42,6 @@ frame_emulated_count = $+1
 	    call draw_sprites
 	    call sync_frame_flip
 	    call convert_palette
-	    call sync_frame_flip
 _
 	    
 preservedAreaHeight = $+1
@@ -436,6 +435,7 @@ frame_dma_size_smc = $+1
 	ld hl,0
 	sbc hl,de
 	ld (frame_flip_end_check_smc),hl
+convert_palette_obp_smc_finish = $ ; Replace with JR convert_palette_obp_finish
 	; Clear the frequency count for the native BGP value
 	ld a,(BGP_max_value)
 	ld hl,BGP_frequencies
@@ -472,6 +472,80 @@ frame_dma_size_smc = $+1
 	ld (update_palettes_obp0_ptr),hl
 	ret
 	
+convert_palette_obp_finish:
+	ld hl,convert_palette_obp_do_smc
+	ld (convert_palette_obp_smc_enable),hl
+	ld hl,$DD0006 ;LD B,0 \ LD IX,
+	ld (convert_palette_obp_smc_setup),hl
+	ld a,$28 ;JR Z
+	ld (convert_palette_obp_smc_1),a
+	ld (convert_palette_obp_smc_2),a
+	ld hl,((BGP_max_value << 8) | $3A) & $FFFFFF ;LD A,(BGP_max_value)
+	ld (convert_palette_obp_smc_finish),hl
+	; Set pointers to raw mapped colors
+	ld a,(obp0_palette_colors - 2) & $FF
+	ld (update_palettes_bgp123_index),a
+	ld a,(obp1_palette_colors + 2) & $FF
+	ld (update_palettes_obp1_index),a
+	ld hl,obp01_palette_colors
+	ld (update_palettes_obp0_ptr),hl
+convert_palette_obp_restore:
+	ld hl,convert_palette_LUT + $88
+	ld de,-$11
+	ld a,(ScalingMode)
+	or a
+	ld a,6
+	jr nz,_
+	ld l,8
+	ld e,d
+_
+	ld (hl),l
+	add hl,de
+	dec a
+	jr nz,-_
+	ret
+	
+convert_palette_for_menu:
+	; Check if sprite palettes were manually mapped
+	ld hl,(update_palettes_obp0_ptr)
+	ld de,-obp01_palette_colors
+	add hl,de
+	jr c,_
+	; Get the current native BGP palette
+	ld a,(BGP_max_value)
+	ld e,a
+	call convert_palette_setup
+	jr convert_palette_for_menu_continue
+_
+	; Translate OBP0 colors to OBP1 colors
+	ld hl,convert_palette_LUT + $44
+	ld de,-$11
+	ld b,4
+	ld a,(ScalingMode)
+	or a
+	jr nz,_
+	ld l,b
+	ld e,d
+_
+	ld a,l
+	add a,a
+_
+	ld (hl),a
+	add hl,de
+	add a,e
+	djnz -_
+	ex de,hl
+	
+convert_palette_for_menu_continue:
+	ld hl,(current_display)
+	ld c,240
+_
+	ld b,convert_palette_row_loop_count
+convert_palette_row_smc_3 = $+1
+	call convert_palette_row
+	dec c
+	jr nz,-_
+	jr convert_palette_obp_restore
 	
 do_scale_fill:
 	ld hl,(current_display)
@@ -834,6 +908,28 @@ _
 	ld (do_scale_fill_smc),hl
 	ret
 	
+convert_palette_obp_do_setup:
+	push af
+	 push hl
+	  call convert_palette_setup_obp
+	 pop hl
+	pop af
+	jr convert_palette_obp_setup_continue
+	
+convert_palette_obp_do_smc:
+	; If the entire frame has been rendered before the first OBP change, do nothing
+	ld a,(myLY)
+	cp 144
+	ret z
+	ld ix,convert_palette
+	ld (convert_palette_obp_smc_enable),ix
+	ld hl,((convert_palette_obp_do_setup - (convert_palette_obp_smc_setup + 2)) & $FF << 8) | $DD0018
+	ld (ix-convert_palette+convert_palette_obp_smc_setup),hl
+	ld a,$38 ;JR C
+	ld (ix-convert_palette+convert_palette_obp_smc_1),a
+	ld (convert_palette_obp_smc_2),a
+	ld hl,((convert_palette_obp_finish - (convert_palette_obp_smc_finish + 2)) << 8) | $18
+	ld (convert_palette_obp_smc_finish),hl
 	
 convert_palette:
 	; Do setup for the final stretch of scanlines,
@@ -885,9 +981,11 @@ _
 	ld a,c
 	cp l
 	ret z
+convert_palette_obp_smc_setup = $
+	ld b,0 ; Replaced with JR convert_palette_obp_do_setup
+convert_palette_obp_setup_continue:
 scanlineLUT_palette_ptr = $+2
 	ld ix,0
-	ld b,0
 convert_palette_loop:
 	push af
 	 ; Check whether this is run-length or literal run of BGP values
@@ -903,8 +1001,9 @@ convert_palette_loop:
 	 inc l
 	 ; If it's the native palette value, skip conversion
 	 ld a,(BGP_max_value)
-	 cp e
-	 jr z,_
+	 xor e
+convert_palette_obp_smc_1 = $
+	 jr z,_ ; Replaced with JR C when sprite conversion is active
 	 push hl
 	  ; Clear the frequency for this value
 	  inc h
@@ -941,8 +1040,9 @@ convert_multiple_palettes_row_loop:
 	 ; If it's the native palette value, skip conversion
 BGP_max_value = $+1
 	 ld a,0
-	 cp e
-	 jr z,_
+	 xor e
+convert_palette_obp_smc_2 = $
+	 jr z,_ ; Replaced with JR C when sprite conversion is active
 	 push hl
 	  ; Clear the frequency for this value
 	  inc h
@@ -972,6 +1072,54 @@ convert_palette_loop_continue:
 	ld (BGP_write_queue_next),hl
 	ld a,l
 	ld (BGP_write_queue_literal_start),a
+	jp sync_frame_flip
+	
+convert_palette_setup_obp:
+	ld a,(ScalingMode)
+	or a
+	ld hl,convert_palette_LUT + $22
+	ld c,BG_COLOR_0 - 8
+	ld a,(hram_base+OBP0)
+	jr z,convert_palette_setup_obp_noscale
+	inc.s de
+	call _
+	ld c,BG_COLOR_0 - 4
+	ld a,(hram_base+OBP1)
+_
+	ld b,3
+_
+	rrca
+	rrca
+	ld e,a
+	and 3
+	add a,c
+	ld d,a
+	ld a,e
+	ld e,$11
+	add hl,de
+	mlt de
+	ld h,(convert_palette_LUT >> 8) & $FF
+	ld (hl),e
+	djnz -_
+	ret
+	
+convert_palette_setup_obp_noscale:
+	ld l,2
+	call _
+	ld c,BG_COLOR_0 - 4
+	ld a,(hram_base+OBP1)
+_
+	ld b,3
+_
+	rrca
+	rrca
+	ld d,a
+	and 3
+	add a,c
+	inc l
+	ld (hl),a
+	ld a,d
+	djnz -_
 	ret
 	
 convert_palette_setup:
@@ -1014,22 +1162,6 @@ _
 	ld a,d
 	djnz -_
 	ex de,hl
-	ret
-	
-convert_palette_for_menu:
-	; Get the current native BGP palette
-	ld a,(BGP_max_value)
-	ld e,a
-	call convert_palette_setup
-	
-	ld hl,(current_display)
-	ld c,240
-_
-	ld b,convert_palette_row_loop_count
-convert_palette_row_smc_3 = $+1
-	call convert_palette_row
-	dec c
-	jr nz,-_
 	ret
 	
 setup_menu_palette:

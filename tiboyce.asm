@@ -410,13 +410,15 @@ overlapped_palette_index_lut = BGP_frequencies + 256
 ; at each word. Note that this means each table is (64 + 2) * 2 bytes large.
 ; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
 ; at the offset corresponding to palette %100100, which is $1A.
-; The tables must directly follow each other in the order BGP, OBP0, OBP1.
+; The tables must directly follow each other in the order BGP, OBP0, OBP1,
+; with the exception of a couple of slots inserted between OBP0 and OBP1.
 ; Also, BGP and OBP1 tables must not cross a 256-byte boundary.
 overlapped_bg_palette_colors = overlapped_palette_index_lut + $40
 bg_palette_colors = overlapped_bg_palette_colors + $1A
 overlapped_obp0_palette_colors = overlapped_bg_palette_colors + ((64 + 2) * 2)
 obp0_palette_colors = overlapped_obp0_palette_colors + $1A
-overlapped_obp1_palette_colors = overlapped_obp0_palette_colors + ((64 + 2) * 2)
+obp01_palette_colors = overlapped_obp0_palette_colors + ((64 + 2) * 2)
+overlapped_obp1_palette_colors = obp01_palette_colors + (2 * 2)
 obp1_palette_colors = overlapped_obp1_palette_colors + $1A
 
 ; A list of scanline start addresses. 144*2 pointers in size.
