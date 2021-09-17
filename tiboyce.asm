@@ -368,11 +368,16 @@ convert_palette_LUT = recompile_cache_LUT + $0200
 rombankLUT = convert_palette_LUT + 256
 rombankLUT_end = rombankLUT + (256*3)
 
+; A table with the largest Y position of a sprite using the corresponding tile,
+; or 0 if the tile is not used by any onscreen sprite.
+; Must be 256-byte aligned.
+oam_tile_usage_lut = rombankLUT_end
+
 ; Specifies offsets into a buffer of pixel data corresponding to the
 ; input 2bpp pixel data. Note that the input has the high palette bits
 ; grouped in the high nibble, and the low palette bits in the low nibble.
 ; Must be 256-byte aligned.
-overlapped_pixel_index_lut = rombankLUT_end
+overlapped_pixel_index_lut = oam_tile_usage_lut + 256
 
 ; A table representing every possible combination of four 2bpp pixels.
 ; The data is overlapped such that a unique sequence of four pixels begins

@@ -125,8 +125,8 @@ _
 	; Propagate the bank mismatch value to the next callstack entry
 	; in the same region as the return address
 callstack_ret_bank_mismatch_helper:
+	ld h,c
 	ld c,a
-	ld h,d
 callstack_ret_skip_propagate_helper:
 	; Ensure the return address is in the $4000-$7FFF bank
 	ld a,$BF
@@ -270,10 +270,24 @@ _
 	  jr flush_mem_finish
 	
 	
+write_vram_check_sprite_catchup:
+	ex de,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	add hl,hl
+	ld a,h
+	ld hl,oam_tile_usage_lut
+	ld l,a
+	ld a,(myspriteLY)
+	cp (hl)
+	jp nc,render_catchup
+	call render_catchup
+	ld a,(myLY)
 ; Catches up sprite rendering before changing sprite state.
 ; Must be called only if render_catchup has already been called.
 ;
-; Outputs: A = current scanline
+; Inputs: A = current scanline
 ; Destroys: AF, BC, DE, HL, IX
 sprite_catchup:
 	push iy
@@ -289,19 +303,46 @@ sprite_catchup:
 scroll_write_DMA:
 	 push bc
 	  ; Render the existing OAM data if applicable
-	  ld a,(z80codebase+updateSTAT_enable_catchup_smc)
-	  rra
-	  call c,sprite_catchup
+	  ld a,(myLY)
+	  or a
+	  call nz,sprite_catchup
+	  ; This returns BC=0, DE=0
+	  MEMSET_FAST(oam_tile_usage_lut, 256, 0)
 	  ; Copy 160 bytes from the specified source address to OAM
-	  ld de,0
 	  ex af,af'
 	  ld d,a
 	  ex af,af'
 	  GET_BASE_ADDR_FAST
 	  add hl,de
-	  ld bc,$00A0
 	  ld de,hram_start
+	  ld c,$A0
 	  ldir
+	  ld hl,oam_tile_usage_lut
+	  ld c,143+16
+oam_tile_usage_gen_loop:
+	  dec e
+	  dec e
+	  ld a,(de)
+	  ld l,a
+	  dec e
+	  dec e
+	  ld a,(de)
+	  jr z,_
+	  dec a
+	  cp c
+	  jr nc,oam_tile_usage_gen_loop
+	  cp (hl)
+	  jr c,oam_tile_usage_gen_loop
+	  inc a
+	  ld (hl),a
+	  jr oam_tile_usage_gen_loop
+_
+	  cp 144+16
+	  jr nc,_
+	  cp (hl)
+	  jr c,_
+	  ld (hl),a
+_
 	 pop bc
 	pop hl
 	jp.sis z80_restore_swap_ret
@@ -889,10 +930,10 @@ lcdc_write_helper:
 	 ld c,a
 	 and $06
 	 jr z,_
-	 ld a,(z80codebase+updateSTAT_enable_catchup_smc)
-	 rra
 	 push bc
-	  call c,sprite_catchup
+	  ld a,(myLY)
+	  or a
+	  call nz,sprite_catchup
 	 pop bc
 _
 	 bit 0,c
@@ -1263,7 +1304,8 @@ opgen_overlap_rerecompile:
 	 pop iy
 	pop bc
 	pop hl
-	jp.sis z80_restore_c_swap_ret
+	ld a,c
+	jp.sis z80_double_swap_ret
 	
 handle_overlapped_op_1_1_helper:
 	ex af,af'

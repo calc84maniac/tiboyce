@@ -39,6 +39,7 @@ frame_emulated_count = $+1
 	    ld a,(hram_base+LCDC)
 	    rla
 	    jr nc,_
+	    ld a,144
 	    call draw_sprites
 	    call sync_frame_flip
 	    call convert_palette

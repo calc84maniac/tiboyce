@@ -664,10 +664,12 @@ rom_start_smc_1 = $+1
 	  add a,$7C	;LD A,B/D/H
 	  ld (hl),a
 	  jr memroutine_gen_end_push
-	 
+	  
 memroutine_gen_write_hmem:
 	  ld de,mem_write_hmem
 memroutine_gen_write:
+	  sra c
+	  call nz,memroutine_gen_restore_hl
 	  inc a
 	  jr z,_
 	  ld (hl),$F1	;POP AF
@@ -691,39 +693,8 @@ _
 	  dec hl
 	  ld (hl),$F5	;PUSH AF
 _
-	  call memroutine_gen_load_ix
-	  jp memroutine_gen_end
-	 
-memroutine_gen_not_cart0:
-	  djnz memroutine_gen_not_hmem
-	  jr c,memroutine_gen_write_hmem
-	  
-	  dec d
-	  ld (hl),d	;Access IXL instead of (HL)
-	  ;Special case for loading into H or L
-	  ld a,d
-	  and $F0
-	  cp $60
-	  jr nz,_
-	  ld (hl),$EB	;EX DE,HL
-	  dec hl
-	  res 5,d
-	  set 4,d
-	  ld (hl),d
-_
-	  dec hl
-	  ld (hl),$DD
-	  jr nz,_
-	  dec hl
-	  ld (hl),$EB	;EX DE,HL
-_
-	  dec hl
-	  ld (hl),mem_read_hmem >> 8
-	  dec hl
-	  ld (hl),mem_read_hmem & $FF
-	  dec hl
-	  ld (hl),$CD	;CALL mem_read_hmem
-	  call memroutine_gen_load_ix	;LD IX,BC/DE/HL
+	  sra c
+	  call nz,memroutine_gen_swap_hl
 	  jp memroutine_gen_end
 	  
 memroutine_gen_write_cart:
@@ -733,6 +704,23 @@ memroutine_gen_write_cart:
 memroutine_gen_write_vram:
 	  ld de,mem_write_vram
 	  jr memroutine_gen_write
+	  
+memroutine_gen_not_cart0:
+	  djnz memroutine_gen_not_hmem
+	  jr c,memroutine_gen_write_hmem
+	  
+	  sra c
+	  call nz,memroutine_gen_restore_hl
+	  ld (hl),d	;op r,(HL)
+	  dec hl
+	  ld (hl),mem_update_hmem >> 8
+	  dec hl
+	  ld (hl),mem_update_hmem & $FF
+	  dec hl
+	  ld (hl),$CD	;CALL mem_update_hmem
+	  sra c
+	  call nz,memroutine_gen_swap_hl
+	  jp memroutine_gen_end
 	  
 memroutine_gen_not_cart_bank:
 	  djnz memroutine_gen_not_vram
@@ -938,16 +926,23 @@ _
 	dec hl
 	ret
 	
-memroutine_gen_load_ix:
+memroutine_gen_swap_hl:
 	dec hl
-	ld (hl),$E1
+	ld (hl),$EB	;EX DE,HL
+	ret c
+	ld (hl),$60	;LD H,B
 	dec hl
-	ld (hl),$DD	;POP IX
+	ld (hl),$69	;LD L,C
 	dec hl
-	ld a,c
-	add a,a
-	add a,a
-	add a,a
-	add a,$E5	;PUSH BC/DE/HL
-	ld (hl),a
+	ld (hl),$E5	;PUSH HL
 	ret
+	
+memroutine_gen_restore_hl:
+	ld (hl),$EB	;EX DE,HL
+	dec hl
+	ret pe
+	inc hl
+	ld (hl),$E1	;POP HL
+	dec hl
+	ret
+	

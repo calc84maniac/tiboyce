@@ -252,6 +252,7 @@ callstack_ret_target_mismatch:
 	jr c,callstack_ret_bank_mismatch_continue
 	; Check if the bank difference is non-zero
 	add.l hl,de  ; Restore the original high byte while keeping carry clear
+	ld c,h  ; Save the original middle byte in case propagation is needed
 	ld h,d
 	ld l,e
 	sbc.l hl,de
@@ -2437,10 +2438,35 @@ trigger_event_already_triggered:
 	pop.l hl
 z80_restore_swap_ret:
 	ld a,iyl
+z80_double_swap_ret:
 	ex af,af'
 z80_swap_ret:
 	exx
 z80_ret:
+	ret
+	
+ophandlerE2:
+	ex af,af'
+	inc c
+	jr z,_
+	dec c
+	jp p,++_
+	ex af,af'
+	ld iyl,b
+	ld b,$FF
+	ld (bc),a
+	ld b,iyl
+	ret
+_
+	dec c
+_
+	ld iyl,a
+	push hl
+	 ld h,$FF
+	 ld l,c
+	 ld a,l
+	 call mem_write_ports_swapped_always
+	pop hl
 	ret
 	
 ophandlerE8:
@@ -2573,12 +2599,23 @@ ophandlerF1_pop_z80:
 	ret
 	
 ophandlerF2:
-	ld ixh,$FF
-	ld ixl,c
 	ex af,af'
+	bit 7,c
+	jr z,_
+	ex af,af'
+	ld iyl,b
+	ld b,$FF
+	ld a,(bc)
+	ld b,iyl
+	ret
+_
 	ld iyl,a
-	call mem_read_ports_always
-	ld a,ixl
+	push hl
+	 ld h,$FF
+	 ld l,c
+	 call mem_update_ports_swapped
+	 ld a,(hl)
+	pop hl
 	ret
 	
 ophandlerF3:
@@ -2699,20 +2736,14 @@ do_push_for_call_cart:
 	push ix
 do_push_cart:
 	ld ix,mem_write_cart_always
-	push af
-	 call do_push_generic
-	pop af
-	ret
+	jr do_push_generic
 	
 do_push_for_call_vram:
 	push bc
 	push ix
 do_push_vram:
 	ld ix,mem_write_vram_always
-	push af
-	 call do_push_generic
-	pop af
-	ret
+	jr do_push_generic
 	
 do_push_for_call_hmem:
 	push bc
@@ -2722,31 +2753,31 @@ do_push_hmem:
 	 ; We need special handling if an event is triggered by the first write
 	 ld ix,event_cycle_count
 	 dec (ix)
-	 dec hl
-	 push hl
-	 pop ix
 	 ex af,af'
 	 ld iyl,a
+	 ld a,d
+	 ex af,af'
 	 ld a,e
-	 push af
-	  ld a,d
-	  ex af,af'
+	 dec hl
+	 push hl
 	  dec hl
-	  push hl
-	   ld de,-1
-	   add iy,de
-	   exx
+	  ld de,-1
+	  add iy,de
+	  exx
+	  ex (sp),hl
+	  push af
 	   jr nc,push_hmem_underflow
 	   call mem_write_hmem_swapped
 push_hmem_continue:
-	   ; Restore the event cycle count, or increment if an event was triggered
-	   ld ix,event_cycle_count
-	   inc (ix)
-	  pop ix
-	 pop af
-	 ex af,af'
-	 inc iy
-	 call mem_write_hmem_swapped
+	  pop af
+	  ex af,af'
+	  dec hl
+	  inc iy
+	  ; Restore the event cycle count, or increment if an event was triggered
+	  ld ix,event_cycle_count
+	  inc (ix)
+	  call mem_write_hmem_swapped
+	 pop hl
 	pop af
 	ret
 	
@@ -2796,35 +2827,39 @@ do_push_for_call_adl:
 	jp (ix)
 	
 	; Pushes using the memory write routine passed in IX
-	; Currently, the routine must not require cycle info
-	; Destroys AF and unswaps BCDEHL'
+	; Currently, the routine must not cause reschedules
+	; Unswaps BCDEHL'
 do_push_generic:
-	dec.l hl
-	push hl
-	 ex (sp),ix
-	 dec.l hl
+	push af
 	 ex af,af'
 	 ld iyl,a
-	 ld a,e
-	 ld c,d
-	 ld de,(sp_base_address_neg)
-	 add ix,de
-	pop de
-	push de
-	 push af
-	  pea ix-1
-	   call _
-	  pop ix
-	 pop af
+	 ld a,d
 	 ex af,af'
+	 ld a,e
+	 dec.l hl
+	 ex.l de,hl
+	 ld hl,(sp_base_address_neg)
+	 add hl,de
+	 push hl
+	  ex.l de,hl
+	  dec.l hl
+	  dec iy
+	  exx
+	  ex (sp),hl
+	  push af
+	   push ix
+	    call _
+	   pop ix
+	  pop af
+	  ex af,af'
+	  dec hl
+	  inc iy
+	  call _
+	 pop hl
+	pop af
 	ret
 _
-	push de
-z80_restore_c_swap_ret:
-	 ld a,c
-	 exx
-	 ex af,af'
-	ret
+	jp (ix)
 	
 ophandlerF8:
 	ld ixl,a
@@ -2923,20 +2958,19 @@ _
 pop_hmem:
 	inc b
 	push hl
-	pop ix
-	inc hl
-	push hl
-	 inc hl
 	 exx
+	 ex (sp),hl
 	 dec iy
-	 call mem_read_hmem_swapped
-	 ex (sp),ix
+	 call mem_update_hmem_swapped
 	 inc iy
+	 inc hl
 	 ex af,af'
-	 call mem_read_hmem_swapped
-	 exx
-	pop de
-	ld d,ixl
+	 call mem_update_hmem_swapped
+	pop hl
+	exx
+	ld de,(hl)
+	inc hl
+	inc hl
 	ret
 	
 write_vram_handler:
@@ -2946,24 +2980,30 @@ write_vram_handler:
 	ld iyl,a
 	exx
 	ld de,(ix)
-	jp.lil write_vram_and_expand_swapped
+	; For now it's not possible to get cycle info for absolute writes,
+	; so we can't call updateSTAT. It may be possible for catch-up to fail.
+	; TODO: Fix this
+	jp.lil write_vram_and_expand_push
 	
 mem_write_vram_always:
-	jp.lil write_vram_and_expand
-	
 mem_write_any_vram:
 	push hl
 	 exx
+	 call updateSTAT
 	pop de
-	jp.lil write_vram_and_expand_swapped
+	ld a,r
+	jp.lil p,write_vram_and_expand
+	jp.lil write_vram_and_expand_catchup
 	
 write_cart_handler:
-	pop ix
-	pea ix+2
-	ld ix,(ix)
 	ex af,af'
 	ld iyl,a
-	jp mem_write_cart_always
+	ex (sp),hl
+	inc hl
+	ld a,(hl)
+	inc hl
+	ex (sp),hl
+	jp mem_write_cart_always_a
 	
 write_cram_bank_handler:
 	pop ix
@@ -3010,8 +3050,16 @@ read_cram_bank_handler_smc = $+1
 readDIVhandler:
 	ex af,af'
 	ld iyl,a
-	call readDIV
-	ld a,ixl
+	call get_mem_cycle_offset_swap_push
+	 ld hl,i
+	 add hl,de
+	 add hl,hl
+	 add hl,hl
+	 ld a,iyl
+	 ex af,af'
+	 ld a,h
+	pop.l hl
+	exx
 	ret
 	
 readTIMAhandler:
@@ -3048,70 +3096,69 @@ readSTAThandler:
 	ld a,(STAT)
 	ret
 	
-readSTAT:
+mem_update_STAT:
 	exx
 	call updateSTAT
 	pop.l hl
 	exx
-	ld ix,(STAT)
 	ld a,iyl
 	ex af,af'
 	ret
 	
-readLY:
+mem_update_LY:
 	call updateLY
 	pop.l hl
 	exx
-	ld ix,(LY)
 	ld a,iyl
 	ex af,af'
 	ret
-
 	
-	;IX=GB address, reads into IXL
-mem_read_hmem:
+	;HL=GB address, ensures data at (HL) is valid for reading
+mem_update_hmem:
 	ex af,af'
 	ld iyl,a
-mem_read_hmem_swapped:
-	ld a,ixh
+mem_update_hmem_swapped:
+	ld a,h
 	cp $FE
-	jr c,mem_read_bail
-	jr z,mem_read_oam
-	;IX=GB address, reads into IXL, AF'=GB AF
-mem_read_ports_always:
-	ld a,ixl
-	add a,a
-	jr c,mem_read_hram
-	cp TIMA*2 & $FF
-	jr z,readTIMA
-	cp LY*2 & $FF
-	jr z,readLY
-	cp DIV*2 & $FF
-	jr z,readDIV
-	cp STAT*2 & $FF
-	jr z,readSTAT
-mem_read_hram:
-mem_read_oam:
-	ld ix,(ix)
+	jr c,mem_update_bail
+	jr z,mem_update_oam
+mem_update_ports_swapped:
+	ld a,l
+	cp STAT & $FF
+	jr z,mem_update_STAT
+	cp LY & $FF
+	jr z,mem_update_LY
+	add a,(-TIMA) & $FF
+	sbc a,h
+	jr z,mem_update_DIV_TIMA
+mem_update_oam:
 	ld a,iyl
 	ex af,af'
 	ret
 	
-readTIMA:
+mem_update_DIV_TIMA:
+	jr nc,mem_update_DIV
 	call updateTIMA
 	pop.l hl
 	exx
-	ld ix,(TIMA)
 	ld a,iyl
 	ex af,af'
 	ret
 	
-mem_read_bail:
+mem_update_bail:
 	pop ix
+	ld a,RST_MEM
+	cp (ix-5)
+	jr z,_
+	dec ix
+	cp (ix-5)
+	jr z,_
+	lea ix,ix-2
+_
 	ld a,iyl
 	ex af,af'
 	push af
-	pea ix-8
+	pea ix-5
 	ret
 	
 mem_read_any_before_write:
@@ -3150,16 +3197,16 @@ _
 	ld.lil ix,wram_base-$2000
 	jr mem_read_any_finish
 	
-readDIV:
+mem_update_DIV:
 	call get_mem_cycle_offset_swap_push
 	 ld hl,i
 	 add hl,de
 	 add hl,hl
 	 add hl,hl
-	 ex de,hl
-	 ld ixl,d
+	 ld a,h
 	pop.l hl
 	exx
+	ld (hl),a
 	ld a,iyl
 	ex af,af'
 	ret
@@ -3181,18 +3228,12 @@ mem_read_any_rtc_smc = $+1
 	ret
 	
 mem_read_any_hmem:
-	jr z,mem_read_any_oam
-	ld a,l
-	add a,a
-	jr c,mem_read_any_hram
-	push hl
-	pop ix
-	call mem_read_ports_always
+	ld a,(hl)
+	ret z ;OAM
+	bit 7,l
+	ret nz ;HRAM
+	call mem_update_ports_swapped
 	ex af,af'
-	ld a,ixl
-	ret
-mem_read_any_hram:
-mem_read_any_oam:
 	ld a,(hl)
 	ret
 	
@@ -3244,8 +3285,6 @@ mem_write_any_wram_mirror:
 	jr mem_write_any_finish
 	
 mem_write_any_hmem:
-	push hl
-	pop ix
 	jr nz,mem_write_ports_swapped
 	jr mem_write_oam_swapped
 	
@@ -3258,7 +3297,7 @@ mem_write_hmem:
 	ex af,af'
 	ld iyl,a
 mem_write_hmem_swapped:
-	ld a,ixh
+	ld a,h
 	inc a
 	jr z,mem_write_ports_swapped
 	inc a
@@ -3267,67 +3306,74 @@ mem_write_hram_swapped:
 mem_write_oam_swapped:
 	ld a,iyl
 	ex af,af'
-	ld (ix),a
+	ld (hl),a
 	ret
 
 mem_write_any_cart:
-	push hl
-	pop ix
 	jr mem_write_cart_always
-
-ophandlerE2:
-	ld ixh,$FF
-	ld ixl,c
-	ex af,af'
-	ld iyl,a
-; Inputs: IX = GB address
+	
+; Inputs: HL = GB address
 ;         IY = cycle counter,
 ;         A' = data to write
 ; Outputs: AF = input AF'
 ;          A' = low cycle counter
 ; Destroys: IX, F', C', DE'
 mem_write_ports_swapped:
-	ld a,ixl
+	ld a,l
 	cp $7F
 	jp pe,mem_write_hram_swapped
+mem_write_ports_swapped_always:
+	ld ixl,a
+	ld ixh,$FF
+	sub WX+1-ioregs
+	ld l,a
+	ld h,mem_write_port_routines >> 8
+	ld l,(hl)
 	push hl
-	 sub WX+1-ioregs
-	 ld l,a
-	 ld h,mem_write_port_routines >> 8
-	 ld l,(hl)
-	 ex (sp),hl
+	 lea hl,ix
 	 ret m
 	pop af
 	ld a,iyl
 	ex af,af'
 	ret
 	
-	;IX=GB address, A=data, preserves AF, destroys F'
+	;HL=GB address, A=data, preserves AF, destroys F'
 mem_write_vram:
 	ex af,af'
 	ld iyl,a
-	ld a,ixh
+	ld a,h
 	sub $20
-	jp.lil pe,write_vram_and_expand
+	jp pe,mem_write_vram_always
 mem_write_bail:
 	pop ix
+	lea ix,ix-5
 	ld a,RST_MEM
-	cp (ix-8)
+	cp (ix)
 	jr z,mem_write_bail_a
-	cp (ix-10)
+	dec ix
+	cp (ix)
+	jr z,mem_write_bail_de
+	dec ix
+	cp (ix)
 	jr z,mem_write_bail_r
 	dec ix
-mem_write_bail_r:
-	ld a,iyl
-	ex af,af'
-	pea ix-10
-	ret
+	; We subtracted either $02 (for LD (BC),A) or $7E (for LD (HL),n)
+	; The latter would have overflowed
+	jp pe,mem_write_bail_r
+mem_write_bail_bc:
+	pop hl
+	ex de,hl
+mem_write_bail_de:
+	ex de,hl
 mem_write_bail_a:
 	ld a,iyl
 	ex af,af'
 	push af
-	pea ix-8
-	ret
+	jp (ix)
+mem_write_bail_r:
+	ld a,iyl
+	ex af,af'
+	jp (ix)
 	
 mbc_rtc_latch:
 	ld a,(cram_actual_bank_base+2)
@@ -3347,16 +3393,17 @@ mbc_rtc_latch_smc = $+1
 	push bc
 	 jp.lil mbc_rtc_latch_helper
 	
-	;IX=GB address, A=data, preserves AF, destroys F'
+	;HL=GB address, A=data, preserves AF, destroys F'
 mem_write_cart:
 	ex af,af'
 	ld iyl,a
-	ld a,ixh
+	ld a,h
 	rla
 	jr c,mem_write_bail
-	;IX=GB address, A'=data, preserves AF', destroys AF
+	;HL=GB address, A'=data, preserves AF', destroys AF
 mem_write_cart_always:
-	ld a,ixh
+	ld a,h
+mem_write_cart_always_a:
 	sub $20
 	jr c,mbc_0000
 	sub $20

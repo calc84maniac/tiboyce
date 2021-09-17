@@ -7,11 +7,11 @@ draw_sprites_save_sp = $+1
 	ld sp,0
 	ret
 	
+; Input: A = current scanline
 draw_sprites:
 LCDC_1_smc = $
 myspriteLY = $+1
 	ld c,0			;ret when sprites disabled
-	ld a,(myLY)
 	sub c
 	ret z
 LCDC_2_smc_4 = $+1
@@ -230,12 +230,23 @@ draw_sprite_priority_hdir_2:
 	pop.s ix
 	jp draw_next_sprite_2
 	
-write_vram_and_expand:
-	exx
-	lea de,ix
-write_vram_and_expand_swapped:
-	push hl
+_
+	   call write_vram_check_sprite_catchup
+	   jr _
+write_vram_and_expand_catchup:
 	 push bc
+	  push de
+	   bit 4,d
+	   jr z,-_
+	   call render_catchup
+_
+	  pop de
+	  jr _
+write_vram_and_expand_push:
+	push hl
+write_vram_and_expand:
+	 push bc
+_
 	  ld hl,vram_base
 	  add hl,de
 	  ex af,af'
