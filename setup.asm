@@ -2776,7 +2776,7 @@ regs_init:
 	.dw $01B0,$0013,$00D8,$014D,$FFFE,$0100
 	.dw $0000 ; Frame cycle counter
 	.dw $0000 ; Serial transfer cycle counter
-	.dw $0000 ; Divisor cycle counter
+	.dw $6AF3 ; Divisor cycle counter
 	.db $01 ; Cart ROM bank
 	.db $00 ; Cart RAM bank
 	.db $02 ; MBC mode
@@ -2784,7 +2784,7 @@ regs_init:
 	
 	
 hmem_init:
-	.db 0,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
+	.db $CF,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
 	.db $80,$BF,$F3,$FF,$BF,$FF,$3F,$00,$FF,$BF,$7F,$FF,$9F,$FF,$BF,$FF
 	.db $FF,$00,$00,$BF,$77,$F3,$F1,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
 	.db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
