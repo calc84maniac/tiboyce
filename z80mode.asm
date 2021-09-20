@@ -3515,6 +3515,7 @@ mem_write_cart_always_a:
 	sub $20
 	jr c,mbc_0000
 	sub $20
+mbc5_2000_smc = $+1
 	jr c,mbc_2000
 	sub $20
 	jr c,mbc_4000
@@ -3553,6 +3554,9 @@ cram_actual_bank_base = $+3
 	 ld.lil ix,mpZeroPage
 	 jr mbc_ram_protect
 	
+mbc5_2000:
+	add a,$10
+	jr c,mbc_6000_denied
 mbc_2000:
 	push bc
 	 ex af,af'

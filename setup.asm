@@ -700,6 +700,8 @@ setup_ram_bank_no_rtc:
 	;MBC5
 	ld hl,$18 + ((mbc5_rom_bank_continue - (mbc5_rom_bank_smc+2)) << 8)
 	ld.sis (mbc5_rom_bank_smc),hl
+	ld a,mbc5_2000 - (mbc5_2000_smc+1)
+	ld (z80codebase+mbc5_2000_smc),a
 setup_ram_bank:
 	ld a,(cram_size+1)
 	add a,a
