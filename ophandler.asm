@@ -300,7 +300,10 @@ sprite_catchup:
 	ld (scanlineLUT_sprite_ptr),hl
 	jp sync_frame_flip
 	
-scroll_write_DMA:
+dma_write_helper:
+	 ; Catch up background rendering
+	 ld a,r
+	 call m,render_catchup
 	 push bc
 	  ; Render the existing OAM data if applicable
 	  ld a,(myLY)
@@ -310,8 +313,15 @@ scroll_write_DMA:
 	  MEMSET_FAST(oam_tile_usage_lut, 256, 0)
 	  ; Copy 160 bytes from the specified source address to OAM
 	  ex af,af'
+	  ld (hram_base+DMA),a
 	  ld d,a
 	  ex af,af'
+	  ld a,$DF
+	  cp d
+	  jr nc,_
+	  and d
+	  ld d,a
+_
 	  GET_BASE_ADDR_FAST
 	  add hl,de
 	  ld de,hram_start
@@ -369,9 +379,7 @@ scroll_write_helper:
 	 sub SCX - ioregs
 	 jr c,scroll_write_SCY
 	 jr z,scroll_write_SCX
-	 sub DMA - SCX
-	 jr z,scroll_write_DMA
-	 sub WY - DMA
+	 sub WY - SCX
 	 jr c,scroll_write_OBP
 	 jr nz,scroll_write_WX
 	 ld a,iyl

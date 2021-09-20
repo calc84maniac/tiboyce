@@ -3066,8 +3066,7 @@ write_vram_handler:
 mem_write_vram_always:
 mem_write_any_vram:
 	push hl
-	 exx
-	 call updateSTAT
+	 call updateSTAT_swap
 	pop de
 	ld a,r
 	jp.lil p,write_vram_and_expand
@@ -3181,8 +3180,7 @@ readLYhandler:
 readSTAThandler:
 	ex af,af'
 	ld iyl,a
-	exx
-	call updateSTAT
+	call updateSTAT_swap
 	pop.l hl
 	exx
 	ld a,iyl
@@ -3191,8 +3189,7 @@ readSTAThandler:
 	ret
 	
 mem_update_STAT:
-	exx
-	call updateSTAT
+	call updateSTAT_swap
 	pop.l hl
 	exx
 	ld a,iyl
@@ -3846,6 +3843,18 @@ mem_cycle_scratch:
 	.dw 0
 	.db 0
 	
+updateSTAT_if_changed_scroll:
+	exx
+	ex af,af'
+	ld c,a
+	ex af,af'
+	ld a,(ix)
+	cp c
+	jr z,updateSTAT_no_change_scroll
+	push ix
+	call updateSTAT
+	jp.lil scroll_write_helper
+	
 updateSTAT_if_changed_lyc:
 	ld a,(LYC)
 updateSTAT_if_changed_any:
@@ -3855,10 +3864,8 @@ updateSTAT_if_changed_any:
 	ex af,af'
 	cp c
 	jr nz,updateSTAT
-	.db $20 ; JR NZ,
-updateSTAT_no_change_ix:
 	pop de   ; Pop return address
-	pop de   ; Pop pushed value of IX
+updateSTAT_no_change_scroll:
 	exx
 	ld a,iyl
 	ex af,af'
@@ -3872,14 +3879,8 @@ lcd_on_STAT_handler:
 	ld a,l
 	jr updateSTAT_mode2
 	
-updateSTAT_if_changed_ix:
+updateSTAT_swap:
 	exx
-	ex af,af'
-	ld c,a
-	ex af,af'
-	ld a,(ix)
-	cp c
-	jr z,updateSTAT_no_change_ix
 updateSTAT:
 	push.l hl
 	; Get the value of DIV at the end of the JIT block
@@ -4313,7 +4314,7 @@ _
 	 ld a,(TMA)
 	 jr updateTIMAcontinue
 	
-	.block (-$-241)&$FF
+	.block (-$-245)&$FF
 	
 _writeSC:
 	ld a,iyl
@@ -4471,10 +4472,6 @@ writeWXhandler:
 	ld ix,WX
 	jr write_scroll_swap
 	
-writeDMAhandler:
-	ld ix,DMA
-	jr write_scroll_swap
-	
 writeOBP0handler:
 	ld ix,OBP0
 	jr write_scroll_swap
@@ -4487,6 +4484,13 @@ writeIFhandler:
 	ex af,af'
 	ld iyl,a
 	jp writeIF
+	
+writeIEhandler:
+	ld (IE),a
+	ex af,af'
+	ld iyl,a
+	exx
+	jp checkInt
 
 write_audio_handler:
 	ex af,af'
@@ -4528,17 +4532,21 @@ write_scroll_swap:
 	ex af,af'
 	ld iyl,a
 write_scroll:
-	push ix
-	 call updateSTAT_if_changed_ix
-	 jp.lil scroll_write_helper
+	jp updateSTAT_if_changed_scroll
 	
 writeLCDChandler:
 	ex af,af'
 	ld iyl,a
 writeLCDC:
-	exx
-	call updateSTAT
+	call updateSTAT_swap
 	jp.lil lcdc_write_helper
+	
+writeDMAhandler:
+	ex af,af'
+	ld iyl,a
+writeDMA:
+	call updateSTAT_swap
+	jp.lil dma_write_helper
 	
 writeTAChandler:
 	ex af,af'
@@ -4551,8 +4559,7 @@ writeSTAThandler:
 	ex af,af'
 	ld iyl,a
 writeSTAT:
-	exx
-	call updateSTAT
+	call updateSTAT_swap
 	jp.lil stat_write_helper
 	
 writeLYChandler:
@@ -4572,9 +4579,6 @@ writeTIMA:
 	ex af,af'
 	jp.lil tima_write_helper
 	
-writeIEhandler:
-	ex af,af'
-	ld iyl,a
 writeIE:
 	ex af,af'
 	ld (IE),a
