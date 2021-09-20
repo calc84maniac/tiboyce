@@ -592,13 +592,14 @@ lyc_write_disable_smc = $
 	 ; Note that bit 2 has been reset, so bit $04 will be ignored
 	 and d
 	 jr nz,_
-	 ; Set the LYC coincidence bit and IF STAT bit
+	 ; Set the LYC coincidence bit
 	 ld (hl),c
-	 ld l,IF & $FF
-	 set 1,(hl)
 	 ; Check if the IE STAT bit is set
-	 ld l,h
+	 ld l,h ;ld l,IE & $FF
 	 bit 1,(hl)
+	 inc hl ;ld hl,active_ints
+	 ; Set the STAT interrupt active bit
+	 set.s 1,(hl)
 	 jr z,++_
 	 ; Perform STAT scheduling updates
 	 call stat_setup
@@ -649,12 +650,11 @@ stat_write_disable_smc = $
 	 ; Emulate DMG STAT write bug by just checking if any source is enabled
 	 or a ; Replace with AND D for GBC emulation, to check against new bits
 	 jr z,_
-	 ; If so, set IF STAT bit
-	 ld l,IF & $FF
-	 set 1,(hl)
-	 ; Check if IE STAT bit is set
-	 ld l,h
+	 ; If so, check if IE STAT bit is set and set IF STAT bit
+	 ld l,h ;ld l,IE & $FF
 	 bit 1,(hl)
+	 inc hl ;ld hl,active_ints
+	 set.s 1,(hl)
 	 jr z,_
 	 ; Handle changes to mode 0 and mode 2 interrupt bits
 	 ld a,e
@@ -1059,8 +1059,9 @@ _
 	 ; Leave mode as 0, even though it's really mode 2
 	 ld (hl),c
 	 jr nz,_
-	 ld l,IF & $FF
-	 set 1,(hl)
+	 sbc hl,hl ;ld hl,active_ints
+	 set.s 1,(hl)
+	 dec h
 _
 	  
 	 ; Set LY and STAT cache times for line 0, mode 2 (fake mode 0)

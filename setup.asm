@@ -979,6 +979,10 @@ _
 	ld (WX_smc_1),a
 _
 	
+	ld a,(iy-ioregs+IF)
+	and $1F
+	ld (z80codebase+active_ints),a
+	
 	; Determine the scanline LUT pointer based on the initial framebuffer
 	ld de,(current_buffer)
 	ld a,d
@@ -1052,6 +1056,10 @@ ExitEmulation:
 	ld (ix-state_size+STATE_SYSTEM_TYPE),a
 	ld b,a
 	sbc hl,hl
+	; Save the active interrupts in IF
+	ld.s a,(hl) ;active_ints
+	or $E0
+	ld (ix-ioregs+IF),a
 	add.s hl,sp
 	lea de,ix-state_size+STATE_REG_AF
 	ld c,8

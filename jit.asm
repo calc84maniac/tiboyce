@@ -2635,9 +2635,11 @@ opgen_emit_jump:
 	inc de
 	ret
 	
-_opgenRET:
+opgen_emit_ret:
 	ex de,hl
 	call opgen_reset_cycle_count
+	bit 0,c
+	jr z,opgen_finish_cond_ret
 	ld (hl),$D9	;EXX
 	inc hl
 	ld (hl),$D1	;POP DE
@@ -2646,9 +2648,7 @@ _opgenRET:
 	inc hl
 	ret
 	
-_opgenRETcond:
-	ex de,hl
-	call opgen_reset_cycle_count
+opgen_finish_cond_ret:
 	dec iyl
 	ld a,c
 	xor $C0 ^ $C2
@@ -3182,6 +3182,11 @@ _
 	cp TIMA*2 & $FF
 	jr nz,_
 	ld bc,readTIMAhandler
+	jr opgenHMEMreadroutine
+_
+	cp IF*2 & $FF
+	jr nz,_
+	ld bc,readIFhandler
 	jr opgenHMEMreadroutine
 _
 	cp LY*2 & $FF

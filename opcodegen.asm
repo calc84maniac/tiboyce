@@ -20,9 +20,8 @@ opgenJR:
 opgenJP:
 	jp opgen_emit_jump
 opgenRET:
-	jp _opgenRET
 opgenRETcond:
-	jp _opgenRETcond
+	jp opgen_emit_ret
 
 opgen08:
 	jp _opgen08
@@ -135,10 +134,13 @@ opgen76:
 opgenCB:
 	ldi
 	ld a,(hl)
-	and $07
-	cp $06
+	xor $36
+	ld c,a
+	and 7
+	jr z,opgenCB_mem
+	xor c
 	jr nz,opgen1byte
-	jr _opgenCB
+	jr opgenCB_swap
 	
 opgen3byte_low:
 	inc b
@@ -199,17 +201,20 @@ _
 	ex de,hl
 	jr opgen_next_fast
 	
-_opgenCB:
+opgenCB_mem:
+	dec de
+	ld (de),a ;NOP
+	inc de
 	dec iyl
-	ld a,(hl)
+	ld a,c
 	add a,$40
 	jp pe,_
 	dec iyl
+	inc c ;Just in case this was SWAP (HL) and C=0
 _
-	dec de
-	xor a
-	ld (de),a
 	inc de
+opgenCB_swap:
+	dec de
 	ld a,RST_BITS
 	ld (de),a
 	inc de

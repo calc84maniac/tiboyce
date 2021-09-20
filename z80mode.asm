@@ -1,12 +1,8 @@
 z80code:
 	.assume adl=0
 	.org 0
-r_bits:
-	ex af,af'
-	ex (sp),hl
-	ld iyl,a
-	ld a,(hl)
-	jp do_bits
+active_ints:
+	.db 0
 	
 	.block $08-$
 r_mem:
@@ -16,6 +12,22 @@ r_mem:
 	jp decode_mem
 	
 	.block $10-$
+r_bits:
+	ex af,af'
+	ex (sp),hl
+	ld iyl,a
+	ld a,(hl)
+	jp do_bits
+
+	.block $18-$
+r_event:
+	exx
+	push.l hl
+	pop hl
+	dec hl
+	jp do_event
+
+	.block $20-$
 r_pop:
 	ex af,af'
 	exx
@@ -24,10 +36,7 @@ do_pop_jump_smc_1 = $+1
 	djnz do_pop_hmem
 	jr do_pop_check_overflow
 	
-	;.block $18-$
-	; Currently unused
-	
-	.block $20-$
+	.block $28-$
 r_call:
 	ex af,af'
 	ld ix,(-call_stack_lower_bound) & $FFFF
@@ -36,16 +45,8 @@ r_call:
 	call.il callstack_overflow_helper
 	jr do_call
 	
-	;.block $28-$
+	;.block $30-$
 	; Currently taken by previous entry
-	
-	.block $30-$
-r_event:
-	exx
-	push.l hl
-	pop hl
-	dec hl
-	jp do_event
 	
 	.block $38-$
 r_cycle_check:
@@ -688,6 +689,80 @@ set_gb_stack_bank:
 	pop bc
 	jr set_gb_stack_bank_done	
 	
+	; Check if an event was scheduled at the end of the current instruction,
+	; and if so, handle them before returning
+handle_events_for_mem_access:
+	ex.l de,hl
+	; Get the address of the recompiled code: the bottom stack entry
+	ld hl,(((myz80stack - 4 - 2) / 2) - myADLstack) & $FFFF
+	add.l hl,sp
+	add hl,hl
+	ld hl,(hl)
+	; Check if an event was scheduled at the end of this instruction
+	ld a,(hl)
+	cp RST_EVENT
+	ex.l de,hl
+	ret nz
+	; Check if the event was before the end of this instruction
+	ld a,(event_cycle_count)
+	or a
+	ret z
+	ld c,a
+	push.l hl
+	push de
+	pop ix
+	call get_mem_cycle_offset_for_events
+	ld a,d
+	or a
+	jr z,_
+	pop.l hl
+	ret
+_
+	; Advance the cycle offsets to after the current cycle
+	dec d
+	ld a,e
+	cpl
+	ld e,a
+	add iy,de ; If IY was decreased for a read, this may underflow temporarily
+	add a,c
+	ASSERT_C
+	ld (event_cycle_count),a
+	ld c,e
+	
+	; Save and override the terminating event counter checker, preventing interrupt dispatch
+	ld hl,event_counter_checkers_ei_delay
+	ld de,(hl)
+	push de
+	 ld de,event_expired_for_mem_access_loop
+	 ld (hl),de
+	 jr do_event_pushed_noassert
+	
+event_expired_for_mem_access_loop:
+	  ld sp,(event_save_sp)
+	  ld h,b
+	  ld l,c
+	 pop bc
+	 ; Check if there are more events before the memory access
+	 inc d
+	 jr nz,_
+	 ld a,c
+	 sub e
+	 jr nc,event_expired_for_mem_access_more_events
+_
+	 ; Advance the next event time to after the current cycle
+	 ld a,l
+	 sub c
+	 ld l,a
+	 jr c,_
+	 inc h
+_
+	 ld i,hl
+	pop hl
+	; Restore the terminating event counter checker
+	ld (event_counter_checkers_ei_delay),hl
+	pop.l hl
+	ret
+	
 do_event:
 event_value = $+1
 	ld (hl),0
@@ -700,20 +775,21 @@ event_value = $+1
 event_cycle_count = $+2
 	ld iyl,0
 	sub iyl
+	ASSERT_NC
 	ld c,a
 do_event_pushed:
-	ASSERT_NC
 #ifdef DEBUG
 	inc iyh
 	dec iyh
 	jr nz,$
 #endif
+do_event_pushed_noassert:
 	push bc
 
 	 ; Check scheduled events
 	 ld (event_save_sp),sp
 event_expired_halt_loop:
-	 ld hl,i
+	 ld hl,i ; This clears the carry flag
 event_expired_loop:
 	 ld sp,event_counter_checkers
 
@@ -740,6 +816,10 @@ audio_counter = $+1
 	 ex de,hl
 	 ret
 
+event_expired_for_mem_access_more_events:
+	 ld c,a
+	 push bc
+	 dec d
 event_expired_more_events:
 	 or a
 	 sbc hl,de
@@ -775,7 +855,7 @@ event_save_sp = $+1
 event_not_expired:
 	ld hl,IE
 	ld a,(hl)
-	ld l,IF - ioregs
+	inc hl
 	and (hl)
 intstate_smc_2 = $+1
 	jr nz,trigger_interrupt
@@ -857,16 +937,16 @@ trigger_timer:
 	add hl,sp
 	jr c,trigger_int_selected
 	jr trigger_int_callstack_overflow
-trigger_stat:
-	res 1,(hl)
-	ld ix,dispatch_stat
+trigger_vblank:
+	dec (hl)
+	ld ix,dispatch_vblank
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	jr c,trigger_int_selected
 	jr trigger_int_callstack_overflow
-trigger_vblank:
-	res 0,(hl)
-	ld ix,dispatch_vblank
+trigger_stat:
+	res 1,(hl)
+	ld ix,dispatch_stat
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	jr nc,trigger_int_callstack_overflow
@@ -939,33 +1019,34 @@ ppu_mode2_line_0_lyc_match:
 	; Check for mode 1 or LYC blocking
 	tst a,$50
 	jr nz,ppu_mode2_continue
-	ld l,IF & $FF
+	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
+	dec h
 	jr ppu_mode2_continue
 	
 ppu_expired_mode2_line_0:
-	ld a,$FF
-	ld (ppu_mode2_LY),a
 	ld hl,ppu_expired_mode2
 	push hl
 	inc sp
 	inc sp
 	; Check if LYC is 0
 	ld hl,LYC
-	add a,(hl)
+	ld a,h ;$FF
+	ld (ppu_mode2_LY),a
+	and (hl)
 	ld l,STAT & $FF
 	ld a,(hl)
-	jr nc,ppu_mode2_line_0_lyc_match
+	jr z,ppu_mode2_line_0_lyc_match
 	; Check for mode 1 blocking
 	bit 4,a
 	jr nz,ppu_mode2_blocked_fast
+	sbc hl,hl ;ld hl,active_ints
 ppu_expired_mode2:
 	; Request STAT interrupt
-	ld hl,IF
-	set 1,(hl)
-	ld l,STAT & $FF
+	set 1,(hl) ;active_ints
 ppu_mode2_blocked:
 	; Set mode 2
+	ld hl,STAT
 	ld a,(hl)
 ppu_mode2_blocked_fast:
 	and $F8
@@ -1010,7 +1091,6 @@ ppu_expired_mode2_lyc_blocking:
 	push hl
 	inc sp
 	inc sp
-	ld hl,STAT
 	jr ppu_mode2_blocked
 	
 ppu_expired_mode0_line_0:
@@ -1023,12 +1103,12 @@ ppu_expired_mode0_line_0:
 	push hl
 	inc sp
 	inc sp
+	sbc hl,hl ;ld hl,active_ints
 ppu_expired_mode0:
 	; Request STAT interrupt
-	ld hl,IF
-	set 1,(hl)
+	set 1,(hl) ;active_ints
 	; Set mode 0
-	ld l,STAT & $FF
+	ld hl,STAT
 	ld a,(hl)
 	and $F8
 	ld (hl),a
@@ -1075,8 +1155,9 @@ ppu_expired_mode0_lyc_match:
 	bit 6,a
 	jr nz,ppu_mode0_blocked
 	; Request STAT interrupt
-	ld l,IF & $FF
+	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
+	dec h
 	jr ppu_mode0_blocked
 	
 ppu_mode2_prepare_vblank:
@@ -1124,8 +1205,9 @@ ppu_lyc_enable_catchup_smc = $+1
 	; Set interrupt bit, if LYC interrupt is enabled
 	bit 6,a
 	jr z,_
-	ld l,IF & $FF
+	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
+	dec h
 _
 	; Set LY/STAT caches
 	ld l,-MODE_2_CYCLES
@@ -1147,6 +1229,8 @@ ppu_expired_pre_vblank:
 	call ppu_scheduled
 	
 ppu_expired_vblank:
+	; Always trigger vblank interrupt
+	set 0,(hl) ;active_ints
 	; Set LY to 144
 	ld hl,LY
 	ld a,144
@@ -1163,13 +1247,10 @@ ppu_expired_vblank:
 	and $F8
 	inc a
 	ld (hl),a
-	ld l,IF & $FF
 	; Check for mode 1 or mode 2 interrupt enable
 	tst a,$30
 	jr nz,ppu_vblank_mode1_int
 ppu_vblank_stat_int_continue:
-	; Always trigger vblank interrupt
-	set 0,(hl)
 	; Set next LY/STAT update to scanline 145
 	ld l,-CYCLES_PER_SCANLINE
 	add hl,de
@@ -1198,7 +1279,6 @@ ppu_vblank_lyc_close_match:
 	and $F8
 	inc a
 	ld (hl),a
-	ld l,IF & $FF
 	; Check for mode 1 or mode 2 interrupt enable
 	tst a,$30
 	jr z,ppu_vblank_stat_int_continue
@@ -1210,7 +1290,9 @@ ppu_vblank_mode1_int:
 	bit 3,a
 	jr nz,ppu_vblank_stat_int_continue
 	; Trigger STAT interrupt
+	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
+	dec h
 	jr ppu_vblank_stat_int_continue
 	
 ppu_vblank_lyc_match:
@@ -1219,7 +1301,6 @@ ppu_vblank_lyc_match:
 	and $F8
 	or 5
 	ld (hl),a
-	ld l,IF & $FF
 	; Check for mode 0 block
 	bit 3,a
 	jr nz,ppu_vblank_stat_int_continue
@@ -1227,7 +1308,9 @@ ppu_vblank_lyc_match:
 	and $70
 	jr z,ppu_vblank_stat_int_continue
 	; Trigger STAT interrupt
+	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
+	dec h
 	jr ppu_vblank_stat_int_continue
 	
 ppu_expired_lyc_mode1:
@@ -1264,7 +1347,7 @@ ppu_post_mode1_lyc_event_offset = $+1
 	and $50
 	jp nz,audio_counter_checker
 	; If so, trigger LYC interrupt
-	ld hl,IF
+	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
 	jp audio_counter_checker
 	
@@ -1282,9 +1365,8 @@ timer_counter = $+1
 	ret
 	
 timer_expired_handler:
-	ld hl,IF
-	set 2,(hl)
-	ld l,TMA & $FF
+	set 2,(hl) ;active_ints
+	ld hl,TMA
 	xor a
 	sub (hl)
 timer_cycles_reset_factor_smc = $+1
@@ -1403,12 +1485,12 @@ serial_counter = $+1
 	ret
 	
 serial_expired_handler:
-	ld hl,SC
+	set 3,(hl) ;active_ints
+	dec h
+	inc hl ;SB
+	ld (hl),h ;$FF
+	inc hl ;SC
 	res 7,(hl)
-	dec hl
-	ld (hl),h
-	ld l,IF & $FF
-	set 3,(hl)
 	call disabled_counter_checker
 disabled_counter_checker:
 	ret
@@ -2218,10 +2300,9 @@ intstate_smc_1 = $
 	; interrupt is currently requested
 	ld a,trigger_interrupt - (intstate_smc_2 + 1)
 	ld (intstate_smc_2),a
-	ld hl,IF
-	ld a,(hl)
-	ld l,h
-	and (hl)
+	ld hl,(IE)
+	ld a,h
+	and l
 	jr z,ophandlerEI_no_interrupt
 
 	call get_mem_cycle_offset
@@ -2312,10 +2393,9 @@ ophandler_halt:
 	push.l hl
 	ld c,a
 _
-	ld hl,IF
-	ld a,(hl)
-	ld l,h
-	and (hl)
+	ld hl,(IE)
+	ld a,h
+	and l
 	ld hl,intstate_smc_2
 	jr z,haltspin
 	; If interrupts are enabled, go straight to the event handler
@@ -2385,6 +2465,7 @@ ophandler_halt_maybe_overflow:
 	
 trigger_event:
 	exx
+trigger_event_swapped:
 	push.l hl
 reschedule_event_PPU:
 trigger_event_pushed:
@@ -2917,14 +2998,11 @@ ophandlerRETI:
 	ld a,trigger_interrupt - (intstate_smc_2 + 1)
 	ld (intstate_smc_2),a
 	; Check if an interrupt is pending, if not then return normally
-	ex.l de,hl
-	ld hl,IF
-	ld a,(hl)
-	ld l,h  ;ld hl,IE
-	and (hl)
+	ld de,(IE)
+	ld a,d
+	and e
 	jr nz,_
 	ld a,c
-	ex.l de,hl
 	ex af,af'
 	pop de
 	ret
@@ -2938,19 +3016,19 @@ _
 	; If an event will already be scheduled on return, just return
 	ld b,a
 	ld a,iyl
-	ex.l de,hl
 	ex af,af'
 	pop de
 	ret
 _
 	; Update the cycle counter
+	ex.l de,hl
 	ld hl,i
 	add hl,bc
 	ld i,hl
+	ex.l de,hl
 	ld b,a
 	ld iyh,-1
 	ld a,-4
-	ex.l de,hl
 	ex af,af'
 	pop de
 	ret
@@ -3073,6 +3151,22 @@ readTIMAhandler:
 	ld a,(TIMA)
 	ret
 	
+readIFhandler:
+	ex af,af'
+	ld iyl,a
+	ld a,iyh
+	or a
+	exx
+	call z,handle_events_for_mem_access
+	ld a,(active_ints)
+	or $E0
+	ld c,a
+	ld a,iyl
+	ex af,af'
+	ld a,c
+	exx
+	ret
+	
 readLYhandler:
 	ex af,af'
 	ld iyl,a
@@ -3128,10 +3222,24 @@ mem_update_ports_swapped:
 	jr z,mem_update_STAT
 	cp LY & $FF
 	jr z,mem_update_LY
-	add a,(-TIMA) & $FF
+	sub IF & $FF
+	jr z,mem_update_IF
+	add a,IF-TIMA
 	sbc a,h
 	jr z,mem_update_DIV_TIMA
 mem_update_oam:
+	ld a,iyl
+	ex af,af'
+	ret
+	
+mem_update_IF:
+	or iyh
+	exx
+	call z,handle_events_for_mem_access
+	exx
+	ld a,(active_ints)
+	or $E0
+	ld (IF),a
 	ld a,iyl
 	ex af,af'
 	ret
@@ -3605,6 +3713,7 @@ get_mem_cycle_offset:
 	add.l hl,sp
 	add hl,hl
 	ld ix,(hl)
+get_mem_cycle_offset_for_events:
 	; Check if the JIT target address is an absolute jump instruction,
 	; which indicates that the memory access is a branch dispatch
 	ld a,$C3
@@ -3612,12 +3721,12 @@ get_mem_cycle_offset:
 	jr z,get_mem_cycle_offset_for_branch
 	; Assume the JIT code was a routine call; get its target address
 	ld hl,(ix-2)
-	; Check if the target begins with a JP, RST 00h, or RST 10h instruction.
+	; Check if the target begins with a JP, RST 10h, or RST 20h instruction.
 	; This should only be the case when the target is a cycle cache trampoline.
 	; Note that to avoid false positives, no routine called directly from JIT
-	; should start with JP nnnn; OUT (nn),A; RST 00h; or RST 10h.
+	; should start with JP nnnn; OUT (nn),A; EX (SP),HL; DI; or RST x0h.
 	xor (hl)
-	and $EB
+	and $CB
 	jr nz,resolve_get_mem_cycle_offset_call
 	; We probably have a trampoline target; however, we must check whether our
 	; assumption that the JIT code was a routine call is accurate. If the first
@@ -4200,7 +4309,7 @@ _
 	 ld a,(TMA)
 	 jr updateTIMAcontinue
 	
-	.block (-$-249)&$FF
+	.block (-$-241)&$FF
 	
 _writeSC:
 	ld a,iyl
@@ -4369,18 +4478,11 @@ writeOBP0handler:
 writeOBP1handler:
 	ld ix,OBP1
 	jr write_scroll_swap
-	
-writeIEhandler:
-	push af
-	 ex af,af'
-	 ld iyl,a
-	 jp writeIEhandler_continue
 
 writeIFhandler:
-	push af
-	 ex af,af'
-	 ld iyl,a
-	 jp writeIFhandler_continue
+	ex af,af'
+	ld iyl,a
+	jp writeIF
 
 write_audio_handler:
 	ex af,af'
@@ -4466,38 +4568,39 @@ writeTIMA:
 	ex af,af'
 	jp.lil tima_write_helper
 	
+writeIEhandler:
+	ex af,af'
+	ld iyl,a
 writeIE:
 	ex af,af'
-	push af
-	 ex af,af'
-writeIEhandler_continue:
-	pop af
-	and $1F
 	ld (IE),a
+	ex af,af'
+	exx
 	jr checkInt
 	
 writeIF:
+	ld a,iyh
+	or a
+	exx
+	call z,handle_events_for_mem_access
 	ex af,af'
-	push af
-	 ex af,af'
-writeIFhandler_continue:
-	pop af
-	or $E0
-	ld (IF),a
+	ld c,a
+	ex af,af'
+	ld a,c
+	and $1F
+	ld (active_ints),a
 checkInt:
 	; Check the pre-delay interrupt state, since if the interrupt enable
 	; delay is active then an interrupt check is already scheduled
 	ld a,(intstate_smc_2)
 	or a
 	jr z,checkIntDisabled
-	push hl
-	 ld hl,IF
-	 ld a,(hl)
-	 ld l,h
-	 and (hl)
-	pop hl
-	jp nz,trigger_event
+	ld de,(IE)
+	ld a,d
+	and e
+	jp nz,trigger_event_swapped
 checkIntDisabled:
+	exx
 write_port_ignore:
 	ld a,iyl
 	ex af,af'
