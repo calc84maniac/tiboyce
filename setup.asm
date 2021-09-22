@@ -595,7 +595,6 @@ _
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
 	ld (z80codebase+rom_bank_check_smc_1),a
-	ld (z80codebase+rom_bank_check_smc_2),a
 	ld c,a
 	ld b,3
 	mlt bc
@@ -605,8 +604,9 @@ _
 	ld (rom_bank_base),hl
 	
 	ld a,(cram_size+1)
-	and $80
-	add a,$B7	; or a / scf
+	add a,a
+	sbc a,a
+	and 3
 	ld (z80codebase+cram_size_smc),a
 	
 	xor a
@@ -619,26 +619,43 @@ _
 	ld bc,$A000
 	sbc hl,bc
 	ld (z80codebase+cram_base_0),hl
+	ld (z80codebase+cram_base_1),hl
+	ld (z80codebase+cram_base_2),hl
 	
+	APTR(mbc_impl_code - MBC_IMPL_SIZE)
 	ld a,(mbc)
-	ld (z80codebase+mbc_z80),a
-	ld b,a
-	cp 5
-	ld a,(rom_bank_mask)  ;MBC5
-	ld (z80codebase+rom_bank_mask_smc),a
-	jr nc,_
-	sbc a,a	;MBC3/MBC3+RTC
+	ld e,a
+	ld d,MBC_IMPL_SIZE
+	; Fold MBC3+RTC into MBC3
+	cp 4
+	jr c,_
+	dec de ; Preserve Z
 _
-	djnz _
-	ld a,$1F	;MBC1
-_
-	djnz _
-	ld a,$0F	;MBC2
-_
-	ld (z80codebase+rom_bank_mbc_mask_smc),a
-	dec b
-	djnz setup_ram_bank_no_rtc
+	; Copy the MBC implementation in
+	ld b,c
+	ld c,d
+	mlt de
+	add hl,de
+	ld de,z80codebase+mbc_impl
+	ldir
+	
+	ld c,a
+	ld a,(rom_bank_mask)
+	inc de
+	ld (de),a ;rom_bank_mask_smc
+	
+	jr nz,setup_ram_bank_no_rtc_trampoline
 	;MBC3+RTC
+	
+	; Skip over MBC5 impl to get to mbc3rtc_4000_impl
+	ld c,MBC_IMPL_SIZE
+	add hl,bc
+	ld de,z80codebase+mbc_4000_impl
+	ld c,mbc3rtc_4000_impl_size
+	ldir
+	
+	ld hl,mbc3rtc_6000
+	ld.sis (mbc_6000_smc),hl
 	
 	; Update rtc_last
 	call update_rtc_always
@@ -663,7 +680,9 @@ _
 	 ex (sp),ix
 	 ex (sp),hl
 	 ld de,(ix)
-	 or a
+	 xor a
+setup_ram_bank_no_rtc_trampoline:
+	 jr nz,setup_ram_bank_no_rtc
 	 sbc hl,de
 	pop hl
 	ld de,(ix+3)
@@ -693,15 +712,27 @@ _
 	call mbc_rtc_toggle_smc
 	ld b,0
 	ld hl,z80codebase+rtc_latched
-	jr _
+	jr setup_ram_bank_any
 	
 setup_ram_bank_no_rtc:
-	djnz setup_ram_bank
-	;MBC5
-	ld hl,$18 + ((mbc5_rom_bank_continue - (mbc5_rom_bank_smc+2)) << 8)
-	ld.sis (mbc5_rom_bank_smc),hl
-	ld a,mbc5_2000 - (mbc5_2000_smc+1)
-	ld (z80codebase+mbc5_2000_smc),a
+	dec c
+	jr nz,setup_ram_normal
+	;MBC1
+	ld hl,mbc1_6000
+	ld.sis (mbc_6000_smc),hl
+	; Check for large ROM
+	and $60
+	jr z,setup_ram_normal
+	ld (z80codebase+mbc1_rom_size_smc),a
+	and (iy-state_size+STATE_ROM_BANK)
+	ld (de),a ;rom_bank_mask_smc
+	dec de
+	ld a,$F6 ;OR imm8
+	ld (de),a ;mbc1_large_rom_smc
+	jr setup_ram_bank
+setup_ram_normal:
+	ld hl,((mbc_ram - (mbc_4000_impl+2)) << 8) | $18
+	ld.sis (mbc_4000_impl),hl
 setup_ram_bank:
 	ld a,(cram_size+1)
 	add a,a
@@ -715,21 +746,30 @@ setup_ram_bank:
 	ld b,a
 	ld c,0
 	ld hl,(z80codebase+cram_base_0)
-_
+setup_ram_bank_any:
 	add hl,bc
 	ld (z80codebase+cram_actual_bank_base),hl
 	
-	ld a,(iy-state_size+STATE_MBC_MODE)
-	bit 1,a
+	ld b,(iy-state_size+STATE_MBC_MODE)
+	; Check for MBC1 mode 0
+	bit 0,b
+	jr nz,_
+	ld a,(mbc)
+	dec a
+	jr nz,_
+	ld a,$20 ;JR NZ (overriding JR)
+	ld (z80codebase+mbc1_ram_smc_1),a
+	ld a,$30 ;JR NC (overriding JR Z)
+	ld (z80codebase+mbc1_ram_smc_2),a
+	; Set RAM bank 0 always in this mode
+	ld hl,(z80codebase+cram_base_0)
+_
+	; Disable RAM
+	bit 1,b
 	jr z,_
 	ld hl,mpZeroPage
 _
 	ld (cram_bank_base),hl
-	rra
-	jr nc,_
-	ld a,$20 ;JR NZ (overriding JR Z)
-	ld (z80codebase+mbc1_ram_smc),a
-_
 	
 	ld de,z80codebase+intstate_smc_2
 	ld a,(iy-state_size+STATE_INTERRUPTS)
@@ -1134,12 +1174,12 @@ _
 	ld a,(z80codebase+curr_rom_bank)
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
-	; Save the current MBC mode
+	; Save the current MBC mode: bit 0 = MBC1 mode, bit 1 = RAM disable
 	ld a,(cram_bank_base+2)
 	add a,1
 	sbc hl,hl
-	ld a,(z80codebase+mbc1_ram_smc)
-	sub $28
+	ld a,(z80codebase+mbc1_ram_smc_1)
+	sub $20
 	ld l,a
 	add hl,hl
 	ld a,h
@@ -1412,31 +1452,6 @@ mbc_valid_no_carry:
 	ret c
 	ld a,b
 	ld (mbc),a
-	
-	; Mirror ROM across all banks
-	lea de,ix
-	ld hl,rombankLUT_end
-	sbc hl,de
-	push hl
-	pop bc
-	ld hl,rombankLUT
-	ldir
-	
-	; Handle MBC-specific mirrors
-	cp 5	;MBC5
-	jr z,_
-	ld hl,(rombankLUT+3)
-	ld (rombankLUT),hl
-_
-	dec a	;MBC1
-	jr nz,_
-	ld hl,(rombankLUT+($21*3))
-	ld (rombankLUT+($20*3)),hl
-	ld hl,(rombankLUT+($41*3))
-	ld (rombankLUT+($40*3)),hl
-	ld hl,(rombankLUT+($61*3))
-	ld (rombankLUT+($60*3)),hl
-_
 	
 LoadRAM:
 	ld hl,ROMName
@@ -2722,6 +2737,96 @@ sha_code_size = $ - sha_code
 sha_code_entry_offset = (15 - (160 % 15)) * 4
 convert_palette_row = mpShaData + sha_code_entry_offset
 convert_palette_row_loop_count = (160 / 15) + 1
+	
+MBC_IMPL_SIZE = 16
+mbc_impl_code:
+	.assume adl=0
+	
+	;MBC1
+	.org 0
+	add a,a
+	add a,a
+	jr c,mbc_4000 - mbc_impl
+	push bc
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 jp p,mbc_0000
+mbc1_large_rom_continue:
+	 ; Mask the new value and check if 0-page should be overridden
+	 and $1F
+	 jr z,mbc_zero_page_override - mbc_impl
+#if $ != MBC_IMPL_SIZE
+	.error "MBC1 impl size is incorrect"
+#endif
+
+	;MBC2
+	.org 0
+	bit 6,a
+	jr nz,mbc_denied - mbc_impl
+	rra
+	push bc
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 jr nc,mbc_0000 - mbc_impl
+	 and $0F
+	 jr z,mbc_zero_page_override - mbc_impl
+#if $ != MBC_IMPL_SIZE
+	.error "MBC2 impl size is incorrect"
+#endif
+	
+	;MBC3
+	.org 0
+	add a,a
+	add a,a
+	jr c,mbc_4000 - mbc_impl
+	push bc
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 jp p,mbc_0000
+	 and $7F
+	 jr z,mbc_zero_page_override - mbc_impl
+#if $ != MBC_IMPL_SIZE
+	.error "MBC3 impl size is incorrect"
+#endif
+	
+	;MBC5
+	.org 0
+	add a,a
+	add a,a
+	jr c,mbc_4000 - mbc_impl
+	add a,a
+	push bc
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 jr nc,mbc5_0000 - mbc_impl
+	 jp m,mbc_denied_restore
+	 nop
+#if $ != MBC_IMPL_SIZE
+	.error "MBC5 impl size is incorrect"
+#endif
+	
+	.org mbc_impl_code + (MBC_IMPL_SIZE * 4)
+	
+mbc3rtc_4000_impl:
+	.org 0
+	ld a,(cram_actual_bank_base+2)
+	cp z80codebase>>16
+	jp.lil z,mbc_rtc_switch_from_rtc_helper
+	bit 3,c
+	jr z,mbc_ram - mbc_4000_impl
+	jp.lil mbc_rtc_switch_to_rtc_helper
+mbc3rtc_4000_impl_size = $
+	
+	.org mbc3rtc_4000_impl + mbc3rtc_4000_impl_size
+	.assume adl=1
 	
 customHardwareSettings:
 	;mpIntEnable

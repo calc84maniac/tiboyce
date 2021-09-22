@@ -206,7 +206,7 @@ do_rom_bank_call:
 	ex af,af'
 	exx
 	ld c,a  ; Save cycle count
-rom_bank_check_smc_1 = $+1
+curr_rom_bank = $+1
 	ld a,0  ; Get current bank
 banked_call_common:
 	ex.l de,hl
@@ -470,7 +470,7 @@ do_rom_bank_jump:
 	exx
 	ld c,a
 	pop ix
-rom_bank_check_smc_2 = $+1
+rom_bank_check_smc_1 = $+1
 	ld a,0
 	ld de,(ix+3)
 	cp e
@@ -3480,24 +3480,6 @@ mem_write_bail_r:
 	ex af,af'
 	jp (ix)
 	
-mbc_rtc_latch:
-	ld a,(cram_actual_bank_base+2)
-	cp z80codebase>>16
-	jr nz,_
-	ld ix,(cram_actual_bank_base)
-	ld a,(ix)
-	cp (ix+5)
-	jr z,_
-	xor a
-	ld (mbc_rtc_latch_smc),a
-_
-	ld.lil a,(mpRtcIntStatus)
-	rra
-mbc_rtc_latch_smc = $+1
-	jr nc,$+2 ;mbc_6000_denied
-	push bc
-	 jp.lil mbc_rtc_latch_helper
-	
 	;HL=GB address, A=data, preserves AF, destroys F'
 mem_write_cart:
 	ex af,af'
@@ -3509,126 +3491,79 @@ mem_write_cart:
 mem_write_cart_always:
 	ld a,h
 mem_write_cart_always_a:
-	sub $20
-	jr c,mbc_0000
-	sub $20
-mbc5_2000_smc = $+1
-	jr c,mbc_2000
-	sub $20
-	jr c,mbc_4000
-	
-mbc_6000:
-	ld a,(mbc_z80)
-	cp 4 ;MBC3+RTC
-	jr z,mbc_rtc_latch
-	dec a
-	jr nz,mbc_6000_denied
-	ex af,af'
-	push af
-	 ex af,af'
-	pop af
-	rra
-	ld a,$28
-	jr nc,_
-	ld a,$20
-_
-	ld (mbc1_ram_smc),a
-mbc_6000_denied:
-	ld a,iyl
-	ex af,af'
-	ret
-	
-mbc_0000:
-	push bc
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
-	 ld a,c
-	 cp $0A
-cram_actual_bank_base = $+3
-	 ld.lil ix,0
-	 jr z,mbc_ram_protect
-	 ld.lil ix,mpZeroPage
-	 jr mbc_ram_protect
-	
-mbc5_2000:
-	add a,$10
-	jr c,mbc_6000_denied
-mbc_2000:
-	push bc
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
-	 ld a,c
-rom_bank_mbc_mask_smc = $+1
-	 ld b,$FF
-mbc_4000_continue:
-curr_rom_bank = $+1
-	 ld c,1
-	 ; Mask the new value and check if 0-page should be overridden
-	 and b
-mbc5_rom_bank_smc = $
-	 jr z,mbc_zero_page_override
+mbc_impl:
+	.block MBC_IMPL_SIZE
 mbc_zero_page_continue:
-	 ; Set only the given mask of the page
-	 xor c
-	 and b
-	 xor c
 	 ; Adjust value to physical page based on ROM size
+mbc1_large_rom_smc = $ ; Or combine with upper bits of page
 rom_bank_mask_smc = $+1
 	 and 0
-mbc5_rom_bank_continue:
-	 ld (curr_rom_bank),a
-	 ld (rom_bank_check_smc_1),a
-	 ld (rom_bank_check_smc_2),a
 	 ld b,a
-	 xor c
 	 push hl
+	  ld hl,curr_rom_bank
+	  ld a,(hl)
+	  ld (hl),b
+	  ld (rom_bank_check_smc_1),a
+	  xor b
 	  jp.lil nz,mbc_change_rom_bank_helper
 mbc_2000_finish:
 	 pop hl
+mbc_denied_restore:
 	pop bc
+mbc_denied:
 	ld a,iyl
 	ex af,af'
 	ret
 	
 mbc_zero_page_override:
 	; If the masked value is 0, increase the result (except MBC5)
-	; When setting the high bits, this is ignored by the masking below
 	inc a
 	jr mbc_zero_page_continue
 	
+mbc_0000:
+	 and $0F
+mbc5_0000:
+	 cp $0A
+	 ld.lil ix,mpZeroPage
+	 jr nz,mbc_ram_protect
+cram_actual_bank_base = $+3
+	 ld.lil ix,0
+mbc1_ram_smc_1 = $ ; Replaced with JR NZ in MBC1 mode 0
+	 jr mbc_ram_protect
+cram_base_2 = $+3
+	 ld.lil ix,0
+	 jr mbc_ram_protect
+	
 mbc_4000:
+mbc_6000_smc = $+1
+	jp m,mbc_denied
 	push bc
-	 ld b,$60
 	 ex af,af'
 	 ld c,a
 	 ex af,af'
-mbc_z80 = $+1
-	 ld a,0
-	 dec a	; Check for MBC1
-	 jr nz,_
-mbc1_ram_smc = $
-	 jr z,mbc_ram
+mbc_4000_impl:
+	 ; Default to largest impl, large ROM MBC1
+	 call mbc_ram_and_return
+	 ex af,af'
 	 ld a,c
 	 rrca
 	 rrca
 	 rrca
-	 jr mbc_4000_continue
-_
-	 srl a
-	 jr nc,mbc_ram ; MBC3 or MBC5
-	 jp.lil nz,mbc_rtc_helper ; MBC3+RTC
-	 jr mbc_4000_denied ; MBC2
+mbc1_rom_size_smc = $+1
+	 and 0
+	 ld (rom_bank_mask_smc),a
+	 ld a,(curr_rom_bank)
+	 jr mbc_impl + mbc1_large_rom_continue
+	 
+mbc_ram_and_return:
+	push bc
 mbc_ram:
-cram_size_smc = $
-	 or a
-	 sbc a,a
-	 and c
+	 ld a,c
+cram_size_smc = $+1
+	 and 0
 	 rrca
 	 rrca
 	 rrca
-	 and b
 	 ld b,a
 	 ld c,0
 cram_base_0 = $+3
@@ -3639,6 +3574,7 @@ mbc_ram_any:
 	 ; If RAM is currently protected, don't remap
 	 ld.lil a,(cram_bank_base+2)
 	 inc a
+mbc1_ram_smc_2 = $ ; Replaced with JR NC in MBC1 mode 0
 	 jr z,mbc_no_fix_sp
 mbc_ram_protect:
 	 ld.lil (cram_bank_base),ix
@@ -3658,13 +3594,51 @@ mbc_fix_sp:
 	 pop bc
 	 exx
 mbc_no_fix_sp:
-mbc_4000_denied:
-mbc_6000_finish:
 	pop bc
+mbc_finish:
 	ld a,iyl
 	ex af,af'
 	ret
 	
+mbc1_6000:
+	push bc
+	 ex af,af'
+	 ld c,a
+	 ex af,af'
+	 ld a,c
+	 rra
+	 ld a,$20
+cram_base_1 = $+3
+	 ld.lil ix,0
+	 jr nc,_
+	 ld a,$18
+	 ld.lil ix,(z80codebase+cram_actual_bank_base)
+_
+	 ld (mbc1_ram_smc_1),a
+	 add a,$10
+	 ld (mbc1_ram_smc_2),a
+	 ld.lil a,(cram_bank_base+2)
+	 inc a
+	 jr nz,mbc_ram_protect
+	 jr mbc_no_fix_sp
+	
+mbc3rtc_6000:
+	ld a,(cram_actual_bank_base+2)
+	cp z80codebase>>16
+	jr nz,_
+	ld ix,(cram_actual_bank_base)
+	ld a,(ix)
+	cp (ix+5)
+	jr z,_
+	xor a
+	ld (mbc_rtc_latch_smc),a
+_
+	ld.lil a,(mpRtcIntStatus)
+	rra
+mbc_rtc_latch_smc = $+1
+	jr nc,$+2 ;mbc_finish
+	push bc
+	 jp.lil mbc_rtc_latch_helper
 	
 write_audio_enable:
 	 or c

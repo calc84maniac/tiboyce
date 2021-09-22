@@ -1915,18 +1915,13 @@ mbc_rtc_latch_helper:
 	ld a,(ix+9)
 	and $C1
 	ld (ix+4),a
-	ld a,mbc_6000_denied - (mbc_rtc_latch_smc+1)
+	ld a,mbc_finish - (mbc_rtc_latch_smc+1)
 	ld (z80codebase+mbc_rtc_latch_smc),a
-	jp.sis mbc_6000_finish
+	jp.sis mbc_denied_restore
 	
-mbc_rtc_helper:
-	ld a,(z80codebase+cram_actual_bank_base+2)
-	cp z80codebase>>16
-	jr z,++_
-	bit 3,c
-	jp.sis z,mbc_ram
+mbc_rtc_switch_to_rtc_helper:
 	call mbc_rtc_toggle_smc
-_
+mbc_rtc_switch_between_rtc:
 	call update_rtc
 	ld a,c
 	and 7
@@ -1934,17 +1929,17 @@ _
 	ld b,0
 	ld ix,z80codebase+rtc_latched
 	jp.sis mbc_ram_any
-_
+
+mbc_rtc_switch_from_rtc_helper:
 	ld ix,(z80codebase+cram_actual_bank_base)
 	ld a,(ix)
 	cp (ix+5)
 	jr nz,mbc_rtc_mark_latch_dirty
 mbc_rtc_mark_latch_dirty_continue:	
 	bit 3,c
-	jr nz,--_
+	jr nz,mbc_rtc_switch_between_rtc
 	call mbc_rtc_toggle_smc
 	call update_rtc
-	ld b,$60
 	jp.sis mbc_ram
 	
 mbc_rtc_mark_latch_dirty:
