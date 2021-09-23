@@ -3,6 +3,8 @@ z80code:
 	.org 0
 active_ints:
 	.db 0
+waitloop_sentinel:
+	.db 0
 	
 	.block $08-$
 r_mem:
@@ -513,8 +515,8 @@ schedule_event_finish:
 	ld (event_gb_address),hl
 #ifdef DEBUG
 	ld a,(event_address+1)
-	cp event_value >> 8
-	jr nz,$
+	cp (event_value >> 8) + 1
+	jr nc,$
 #endif
 	lea hl,ix
 	ld (event_address),hl
@@ -2190,6 +2192,11 @@ handle_waitloop_ly:
 	jr c,-_
 handle_waitloop_common:
 	push.l hl
+	; Check if the waitloop sentinel is set
+	ld hl,(event_address)
+	inc h
+	dec h
+	jr nz,handle_waitloop_set_sentinel
 	; Get the current number of cycles until the next register update
 	ld hl,i
 	add hl,de
@@ -2230,6 +2237,11 @@ handle_waitloop_finish:
 	exx
 	ex af,af'
 	jp (ix)
+	
+handle_waitloop_set_sentinel:
+	ld hl,waitloop_sentinel
+	ld (event_address),hl
+	jr handle_waitloop_finish
 	
 	; Skip as many full loops as possible until the cycle count expires
 handle_waitloop_skip_to_expiration:
@@ -2330,8 +2342,8 @@ intstate_smc_1 = $
 	ld hl,(event_address)
 #ifdef DEBUG
 	ld a,h
-	cp event_value >> 8
-	jr z,$
+	cp (event_value >> 8) + 1
+	jr nc,$
 #endif
 	ld a,(event_value)
 	ld (hl),a
@@ -2482,8 +2494,8 @@ trigger_event_remove_smc = $+1
 	 jr nz,trigger_event_no_remove
 #ifdef DEBUG
 	 ld a,(event_address+1)
-	 cp event_value >> 8
-	 jr z,$
+	 cp (event_value >> 8) + 1
+	 jr c,$
 #endif
 	 ld a,(event_value)
 event_address = $+1
@@ -2495,8 +2507,9 @@ event_address = $+1
 trigger_event_no_remove:
 #ifdef DEBUG
 	 ld a,(event_address+1)
-	 sub event_value >> 8
-	 jr nz,$
+	 cp (event_value >> 8) + 1
+	 jr nc,$
+	 xor a
 _
 #endif
 	 inc a  ; Cycle count at event is relative to the memory access
@@ -2782,8 +2795,8 @@ schedule_event_finish_for_call:
 	ld (event_gb_address),hl
 ;#ifdef DEBUG
 ;	ld a,(event_address+1)
-;	cp event_value >> 8
-;	jr nz,$
+;	cp (event_value >> 8) + 1
+;	jr nc,$
 ;#endif
 	lea hl,ix
 	ld (event_address),hl
