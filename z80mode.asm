@@ -15,10 +15,7 @@ r_mem:
 	
 	.block $10-$
 r_bits:
-	ex af,af'
-	ex (sp),hl
-	ld iyl,a
-	ld a,(hl)
+	ld ixl,NO_CYCLE_INFO
 	jp do_bits
 
 	.block $18-$
@@ -536,18 +533,6 @@ Z80InvalidOpcode:
 Z80Error:
 	jp.lil runtime_error
 	
-	  ; If the cycle count underflowed, modify event trigger logic
-	  ; to force it to recognize the count as an overflow
-do_push_overflow_underflow:
-	  ex af,af'
-	  xor a
-	  ld (trigger_event_remove_smc),a
-	  ex af,af'
-	  call mem_write_any
-	  ld a,trigger_event_no_remove - (trigger_event_remove_smc+1)
-	  ld (trigger_event_remove_smc),a
-	  jr do_push_overflow_continue
-	
 do_push_for_call_overflow:
 	push ix
 do_push_overflow:
@@ -559,25 +544,17 @@ do_push_overflow:
 	 ld de,(sp_base_address_neg)
 	 add hl,de
 	 push hl
-	  ; We need special handling if an event is triggered by the first write
-	  ld hl,event_cycle_count
-	  dec (hl)
-	  ld de,-1
-	  add iy,de
 	  exx
 	  ex (sp),hl
 	  dec hl
-	  jr nc,do_push_overflow_underflow
+	  ld ixl,NO_CYCLE_INFO - 1
 	  call mem_write_any
-do_push_overflow_continue:
 	  exx
-	  ; Restore the event cycle count, or increment if an event was triggered
-	  ld hl,event_cycle_count
-	  inc (hl)
 	  ld a,b
 	  exx
 	  dec hl
-	  call mem_write_any_after_read
+	  ld ixl,NO_CYCLE_INFO
+	  call mem_write_any
 	  ex (sp),hl
 	  exx
 	 pop hl
@@ -607,10 +584,11 @@ pop_overflow:
 	 push hl
 	  exx
 	  ex (sp),hl
+	  ld ixl,NO_CYCLE_INFO - 1
 	  call mem_read_any_before_write
 	  inc hl
-	  inc iy
 	  push af
+	   ld ixl,NO_CYCLE_INFO
 	   call mem_read_any
 	  pop ix
 	  ld ixl,ixh
@@ -689,47 +667,38 @@ set_gb_stack_bank:
 	 call.il set_gb_stack_bounds_helper
 	 call.il set_gb_stack_bank_helper
 	pop bc
-	jr set_gb_stack_bank_done	
+	jr set_gb_stack_bank_done
 	
-	; Check if an event was scheduled at the end of the current instruction,
-	; and if so, handle them before returning
-handle_events_for_mem_access:
-	ex.l de,hl
-	; Get the address of the recompiled code: the bottom stack entry
-	ld hl,(((myz80stack - 4 - 2) / 2) - myADLstack) & $FFFF
-	add.l hl,sp
-	add hl,hl
-	ld hl,(hl)
-	; Check if an event was scheduled at the end of this instruction
-	ld a,(hl)
-	cp RST_EVENT
-	ex.l de,hl
-	ret nz
-	; Check if the event was before the end of this instruction
-	ld a,(event_cycle_count)
-	or a
-	ret z
-	ld c,a
+resolve_mem_cycle_offset_for_events:
 	push.l hl
-	push de
-	pop ix
-	call get_mem_cycle_offset_for_events
-	ld a,d
-	or a
-	jr z,_
+	 call resolve_mem_cycle_offset
+	 add a,iyl
+	 jr c,resolve_mem_cycle_offset_for_events_continue
 	pop.l hl
 	ret
-_
+	
+	; Check if an event was scheduled at or before the current memory cycle
+	; Inputs: IY = cycle count at end of block (only call when IYH=0)
+	;         IXL = block-relative cycle offset (negative) or NO_CYCLE_INFO
+	;         A = 0
+	; Destroys: AF, DE, C
+handle_events_for_mem_access:
+	or ixl
+	jp p,resolve_mem_cycle_offset_for_events
+	add a,iyl
+	ret nc
+	push.l hl
+resolve_mem_cycle_offset_for_events_continue:
 	; Advance the cycle offsets to after the current cycle
-	dec d
-	ld a,e
 	cpl
-	ld e,a
-	add iy,de ; If IY was decreased for a read, this may underflow temporarily
-	add a,c
+	ld c,a
+	ld hl,event_cycle_count
+	add a,(hl)
+	ld (hl),a
 	ASSERT_C
-	ld (event_cycle_count),a
-	ld c,e
+	ld a,ixl
+	cpl
+	ld iyl,a
 	
 	; Save and override the terminating event counter checker, preventing interrupt dispatch
 	ld hl,event_counter_checkers_ei_delay
@@ -1880,137 +1849,179 @@ handle_overlapped_op_2_1:
 	pop ix
 	jp.lil handle_overlapped_op_2_1_helper
 	
-do_swap:
-	inc a
-	jr nz,do_swap_generic
+do_swap_c:
+	ld iyl,a
+	ld a,c
+	rrca
+	rrca
+	rrca
+	rrca
+	or a
+	ld c,a
 	ld a,iyl
-	ex af,af'
+	ret
+	
+do_swap_b:
+	ld iyl,a
+	ld a,b
+	rrca
+	rrca
+	rrca
+	rrca
+	or a
+	ld b,a
+	ld a,iyl
+	ret
+	
+do_swap_e:
+	ld iyl,a
+	ld a,e
+	rrca
+	rrca
+	rrca
+	rrca
+	or a
+	ld e,a
+	ld a,iyl
+	ret
+	
+do_swap_d:
+	ld iyl,a
+	ld a,d
+	rrca
+	rrca
+	rrca
+	rrca
+	or a
+	ld d,a
+	ld a,iyl
+	ret
+	
+do_swap_l:
+	ld iyl,a
+	ld a,l
+	rrca
+	rrca
+	rrca
+	rrca
+	or a
+	ld l,a
+	ld a,iyl
+	ret
+	
+do_swap_h:
+	ld iyl,a
+	ld a,h
+	rrca
+	rrca
+	rrca
+	rrca
+	or a
+	ld h,a
+	ld a,iyl
+	ret
+	
+do_swap_a:
 	rrca
 	rrca
 	rrca
 	rrca
 	or a
 	ret
-do_swap_generic:
-	inc a
-	jr z,do_swap_hl
-	add a,$7E	;LD A,r
-	ld (_),a
-	add a,a
-	add a,a
-	add a,a
-	sub $79		;LD r,A
-	ld (++_),a
-	ld a,iyl
-	ex af,af'
-	push af
-_
-	 ld a,b
-	 rrca
-	 rrca
-	 rrca
-	 rrca
-	 or a
-_
-	 ld b,a
-	pop ix
-	ld a,ixh
-	ret
+	.block 6
+	
 do_swap_hl:
+	ld ixl,NO_CYCLE_INFO
 	ex af,af'
-	push af
+	ld iyl,a
+	ex af,af'
+	ld ixh,a
+	push ix
 	 call mem_read_any_before_write
-	 rrca
-	 rrca
-	 rrca
-	 rrca
-	 or a
-	 call mem_write_any_after_read
+	pop ix
+	rrca
+	rrca
+	rrca
+	rrca
+	or a
+	push ix
+	 call mem_write_any
 	pop ix
 	ld a,ixh
 	ret
 	
 do_bits:
-	inc hl
-	ex (sp),hl
-	sub $30
-	sub 8
-	jr c,do_swap
-	add a,$38-1	;Use L instead of (HL)
-	cp $C0
-	jp pe,do_bits_readonly
-	ld (do_bits_smc),a
-	call mem_read_any_before_write
-	; Use L because we have to affect flags, bleh
-	push hl
-	 ld l,a
-	 ex af,af'
-	 ld h,a
-do_bits_smc = $+1
-	 rlc l
-	 ld a,l
-	 ex (sp),hl
-	 call mem_write_any_after_read
-	pop ix
+	ex af,af'
+	ld iyl,a
 	ld a,ixh
+	add a,a
+	jr nc,do_bits_readonly
+	jp m,do_bits_preserve_flags
+	ld (do_bits_smc),a
+	push ix
+	 call mem_read_any_before_write
+	pop ix
+	exx
+	ld d,a
+	ex af,af'
+do_bits_smc = $+1
+	rlc d
+	push af
+	 ld a,d
+	 exx
+	 call mem_write_any
+	pop af
 	ret
+	
+do_bits_preserve_flags:
+	inc a
+	ld (do_bits_preserve_flags_smc),a
+	push ix
+	 call mem_read_any_before_write
+	pop ix
+do_bits_preserve_flags_smc = $+1
+	res 0,a
+	ex af,af'
+	push af
+	 call mem_write_any_swapped
+	pop af
+	ret
+	
 do_bits_readonly:
 	ld (do_bits_readonly_smc),a
 	call mem_read_any
-	; Use L because we have to affect flags, bleh
-	push hl
-	 ld l,a
-	 ld a,iyl
-	 ex af,af'
+	exx
+	ld d,a
+	ld a,iyl
+	ex af,af'
 do_bits_readonly_smc = $+1
-	 bit 0,l
-	pop hl
+	bit 0,d
+	exx
 	ret
 	
 ophandler08:
+	ld ixl,NO_CYCLE_INFO
 	push af
 	 push de
+	  ex.l de,hl
+	  ld hl,(sp_base_address_neg)
+	  add hl,de
+	  ex.l de,hl
+	  ld a,e
+	  ld ixh,d
 	  exx
-	  push hl
-	   exx
+	  ex (sp),hl
+	  push ix
+	   dec ixl
 	   ex af,af'
 	   ld iyl,a
-	   ex (sp),hl
-	   ld de,(sp_base_address_neg)
-	   add hl,de
-	   ld de,-1
-	   add iy,de
-	   ex de,hl
-	   ; We need special handling if an event is triggered by the first write
-	   ld hl,event_cycle_count
-	   dec (hl)
-	   push ix
-	    ex (sp),hl
-	    jr nc,ophandler08_underflow
-	    ld a,e
-	    call mem_write_any
-ophandler08_continue:
-	    ex (sp),hl
-	    ; Restore the event cycle count, or increment if an event was triggered
-	    inc (hl)
-	   pop hl
-	   inc hl
-	   ld a,d
-	   call mem_write_any_after_read
-	  pop hl
-	 pop de
+	   call mem_write_any_swapped
+	  pop ix
+	  inc hl
+	  call mem_write_any_ixh
+	 pop hl
 	pop af
 	ret
-	   ; If the cycle count underflowed, modify event trigger logic
-	   ; to force it to recognize the count as an overflow
-ophandler08_underflow:
-	   xor a
-	   ld (trigger_event_remove_smc),a
-	   ld a,e
-	   call mem_write_any
-	   ld a,trigger_event_no_remove - (trigger_event_remove_smc+1)
-	   ld (trigger_event_remove_smc),a
-	   jr ophandler08_continue
 	
 ophandler27:
 	; Save input A value
@@ -2131,24 +2142,28 @@ ophandler3B_bound_smc = $+1
 	ret
 	
 ophandler34:
+	ld ixl,NO_CYCLE_INFO
+	push ix
+	 call mem_read_any_before_write_swap
+	pop ix
+	ld ixh,a
 	ex af,af'
-	ld iyl,a
-	call mem_read_any_before_write
-	ld ixl,a
-	ex af,af'
-	inc ixl
-	jr _
+	inc ixh
+	push af
+	 call mem_write_any_ixh
+	pop af
+	ret
 	
 ophandler35:
+	ld ixl,NO_CYCLE_INFO
+	push ix
+	 call mem_read_any_before_write_swap
+	pop ix
+	ld ixh,a
 	ex af,af'
-	ld iyl,a
-	call mem_read_any_before_write
-	ld ixl,a
-	ex af,af'
-	dec ixl
-_
+	dec ixh
 	push af
-	 call mem_write_any_after_read_ixl
+	 call mem_write_any_ixh
 	pop af
 	ret
 	
@@ -2287,6 +2302,7 @@ ophandlerEI_no_change:
 	ret
 	
 ophandlerEI:
+	ld ixl,NO_CYCLE_INFO
 intstate_smc_1 = $
 	ret	; SMC overrides with EX AF,AF' when IME=0
 	ld iyl,a
@@ -2317,24 +2333,23 @@ intstate_smc_1 = $
 	and l
 	jr z,ophandlerEI_no_interrupt
 
-	call get_mem_cycle_offset
+	call get_mem_info_full
 	inc de	; Advance to cycle after EI
 	inc de  ; Advance after EI delay cycle
-	ld a,(hl)
-	or a	; Check if cycles remain in the block
+	ld a,(ix+2)
+	inc a	; Check if cycles remain in the block
 	jr z,++_
 	; Interrupt check will happen in this block
 	push hl
 	 ld hl,i
 	 add hl,de
 	 ld i,hl
-	pop hl
-	dec hl
-	dec hl
-	ld de,(hl)
-	ld c,a
-	dec a
+	 ld de,(ix-2)
+	pop ix
+	cpl
 	ld iyl,a
+	inc a
+	ld c,a
 	xor a
 	cp iyh
 	ld iyh,a
@@ -2482,7 +2497,7 @@ trigger_event_swapped:
 reschedule_event_PPU:
 trigger_event_pushed:
 	 ; Get the cycle offset, GB address, and JIT address after the current opcode
-	 call get_mem_cycle_offset
+	 call get_mem_info_full
 	 ; If the end of this instruction is already past the target, no reschedule
 	 xor a
 	 cp d
@@ -2490,7 +2505,6 @@ trigger_event_pushed:
 	 ; If the counter already overflowed, remove any already-scheduled event
 	 cp iyh
 	 ld iyh,a
-trigger_event_remove_smc = $+1
 	 jr nz,trigger_event_no_remove
 #ifdef DEBUG
 	 ld a,(event_address+1)
@@ -2500,7 +2514,6 @@ trigger_event_remove_smc = $+1
 	 ld a,(event_value)
 event_address = $+1
 	 ld (event_value),a
-	 xor a
 #ifdef DEBUG
 	 jr _
 #endif
@@ -2509,22 +2522,22 @@ trigger_event_no_remove:
 	 ld a,(event_address+1)
 	 cp (event_value >> 8) + 1
 	 jr nc,$
-	 xor a
 _
 #endif
-	 inc a  ; Cycle count at event is relative to the memory access
-	 ld (event_cycle_count),a
-	 add a,(hl)
+	 ; Cycle count at event is relative to the memory access
+	 ld a,iyl
+	 sub e
 	 ld iyl,a
-	 dec hl
-	 dec hl
-	 ld hl,(hl)
-	 ld (event_gb_address),hl
-	 lea hl,ix
+	 scf
+	 adc a,(ix+2)
+	 ASSERT_C
+	 ld (event_cycle_count),a
 	 ld (event_address),hl
 	 ld a,(hl)
 	 ld (event_value),a
 	 ld (hl),RST_EVENT
+	 ld hl,(ix-2)
+	 ld (event_gb_address),hl
 	 ld hl,i
 	 add hl,de	; Reset div counter to the time of memory access
 	 ld i,hl
@@ -2540,28 +2553,29 @@ z80_ret:
 	ret
 	
 ophandlerE2:
+	ld ixl,NO_CYCLE_INFO
 	ex af,af'
+	ld ixh,b
 	inc c
 	jr z,_
 	dec c
 	jp p,++_
 	ex af,af'
-	ld iyl,b
 	ld b,$FF
 	ld (bc),a
-	ld b,iyl
+	ld b,ixh
 	ret
 _
 	dec c
 _
 	ld iyl,a
-	push hl
-	 ld h,$FF
-	 ld l,c
-	 ld a,l
-	 call mem_write_ports_swapped_always
-	pop hl
-	ret
+	ld b,mem_write_port_lut >> 8
+	ld a,(bc)
+	ld (_+1),a
+	ld b,ixh
+	ld ixh,c
+_
+	jp mem_write_port_routines
 	
 ophandlerE8:
 	exx
@@ -2693,6 +2707,7 @@ ophandlerF1_pop_z80:
 	ret
 	
 ophandlerF2:
+	ld ixl,NO_CYCLE_INFO
 	ex af,af'
 	bit 7,c
 	jr z,_
@@ -2844,9 +2859,6 @@ do_push_for_call_hmem:
 	push ix
 do_push_hmem:
 	push af
-	 ; We need special handling if an event is triggered by the first write
-	 ld ix,event_cycle_count
-	 dec (ix)
 	 ex af,af'
 	 ld iyl,a
 	 ld a,d
@@ -2855,21 +2867,15 @@ do_push_hmem:
 	 dec hl
 	 push hl
 	  dec hl
-	  ld de,-1
-	  add iy,de
 	  exx
 	  ex (sp),hl
 	  push af
-	   jr nc,push_hmem_underflow
+	   ld ixl,NO_CYCLE_INFO - 1
 	   call mem_write_hmem_swapped
-push_hmem_continue:
 	  pop af
 	  ex af,af'
 	  dec hl
-	  inc iy
-	  ; Restore the event cycle count, or increment if an event was triggered
-	  ld ix,event_cycle_count
-	  inc (ix)
+	  ld ixl,NO_CYCLE_INFO
 	  call mem_write_hmem_swapped
 	 pop hl
 	pop af
@@ -2893,16 +2899,6 @@ do_push_bound_smc_2 = $+1
 do_push_for_call_jump_smc_2 = $+1
 	jr do_push_for_call_rtc
 	
-	   ; If the cycle count underflowed, modify event trigger logic
-	   ; to force it to recognize the count as an overflow
-push_hmem_underflow:
-	   xor a
-	   ld (trigger_event_remove_smc),a
-	   call mem_write_hmem_swapped
-	   ld a,trigger_event_no_remove - (trigger_event_remove_smc+1)
-	   ld (trigger_event_remove_smc),a
-	   jr push_hmem_continue
-	
 do_push_for_call_z80:
 	push bc
 	dec hl
@@ -2921,7 +2917,6 @@ do_push_for_call_adl:
 	jp (ix)
 	
 	; Pushes using the memory write routine passed in IX
-	; Currently, the routine must not cause reschedules
 	; Unswaps BCDEHL'
 do_push_generic:
 	push af
@@ -2937,23 +2932,25 @@ do_push_generic:
 	 push hl
 	  ex.l de,hl
 	  dec.l hl
-	  dec iy
 	  exx
 	  ex (sp),hl
-	  push af
-	   push ix
-	    call _
-	   pop ix
-	  pop af
-	  ex af,af'
-	  dec hl
-	  inc iy
 	  call _
 	 pop hl
 	pop af
 	ret
 _
-	jp (ix)
+	push ix
+	 push af
+	  call _
+	 pop af
+	 ex af,af'
+	 dec hl
+	 ld ixl,NO_CYCLE_INFO
+	ret
+_
+	push ix
+	 ld ixl,NO_CYCLE_INFO - 1
+	ret
 	
 ophandlerF8:
 	ld ixl,a
@@ -3051,11 +3048,11 @@ pop_hmem:
 	push hl
 	 exx
 	 ex (sp),hl
-	 dec iy
+	 ld ixl,NO_CYCLE_INFO - 1
 	 call mem_update_hmem_swapped
-	 inc iy
 	 inc hl
 	 ex af,af'
+	 ld ixl,NO_CYCLE_INFO
 	 call mem_update_hmem_swapped
 	pop hl
 	exx
@@ -3249,7 +3246,7 @@ mem_update_IF:
 	exx
 	ld a,(active_ints)
 	or $E0
-	ld (IF),a
+	ld (hl),a
 	ld a,iyl
 	ex af,af'
 	ret
@@ -3279,8 +3276,11 @@ _
 	pea ix-5
 	ret
 	
+mem_read_any_before_write_swap:
+	ex af,af'
+	ld iyl,a
 mem_read_any_before_write:
-	dec iy
+	dec ixl
 	;HL=GB address, reads into A, AF'=GB AF
 mem_read_any:
 	ld a,h
@@ -3355,12 +3355,10 @@ mem_read_any_hmem:
 	ld a,(hl)
 	ret
 	
-	;HL=GB address, IXL=data, destroys A,AF'
-mem_write_any_after_read_ixl:
-	ld a,ixl
-mem_write_any_after_read:
-	inc iy
-	;HL=GB address, A=data, preserves AF, destroys AF'
+	;HL=GB address, IXH=data, IXL=cycle offset, destroys A,AF'
+mem_write_any_ixh:
+	ld a,ixh
+	;HL=GB address, IXL=cycle offset, A=data, preserves AF, destroys AF'
 mem_write_any:
 	ex af,af'
 mem_write_any_swapped:
@@ -3403,8 +3401,14 @@ mem_write_any_wram_mirror:
 	jr mem_write_any_finish
 	
 mem_write_any_hmem:
-	jr nz,mem_write_ports_swapped
-	jr mem_write_oam_swapped
+	jr z,mem_write_oam_swapped
+	ld a,l
+	cp $7F
+	jp po,mem_write_ports_swapped_a
+	ld a,iyl
+	ex af,af'
+	ld (hl),a
+	ret
 	
 	; Inputs: IX = GB address
 	;         IY = cycle counter,
@@ -3415,12 +3419,34 @@ mem_write_hmem:
 	ex af,af'
 	ld iyl,a
 mem_write_hmem_swapped:
+	inc h
+	jr nz,mem_write_not_ports_swapped
+
+; Inputs: HL = GB address
+;         A = low byte of GB address
+;         IY = cycle counter
+;         IXL = cycle offset
+;         A' = data to write
+; Outputs: AF = input AF'
+;          A' = low cycle counter
+; Destroys: IX, F', C', DE'
+mem_write_ports_swapped:
+	ld a,l
+mem_write_ports_swapped_a:
+	ld ixh,a
+	ld h,mem_write_port_lut >> 8
+	ld l,(hl)
+	dec h
+	push hl
+	 ld h,$FF
+	 ld l,a
+	 ret
+	
+mem_write_not_ports_swapped:
 	ld a,h
-	inc a
-	jr z,mem_write_ports_swapped
+	dec h
 	inc a
 	jr nz,mem_write_bail
-mem_write_hram_swapped:
 mem_write_oam_swapped:
 	ld a,iyl
 	ex af,af'
@@ -3430,30 +3456,6 @@ mem_write_oam_swapped:
 mem_write_any_cart:
 	jr mem_write_cart_always
 	
-; Inputs: HL = GB address
-;         IY = cycle counter,
-;         A' = data to write
-; Outputs: AF = input AF'
-;          A' = low cycle counter
-; Destroys: IX, F', C', DE'
-mem_write_ports_swapped:
-	ld a,l
-	cp $7F
-	jp pe,mem_write_hram_swapped
-mem_write_ports_swapped_always:
-	ld ixl,a
-	ld ixh,$FF
-	sub WX+1-ioregs
-	ld l,a
-	ld h,mem_write_port_routines >> 8
-	ld l,(hl)
-	push hl
-	 lea hl,ix
-	 ret m
-	pop af
-	ld a,iyl
-	ex af,af'
-	ret
 	
 	;HL=GB address, A=data, preserves AF, destroys F'
 mem_write_vram:
@@ -3464,7 +3466,8 @@ mem_write_vram:
 	jp pe,mem_write_vram_always
 mem_write_bail:
 	pop ix
-	lea ix,ix-5
+	lea ix,ix-8
+mem_write_bail_any:
 	ld a,RST_MEM
 	cp (ix)
 	jr z,mem_write_bail_a
@@ -3493,13 +3496,18 @@ mem_write_bail_r:
 	ex af,af'
 	jp (ix)
 	
+mem_write_bail_no_cycle_info:
+	pop ix
+	lea ix,ix-5
+	jr mem_write_bail_any
+	
 	;HL=GB address, A=data, preserves AF, destroys F'
 mem_write_cart:
 	ex af,af'
 	ld iyl,a
 	ld a,h
 	rla
-	jr c,mem_write_bail
+	jr c,mem_write_bail_no_cycle_info
 	;HL=GB address, A'=data, preserves AF', destroys AF
 mem_write_cart_always:
 	ld a,h
@@ -3685,123 +3693,161 @@ get_mem_cycle_offset_push:
 	push.l hl
 
 ; Inputs: IY = current block cycle base
+;         IXL = block-relative cycle offset (negative) or NO_CYCLE_INFO[-1]
 ;         (SPL) = saved HL'
 ;         SPL = top of callstack cache - 3
 ;         (bottom of short stack) = JIT return address
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
 ;          May be positive if target lies within an instruction
-;          (HL) = cycles until block end
-;          (HL-2) = Game Boy address
-;          IX = current JIT address
-; Destroys HL,IX
+;          IXL is updated if it was NO_CYCLE_INFO[-1]
+; Destroys AF,HL
 get_mem_cycle_offset:
+	ld a,ixl
+	ld (_+2),a
+_
+	lea de,iy
+	or a
+	ret m
+resolve_mem_cycle_offset:
+	push ix
+	 call get_mem_info_full
+	pop ix
+	ld a,e
+	sub iyl
+	ld ixl,a
+	ret
+
+; Inputs: IY = current block cycle base
+;         IXL = currently known cycle info, possibly minus 1
+;         (SPL) = saved HL'
+;         SPL = top of callstack cache - 3
+;         (bottom of short stack) = JIT return address
+;         AFBCDEHL' have been swapped
+; Outputs: DE = (negative) cycle offset
+;          May be positive if target lies within an instruction
+;          (IX-2) = Game Boy address
+;          (IX+2) = cycles until block end from end of instruction, minus 1
+;          HL = current JIT address
+; Destroys AF
+get_mem_info_full:
+#ifdef DEBUG
+	ld a,ixl
+	add a,$7F - NO_CYCLE_INFO
+	jp pe,$
+#endif
 	; Get the address of the recompiled code: the bottom stack entry
 	ld hl,(((myz80stack - 4 - 2) / 2) - (myADLstack - 3)) & $FFFF
 	add.l hl,sp
 	add hl,hl
-	ld ix,(hl)
-get_mem_cycle_offset_for_events:
+	ld hl,(hl)
 	; Check if the JIT target address is an absolute jump instruction,
 	; which indicates that the memory access is a branch dispatch
 	ld a,$C3
-	cp (ix)
-	jr z,get_mem_cycle_offset_for_branch
+	cp (hl)
+	ld d,ixl
+	jr z,get_mem_info_for_branch
 	; Assume the JIT code was a routine call; get its target address
-	ld hl,(ix-2)
-	; Check if the target begins with a JP, RST 10h, or RST 20h instruction.
-	; This should only be the case when the target is a cycle cache trampoline.
-	; Note that to avoid false positives, no routine called directly from JIT
-	; should start with JP nnnn; OUT (nn),A; EX (SP),HL; DI; or RST x0h.
-	xor (hl)
-	and $CB
-	jr nz,resolve_get_mem_cycle_offset_call
+	dec hl
+	dec hl
+	ld ix,(hl)
+	dec hl
+	; The target is supposed to start with a LD IXL,offset instruction,
+	; whether or not it is a cycle cache trampoline.
+	; Check if the offset in question is NO_CYCLE_INFO.
+	ld a,(ix+2)
+	dec a
+	jr z,resolve_mem_info_from_call
 	; We probably have a trampoline target; however, we must check whether our
 	; assumption that the JIT code was a routine call is accurate. If the first
-	; byte of the JIT code is a NOP, then we actually have a bitwise prefix op
-	; or a POP.
-	cp (ix-3)
-	jr z,resolve_mem_cycle_offset_prefix
-	; Get a pointer to the cached cycle offset, which is right before the target
-	dec hl
-get_mem_cycle_offset_continue:
-	; Carry is set, calculate the cycle count in DE.
-	; The extra one cycle is subtracted because the memory access occurs during
-	; the last cycle of the instruction.
-	ld a,iyl
-	sbc a,(hl)
+	; byte of the JIT code is a NOP or LD IXH and not a CALL, then we actually
+	; have a POP or a bitwise prefix op.
+	bit 7,(hl)
+	jr z,resolve_mem_info_for_prefix
+get_mem_info_finish_inc3:
+	inc hl
+get_mem_info_finish_inc2:
+	inc hl
+	inc hl
+get_mem_info_finish:
+	; If NO_CYCLE_INFO[-1] was passed in, offset from the cached value
+	add a,d
+	jr nc,_
+	; Otherwise, use the passed-in value
+	ld a,d
+_
+	add a,iyl
 	ld e,a
 	ld d,iyh
-	ret nc
+	ret c
 	dec d
 	ret
 	
-	
-resolve_get_mem_cycle_offset_call:
+resolve_mem_info_from_call:
 	; If the code is not in the JIT area, the routine call was actually for a RET
-	ld a,ixh
+	ld a,h
 	cp jit_start >> 8
 	jr c,get_mem_cycle_offset_for_ret
-	; Check if the JIT code corresponds to a prefixed bitwise operation, which begins with NOP
-	xor a
-	cp (ix-3)
-	jr z,resolve_mem_cycle_offset_prefix
-	; If not, the JIT code is a routine call, so we emit a jump to the original call target
-	ld a,h
-	ld h,l
-	ld l,$C3
-	.db $CA	;JP Z,
-resolve_mem_cycle_offset_prefix:
-	; For a prefixed bitwise operation, we emit the two-byte operation followed by a RET
-	ld a,$C9
-	jp.lil resolve_mem_cycle_offset_helper
+	; Check if the JIT code corresponds to a prefixed bitwise operation or POP
+	bit 7,(hl)
+	jp.lil nz,resolve_mem_info_from_call_helper
+resolve_mem_info_for_prefix:
+	; Differentiate between NOP and LD IXH
+	bit 5,(hl)
+	jp.lil resolve_mem_info_for_prefix_helper
 
-get_mem_cycle_offset_for_branch:
+get_mem_info_for_branch:
 	; This is a push related to an RST, CALL, or interrupt
-	ld a,ixh
+	ld a,h
 	cp jit_start >> 8
-	jp.lil nc,get_mem_cycle_offset_for_call_helper
+	jp.lil nc,get_mem_info_for_call_helper
 	
 	; Retrieve the cycle info and actual target address,
 	; and infer the Game Boy address
-	ld hl,mem_cycle_scratch
-	ld a,ixl
+	ld a,l
+	inc hl
+	inc hl
+	inc hl
 	sub dispatch_rst_00 & $FF
 	add a,a
-	ld (hl),a
-	inc hl
-	ld (hl),0
-	; Subtract 4 cycles for RST, or 5 for interrupt
+	ld ix,mem_info_scratch
+	ld (ix-2),a
+	ld (ix-1),0
+	; Subtract from 3 cycles for RST, or 4 for interrupt
 	cp $40
-	ld a,-5
-get_mem_cycle_offset_for_call_finish:
-	adc a,(ix+3)
-	inc hl
-	ld (hl),a
-	ld ix,(ix+1)  ; Get the actual target from the dispatch
-	; Check if it's possibly the flush handler
+	ld a,4
+get_mem_info_for_call_finish:
+	sbc a,(hl)
+	dec hl
+	dec hl
+	ld hl,(hl) ; Get the actual target from the dispatch
+	ld (ix+2),a
+	dec a
+	ld e,a
+	; Check if the target is possibly the flush handler
 	ld a,(jit_start >> 8) - 1
-	cp ixh
-	jr c,get_mem_cycle_offset_continue
+	cp h
+	ld a,e
+	jr c,get_mem_info_finish
 	; The target should be the flush handler.
 #ifdef DEBUG
-	ld a,ixh
+	ld a,h
 	cp flush_handler >> 8
 	jr nz,$
-	ld a,ixl
+	ld a,l
 	cp flush_handler & $FF
 	jr nz,$
+	ld a,e
 #endif
 	; Set the JIT address to a harmless location in case an event is scheduled.
-	ld ix,event_value
-	scf
-	jr get_mem_cycle_offset_continue
+	ld hl,event_value
+	jr get_mem_info_finish
 
 get_mem_cycle_offset_for_ret:
 	; The second read of an unconditional RET is always two cycles after
 	; the end of a JIT sub-block. A conditional RET adds an extra cycle,
 	; so we must retrieve this information which is saved on the stack.
-	ld a,l
+	ld a,ixl
 	cp pop_overflow & $FF
 	; Get the address of the cycle count stored on the stack,
 	; this is just above the return address of the call to pop_overflow
@@ -3821,24 +3867,32 @@ _
 	; Check the low bit to see if it was conditional
 	rra
 	; IX and HL returns are never used by reads; just get the cycle count
-	lea de,iy+2
+	ld a,iyl
+	; The cycle offset is guaranteed NO_CYCLE_INFO[-1], so increment and add it
+	inc d
+	adc a,d
+	ld e,a
+	ld d,iyh
 	ret nc
-	inc de
+	inc d
 	ret
 
-mem_cycle_scratch:
-	.dw 0
-	.db 0
+	.dw 0	; GB address
+mem_info_scratch:
+	.db 0,0
+	.db 0	; Cycle offset
 	
 updateSTAT_if_changed_scroll:
 	exx
 	ex af,af'
 	ld c,a
 	ex af,af'
-	ld a,(ix)
+	ld d,$FF
+	ld e,ixh
+	ld a,(de)
 	cp c
 	jr z,updateSTAT_no_change_scroll
-	push ix
+	push de
 	call updateSTAT
 	jp.lil scroll_write_helper
 	
@@ -3858,6 +3912,10 @@ updateSTAT_no_change_scroll:
 	ex af,af'
 	ret
 	
+updateSTAT_resolve_cycle_offset:
+	call resolve_mem_cycle_offset
+	jr updateSTAT_resolve_cycle_offset_continue
+	
 	; Handle transition from fake mode 0 on LCD startup
 lcd_on_STAT_handler:
 	call lcd_on_STAT_restore
@@ -3870,32 +3928,30 @@ updateSTAT_swap:
 	exx
 updateSTAT:
 	push.l hl
+updateSTAT_resolve_cycle_offset_continue:
 	; Get the value of DIV at the end of the JIT block
 updateSTAT_disable_smc = $
 	ld hl,i ; Replaced with RET when LCD is disabled
+	; Quickly test to see if STAT is valid for this memory access,
+	; or during the entire block if no cycle info is available
+	ld a,ixl
+	ld (_+2),a
+_
 	lea de,iy
 	add hl,de
-	; Quickly test to see if STAT is valid during the entire block
 nextupdatecycle_STAT = $+1
 	ld de,0
-	add hl,de
-	inc h
-	ret z
-	; If STAT may be invalid, get the exact DIV value
-	push de
-	 call get_mem_cycle_offset
-	 ld hl,i
-	 add hl,de
-	pop de
 	ex de,hl
-	; Check if it's still valid
 	add hl,de
 	inc h
 	ret z
+	; Check if the cycle offset was invalid, and if so, resolve the real offset
+	rla
+	jr nc,updateSTAT_resolve_cycle_offset
+	; Now check to see if we are within one scanline after the update time
+	; This limitation is needed to ensure the STAT update time is still valid
 	dec h
 	jr nz,updateSTAT_full
-	; Now check to see if we are within one scanline after the update time
-	; This limitation is needed to ensure the LY update time is still valid
 	ld a,l
 	cp CYCLES_PER_SCANLINE
 	jr nc,updateSTAT_full
@@ -4058,57 +4114,61 @@ get_scanline_from_cycle_count_finish:
 	 ld a,143
 	 sub d
 	pop de
-	jr c,updateSTAT_full_vblank
-	; Scanline is during active video
-	ld ixh,a
-	xor a
-	ld ixl,a
-	; Get the (negative) cycles until the next scanline
-	dec a
-	; Allow rendering catch-up outside of vblank, if this frame isn't skipped
+	push bc
+	 jr c,updateSTAT_full_vblank
+	 ; Scanline is during active video
+	 ld b,a
+	 xor a
+	 ld c,a
+	 ; Get the (negative) cycles until the next scanline
+	 dec a
+	 ; Allow rendering catch-up outside of vblank, if this frame isn't skipped
 updateSTAT_full_enable_catchup_smc = $+1
-	ld r,a
-	ld h,a
-	xor l
-	rrca ;NOP this out in double-speed
-	ld l,a
-	; Add to the negative DIV count
-	add hl,de
-	ld (nextupdatecycle_LY),hl
-	; Determine the STAT mode and the cycles until next update
-	; Check if during mode 0
-	ld l,a
-	add a,MODE_0_CYCLES
-	jr c,_
-	; Check if during mode 3
-	ld l,a
-	lea ix,ix+3
-	add a,MODE_3_CYCLES
-	jr c,_
-	; During mode 2
-	ld l,a
-	dec ixl
+	 ld r,a
+	 ld h,a
+	 xor l
+	 rrca ;NOP this out in double-speed
+	 ld l,a
+	 ; Add to the negative DIV count
+	 add hl,de
+	 ld (nextupdatecycle_LY),hl
+	 ; Determine the STAT mode and the cycles until next update
+	 ; Check if during mode 0
+	 ld l,a
+	 add a,MODE_0_CYCLES
+	 jr c,_
+	 ; Check if during mode 3
+	 ld l,a
+	 inc c
+	 inc c
+	 inc c
+	 add a,MODE_3_CYCLES
+	 jr c,_
+	 ; During mode 2
+	 ld l,a
+	 dec c
 _
-	ld h,$FF
-	add hl,de
-	ld (nextupdatecycle_STAT),hl
+	 ld h,$FF
+	 add hl,de
+	 ld (nextupdatecycle_STAT),hl
 updateSTAT_full_finish:
-	; Write value of LY
-	ld a,ixh
-	ld hl,LY
-	ld (hl),a
-	; Check for LYC coincidence
-	inc hl
-	cp (hl)
-	jr nz,_
-	lea ix,ix+4
+	 ; Write value of LY
+	 ld a,b
+	 ld hl,LY
+	 ld (hl),a
+	 ; Check for LYC coincidence
+	 inc hl
+	 cp (hl)
+	 jr nz,_
+	 set 2,c
 _
-	; Write low bits of STAT
-	ld l,STAT & $FF
-	ld a,(hl)
-	and $F8
-	or ixl
-	ld (hl),a
+	 ; Write low bits of STAT
+	 ld l,STAT & $FF
+	 ld a,(hl)
+	 and $F8
+	 or c
+	 ld (hl),a
+	pop bc
 lcd_on_STAT_restore:
 	ret ; Replaced with .LIL prefix
 	.db $C3
@@ -4123,69 +4183,71 @@ updateSTAT_full_for_LY_trampoline:
 	jr updateSTAT_full_for_LY
 	
 updateSTAT_full_vblank:
-	; Set mode 1 unconditionally
-	ld ixl,1
-	; Get the actual scanline, and check whether it's the final line
-	inc a
-	add a,SCANLINES_PER_FRAME - 1
-	ld ixh,a
-	jr nc,updateSTAT_full_last_scanline
-	; Get the (negative) cycles until the next scanline
-	sbc a,a
-	ld h,a
-	xor l
-	rrca ; NOP this out in double-speed mode
+	 ; Set mode 1 unconditionally
+	 ld c,1
+	 ; Get the actual scanline, and check whether it's the final line
+	 inc a
+	 add a,SCANLINES_PER_FRAME - 1
+	 ld b,a
+	 jr nc,updateSTAT_full_last_scanline
+	 ; Get the (negative) cycles until the next scanline
+	 sbc a,a
+	 ld h,a
+	 xor l
+	 rrca ; NOP this out in double-speed mode
 _
-	ld l,a
+	 ld l,a
 _
-	; Add to the negative DIV count
-	add hl,de
-	; This will be used for both the next LY and STAT update times
-	; Since during vblank, STAT must still be updated for LY=LYC
-	ld (nextupdatecycle_LY),hl
-	ld (nextupdatecycle_STAT),hl
-	jr updateSTAT_full_finish
+	 ; Add to the negative DIV count
+	 add hl,de
+	 ; This will be used for both the next LY and STAT update times
+	 ; Since during vblank, STAT must still be updated for LY=LYC
+	 ld (nextupdatecycle_LY),hl
+	 ld (nextupdatecycle_STAT),hl
+	 jr updateSTAT_full_finish
 	
 updateSTAT_full_last_scanline:
-	; On the final line, set LY to 0 after the first cycle
-	ld h,$FF
-	ld a,l
-	cpl
-	rrca
-	ld l,a
-	add a,CYCLES_PER_SCANLINE - 1
-	jr nc,--_
-	ld ixh,0
-	jr -_
+	 ; On the final line, set LY to 0 after the first cycle
+	 ld h,$FF
+	 ld a,l
+	 cpl
+	 rrca
+	 ld l,a
+	 add a,CYCLES_PER_SCANLINE - 1
+	 jr nc,--_
+	 ld b,0
+	 jr -_
 	
 updateSTAT_full_for_setup:
 	call updateSTAT_full
 	ret.l
 	
+updateLY_resolve_cycle_offset:
+	call resolve_mem_cycle_offset
+	jr updateLY_resolve_cycle_offset_continue
+	
 updateLY:
 	exx
 	push.l hl
+updateLY_resolve_cycle_offset_continue:
 	; Get the value of DIV at the end of the JIT block
 updateLY_disable_smc = $
 	ld hl,i ; Replaced with RET when LCD is disabled
+	; Quickly test to see if LY is valid for this memory access,
+	; or during the entire block if no cycle info is available
+	ld a,ixl
+	ld (_+2),a
+_
 	lea de,iy
 	add hl,de
-	; Quickly test to see if LY is valid during the entire block
 nextupdatecycle_LY = $+1
 	ld de,0
 	add hl,de
 	inc h
 	ret z
-	; If LY may be invalid, get the exact DIV value
-	push de
-	 call get_mem_cycle_offset
-	 ld hl,i
-	 add hl,de
-	pop de
-	; Check if it's still valid
-	add hl,de
-	inc h
-	ret z
+	; Check if the cycle offset was invalid, and if so, resolve the real offset
+	rla
+	jr nc,updateLY_resolve_cycle_offset
 	; Now check to see if we are within one scanline after the update time
 	dec h
 	jr nz,updateSTAT_full_for_LY_trampoline
@@ -4301,11 +4363,8 @@ _
 	 ld a,(TMA)
 	 jr updateTIMAcontinue
 	
-	.block (-$-245)&$FF
+	.block (-$-37)&$FF
 	
-_writeSC:
-	ld a,iyl
-	ex af,af'
 _writeSChandler:
 	push af
 	 push hl
@@ -4330,174 +4389,26 @@ _
 	pop af
 	ret
 	
-_writeP1:
-	ld a,iyl
-	ex af,af'
-_writeP1handler:
-	push af
-	 or $CF
-	 bit 4,a
-	 jr nz,_
-keys_low = $+1
-	 and $FF
-_
-	 bit 5,a
-	 jr nz,_
-keys_high = $+1
-	 and $FF
-_
-	 ld (P1),a
-	pop af
-	ret
-	
-_writeDIVhandler:
-	ex af,af'
-	ld iyl,a
-_writeDIV:
-	call updateTIMA
-	jp.lil div_write_helper
-	
-_writeBGPhandler:
-	ex af,af'
-	ld iyl,a
-_writeBGP:
-	ld a,(BGP)
-	call updateSTAT_if_changed_any
-	jp.lil BGP_write_helper
-	
-_writeNR52handler:
-	ex af,af'
-	ld iyl,a
-_writeNR52:
-	jp.lil NR52_write_helper
-	
-mem_write_port_handler_base = $-2
-writeSChandler:
-	jr _writeSChandler
-writeP1handler:
-	jr _writeP1handler
-writeDIVhandler:
-	jr _writeDIVhandler
-writeBGPhandler:
-	jr _writeBGPhandler
-writeNR52handler:
-	jr _writeNR52handler
-writeNR10handler:
-	call write_audio_handler
-	.db NR10 - ioregs
-writeNR11handler:
-	call write_audio_handler
-	.db NR11 - ioregs
-writeNR12handler:
-	call write_audio_handler
-	.db NR12 - ioregs
-writeNR13handler:
-	call write_audio_handler
-	.db NR13 - ioregs
-writeNR14handler:
-	call write_audio_handler
-	.db NR14 - ioregs
-writeNR21handler:
-	call write_audio_handler
-	.db NR21 - ioregs
-writeNR22handler:
-	call write_audio_handler
-	.db NR22 - ioregs
-writeNR23handler:
-	call write_audio_handler
-	.db NR23 - ioregs
-writeNR24handler:
-	call write_audio_handler
-	.db NR24 - ioregs
-writeNR30handler:
-	call write_audio_handler
-	.db NR30 - ioregs
-writeNR31handler:
-	call write_audio_handler
-	.db NR31 - ioregs
-writeNR32handler:
-	call write_audio_handler
-	.db NR32 - ioregs
-writeNR33handler:
-	call write_audio_handler
-	.db NR33 - ioregs
-writeNR34handler:
-	call write_audio_handler
-	.db NR34 - ioregs
-writeNR41handler:
-	call write_audio_handler
-	.db NR41 - ioregs
-writeNR42handler:
-	call write_audio_handler
-	.db NR42 - ioregs
-writeNR43handler:
-	call write_audio_handler
-	.db NR43 - ioregs
-writeNR44handler:
-	call write_audio_handler
-	.db NR44 - ioregs
-writeNR50handler:
-	call write_audio_handler
-	.db NR50 - ioregs
-writeNR51handler:
-	call write_audio_handler
-	.db NR51 - ioregs
-	
-writeSCYhandler:
-	ld ix,SCY
-	jr write_scroll_swap
-	
-writeSCXhandler:
-	ld ix,SCX
-	jr write_scroll_swap
-	
-writeWYhandler:
-	ld ix,WY
-	jr write_scroll_swap
-	
-writeWXhandler:
-	ld ix,WX
-	jr write_scroll_swap
-	
-writeOBP0handler:
-	ld ix,OBP0
-	jr write_scroll_swap
-	
-writeOBP1handler:
-	ld ix,OBP1
-	jr write_scroll_swap
-
-writeIFhandler:
-	ex af,af'
-	ld iyl,a
-	jp writeIF
-	
-writeIEhandler:
-	ld (IE),a
-	ex af,af'
-	ld iyl,a
-	exx
-	jp checkInt
-
-write_audio_handler:
-	ex af,af'
-	ld iyl,a
-	ex (sp),hl
-	ld ix,(hl)
-	pop hl
-	
 #if $ & 255
 	.error "mem_write_port_routines must be aligned: ", $ & 255
 #endif
 	
 mem_write_port_routines:
+writeSC:
+	ld a,iyl
+	ex af,af'
+writeSChandler:
+	jr _writeSChandler
+
 write_audio:
 	ld a,iyl
 	ex af,af'
+write_audio_handler:
 write_audio_disable_smc = $
 	push af
 	 exx
 	 ld c,a
+	 ld ixl,ixh
 	 ld e,ixl
 	 ld d,$FF
 	 ld ixh,audio_port_value_base >> 8
@@ -4515,7 +4426,7 @@ _
 	pop af
 	ret
 	
-write_scroll_swap:
+write_scroll_handler:
 	ex af,af'
 	ld iyl,a
 write_scroll:
@@ -4566,6 +4477,34 @@ writeTIMA:
 	ex af,af'
 	jp.lil tima_write_helper
 	
+writeDIVhandler:
+	ex af,af'
+	ld iyl,a
+writeDIV:
+	call updateTIMA
+	jp.lil div_write_helper
+	
+writeBGPhandler:
+	ex af,af'
+	ld iyl,a
+writeBGP:
+	ld a,(BGP)
+	call updateSTAT_if_changed_any
+	jp.lil BGP_write_helper
+	
+writeNR52handler:
+	ex af,af'
+	ld iyl,a
+writeNR52:
+	jp.lil NR52_write_helper
+	
+writeIEhandler:
+	ld (IE),a
+	ex af,af'
+	ld iyl,a
+	exx
+	jr checkInt
+	
 writeIE:
 	ex af,af'
 	ld (IE),a
@@ -4573,6 +4512,9 @@ writeIE:
 	exx
 	jr checkInt
 	
+writeIFhandler:
+	ex af,af'
+	ld iyl,a
 writeIF:
 	ld a,iyh
 	or a
@@ -4602,30 +4544,46 @@ write_port_ignore:
 	ret
 	
 writeP1:
-	jp _writeP1
+	ld a,iyl
+	ex af,af'
+writeP1handler:
+	push af
+	 or $CF
+	 bit 4,a
+	 jr nz,_
+keys_low = $+1
+	 and $FF
+_
+	 bit 5,a
+	 jr nz,_
+keys_high = $+1
+	 and $FF
+_
+	 ld (P1),a
+	pop af
+	ret
 	
-writeSC:
-	jp _writeSC
-	
-writeDIV:
-	jp _writeDIV
-	
-writeNR52:
-	jp _writeNR52
-	
-writeBGP:
-	jp _writeBGP
-	
+	; Compatible with LD ($FF00+C),A
 write_port_direct:
 	ld a,iyl
 	ex af,af'
-	ld (ix),a
+	exx
+	ld d,$FF
+	ld e,ixh
+	ld (de),a
+	exx
 	ret
 	
-	.echo (mem_write_port_routines+256-(WX+2-ioregs))-$, " bytes remaining for port writes"
-	.block (mem_write_port_routines+256-(WX+2-ioregs))-$
-
-	.db writeIE - mem_write_port_routines
+	; Only invoked through (r16) writes or mem_write_any
+write_hram_direct:
+	ld a,iyl
+	ex af,af'
+	ld (hl),a
+	ret
+	
+	.echo mem_write_port_routines+256-$, " bytes remaining for port writes"
+	.block mem_write_port_routines+256-$
+mem_write_port_lut:
 ;00
 	.db writeP1 - mem_write_port_routines
 	.db write_port_direct - mem_write_port_routines
@@ -4712,6 +4670,12 @@ write_port_direct:
 	.db write_scroll - mem_write_port_routines
 	.db write_scroll - mem_write_port_routines
 	.db write_scroll - mem_write_port_routines
+;4C
+	.fill $FF80 - (WX+1), write_port_ignore - mem_write_port_routines
+;80
+	.fill IE - $FF80, write_hram_direct - mem_write_port_routines
+;FF
+	.db writeIE - mem_write_port_routines
 	
 audio_port_value_base:
 	.block 1

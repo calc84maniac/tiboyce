@@ -667,6 +667,8 @@ rom_start_smc_1 = $+1
 	  
 memroutine_gen_write_hmem:
 	  ld de,mem_write_hmem
+memroutine_gen_write_with_cycle_info:
+	  inc b
 memroutine_gen_write:
 	  sra c
 	  call nz,memroutine_gen_restore_hl
@@ -695,6 +697,8 @@ _
 _
 	  sra c
 	  call nz,memroutine_gen_swap_hl
+	  dec b
+	  call z,memroutine_gen_no_cycle_info
 	  jp memroutine_gen_end
 	  
 memroutine_gen_write_cart:
@@ -703,7 +707,7 @@ memroutine_gen_write_cart:
 	  
 memroutine_gen_write_vram:
 	  ld de,mem_write_vram
-	  jr memroutine_gen_write
+	  jr memroutine_gen_write_with_cycle_info
 	  
 memroutine_gen_not_cart0:
 	  djnz memroutine_gen_not_hmem
@@ -720,6 +724,7 @@ memroutine_gen_not_cart0:
 	  ld (hl),$CD	;CALL mem_update_hmem
 	  sra c
 	  call nz,memroutine_gen_swap_hl
+	  call memroutine_gen_no_cycle_info
 	  jp memroutine_gen_end
 	  
 memroutine_gen_not_cart_bank:
@@ -946,3 +951,11 @@ memroutine_gen_restore_hl:
 	dec hl
 	ret
 	
+memroutine_gen_no_cycle_info:
+	dec hl
+	ld (hl),NO_CYCLE_INFO
+	dec hl
+	ld (hl),$2E
+	dec hl
+	ld (hl),$DD ;LD IXL,NO_CYCLE_INFO
+	ret

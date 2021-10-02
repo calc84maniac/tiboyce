@@ -701,6 +701,7 @@ do_lcd_disable:
 	ld (stat_write_disable_smc),hl
 	 
 	; Update PPU scheduler to do events once per "frame"
+	push ix
 	ld ix,z80codebase+ppu_expired_lcd_off
 	ld hl,-CYCLES_PER_FRAME
 	ld.sis (ppu_post_vblank_event_handler),ix
@@ -794,6 +795,7 @@ stat_setup_c:
 	ld d,c
 	; Input: D = current writable bits of STAT, C = current read-only bits of STAT
 stat_setup:
+	push ix
 	ld ix,z80codebase+ppu_expired_vblank
 	; Get the line to match, but treat offscreen lines as vblank match
 	ld.sis hl,(LY)
@@ -837,6 +839,7 @@ stat_setup_done:
 	ld.sis (ppu_counter),hl
 lcd_on_stat_setup_event_smc = $+3
 	ld.sis (event_counter_checker_slot_PPU),ix
+	pop ix
 	ret
 	
 stat_setup_oam:
@@ -852,7 +855,7 @@ stat_setup_oam:
 	; If LY is 143, schedule vblank
 	ld a,e
 	cp 143
-	jr z,stat_setup_next_vblank
+	jp z,stat_setup_next_vblank
 	ld ix,z80codebase+ppu_expired_mode2
 	; If currently in mode 1, schedule the first post-vblank event
 	ld a,c
@@ -927,8 +930,10 @@ lyc_cycle_offset = $+1
 ;          AF' has been unswapped
 ;          BCDEHL' have been unswapped
 lcdc_write_helper:
+	 ld c,ixl
 	 ld a,r
 	 call m,render_catchup
+	 ld ixl,c
 	 ld hl,hram_base+LCDC
 	 ld a,(hl)
 	 ex af,af'
@@ -939,9 +944,11 @@ lcdc_write_helper:
 	 and $06
 	 jr z,_
 	 push bc
-	  ld a,(myLY)
-	  or a
-	  call nz,sprite_catchup
+	  push ix
+	   ld a,(myLY)
+	   or a
+	   call nz,sprite_catchup
+	  pop ix
 	 pop bc
 _
 	 bit 0,c
@@ -1034,7 +1041,7 @@ do_lcd_enable:
 	 ld (z80codebase+lcd_on_updateSTAT_smc),a
 	 xor a
 	 ld (lcd_on_stat_setup_mode_smc),a
-	 ld hl,($C9 << 16) | lcd_on_ppu_event_checker
+	 ld hl,($DD << 16) | lcd_on_ppu_event_checker
 	 ld (lcd_on_stat_setup_event_smc),hl
 	 ld hl,lcd_on_STAT_handler
 	 ld.sis (event_counter_checker_slot_PPU),hl
@@ -1071,7 +1078,7 @@ _
 	 set.s 1,(hl)
 	 dec h
 _
-	  
+	 
 	 ; Set LY and STAT cache times for line 0, mode 2 (fake mode 0)
 	 ; This is reduced by 1 cycle because of course it is
 	 ld l,1-CYCLES_PER_SCANLINE
@@ -1093,7 +1100,7 @@ lcd_on_STAT_restore_helper:
 	ld a,1
 	ld (lcd_on_stat_setup_mode_smc),a
 	push hl
-	 ld hl,($C9 << 16) | event_counter_checker_slot_PPU
+	 ld hl,($DD << 16) | event_counter_checker_slot_PPU
 	 ld (lcd_on_stat_setup_event_smc),hl
 	 ; If this is called from the PPU event, it overwrites the return address
 	 ld.sis hl,(lcd_on_ppu_event_checker)
@@ -1757,114 +1764,169 @@ _
 	ret
 #endif
 	
+resolve_mem_info_for_prefix_helper:
+	push de
+	 push bc
+	  push hl
+	   jr z,_
+	   ld bc,do_bits
+	   push bc
+	    ld c,ixl ;CB opcode (rotated right by 1), bit 0 set
+	    jr resolve_mem_info_any_jump
+_
+	   ld c,ixh ;POP opcode, bit 0 set
+	   ld b,$C9
+	   push bc
+	    ; Switch to bit 0 reset
+	    inc c
+	    ld b,RST_BITS
+	    jr resolve_mem_info_any
 	
 ; Inputs:  BCDEHL' are swapped
-;          IX = current JIT address
-;          HLA = desired trampoline opcodes
+;          HL = current JIT address minus 3
+;          IX = memory routine to jump to
+;          D = known cycle info
 ; Outputs: BCDEHL' are swapped
-;          IX = current JIT address
-;          HL = pointer to emitted cycle offset
-; Preserves: BC
+;          HL = current JIT address
+;          IX = pointer to emitted cycle offset
+; Preserves: BC, DE
 ;	
-resolve_mem_cycle_offset_helper:
-	push bc
-	 push af
+resolve_mem_info_from_call_helper:
+	push de
+	 push bc
 	  push hl
-	   lea bc,ix
-	   push bc
-	    call lookup_gb_code_address
+	   pea ix+3 ; Skip the LD IXL,NO_CYCLE_INFO
+	    ld c,0 ; Bit 0 reset
+resolve_mem_info_any_jump:
+	    ld b,$C3
+resolve_mem_info_any:
+	    push bc
+	     inc hl
+	     inc hl
+	     inc hl
+	     ld b,h
+	     ld c,l
+	     call lookup_gb_code_address
+	     cpl
+	    pop bc
 	    push de
 	     ld hl,(z80codebase+memroutine_next)
-	     ld de,-6
-	     add hl,de	;Sets C flag
 	     ; Check if enough room for trampoline
+	     ld de,-9
+	     rrc c
+	     ccf
+	     adc hl,de ;Sets carry flag
 	     ex de,hl
 	     ld hl,(recompile_struct_end)
 	     ld hl,(hl)
 	     sbc hl,de	;Carry is set
 	     ex de,hl
 	    pop de
-	   pop ix
-	   jr nc,_
-	   ld (z80codebase+memroutine_next),hl
-	   ; Emit the error catcher
-	   ld bc,ERROR_CATCHER
-	   ld (hl),bc
-	   inc hl
-	   inc hl
-	   inc hl
-	   ; Emit the Game Boy address
-	   ld (hl),de
-	   inc hl
-	   inc hl
-	   ; Emit the block cycle offset
-	   ld (hl),a
-	   inc hl
-	   ; Overwrite the JIT code with a call to the trampoline
-	   ld.s (ix-2),hl
-	   ld.s (ix-3),$CD
-	  pop bc
-	  ; Emit the trampoline code
-	  ld (hl),bc
-	  inc hl
-	  inc hl
-	 pop af
-	 ld (hl),a
-	pop bc
-	; Return the trampoline pointer minus 1
-	dec hl
-	dec hl
-	dec hl
-	jp.sis get_mem_cycle_offset_continue
-	
+	    jr nc,resolve_mem_info_no_trampoline
+	    ld (z80codebase+memroutine_next),hl
+	    ; Emit the error catcher
+	    ld (hl),ERROR_CATCHER & $FF
+	    inc hl
+	    ld (hl),(ERROR_CATCHER >> 8) & $FF
+	    inc hl
+	    ld (hl),ERROR_CATCHER >> 16
+	    inc hl
+	    ; Emit the Game Boy address
+	    ld (hl),de
+	    inc hl
+	    inc hl
+	    push hl
+	    pop ix
+	    ; Emit the LD IXL or LD IX instruction
+	    ld (hl),$DD
+	    inc hl
+	    ld (hl),$2E
+	    rlc c
+	    ld d,a
+	    jr nc,_
+	    ld (hl),$21
+	    inc hl
+	    ld (hl),d
+	    ld d,c
 _
-	  pop bc
+	    inc hl
+	    ld (hl),d
+	    inc hl
+	    ; Emit the target jump
+	    ld (hl),b
+	    inc hl
+	   pop bc
+	   ld (hl),c
+	   inc hl
+	   ld (hl),b
+	  ; Overwrite the JIT code with a call to the trampoline
+	  pop hl
+	  jr nc,_
+	  ; For CB prefixes only, overwrite the preceding byte
+	  dec hl
+	  ld.s (hl),$7F ;LD A,A
+	  inc hl
+_
+	  ld.s (hl),$CD
+	  inc hl
+	  ld.s (hl),ix
 	 pop bc
-	pop bc
-	scf
-	; No trampoline was emitted, so use a scratch area to return the info
-	ld hl,z80codebase + mem_cycle_scratch
-	; Emit the Game Boy address
-	ld (hl),de
-	inc hl
-	inc hl
-	; Emit the block cycle offset
-	ld (hl),a
-	jp.sis get_mem_cycle_offset_continue
+	pop de
+	dec a
+	jp.sis get_mem_info_finish_inc2
+	
+resolve_mem_info_no_trampoline:
+	    ; No trampoline was emitted, so use a scratch area to return the info
+	    ld ix,z80codebase + mem_info_scratch
+	    ; Emit the Game Boy address
+	    ld (ix-2),de
+	    ; Emit the block cycle offset
+	    ld (ix+2),a
+	   pop bc
+	  pop hl
+	 pop bc
+	pop de
+	dec a
+	jp.sis get_mem_info_finish_inc3
 	
 ; Inputs:  BCDEHL' are swapped
-;          IX = current JIT dispatch address
+;          HL = current JIT dispatch address (points to jump followed by cycle)
 ;          (SP+3) = call return GB address
 ; Outputs: BCDEHL' are swapped
-;          IX = current JIT dispatch address
-;          HL = second byte of scratch buffer, holding target GB address
+;          HL = current JIT dispatch address plus 3 (points to cycle)
+;          IX = scratch buffer, holding target GB address
 ;          A = negative cycle offset for CALL instruction
 ; Preserves: BC
-get_mem_cycle_offset_for_call_helper:
-	pop hl
+get_mem_info_for_call_helper:
+	ld a,d
+	ex (sp),hl
+	pop ix
 	pop de
 	push de
 	push hl
-	dec de
-	dec.s de
-	GET_BASE_ADDR_FAST
-	add hl,de
-	ld a,(hl)
-	inc hl
-	inc e
-	jr nz,_
-	inc d
-	GET_BASE_ADDR_FAST
-	add hl,de
+	push af
+	 dec de
+	 dec.s de
+	 GET_BASE_ADDR_FAST
+	 add hl,de
+	 ld a,(hl)
+	 inc hl
+	 inc e
+	 jr nz,_
+	 inc d
+	 GET_BASE_ADDR_FAST
+	 add hl,de
 _
-	ld d,(hl)
-	ld hl,z80codebase + mem_cycle_scratch
-	ld (hl),a
-	inc hl
-	ld (hl),d
-	ld a,-6
+	 ld d,(hl)
+	 lea hl,ix+3
+	 ld ix,z80codebase + mem_info_scratch
+	 ld (ix-2),a
+	 ld (ix-1),d
+	pop de
+	; Subtract from 5 cycles for CALL
+	ld a,5
 	ASSERT_NC
-	jp.sis get_mem_cycle_offset_for_call_finish
+	jp.sis get_mem_info_for_call_finish
 	
 	
 mbc_change_rom_bank_helper:

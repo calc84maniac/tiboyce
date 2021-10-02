@@ -136,11 +136,11 @@ opgenCB:
 	ld a,(hl)
 	xor $36
 	ld c,a
-	and 7
-	jr z,opgenCB_mem
+	and $F8
+	jr z,opgenCB_swap
 	xor c
 	jr nz,opgen1byte
-	jr opgenCB_swap
+	jr opgenCB_mem
 	
 opgen3byte_low:
 	inc b
@@ -202,23 +202,10 @@ _
 	jr opgen_next_fast
 	
 opgenCB_mem:
-	dec de
-	ld (de),a ;NOP
-	inc de
-	dec iyl
-	ld a,c
-	add a,$40
-	jp pe,_
-	dec iyl
-	inc c ;Just in case this was SWAP (HL) and C=0
-_
-	inc de
+	jp _opgenCB_mem
+
 opgenCB_swap:
-	dec de
-	ld a,RST_BITS
-	ld (de),a
-	inc de
-	jr opgen1byte
+	jp _opgenCB_swap
 	
 _opgen3F:
 	ex de,hl

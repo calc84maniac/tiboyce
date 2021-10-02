@@ -17,6 +17,11 @@
 #define MAX_BYTES_PER_OPCODE 3
 #define MAX_CACHE_FLUSHES_ALLOWED 2
 
+; The default value for no cycle offset available. Any non-negative offset
+; is considered invalid, but the offset may be decremented by 1 during
+; instructions, so it must stay non-negative in those cases.
+#define NO_CYCLE_INFO 1
+
 cache_flushes_allowed:
 	.db 0
 
@@ -185,6 +190,13 @@ _
 	set 1,(hl)
 	AJUMP(ExitEmulationWithoutState)
 	
+lookup_gb_found_start:
+	ld a,(ix+7)
+	bit 7,d
+	ret z
+	xor a
+	ret
+	
 ; Gets the Game Boy opcode address from a recompiled code pointer.
 ;
 ; The pointer must point either to the start of a recompiled instruction
@@ -283,13 +295,6 @@ lookup_gb_finish:
 	pop af
 #endif
 	ret
-	
-lookup_gb_found_start:
-	ld a,(ix+7)
-	bit 7,d
-	ret z
-	xor a
-	ret
 
 lookup_gb_new_sub_block_end:
 	 dec ix
@@ -350,25 +355,27 @@ lookup_gb_prefix:
 	  dec hl
 	  ld a,(hl)
 	  inc hl
-	  xor $46
-	  and $C7
-	  jr z,++_
-	  and 7
+	  xor $36
+	  ; Check for (HL) access
+	  tst a,7
 	  jr z,_
+	  ; Check for SWAP to adjust JIT code size appropriately
+	  cp 8
 	  ld a,c
-	  ld c,2
+	  ld c,1
+	  rl c
 	  jr lookup_gb_add
 _
-	  dec c
-_
-	  dec c
-#ifdef DEBUG
-	  jp m,$
-#endif
-	  ld a,c
-	  ld c,3
+	  ; Check for BIT to adjust cycle count appropriately
+	  add a,$80
+	  cp $C0
+	  sbc a,a
+	  dec a
+	  add a,c
+	  ASSERT_C
+	  ld c,4
 	  jr lookup_gb_add
-
+	  
 lookup_gb_found_overlapped_or_halt:
 	  ; Check if the opcode was a HALT or not
 	  inc a
@@ -547,7 +554,7 @@ internal_found_new_subblock:
 	  cp -5
 	  jr c,internal_found_prefix
 	  add.s a,(ix-3)
-	  ASSERT_C
+	  ;ASSERT_C
 	  bit 2,e
 	  jr nz,_ ; For CALL/RST, offsets are normal
 	  inc ix  ; For RET/JR/JP, offsets are stored -1
@@ -562,20 +569,28 @@ internal_found_prefix:
 	  sbc a,c
 	  ; If we're stepping past a HALT, then continue
 	  jr c,foundloop_internal_continue
-	  bit.s 1,(ix-2)
-	  jr nz,foundloop_internal_continue
-	  inc ix
-	  sub c
-	  inc hl
-	  bit 7,(hl)
-	  dec hl
-	  jr nz,foundloop_internal_continue
-	  inc hl
-	  bit 6,(hl)
-	  dec hl
+	  ; Analyze the first byte of JIT code
+	  ld.s e,(ix-2)
+	  ; Check for CB prefix, as opposed to CALL, LD IXH, or LD A,A
+	  bit 2,e
 	  jr z,foundloop_internal_continue
-	  inc a
+	  inc ix
+	  ; Check for CALL, as opposed to LD IXH or LD A,A
+	  bit 4,e
+	  jr z,foundloop_internal_continue
+	  ld e,a
+	  inc ix
+	  inc hl
+	  ld a,(hl)
+	  dec hl
+	  ; Check for BIT to adjust cycle count
+	  add a,$80
+	  cp $C0
+	  sbc a,a
+	  dec a
+	  add a,e
 	  jr foundloop_internal_continue
+	  
 	
 lookup_code_link_internal:
 	call get_banked_address
@@ -767,19 +782,26 @@ lookup_found_prefix:
 	   sbc a,c
 	   ; If we're stepping past a HALT, then continue
 	   jr c,lookup_found_continue
-	   bit.s 1,(ix-2)
-	   jr nz,lookup_found_continue
-	   inc ix
-	   sub c
-	   inc hl
-	   bit 7,(hl)
-	   dec hl
-	   jr nz,lookup_found_continue
-	   inc hl
-	   bit 6,(hl)
-	   dec hl
+	   ; Analyze the first byte of JIT code
+	   ld.s e,(ix-2)
+	   ; Check for CB prefix, as opposed to CALL, LD IXH, or LD A,A
+	   bit 2,e
 	   jr z,lookup_found_continue
-	   inc a
+	   inc ix
+	   ; Check for CALL, as opposed to LD IXH or LD A,A
+	   bit 4,e
+	   jr z,lookup_found_continue
+	   ld e,a
+	   inc ix
+	   inc hl
+	   ld a,(hl)
+	   dec hl
+	   ; Check for BIT to adjust cycle count
+	   add a,$80
+	   cp $C0
+	   sbc a,a
+	   dec a
+	   add a,e
 	   jr lookup_found_continue
 	
 	
@@ -1237,6 +1259,10 @@ opcycle_first:
 	dec h
 	jp (hl)
 	
+opcycleCB_maybe_swap:
+	; Differentiate between CB prefix and CALL
+	bit 1,l
+	jr nz,opcycleCB_normal
 	; 1b op, 3b rec, 2cc
 opcycleMEM:
 opcycle33:
@@ -1261,8 +1287,9 @@ opcycle1byte_2cc:
 	
 	; 2b op, 2b rec, 2cc
 opcycle2byte:
-	lea ix,ix+2
 	inc de
+opcycleCB_normal:
+	lea ix,ix+2
 	inc de
 	ex de,hl
 	add a,2
@@ -1301,12 +1328,13 @@ opcyclePOP:
 	OPCYCLE_NEXT
 
 opcycleCB:
-	; Check for CB prefix or RST 00h (as opposed to NOP or CALL)
-	bit.s 1,(ix)
-	jr nz,opcycle2byte	; 2b op, 2b rec, 2cc
-	; 2b op, 3b rec,
-	add ix,bc
+	; Check for CB prefix or CALL (as opposed to LD IXH or LD A,A)
+	ld.s l,(ix)
+	bit 4,l
 	inc de
+	jr z,opcycleCB_maybe_swap
+	; 2b op, 4b rec,
+	lea ix,ix+4
 	ld l,a
 	ld a,(de)
 	; 3cc if second opcode byte is between $40-$7F, 4cc otherwise
@@ -2088,16 +2116,16 @@ opgentable:
 #define WRITE_PORT_NO_HANDLER_DIRECT 0
 #define WRITE_PORT_NO_HANDLER_IGNORE 1
 mem_write_port_handler_table:
-	.db writeIEhandler - mem_write_port_handler_base
+	.db writeIEhandler - mem_write_port_routines
 ;00
-	.db writeP1handler - mem_write_port_handler_base
+	.db writeP1handler - mem_write_port_routines
 	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db writeSChandler - mem_write_port_handler_base
+	.db writeSChandler - mem_write_port_routines
 	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db writeDIVhandler - mem_write_port_handler_base
-	.db writeTIMAhandler - mem_write_port_handler_base
+	.db writeDIVhandler - mem_write_port_routines
+	.db writeTIMAhandler - mem_write_port_routines
 	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db writeTAChandler - mem_write_port_handler_base
+	.db writeTAChandler - mem_write_port_routines
 ;08
 	.db WRITE_PORT_NO_HANDLER_IGNORE
 	.db WRITE_PORT_NO_HANDLER_IGNORE
@@ -2106,33 +2134,33 @@ mem_write_port_handler_table:
 	.db WRITE_PORT_NO_HANDLER_IGNORE
 	.db WRITE_PORT_NO_HANDLER_IGNORE
 	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db writeIFhandler - mem_write_port_handler_base
+	.db writeIFhandler - mem_write_port_routines
 ;10
-	.db writeNR10handler - mem_write_port_handler_base
-	.db writeNR11handler - mem_write_port_handler_base
-	.db writeNR12handler - mem_write_port_handler_base
-	.db writeNR13handler - mem_write_port_handler_base
-	.db writeNR14handler - mem_write_port_handler_base
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
 	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db writeNR21handler - mem_write_port_handler_base
-	.db writeNR22handler - mem_write_port_handler_base
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
 ;18
-	.db writeNR23handler - mem_write_port_handler_base
-	.db writeNR24handler - mem_write_port_handler_base
-	.db writeNR30handler - mem_write_port_handler_base
-	.db writeNR31handler - mem_write_port_handler_base
-	.db writeNR32handler - mem_write_port_handler_base
-	.db writeNR33handler - mem_write_port_handler_base
-	.db writeNR34handler - mem_write_port_handler_base
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
 	.db WRITE_PORT_NO_HANDLER_IGNORE
 ;20
-	.db writeNR41handler - mem_write_port_handler_base
-	.db writeNR42handler - mem_write_port_handler_base
-	.db writeNR43handler - mem_write_port_handler_base
-	.db writeNR44handler - mem_write_port_handler_base
-	.db writeNR50handler - mem_write_port_handler_base
-	.db writeNR51handler - mem_write_port_handler_base
-	.db writeNR52handler - mem_write_port_handler_base
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db write_audio_handler - mem_write_port_routines
+	.db writeNR52handler - mem_write_port_routines
 	.db WRITE_PORT_NO_HANDLER_IGNORE
 ;28
 	.db WRITE_PORT_NO_HANDLER_IGNORE
@@ -2162,19 +2190,19 @@ mem_write_port_handler_table:
 	.db WRITE_PORT_NO_HANDLER_DIRECT
 	.db WRITE_PORT_NO_HANDLER_DIRECT
 ;40
-	.db writeLCDChandler - mem_write_port_handler_base
-	.db writeSTAThandler - mem_write_port_handler_base
-	.db writeSCYhandler - mem_write_port_handler_base
-	.db writeSCXhandler - mem_write_port_handler_base
+	.db writeLCDChandler - mem_write_port_routines
+	.db writeSTAThandler - mem_write_port_routines
+	.db write_scroll_handler - mem_write_port_routines
+	.db write_scroll_handler - mem_write_port_routines
 	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db writeLYChandler - mem_write_port_handler_base
-	.db writeDMAhandler - mem_write_port_handler_base
-	.db writeBGPhandler - mem_write_port_handler_base
+	.db writeLYChandler - mem_write_port_routines
+	.db writeDMAhandler - mem_write_port_routines
+	.db writeBGPhandler - mem_write_port_routines
 ;48
-	.db writeOBP0handler - mem_write_port_handler_base
-	.db writeOBP1handler - mem_write_port_handler_base
-	.db writeWYhandler - mem_write_port_handler_base
-	.db writeWXhandler - mem_write_port_handler_base
+	.db write_scroll_handler - mem_write_port_routines
+	.db write_scroll_handler - mem_write_port_routines
+	.db write_scroll_handler - mem_write_port_routines
+	.db write_scroll_handler - mem_write_port_routines
 mem_write_port_handler_table_end:
 	
 	.block (128-11-$)&255
@@ -2742,7 +2770,34 @@ opgen_reset_cycle_count_any:
 opgen_last_cycle_count_smc = $+1
 	ld (0),a
 	ld iyl,e
+port_access_trampoline_count_smc = $+1
+	ld a,0
+	or a
+	ret z
+	push bc
+	 push de
+	  push hl
+	   ld b,a
+	   ld hl,(opgen_last_cycle_count_smc)
+	   ld c,(hl)
+	   ld hl,(z80codebase+memroutine_next)
+	   ld de,9
+	   dec hl
+	   dec hl
+_
+	   adc hl,de
+	   ld a,(hl)
+	   sub c
+	   ld (hl),a
+	   dec hl
+	   ld a,(hl)
+	   rra
+	   djnz -_
+	  pop hl
+	 pop de
+	pop bc
 	xor a
+	ld (port_access_trampoline_count_smc),a
 	ret
 	
 _opgen76:
@@ -2829,10 +2884,10 @@ opgenroutinecall1byte_3cc:
 	jp opgen1byte
 	
 _opgen08:
-	ld a,$DD	;LD IX,nnnn
+	ld a,$D9	;EXX
 	ld (de),a
 	inc de
-	ld a,$21
+	ld a,$11	;LD DE,nnnn
 	ld (de),a
 	inc de
 	inc hl
@@ -2853,6 +2908,55 @@ _opgen36:
 	ldi
 	ld c,$76
 	jp opgen36_finish
+	
+_opgenCB_mem:
+	ex de,hl
+	dec hl
+	ld (hl),$DD ;LD IXH,
+	inc hl
+	ld (hl),$26
+	inc hl
+	dec iyl
+	ld a,c
+	; Check for RES/SET
+	add a,$87 ; Use A register in implementation
+	jr c,_
+	add a,2-7 ; Use D register in implementation
+	; Check for BIT
+	cp $C0
+	jr nc,++_
+_
+	dec iyl
+_
+	rra ; Reset top bit only for BIT instructions
+	xor ($80 ^ $30) >> 1 ; Revert to original instruction type
+	ld (hl),a
+	inc hl
+	ld (hl),RST_BITS
+	jp opgen_next_swap_skip
+	
+_opgenCB_swap:
+	ex de,hl
+	dec hl
+	or c
+	jr nz,_
+	ld (hl),$7F ;LD A,A
+	inc hl
+	dec iyl
+	dec iyl
+_
+	ld (hl),$CD
+	inc hl
+	ld b,do_swap_b - do_swap_c
+	mlt bc
+	ld a,do_swap_hl & $FF
+	sub c
+	ld (hl),a
+	inc hl
+	ld a,do_swap_hl >> 8
+	sbc a,b
+	ld (hl),a
+	jp opgen_next_swap_skip
 	
 opgenroutinecall_4cc:
 	dec iyl
@@ -3008,34 +3112,76 @@ _
 	 ld a,(hl)
 	pop hl
 	jr nc,opgenHRAMignore
-	add a,b
-	jr nc,opgenHRAMwrite
-	jr z,opgenHRAMignore0
-	ld (hl),$CD ;CALL addr
-	inc hl
-	add a,(mem_write_port_handler_base + 1) & $FF
-	ld (hl),a
-	ld a,(mem_write_port_handler_base + 257) >> 8
-	adc a,b
+	cp 1
+	jr c,opgenHRAMwrite
+	jr z,opgenHRAMignore
+	ld b,mem_write_port_routines >> 8
+	cp write_scroll_handler - mem_write_port_routines
+	jr z,emit_port_handler_trampoline
+	cp write_audio_handler - mem_write_port_routines
+emit_port_handler_trampoline:
+	push hl
+	 ld hl,(z80codebase+memroutine_next)
+	 inc hl
+	 ld (hl),a
+	 inc hl
+	 ld (hl),b
+	 dec hl
+	 dec hl
+	 ld (hl),$C3 ;JP
+	 dec hl
+	 ld b,$2E ;LD IXL,
+	 jr nz,_
+	 ld (hl),c
+	 dec hl
+	 ld b,$21 ;LD IX,
 _
-	inc hl
-	ld (hl),a
-	jp opgen_next_swap_skip
-	
-opgenHRAMignore:
-	xor a
-opgenHRAMignore0:
-	ld (hl),a	;NOP
-	inc hl
-	ld (hl),a
-	jr -_
+	 ; Save the number of cycles from the start of the sub-block
+	 ld a,e
+	 sub iyl
+	 ld (hl),a
+	 dec hl
+	 ld (hl),b
+	 dec hl
+	 ld (hl),$DD ;LD IXL,cycles or LD IX,(addr << 8) | cycles
+	 dec hl
+	 dec hl
+	 dec hl
+	 dec hl
+	 dec hl
+	 ld (z80codebase+memroutine_next),hl
+	 ld bc,ERROR_CATCHER
+	 ld (hl),bc
+	 inc hl
+	 inc hl
+	 ; Emit the address following the instruction
+	 inc de
+	 call opgen_emit_gb_address
+	 dec de
+	 push hl
+	  ld hl,port_access_trampoline_count_smc
+	  inc (hl)
+	 pop bc
+	pop hl
+	ld (hl),$CD ;CALL addr
+	jr _
 	
 opgenHRAMwrite:
 	ld (hl),$32 ;LD (addr),A
+_
 	inc hl
 	ld (hl),c
 	inc hl
 	ld (hl),b
+	jp opgen_next_swap_skip
+	
+opgenHRAMignore:
+	xor a
+	ld (hl),a	;NOP
+	inc hl
+	ld (hl),a
+	inc hl
+	ld (hl),a
 	jp opgen_next_swap_skip
 	
 opgencartread:
@@ -3198,12 +3344,9 @@ _
 	jr nz,opgenHRAMread
 	ld bc,readSTAThandler
 opgenHMEMreadroutine:
-	ld (hl),$CD
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip
+	or a ; Reset Z flag
+	ld a,c
+	jp emit_port_handler_trampoline
 	
 opgenHRAMread:
 	ld (hl),$3A ;LD A,(addr)
