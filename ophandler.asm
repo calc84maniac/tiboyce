@@ -474,7 +474,7 @@ BGP_write_queue_next = $+1
 	 jr nz,BGP_write_multiple_lines
 	 ld a,l
 BGP_write_queue_literal_start = $+1
-	 ld l,0
+	 ld l,BGP_write_queue & $FF
 	 ; Increment the old literal run length, and check for overflow
 	 inc (hl)
 	 jr nz,_
