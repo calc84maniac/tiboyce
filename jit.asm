@@ -3121,44 +3121,58 @@ _
 	cp write_audio_handler - mem_write_port_routines
 emit_port_handler_trampoline:
 	push hl
-	 ld hl,(z80codebase+memroutine_next)
-	 inc hl
-	 ld (hl),a
-	 inc hl
-	 ld (hl),b
-	 dec hl
-	 dec hl
-	 ld (hl),$C3 ;JP
-	 dec hl
-	 ld b,$2E ;LD IXL,
-	 jr nz,_
-	 ld (hl),c
-	 dec hl
-	 ld b,$21 ;LD IX,
+	 push bc
+	  push de
+	   ex de,hl
+	   ld hl,(z80codebase+memroutine_next)
+	   ; Subtract 7 or 8 bytes, and also preserve the Z flag in bit 0 of C
+	   ld bc,-8
+	   jr z,_
+	   inc c
 _
-	 ; Save the number of cycles from the start of the sub-block
-	 ld a,e
-	 sub iyl
-	 ld (hl),a
-	 dec hl
-	 ld (hl),b
-	 dec hl
-	 ld (hl),$DD ;LD IXL,cycles or LD IX,(addr << 8) | cycles
-	 dec hl
-	 dec hl
-	 dec hl
-	 dec hl
-	 dec hl
-	 ld (z80codebase+memroutine_next),hl
-	 ld bc,ERROR_CATCHER
-	 ld (hl),bc
-	 inc hl
-	 inc hl
-	 ; Emit the address following the instruction
-	 inc de
-	 call opgen_emit_gb_address
-	 dec de
+	   add hl,bc ; Sets carry
+	   ; Compare to current JIT output pointer to ensure no overflow
+	   ; can happen into the previous block
+	   ; Also subtracts one extra byte
+	   sbc hl,de
+	   jr c,emit_port_handler_trampoline_overflow
+	   add hl,de
+	   ld (z80codebase+memroutine_next),hl
+	   ld de,ERROR_CATCHER
+	   ld (hl),de
+	   inc hl
+	   inc hl
+	  pop de
+	  ; Emit the address following the instruction
+	  ld ixl,a
+	  inc de
+	  call opgen_emit_gb_address
+	  dec de
+	  ; Get the number of cycles from the start of the sub-block
+	  ld a,e
+	  sub iyl
+	  ; Restore the Z flag input
+	  bit 0,c
+	 pop bc
 	 push hl
+	  ld (hl),$DD
+	  inc hl
+	  ld (hl),$2E ;LD IXL,
+	  jr nz,_
+	  ld (hl),$21 ;LD IX,
+	  inc hl
+	  ld (hl),a ; Cycles
+	  ld a,c ; addr
+_
+	  inc hl
+	  ld (hl),a ; Cycles or addr
+	  inc hl
+	  ld (hl),$C3 ; JP routine
+	  inc hl
+	  ld a,ixl
+	  ld (hl),a
+	  inc hl
+	  ld (hl),b
 	  ld hl,port_access_trampoline_count_smc
 	  inc (hl)
 	 pop bc
@@ -3175,6 +3189,12 @@ _
 	ld (hl),b
 	jp opgen_next_swap_skip
 	
+emit_port_handler_trampoline_overflow:
+	  pop de
+	 pop bc
+	pop hl
+	; Make sure the overflow is detected because the code is invalid
+	ld (z80codebase+memroutine_next),hl
 opgenHRAMignore:
 	xor a
 	ld (hl),a	;NOP
