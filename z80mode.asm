@@ -3521,11 +3521,10 @@ rom_bank_mask_smc = $+1
 	 and 0
 	 ld b,a
 	 push hl
-	  ld hl,curr_rom_bank
-	  ld a,(hl)
-	  ld (hl),b
 	  ld (rom_bank_check_smc_1),a
-	  xor b
+	  ld hl,curr_rom_bank
+	  xor (hl)
+	  ld (hl),b
 	  jp.lil nz,mbc_change_rom_bank_helper
 mbc_2000_finish:
 	 pop hl
