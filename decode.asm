@@ -667,8 +667,7 @@ rom_start_smc_1 = $+1
 	  
 memroutine_gen_write_hmem:
 	  ld de,mem_write_hmem
-memroutine_gen_write_with_cycle_info:
-	  inc b
+	  ; B = NO_CYCLE_INFO - 1
 memroutine_gen_write:
 	  sra c
 	  call nz,memroutine_gen_restore_hl
@@ -697,17 +696,18 @@ _
 _
 	  sra c
 	  call nz,memroutine_gen_swap_hl
-	  dec b
-	  call z,memroutine_gen_no_cycle_info
+	  inc b
+	  call nz,memroutine_gen_no_cycle_info
 	  jp memroutine_gen_end
 	  
 memroutine_gen_write_cart:
 	  ld de,mem_write_cart
-	  jr memroutine_gen_write
+	  djnz memroutine_gen_write ; Set B=-1, don't emit cycle info
 	  
 memroutine_gen_write_vram:
 	  ld de,mem_write_vram
-	  jr memroutine_gen_write_with_cycle_info
+	  ld b,(NO_RESCHEDULE | NO_CYCLE_INFO) - 1
+	  jr memroutine_gen_write
 	  
 memroutine_gen_not_cart0:
 	  djnz memroutine_gen_not_hmem
@@ -724,6 +724,7 @@ memroutine_gen_not_cart0:
 	  ld (hl),$CD	;CALL mem_update_hmem
 	  sra c
 	  call nz,memroutine_gen_swap_hl
+	  ld b,NO_CYCLE_INFO | NO_RESCHEDULE
 	  call memroutine_gen_no_cycle_info
 	  jp memroutine_gen_end
 	  
@@ -953,9 +954,9 @@ memroutine_gen_restore_hl:
 	
 memroutine_gen_no_cycle_info:
 	dec hl
-	ld (hl),NO_CYCLE_INFO
+	ld (hl),b
 	dec hl
 	ld (hl),$2E
 	dec hl
-	ld (hl),$DD ;LD IXL,NO_CYCLE_INFO
+	ld (hl),$DD ;LD IXL,NO_CYCLE_INFO[ | NO_RESCHEDULE]
 	ret

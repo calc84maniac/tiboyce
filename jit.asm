@@ -21,6 +21,9 @@
 ; is considered invalid, but the offset may be decremented by 1 during
 ; instructions, so it must stay non-negative in those cases.
 #define NO_CYCLE_INFO 1
+; This bit specifies that a memory access cannot cause a reschedule,
+; so the Game Boy address will not be included in the cycle cache.
+#define NO_RESCHEDULE 2
 
 cache_flushes_allowed:
 	.db 0

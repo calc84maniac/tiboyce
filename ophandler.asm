@@ -1771,32 +1771,41 @@ resolve_mem_info_for_prefix_helper:
 	   jr z,_
 	   ld bc,do_bits
 	   push bc
-	    ld c,ixl ;CB opcode (rotated right by 1), bit 0 set
+	    ;CB opcode (rotated right by 1)
+	    ;Bit 0 set, indicates full IX load
+	    ;Bit 7 reset only if no reschedule allowed (i.e. BIT)
+	    ld c,ixl
 	    jr resolve_mem_info_any_jump
 _
-	   ld c,ixh ;POP opcode, bit 0 set
+	   ld c,ixh ;POP opcode
 	   ld b,$C9
 	   push bc
-	    ; Switch to bit 0 reset
-	    inc c
-	    ld b,RST_BITS
+	    ;Bit 0 reset, indicates IXL load
+	    ;Bit 7 reset, indicates no reschedule allowed
+	    ld c,0
+	    ld b,RST_POP
 	    jr resolve_mem_info_any
 	
 ; Inputs:  BCDEHL' are swapped
 ;          HL = current JIT address minus 3
 ;          IX = memory routine to jump to
-;          D = known cycle info
+;          D = NO_CYCLE_INFO offset
 ; Outputs: BCDEHL' are swapped
 ;          HL = current JIT address
 ;          IX = pointer to emitted cycle offset
 ; Preserves: BC, DE
 ;	
-resolve_mem_info_from_call_helper:
+resolve_mem_info_for_routine_helper:
 	push de
 	 push bc
 	  push hl
 	   pea ix+3 ; Skip the LD IXL,NO_CYCLE_INFO
-	    ld c,0 ; Bit 0 reset
+	    ld a,d
+	    sub NO_RESCHEDULE
+	    add a,a
+	    ;Bit 0 reset, indicates IXL load
+	    ;Bit 7 reset only if no reschedule allowed
+	    ld c,a
 resolve_mem_info_any_jump:
 	    ld b,$C3
 resolve_mem_info_any:
@@ -1810,19 +1819,25 @@ resolve_mem_info_any:
 	     cpl
 	    pop bc
 	    push de
-	     ld hl,(z80codebase+memroutine_next)
-	     ; Check if enough room for trampoline
-	     ld de,-9
+	     ; Put the trampoline size minus 2 in DE
+	     ld de,1
+	     ld l,c
+	     sla l
+	     rl e
 	     rrc c
-	     ccf
-	     adc hl,de ;Sets carry flag
+	     rl e
+	     ; Check if enough room for trampoline
+	     ld hl,(z80codebase+memroutine_next)
+	     scf
+	     sbc hl,de ; Resets carry flag
 	     ex de,hl
 	     ld hl,(recompile_struct_end)
 	     ld hl,(hl)
-	     sbc hl,de	;Carry is set
+	     sbc hl,de	;Carry is reset, but DE is already one larger
 	     ex de,hl
 	    pop de
 	    jr nc,resolve_mem_info_no_trampoline
+	    dec hl
 	    ld (z80codebase+memroutine_next),hl
 	    ; Emit the error catcher
 	    ld (hl),ERROR_CATCHER & $FF
@@ -1831,17 +1846,19 @@ resolve_mem_info_any:
 	    inc hl
 	    ld (hl),ERROR_CATCHER >> 16
 	    inc hl
-	    ; Emit the Game Boy address
+	    ; Emit the Game Boy address if required
+	    rlc c
+	    jp p,_
 	    ld (hl),de
 	    inc hl
 	    inc hl
+_
 	    push hl
 	    pop ix
 	    ; Emit the LD IXL or LD IX instruction
 	    ld (hl),$DD
 	    inc hl
 	    ld (hl),$2E
-	    rlc c
 	    ld d,a
 	    jr nc,_
 	    ld (hl),$21
@@ -1870,9 +1887,13 @@ _
 	  ld.s (hl),$CD
 	  inc hl
 	  ld.s (hl),ix
+_
 	 pop bc
 	pop de
+	; Combine the passed NO_CYCLE_INFO offset
 	dec a
+	res 1,d
+	add a,d
 	jp.sis get_mem_info_finish_inc2
 	
 resolve_mem_info_no_trampoline:
@@ -1884,10 +1905,8 @@ resolve_mem_info_no_trampoline:
 	    ld (ix+2),a
 	   pop bc
 	  pop hl
-	 pop bc
-	pop de
-	dec a
-	jp.sis get_mem_info_finish_inc3
+	  inc hl
+	  jr -_
 	
 ; Inputs:  BCDEHL' are swapped
 ;          HL = current JIT dispatch address (points to jump followed by cycle)

@@ -584,11 +584,11 @@ pop_overflow:
 	 push hl
 	  exx
 	  ex (sp),hl
-	  ld ixl,NO_CYCLE_INFO - 1
+	  ld ixl,(NO_CYCLE_INFO - 1) | NO_RESCHEDULE
 	  call mem_read_any_before_write
 	  inc hl
 	  push af
-	   ld ixl,NO_CYCLE_INFO
+	   ld ixl,NO_CYCLE_INFO | NO_RESCHEDULE
 	   call mem_read_any
 	  pop ix
 	  ld ixl,ixh
@@ -2707,7 +2707,7 @@ ophandlerF1_pop_z80:
 	ret
 	
 ophandlerF2:
-	ld ixl,NO_CYCLE_INFO
+	ld ixl,NO_CYCLE_INFO | NO_RESCHEDULE
 	ex af,af'
 	bit 7,c
 	jr z,_
@@ -3048,11 +3048,11 @@ pop_hmem:
 	push hl
 	 exx
 	 ex (sp),hl
-	 ld ixl,NO_CYCLE_INFO - 1
+	 ld ixl,(NO_CYCLE_INFO - 1) | NO_RESCHEDULE
 	 call mem_update_hmem_swapped
 	 inc hl
 	 ex af,af'
-	 ld ixl,NO_CYCLE_INFO
+	 ld ixl,NO_CYCLE_INFO | NO_RESCHEDULE
 	 call mem_update_hmem_swapped
 	pop hl
 	exx
@@ -3730,9 +3730,10 @@ resolve_mem_cycle_offset:
 ;          HL = current JIT address
 ; Destroys AF
 get_mem_info_full:
+	ld d,ixl
 #ifdef DEBUG
-	ld a,ixl
-	add a,$7F - NO_CYCLE_INFO
+	ld a,d
+	add a,$7F - (NO_CYCLE_INFO | NO_RESCHEDULE)
 	jp pe,$
 #endif
 	; Get the address of the recompiled code: the bottom stack entry
@@ -3740,41 +3741,22 @@ get_mem_info_full:
 	add.l hl,sp
 	add hl,hl
 	ld hl,(hl)
-	; Check if the JIT target address is an absolute jump instruction,
-	; which indicates that the memory access is a branch dispatch
-	ld a,$C3
-	cp (hl)
-	ld d,ixl
-	jr z,get_mem_info_for_branch
-	; Assume the JIT code was a routine call; get its target address
+	; Get the byte at the JIT target address which, if it's a jump,
+	; indicates that the memory access is a branch dispatch
+	ld a,(hl)
+	; Assuming the JIT code was a routine call, get its target address
 	dec hl
 	dec hl
 	ld ix,(hl)
-	dec hl
-	; The target is supposed to start with a LD IXL,offset instruction,
-	; whether or not it is a cycle cache trampoline.
-	; Check if the offset in question is NO_CYCLE_INFO.
-	ld a,(ix+2)
-	dec a
-	jr z,resolve_mem_info_from_call
-	; We probably have a trampoline target; however, we must check whether our
-	; assumption that the JIT code was a routine call is accurate. If the first
-	; byte of the JIT code is a NOP or LD IXH and not a CALL, then we actually
-	; have a POP or a bitwise prefix op.
-	bit 7,(hl)
-	jr z,resolve_mem_info_for_prefix
-get_mem_info_finish_inc3:
-	inc hl
+	; If the value passed in is not NO_CYCLE_INFO, then we know it was
+	; definitely a routine call, so get its target address
+	bit 7,d
+	jr z,resolve_mem_info
+	ld a,d
 get_mem_info_finish_inc2:
 	inc hl
 	inc hl
 get_mem_info_finish:
-	; If NO_CYCLE_INFO[-1] was passed in, offset from the cached value
-	add a,d
-	jr nc,_
-	; Otherwise, use the passed-in value
-	ld a,d
-_
 	add a,iyl
 	ld e,a
 	ld d,iyh
@@ -3782,18 +3764,31 @@ _
 	dec d
 	ret
 	
-resolve_mem_info_from_call:
-	; If the code is not in the JIT area, the routine call was actually for a RET
-	ld a,h
-	cp jit_start >> 8
-	jr c,get_mem_cycle_offset_for_ret
-	; Check if the JIT code corresponds to a prefixed bitwise operation or POP
+resolve_mem_info:
+	; Check if the JIT target address is an absolute jump instruction,
+	; which indicates that the memory access is a branch dispatch
+	cp $C3
+	jr z,get_mem_info_for_branch
+	; We probably have a trampoline target; however, we must check whether our
+	; assumption that the JIT code was a routine call is accurate. If the first
+	; byte of the JIT code is a NOP or LD IXH and not a CALL, then we actually
+	; have a POP or a bitwise prefix op.
+	dec hl
 	bit 7,(hl)
-	jp.lil nz,resolve_mem_info_from_call_helper
-resolve_mem_info_for_prefix:
-	; Differentiate between NOP and LD IXH
-	bit 5,(hl)
-	jp.lil resolve_mem_info_for_prefix_helper
+	jr z,resolve_mem_info_for_prefix
+	; Check if the target starts with a DD (LD IXL or LD IX) instruction with
+	; a cycle offset that is not NO_CYCLE_INFO.
+	ld a,(ix)
+	sub $DD
+	jr nz,resolve_mem_info_for_routine
+	or (ix+2)
+	jp p,resolve_mem_info_for_routine
+	; Remove NO_RESCHEDULE from the passed value before adding it
+	res 1,d
+	dec a
+	add a,d
+	inc hl
+	jr get_mem_info_finish_inc2
 
 get_mem_info_for_branch:
 	; This is a push related to an RST, CALL, or interrupt
@@ -3803,6 +3798,8 @@ get_mem_info_for_branch:
 	
 	; Retrieve the cycle info and actual target address,
 	; and infer the Game Boy address
+	inc hl
+	inc hl
 	ld a,l
 	inc hl
 	inc hl
@@ -3821,12 +3818,15 @@ get_mem_info_for_call_finish:
 	dec hl
 	ld hl,(hl) ; Get the actual target from the dispatch
 	ld (ix+2),a
+	; Combine the passed NO_CYCLE_INFO offset
 	dec a
-	ld e,a
+	res 1,d
+	add a,d
+	ld d,a
 	; Check if the target is possibly the flush handler
 	ld a,(jit_start >> 8) - 1
 	cp h
-	ld a,e
+	ld a,d
 	jr c,get_mem_info_finish
 	; The target should be the flush handler.
 #ifdef DEBUG
@@ -3836,13 +3836,22 @@ get_mem_info_for_call_finish:
 	ld a,l
 	cp flush_handler & $FF
 	jr nz,$
-	ld a,e
+	ld a,d
 #endif
 	; Set the JIT address to a harmless location in case an event is scheduled.
 	ld hl,event_value
 	jr get_mem_info_finish
 
-get_mem_cycle_offset_for_ret:
+resolve_mem_info_for_prefix:
+	; Differentiate between NOP and LD IXH
+	bit 5,(hl)
+	jp.lil resolve_mem_info_for_prefix_helper
+	
+resolve_mem_info_for_routine:
+	; If the code is not in the JIT area, the routine call was actually for a RET
+	ld a,h
+	cp jit_start >> 8
+	jp.lil nc,resolve_mem_info_for_routine_helper
 	; The second read of an unconditional RET is always two cycles after
 	; the end of a JIT sub-block. A conditional RET adds an extra cycle,
 	; so we must retrieve this information which is saved on the stack.
@@ -3867,8 +3876,9 @@ _
 	rra
 	; IX and HL returns are never used by reads; just get the cycle count
 	ld a,iyl
-	; The cycle offset is guaranteed NO_CYCLE_INFO[-1], so increment and add it
-	inc d
+	; The cycle offset is guaranteed (NO_CYCLE_INFO[-1]) | NO_RESCHEDULE,
+	; so decrement and add it
+	dec d
 	adc a,d
 	ld e,a
 	ld d,iyh
