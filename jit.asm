@@ -2728,6 +2728,7 @@ opgen_emit_subblock_combined_bridge:
 	
 opgen_emit_gb_address:
 	inc hl
+opgen_emit_gb_address_noinc:
 	ld a,e
 opgen_base_address_smc_1 = $+1
 	sub 0
@@ -2740,13 +2741,6 @@ opgen_base_address_smc_2 = $+1
 	inc hl
 	ret
 	
-opgenblockend_invalid:
-	push hl
-	ex de,hl
-	ld (hl),$CD	;CALL
-	ld de,Z80InvalidOpcode
-	jr _
-	
 opgenblockend:
 	ex (sp),hl
 	ld hl,(hl)
@@ -2758,7 +2752,7 @@ opgenblockend:
 	ld (hl),$08 ;EX AF,AF'
 	inc hl
 	ld (hl),$C3	;JP
-_
+opgenblockend_invalid_finish:
 	inc hl
 	ld (hl),e
 	inc hl
@@ -2781,20 +2775,26 @@ port_access_trampoline_count_smc = $+1
 	 push de
 	  push hl
 	   ld b,a
+	   sbc hl,hl
+	   ex de,hl
 	   ld hl,(opgen_last_cycle_count_smc)
 	   ld c,(hl)
 	   ld hl,(z80codebase+memroutine_next)
-	   ld de,9
-	   dec hl
-	   dec hl
 _
-	   adc hl,de
+	   ld a,(hl)
+	   ld (hl),$C3
+	   cpl
+	   ld e,a
+	   res 0,e
+	   add hl,de
+	   inc hl
+	   xor e
+	   ld e,a
 	   ld a,(hl)
 	   sub c
 	   ld (hl),a
-	   dec hl
-	   ld a,(hl)
-	   rra
+	   add hl,de
+	   inc hl
 	   djnz -_
 	  pop hl
 	 pop de
@@ -2802,6 +2802,13 @@ _
 	xor a
 	ld (port_access_trampoline_count_smc),a
 	ret
+	
+opgenblockend_invalid:
+	push hl
+	ex de,hl
+	ld (hl),$CD	;CALL
+	ld de,Z80InvalidOpcode
+	jr opgenblockend_invalid_finish
 	
 _opgen76:
 	ex de,hl
@@ -3119,8 +3126,10 @@ _
 	jr c,opgenHRAMwrite
 	jr z,opgenHRAMignore
 	ld b,mem_write_port_routines >> 8
+	; Set Z flag and reset C flag for scroll write
 	cp write_scroll_handler - mem_write_port_routines
 	jr z,emit_port_handler_trampoline
+	; Set Z flag for audio write, set C flag for reschedulable write
 	cp write_audio_handler - mem_write_port_routines
 emit_port_handler_trampoline:
 	push hl
@@ -3128,9 +3137,15 @@ emit_port_handler_trampoline:
 	  push de
 	   ex de,hl
 	   ld hl,(z80codebase+memroutine_next)
-	   ; Subtract 7 or 8 bytes, and also preserve the Z flag in bit 0 of C
-	   ld bc,-8
+	   ; If Z is set, routine size is 7 bytes
+	   ; If C is set, routine size is 8 bytes, else 6 bytes
+	   ; Subtract the routine size minus 1, preserve the Z flag in bit 0 of C,
+	   ; and preserve the C flag in bit 1 of C
+	   ld bc,-6
 	   jr z,_
+	   dec c
+	   jr c,_
+	   inc c
 	   inc c
 _
 	   add hl,bc ; Sets carry
@@ -3141,15 +3156,20 @@ _
 	   jr c,emit_port_handler_trampoline_overflow
 	   add hl,de
 	   ld (z80codebase+memroutine_next),hl
-	   ld de,ERROR_CATCHER
-	   ld (hl),de
+	   ; Temporarily save the byte count instead of the JP,
+	   ; so the cycles can be fixed up at the end of the block
+	   ld (hl),c
 	   inc hl
+	   ld (hl),(ERROR_CATCHER >> 8) & $FF
+	   inc hl
+	   ld (hl),ERROR_CATCHER >> 16
 	   inc hl
 	  pop de
 	  ; Emit the address following the instruction
 	  ld ixl,a
 	  inc de
-	  call opgen_emit_gb_address
+	  bit 1,c
+	  call z,opgen_emit_gb_address_noinc
 	  dec de
 	  ; Get the number of cycles from the start of the sub-block
 	  ld a,e
@@ -3170,7 +3190,7 @@ _
 	  inc hl
 	  ld (hl),a ; Cycles or addr
 	  inc hl
-	  ld (hl),$C3 ; JP routine
+	  ; JP routine (preserve byte count to be overwritten with JP)
 	  inc hl
 	  ld a,ixl
 	  ld (hl),a
@@ -3198,6 +3218,9 @@ emit_port_handler_trampoline_overflow:
 	pop hl
 	; Make sure the overflow is detected because the code is invalid
 	ld (z80codebase+memroutine_next),hl
+	; Also disable fixups at block end
+	xor a
+	ld (port_access_trampoline_count_smc),a
 opgenHRAMignore:
 	xor a
 	ld (hl),a	;NOP
@@ -3367,7 +3390,7 @@ _
 	jr nz,opgenHRAMread
 	ld bc,readSTAThandler
 opgenHMEMreadroutine:
-	or a ; Reset Z flag
+	or a ; Reset Z flag and C flag
 	ld a,c
 	jp emit_port_handler_trampoline
 	

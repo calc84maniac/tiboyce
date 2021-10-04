@@ -4408,104 +4408,6 @@ writeSC:
 	ex af,af'
 writeSChandler:
 	jr _writeSChandler
-
-write_audio:
-	ld a,iyl
-	ex af,af'
-write_audio_handler:
-write_audio_disable_smc = $
-	push af
-	 exx
-	 ld c,a
-	 ld ixl,ixh
-	 ld e,ixl
-	 ld d,$FF
-	 ld ixh,audio_port_value_base >> 8
-	 ld (ix),c
-	 ld a,(ix + audio_port_masks - audio_port_values)
-	 ; Handle writes to the enable bit specially
-	 cp $BF
-	 jr nz,_
-	 bit 7,c
-	 jp nz,write_audio_enable
-_
-	 or c
-	 ld (de),a
-	 exx
-	pop af
-	ret
-	
-write_scroll_handler:
-	ex af,af'
-	ld iyl,a
-write_scroll:
-	jp updateSTAT_if_changed_scroll
-	
-writeLCDChandler:
-	ex af,af'
-	ld iyl,a
-writeLCDC:
-	call updateSTAT_swap
-	jp.lil lcdc_write_helper
-	
-writeDMAhandler:
-	ex af,af'
-	ld iyl,a
-writeDMA:
-	call updateSTAT_swap
-	jp.lil dma_write_helper
-	
-writeTAChandler:
-	ex af,af'
-	ld iyl,a
-writeTAC:
-	call updateTIMA
-	jp.lil tac_write_helper
-	
-writeSTAThandler:
-	ex af,af'
-	ld iyl,a
-writeSTAT:
-	call updateSTAT_swap
-	jp.lil stat_write_helper
-	
-writeLYChandler:
-	ex af,af'
-	ld iyl,a
-writeLYC:
-	call updateSTAT_if_changed_lyc
-	jp.lil lyc_write_helper
-	
-writeTIMAhandler:
-	ex af,af'
-	ld iyl,a
-writeTIMA:
-	call updateTIMA
-	ex af,af'
-	ld (TIMA),a
-	ex af,af'
-	jp.lil tima_write_helper
-	
-writeDIVhandler:
-	ex af,af'
-	ld iyl,a
-writeDIV:
-	call updateTIMA
-	jp.lil div_write_helper
-	
-writeBGPhandler:
-	ex af,af'
-	ld iyl,a
-writeBGP:
-	ld a,(BGP)
-	call updateSTAT_if_changed_any
-	jp.lil BGP_write_helper
-	
-writeNR52handler:
-	ex af,af'
-	ld iyl,a
-writeNR52:
-	jp.lil NR52_write_helper
 	
 writeIEhandler:
 	ld (IE),a
@@ -4551,6 +4453,107 @@ write_port_ignore:
 	ld a,iyl
 	ex af,af'
 	ret
+
+writeTAChandler:
+	ex af,af'
+	ld iyl,a
+writeTAC:
+	call updateTIMA
+	jp.lil tac_write_helper
+
+writeTIMAhandler:
+	ex af,af'
+	ld iyl,a
+writeTIMA:
+	call updateTIMA
+	ex af,af'
+	ld (TIMA),a
+	ex af,af'
+	jp.lil tima_write_helper
+
+writeLCDChandler:
+	ex af,af'
+	ld iyl,a
+writeLCDC:
+	call updateSTAT_swap
+	jp.lil lcdc_write_helper
+
+writeSTAThandler:
+	ex af,af'
+	ld iyl,a
+writeSTAT:
+	call updateSTAT_swap
+	jp.lil stat_write_helper
+	
+writeLYChandler:
+	ex af,af'
+	ld iyl,a
+writeLYC:
+	call updateSTAT_if_changed_lyc
+	jp.lil lyc_write_helper
+	
+writeDIVhandler:
+	ex af,af'
+	ld iyl,a
+writeDIV:
+	call updateTIMA
+	jp.lil div_write_helper
+
+;==============================================================================
+; Everything below this point must not cause a reschedule on write
+;==============================================================================
+write_audio:
+	ld a,iyl
+	ex af,af'
+write_audio_handler:
+write_audio_disable_smc = $
+	push af
+	 exx
+	 ld c,a
+	 ld ixl,ixh
+	 ld e,ixl
+	 ld d,$FF
+	 ld ixh,audio_port_value_base >> 8
+	 ld (ix),c
+	 ld a,(ix + audio_port_masks - audio_port_values)
+	 ; Handle writes to the enable bit specially
+	 cp $BF
+	 jr nz,_
+	 bit 7,c
+	 jp nz,write_audio_enable
+_
+	 or c
+	 ld (de),a
+	 exx
+	pop af
+	ret
+	
+write_scroll_handler:
+	ex af,af'
+	ld iyl,a
+write_scroll:
+	jp updateSTAT_if_changed_scroll
+	
+writeDMAhandler:
+	ex af,af'
+	ld iyl,a
+writeDMA:
+	call updateSTAT_swap
+	jp.lil dma_write_helper
+	
+writeBGPhandler:
+	ex af,af'
+	ld iyl,a
+writeBGP:
+	ld a,(BGP)
+	call updateSTAT_if_changed_any
+	jp.lil BGP_write_helper
+	
+writeNR52handler:
+	ex af,af'
+	ld iyl,a
+writeNR52:
+	jp.lil NR52_write_helper
 	
 writeP1:
 	ld a,iyl
