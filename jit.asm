@@ -2127,7 +2127,7 @@ mem_write_port_handler_table:
 	.db WRITE_PORT_NO_HANDLER_IGNORE
 	.db writeDIVhandler - mem_write_port_routines
 	.db writeTIMAhandler - mem_write_port_routines
-	.db WRITE_PORT_NO_HANDLER_DIRECT
+	.db writeTMAhandler - mem_write_port_routines
 	.db writeTAChandler - mem_write_port_routines
 ;08
 	.db WRITE_PORT_NO_HANDLER_IGNORE

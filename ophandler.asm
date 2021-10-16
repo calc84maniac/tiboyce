@@ -1141,7 +1141,7 @@ div_write_helper:
 	  ld a,(hram_base+TIMA)
 	  cpl
 	  ld l,a
-	  ld a,(writeTIMA_smc)
+	  ld a,(z80codebase+timer_cycles_reset_factor_smc)
 	  ld h,a
 	  ; Only if the old bit of DIV is 0, add to the scheduled time
 	  ; In effect, if the bit was 1, this schedules the next increment immediately
@@ -1151,6 +1151,7 @@ div_write_helper:
 	  mlt hl
 	  add.s hl,de
 	  add hl,hl
+	  inc hl
 	  ld.sis (timer_counter),hl
 	 pop de
 	 sbc hl,hl
@@ -1179,13 +1180,32 @@ tac_write_helper:
 	 or $F8
 	 ld (hram_base+TAC),a
 	 add a,4
-	 jr c,_
+	 jr c,tac_write_enable
 	 ld hl,disabled_counter_checker
 	 ld.sis (event_counter_checker_slot_timer),hl
+	 ld a,$C3
+	 ld (z80codebase+enableTIMA_smc),a
+	 ; If the corresponding bit of DIV is 1, increment TIMA
+	 ld hl,i
+	 add hl,de
+	 ld a,(z80codebase+timer_cycles_reset_factor_smc)
+	 and l
+	 jr z,return_from_write_helper
+	 ld hl,hram_base+TIMA
+	 inc (hl)
+	 jr z,_
 return_from_write_helper:
 	pop hl
 	jp.sis z80_restore_swap_ret
 _
+	 sbc hl,hl
+	 set.s 2,(hl) ;active_ints
+	 jp.sis trigger_event_pushed
+	 
+tac_write_enable:
+	 ld hl,timer_counter_checker
+	 ld.sis (event_counter_checker_slot_timer),hl
+
 	 ; Get SMC data
 	 ld c,a
 	 ld a,b
@@ -1200,49 +1220,23 @@ _
 	 inc hl
 	 ld a,(hl)
 	 ld (z80codebase + timer_cycles_reset_factor_smc),a
-	 ld (writeTIMA_smc),a
-
-	 ld hl,timer_counter_checker
-	 ld.sis (event_counter_checker_slot_timer),hl
-	
-; Writes to the GB timer count (TIMA).
-; Does not use a traditional call/return, must be jumped to directly.
-;
-; Updates the GB timer based on the new value, if enabled.
-;
-; Inputs:  DE = current cycle offset
-;          (TIMA) = value written
-;          (SPS) = Z80 return address
-;          (SPL) = saved HL'
-;          BCDEHL' are swapped
-; Outputs: GB timer updated
-;          Event triggered
-tima_write_helper:
-	 ld hl,hram_base+TAC
-	 bit 2,(hl)
-	 jr z,return_from_write_helper
 	 
-	 ld l,TIMA & $FF
-	 ld a,(hl)
-	 
-	 ld hl,i
-	 add hl,de
-	 
-	 cpl
-	 ld e,a 
-writeTIMA_smc = $+1
-	 ld d,0
-	 ld a,d
-	 add a,a
-	 dec a
-	 or l
+	 ld.sis hl,(TIMA)
+	 ld c,l
+	 ld l,h
+	 ld h,a
+	 xor a
+	 sub l
 	 ld l,a
-	 inc hl
-	 mlt de
-	 add hl,de
-	 add hl,de
-	 ld.sis (timer_counter),hl
-	 jp.sis trigger_event_pushed
+	 jr z,_
+	 mlt hl
+_
+	 ld.sis (timer_period),hl
+	 
+	 ld a,$CD
+	 ld (z80codebase+enableTIMA_smc),a
+	 ld a,c
+	 jp.sis tima_reschedule_helper
 	
 timer_smc_data:
 	.db 6,$80

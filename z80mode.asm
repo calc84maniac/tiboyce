@@ -1337,18 +1337,11 @@ timer_counter = $+1
 	
 timer_expired_handler:
 	set 2,(hl) ;active_ints
-	ld hl,TMA
-	xor a
-	sub (hl)
-timer_cycles_reset_factor_smc = $+1
-	ld h,0
-	ld l,a
-	jr z,_
-	mlt hl
-_
-	add hl,hl
+timer_period = $+1
+	ld hl,0
 	; If scheduled for 65536 cycles in the future, no need to reschedule
 	; Returning here prevents the delay from being interpreted as 0
+	add hl,hl
 	ret c
 	add hl,bc
 	ld (timer_counter),hl
@@ -2490,6 +2483,45 @@ ophandler_halt_maybe_overflow:
 	jp.lil schedule_event_helper
 #endif
 	
+; Writes to the GB timer count (TIMA).
+; Does not use a traditional call/return, must be jumped to directly.
+;
+; Updates the GB timer based on the new value, if enabled.
+;
+; Inputs:  DE = current cycle offset
+;          A' = value to write
+;          (SPS) = Z80 return address
+;          (SPL) = saved HL'
+;          BCDEHL' are swapped
+; Outputs: TIMA and GB timer updated
+;          Event triggered
+tima_write_helper:
+	 ld hl,TAC
+	 bit 2,(hl)
+	 ld l,TIMA & $FF
+	 ex af,af'
+	 ld (hl),a
+	 ex af,af'
+	 jr z,trigger_event_already_triggered
+	 ld a,(hl)
+tima_reschedule_helper:
+	 ld hl,i
+	 add hl,de
+	 cpl
+	 ld e,a
+	 ld a,(timer_cycles_reset_factor_smc)
+	 ld d,a
+	 add a,a
+	 dec a
+	 or l
+	 ld l,a
+	 mlt de
+	 inc de
+	 add hl,de
+	 add hl,de
+	 ld (timer_counter),hl
+	 jr trigger_event_pushed
+	
 trigger_event:
 	exx
 trigger_event_swapped:
@@ -2551,6 +2583,34 @@ z80_swap_ret:
 	exx
 z80_ret:
 	ret
+	
+_writeTMA:
+	call updateTIMA
+	 ld hl,TMA
+	 ex af,af'
+	 ld (hl),a
+	 ex af,af'
+	 ; Subtract TMA from 256, without destroying Z
+	 ld a,(hl)
+	 cpl
+	 ld l,a
+	 inc hl
+	 ; Check if the result was 256, without destroying Z
+	 ld a,h
+	 rlca
+	 ; Multiply by the timer factor
+timer_cycles_reset_factor_smc = $+1
+	 ld h,0
+	 jr nc,_
+	 mlt hl
+_
+	 ld (timer_period),hl
+	 jr nz,trigger_event_already_triggered
+	 ; Make sure writes on the reload cycle go through
+	 ld hl,i
+	 add hl,de
+	 ld (timer_counter),hl
+	 jr trigger_event_already_triggered
 	
 ophandlerE2:
 	ld ixl,NO_CYCLE_INFO
@@ -3698,6 +3758,7 @@ get_mem_cycle_offset_push:
 ;         (bottom of short stack) = JIT return address
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
+;          Z flag reset
 ;          May be positive if target lies within an instruction
 ;          IXL is updated if it was NO_CYCLE_INFO[-1]
 ; Destroys AF,HL
@@ -4331,24 +4392,23 @@ updateLY_from_line_0:
 ; Output: BCDEHL' are swapped
 ;         (SPL) = saved HL'
 ;         DE = current cycle offset
+;         Z flag set if TIMA reload occurs this cycle
 ;         (TIMA) updated to current value
-;         Interrupts are disabled
 updateTIMA:
-	call get_mem_cycle_offset_swap_push
-	 ld a,(TAC)
-	 and 4
-	 ret z
-	 ld hl,i
+enableTIMA_smc = $
+	jp get_mem_cycle_offset_swap_push ; Replaced with CALL when enabled
+	 ld hl,i ; Resets carry
 	 ld a,b
 	 ld bc,(timer_counter)
 	 sbc hl,bc
 	 ld b,a
 	 ; Handle special case if cycle offset is non-negative
 	 xor a
-	 cp d
 	 add hl,de
+	 cp h
 	 jr z,updateTIMAoverflow
 updateTIMAcontinue:
+	 inc hl
 updateTIMA_smc = $+1
 	 jr $+8
 	 add hl,hl
@@ -4357,20 +4417,38 @@ updateTIMA_smc = $+1
 	 add hl,hl
 	 add hl,hl
 	 add hl,hl
-	 add a,h
+	 ld a,h
 	 ld (TIMA),a
 	 ret
 	
 updateTIMAoverflow:
-	 ; Check if adding the cycle offset created a non-negative result
-	 jr c,_
-	 sbc hl,de
-	 add hl,de
+	 ; Check if the cycle offset was non-negative, which is the only case
+	 ; that a mid-instruction overflow is possible
+	 cp d
 	 jr nz,updateTIMAcontinue
-_
-	 ; If so, offset the TIMA value by TMA
-	 ld a,(TMA)
-	 jr updateTIMAcontinue
+	 ; Check if the cycle offset caused the overflow
+	 ld a,e
+	 cp l
+	 jr c,updateTIMAcontinue
+updateTIMAoverflow_loop:
+	 ; If so, handle timer event(s) immediately
+	 ld c,l
+	 push de
+	  push bc
+	   ld l,h
+	   ld e,d
+	   ld bc,(timer_counter)
+	   call timer_expired_handler
+	  pop bc
+	  xor a
+	  ld h,a
+	  ; Set Z flag if the reload happened on this cycle
+	  or c
+	  ld l,a
+	  add hl,de
+	 pop de
+	 jr nc,updateTIMAcontinue
+	 jr updateTIMAoverflow_loop
 	
 	.block (-$-37)&$FF
 	
@@ -4454,22 +4532,26 @@ write_port_ignore:
 	ex af,af'
 	ret
 
+writeTIMAignore:
+	pop.l hl
+	jr checkIntDisabled
+
 writeTAChandler:
 	ex af,af'
 	ld iyl,a
 writeTAC:
 	call updateTIMA
-	jp.lil tac_write_helper
+	 jp.lil tac_write_helper
 
 writeTIMAhandler:
 	ex af,af'
 	ld iyl,a
 writeTIMA:
 	call updateTIMA
-	ex af,af'
-	ld (TIMA),a
-	ex af,af'
-	jp.lil tima_write_helper
+	 jp nz,tima_write_helper
+	; Ignore writes directly on the reload cycle
+	pop.l hl
+	jr checkIntDisabled
 
 writeLCDChandler:
 	ex af,af'
@@ -4497,7 +4579,7 @@ writeDIVhandler:
 	ld iyl,a
 writeDIV:
 	call updateTIMA
-	jp.lil div_write_helper
+	 jp.lil div_write_helper
 
 ;==============================================================================
 ; Everything below this point must not cause a reschedule on write
@@ -4533,6 +4615,12 @@ write_scroll_handler:
 	ld iyl,a
 write_scroll:
 	jp updateSTAT_if_changed_scroll
+	
+writeTMAhandler:
+	ex af,af'
+	ld iyl,a
+writeTMA:
+	jp _writeTMA
 	
 writeDMAhandler:
 	ex af,af'
@@ -4603,7 +4691,7 @@ mem_write_port_lut:
 	.db write_port_ignore - mem_write_port_routines
 	.db writeDIV - mem_write_port_routines
 	.db writeTIMA - mem_write_port_routines
-	.db write_port_direct - mem_write_port_routines
+	.db writeTMA - mem_write_port_routines
 	.db writeTAC - mem_write_port_routines
 ;08
 	.db write_port_ignore - mem_write_port_routines

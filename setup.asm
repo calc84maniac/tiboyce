@@ -874,7 +874,7 @@ _
 	; Initialize timer values
 	ld a,(iy-ioregs+TAC)
 	bit 2,a
-	jr z,_
+	jr z,++_
 	and 3
 	ld e,a
 	ld d,2
@@ -885,13 +885,21 @@ _
 	ld (z80codebase+updateTIMA_smc),a
 	inc hl
 	ld h,(hl)
+	; Calculate the number of cycles in the timer period (divided by 2)
+	xor a
+	sub (iy-ioregs+TMA)
+	ld e,a
+	ld d,h
+	jr z,_
+	mlt de
+_
+	ld.sis (timer_period),de
 	; Calculate the number of cycles until the timer event
 	ld a,(iy-ioregs+TIMA)
 	cpl
 	ld l,a
 	ld a,h
 	ld (z80codebase+timer_cycles_reset_factor_smc),a
-	ld (writeTIMA_smc),a
 	mlt hl
 	add hl,hl
 	; Add to the DIV counter
@@ -902,9 +910,12 @@ _
 	or l
 	ld l,a
 	inc hl
+	inc hl
 	ld.sis (timer_counter),hl
 	ld hl,timer_counter_checker
 	ld.sis (event_counter_checker_slot_timer),hl
+	ld a,$CD
+	ld (z80codebase+enableTIMA_smc),a
 _
 	
 	; Set the serial counter if needed
@@ -1142,6 +1153,7 @@ _
 	and 4
 	jr z,+++_
 	ld.sis hl,(timer_counter)
+	dec hl
 	ex de,hl
 	sbc hl,de
 	ld a,(z80codebase+updateTIMA_smc)
