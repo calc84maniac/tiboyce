@@ -2520,13 +2520,13 @@ tima_reschedule_helper:
 	 add hl,de
 	 add hl,de
 	 ld (timer_counter),hl
-	 jr trigger_event_pushed
+	 jr reschedule_event_timer
 	
-trigger_event:
-	exx
 trigger_event_swapped:
 	push.l hl
 reschedule_event_PPU:
+reschedule_event_timer:
+reschedule_event_serial:
 trigger_event_pushed:
 	 ; Get the cycle offset, GB address, and JIT address after the current opcode
 	 call get_mem_info_full
@@ -4450,54 +4450,74 @@ updateTIMAoverflow_loop:
 	 jr nc,updateTIMAcontinue
 	 jr updateTIMAoverflow_loop
 	
-	.block (-$-37)&$FF
+	.block (-$-59)&$FF
+_
+	ld de,disabled_counter_checker
+	ld (event_counter_checker_slot_serial),de
+	exx
+	ld a,iyl
+	ex af,af'
+	ret
 	
 _writeSChandler:
-	push af
-	 push hl
-	  or $7E
-	  ld (SC),a
-	  inc a
-	  ld hl,disabled_counter_checker
-	  jr nz,_
-	  ex af,af'
-	  ld iyl,a
-	  call trigger_event
-	  ; Set this cycle count after setting up the trigger
-	  ld hl,i
-	  ld a,h
-	  add a,1024 >> 8
-	  ld h,a
-	  ld (serial_counter),hl
-	  ld hl,serial_counter_checker
-_
-	  ld (event_counter_checker_slot_serial),hl
-	 pop hl
-	pop af
-	ret
+	exx
+	ex af,af'
+	ld c,a
+	ex af,af'
+	ld a,c
+	or $7E
+	ld (SC),a
+	inc a
+	jr nz,-_
+	call get_mem_cycle_offset_push
+	 ld hl,serial_counter_checker
+	 ld (event_counter_checker_slot_serial),hl
+	 ; Get the DIV counter for the current cycle
+	 ld hl,i
+	 add hl,de
+	 ; To make things simpler, since bits tick every 128 cycles,
+	 ; shift left once before overriding the low byte
+	 add hl,hl
+	 ld a,(serial_counter)
+	 ; Preserve the top bit of DIV in bit 0 while shifting left
+	 rla
+	 ; Check whether the tick has already occurred
+	 cp l
+	 ld l,a
+	 ; Adjust the upper byte by 8 if the tick already occurred,
+	 ; otherwise by 7
+	 ld a,h
+	 adc a,7
+	 ld h,a
+	 ; Rotate the counter back and save it
+	 rra
+	 rr l
+	 rr h
+	 ld (serial_counter),hl
+	 jp reschedule_event_serial
 	
 #if $ & 255
 	.error "mem_write_port_routines must be aligned: ", $ & 255
 #endif
 	
 mem_write_port_routines:
-writeSC:
-	ld a,iyl
+writeIE:
 	ex af,af'
+	ld (IE),a
+	ex af,af'
+	exx
+	jr checkInt
+	
 writeSChandler:
+	ex af,af'
+	ld a,iyl
+writeSC:
 	jr _writeSChandler
 	
 writeIEhandler:
 	ld (IE),a
 	ex af,af'
 	ld iyl,a
-	exx
-	jr checkInt
-	
-writeIE:
-	ex af,af'
-	ld (IE),a
-	ex af,af'
 	exx
 	jr checkInt
 	

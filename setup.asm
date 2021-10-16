@@ -918,15 +918,16 @@ _
 	ld (z80codebase+enableTIMA_smc),a
 _
 	
-	; Set the serial counter if needed
-	ld a,(iy-ioregs+SC)
-	cpl
-	and $81
-	jr nz,_
+	; Always set the serial counter, which contains an offset from boot time
 	ld hl,(iy-state_size+STATE_SERIAL_COUNTER)
 	; Add to the DIV counter
 	add hl,bc
 	ld.sis (serial_counter),hl
+	; Set the serial counter check event if needed
+	ld a,(iy-ioregs+SC)
+	cpl
+	and $81
+	jr nz,_
 	ld hl,serial_counter_checker
 	ld.sis (event_counter_checker_slot_serial),hl
 _
@@ -2902,7 +2903,7 @@ regs_init:
 	;     AF,   BC,   DE,   HL,   SP,   PC
 	.dw $01B0,$0013,$00D8,$014D,$FFFE,$0100
 	.dw $0000 ; Frame cycle counter
-	.dw $0000 ; Serial transfer cycle counter
+	.dw -$6AF3 ; Serial transfer cycle counter
 	.dw $6AF3 ; Divisor cycle counter
 	.db $01 ; Cart ROM bank
 	.db $00 ; Cart RAM bank
