@@ -1090,7 +1090,9 @@ _
 	 
 	 ; Update PPU scheduler based on current value of STAT
 	 call stat_setup_c
-	 jp.sis reschedule_event_PPU
+	 ; We didn't track whether an interrupt was requested, so just
+	 ; trigger an event unconditionally
+	 jp.sis trigger_event_pushed
 	
 lcd_on_STAT_restore_helper:
 	ld a,$C9

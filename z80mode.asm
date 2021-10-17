@@ -2520,13 +2520,47 @@ tima_reschedule_helper:
 	 add hl,de
 	 add hl,de
 	 ld (timer_counter),hl
-	 jr reschedule_event_timer
+reschedule_event_timer:
+reschedule_event_serial:
+	 ; Get the relative time of the event from the currently scheduled event
+	 ex de,hl
+	 ld hl,i ; Resets carry
+	 sbc hl,de
+	 jr _
+	 
+reschedule_event_PPU:
+	 ; Get the relative time of the event from the currently scheduled event
+	 ex de,hl
+	 ld hl,i
+	 add hl,de
+_
+	 call get_mem_cycle_offset
+	 ; If the current event is scheduled before or at the current cycle, do nothing
+	 xor a
+	 cp d
+	 jr z,trigger_event_already_triggered
+	 ; If the new event is after or at the currently scheduled event, do nothing
+	 ex de,hl
+	 dec hl
+	 add hl,de
+	 jr c,trigger_event_already_triggered
+	 ; If the counter already overflowed, trigger an event now to reschedule
+	 cp iyh
+	 jr z,trigger_event_pushed
+	 ; Update the schedule time
+	 ld hl,i ; Resets carry
+	 sbc hl,de
+	 ld i,hl
+	 ; Update the cycle counter
+	 add iy,de
+	 ; If the cycle counter didn't overflow, just continue execution
+	 jr nc,trigger_event_already_triggered
+	 ; Trigger an event without attempting to remove an event trigger
+	 call get_mem_info_full
+	 jr trigger_event_no_remove
 	
 trigger_event_swapped:
 	push.l hl
-reschedule_event_PPU:
-reschedule_event_timer:
-reschedule_event_serial:
 trigger_event_pushed:
 	 ; Get the cycle offset, GB address, and JIT address after the current opcode
 	 call get_mem_info_full
@@ -3758,10 +3792,10 @@ get_mem_cycle_offset_push:
 ;         (bottom of short stack) = JIT return address
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
-;          Z flag reset
 ;          May be positive if target lies within an instruction
+;          Z flag reset
 ;          IXL is updated if it was NO_CYCLE_INFO[-1]
-; Destroys AF,HL
+; Destroys AF
 get_mem_cycle_offset:
 	ld a,ixl
 	ld (_+2),a
@@ -3771,7 +3805,9 @@ _
 	ret m
 resolve_mem_cycle_offset:
 	push ix
-	 call get_mem_info_full
+	 push hl
+	  call get_mem_info_full
+	 pop hl
 	pop ix
 	ld a,e
 	sub iyl
