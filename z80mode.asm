@@ -2351,7 +2351,7 @@ intstate_smc_1 = $
 #ifdef DEBUG
 	ld a,h
 	cp (event_value >> 8) + 1
-	jr nc,$
+	jr c,$
 #endif
 	ld a,(event_value)
 	ld (hl),a
@@ -2502,7 +2502,11 @@ tima_write_helper:
 	 ex af,af'
 	 ld (hl),a
 	 ex af,af'
+#ifdef DEBUG
+	 jp z,trigger_event_already_triggered
+#else
 	 jr z,trigger_event_already_triggered
+#endif
 	 ld a,(hl)
 tima_reschedule_helper:
 	 ld hl,i
@@ -2590,6 +2594,14 @@ trigger_event_no_remove:
 	 jr nc,$
 _
 #endif
+	 ; Make sure the CALL/RST/interrupt dispatch case is handled
+	 ld a,(hl)
+	 cp $C3
+	 jr z,trigger_event_call_fixup
+trigger_event_call_fixup_continue:
+	 ld (event_value),a
+	 ld (event_address),hl
+	 ld (hl),RST_EVENT
 	 ; Cycle count at event is relative to the memory access
 	 ld a,iyl
 	 sub e
@@ -2598,10 +2610,6 @@ _
 	 adc a,(ix+2)
 	 ASSERT_C
 	 ld (event_cycle_count),a
-	 ld (event_address),hl
-	 ld a,(hl)
-	 ld (event_value),a
-	 ld (hl),RST_EVENT
 	 ld hl,(ix-2)
 	 ld (event_gb_address),hl
 	 ld hl,i
@@ -2617,6 +2625,13 @@ z80_swap_ret:
 	exx
 z80_ret:
 	ret
+	
+trigger_event_call_fixup:
+	inc hl
+	ld hl,(hl)
+	ld a,(hl)
+	ld ix,mem_info_scratch
+	jr trigger_event_call_fixup_continue
 	
 _writeTMA:
 	call updateTIMA
@@ -3814,6 +3829,7 @@ resolve_mem_cycle_offset:
 	ld ixl,a
 	ret
 
+
 ; Inputs: IY = current block cycle base
 ;         IXL = currently known cycle info, possibly minus 1
 ;         (SPL) = saved HL'
@@ -3822,9 +3838,14 @@ resolve_mem_cycle_offset:
 ;         AFBCDEHL' have been swapped
 ; Outputs: DE = (negative) cycle offset
 ;          May be positive if target lies within an instruction
-;          (IX-2) = Game Boy address
-;          (IX+2) = cycles until block end from end of instruction, minus 1
-;          HL = current JIT address
+;          If the memory access is a routine call or NO_CYCLE_INFO is passed,
+;          the following is guaranteed:
+;            (IX-2) = Game Boy address
+;            (IX+2) = cycles until block end from end of instruction, minus 1
+;            HL = current JIT address
+;          Otherwise, HL = call dispatch jump address, and since
+;          get_mem_info_full was called once before with NO_CYCLE_INFO,
+;          the GB address and cycle offset are located at mem_info_scratch.
 ; Destroys AF
 get_mem_info_full:
 	ld d,ixl
@@ -3879,7 +3900,7 @@ resolve_mem_info:
 	sub $DD
 	jr nz,resolve_mem_info_for_routine
 	or (ix+2)
-	jp p,resolve_mem_info_for_routine
+	jp p,resolve_mem_info_for_routine_skip
 	; Remove NO_RESCHEDULE from the passed value before adding it
 	res 1,d
 	dec a
@@ -3944,6 +3965,9 @@ resolve_mem_info_for_prefix:
 	bit 5,(hl)
 	jp.lil resolve_mem_info_for_prefix_helper
 	
+resolve_mem_info_for_routine_skip:
+	; Skip the LD IXL,NO_CYCLE_INFO
+	lea ix,ix+3
 resolve_mem_info_for_routine:
 	; If the code is not in the JIT area, the routine call was actually for a RET
 	ld a,h

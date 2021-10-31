@@ -1795,7 +1795,7 @@ resolve_mem_info_for_routine_helper:
 	push de
 	 push bc
 	  push hl
-	   pea ix+3 ; Skip the LD IXL,NO_CYCLE_INFO
+	   push ix
 	    ld a,d
 	    sub NO_RESCHEDULE
 	    add a,a
