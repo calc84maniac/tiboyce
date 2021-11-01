@@ -174,17 +174,17 @@ decode_rst_helper:
 	push bc
 	 push hl
 	  push ix
-	   ; Get the offset of the RST dispatch
-	   lea de,ix+(-(dispatch_rst_00 + $80) & $FF) - $80
-	   ld d,0
+	   ; Get the RST target address
+	   lea hl,ix+(10*4)
+	   srl l
+	   ld.s de,(hl)
 	   ; Get a pointer to the corresponding JR offset
 	   ld hl,z80codebase + do_rst_08 - 1
 	   add hl,de
 	   ld a,e
 	   srl e
-	   add hl,de
-	   ; Get the RST target address
-	   add a,a
+	   srl e
+	   sbc hl,de
 	   ld e,a
 	   ; Adjust the JR offset
 	   ld a,(do_rst-1) & $FF
@@ -378,9 +378,10 @@ _
 decode_intcache_helper:
 	push bc
 	 push de
-	  lea de,ix+(-(dispatch_rst_00 + $80) & $FF) - $80
-	  ld d,a
-	  sla e
+	  ; Get the interrupt target address
+	  lea hl,ix+(10*4)
+	  srl l
+	  ld.s de,(hl)
 	  push ix
 	   call lookup_code
 	   ; Spend 5 cycles for interrupt dispatch overhead

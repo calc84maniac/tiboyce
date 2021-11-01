@@ -70,11 +70,12 @@ flush_code:
 	 ld hl,event_value
 	 ld.sis (event_address),hl
 	 ; Reset the interrupt target caches
-	 ld hl,z80codebase+dispatch_vblank+3
-	 ld de,dispatch_stat - dispatch_vblank
+	 ld hl,z80codebase+dispatch_joypad+3
+	 ld de,2
 	 ld b,5
 _
 	 ld (hl),d
+	 srl l
 	 add hl,de
 	 djnz -_
 	 ; Reset the RST target caches

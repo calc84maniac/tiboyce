@@ -527,12 +527,6 @@ schedule_event_finish_no_schedule:
 	exx
 	ret
 	
-Z80InvalidOpcode:
-	jp.lil Z80InvalidOpcode_helper
-	
-Z80Error:
-	jp.lil runtime_error
-	
 do_push_for_call_overflow:
 	push ix
 do_push_overflow:
@@ -824,10 +818,9 @@ event_save_sp = $+1
 	 ld sp,0   
 	pop bc
 event_not_expired:
-	ld hl,IE
-	ld a,(hl)
-	inc hl
-	and (hl)
+	ld hl,(IE)
+	ld a,l
+	and h
 intstate_smc_2 = $+1
 	jr nz,trigger_interrupt
 cpu_halted_smc = $
@@ -873,55 +866,34 @@ trigger_int_callstack_overflow:
 	pop.l hl
 	call.il callstack_overflow_helper
 	push.l hl
+	ASSERT_NC
+	sbc hl,hl ;active_ints
 	jr trigger_int_selected
 	
 cpu_exit_halt_trigger_interrupt:
 	ld de,$7DFD ; LD A,IYL
 	ld (cpu_halted_smc),de
 trigger_interrupt:
+	; Get the lowest set bit of the active interrupts, times 2
+	ld l,a
+	dec a
+	xor l
+	inc a
+	; Index the dispatch routines by the interrupt bit times 4
+	rlca
+	ld ixl,a
+	ld ixh,dispatch_vblank >> 8
+	; Divide by 4 and clear the active interrupt bit
 	rrca
-	jr c,trigger_vblank
 	rrca
-	jr c,trigger_stat
-	rrca
-	jr c,trigger_timer
-	rrca
-	jr c,trigger_serial
-trigger_joypad:
-	res 4,(hl)
-	ld ix,dispatch_joypad
-	ld hl,(-call_stack_lower_bound) & $FFFF
-	add hl,sp
-	jr c,trigger_int_selected
-	jr trigger_int_callstack_overflow
-trigger_serial:
-	res 3,(hl)
-	ld ix,dispatch_serial
-	ld hl,(-call_stack_lower_bound) & $FFFF
-	add hl,sp
-	jr c,trigger_int_selected
-	jr trigger_int_callstack_overflow
-trigger_timer:
-	res 2,(hl)
-	ld ix,dispatch_timer
-	ld hl,(-call_stack_lower_bound) & $FFFF
-	add hl,sp
-	jr c,trigger_int_selected
-	jr trigger_int_callstack_overflow
-trigger_vblank:
-	dec (hl)
-	ld ix,dispatch_vblank
-	ld hl,(-call_stack_lower_bound) & $FFFF
-	add hl,sp
-	jr c,trigger_int_selected
-	jr trigger_int_callstack_overflow
-trigger_stat:
-	res 1,(hl)
-	ld ix,dispatch_stat
+	xor h
+	; Check for callstack overflow
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	jr nc,trigger_int_callstack_overflow
+	ld l,h ;active_ints
 trigger_int_selected:
+	ld (hl),a
 event_gb_address = $+1
 	ld de,event_gb_address
 	; Disable interrupts
@@ -965,9 +937,9 @@ cycle_overflow_for_rst_or_int:
 	; Subtract 4 for RST, 5 for CALL
 	adc a,-5
 	ld c,a
-	lea de,ix+(-(dispatch_rst_00 + $80) & $FF) - $80
-	ld d,0
-	sla e
+	lea hl,ix+(10*4)
+	srl l
+	ld de,(hl)
 	ld ix,(ix+1)
 #ifdef VALIDATE_SCHEDULE
 	call.il schedule_event_helper_for_call
@@ -976,7 +948,6 @@ cycle_overflow_for_rst_or_int:
 #endif
 	
 decode_intcache:
-	; A = 0
 	call.il decode_intcache_helper
 	ld (ix+1),hl
 	ld (ix+3),a
@@ -1758,89 +1729,6 @@ _
 #else
 	jp.lil schedule_event_helper
 #endif
-	
-wait_for_interrupt_stub:
-	ei
-	halt
-	ret.l
-	
-flush_handler:
-	exx
-flush_address = $+1
-	ld de,0
-	jp.lil flush_normal
-	
-dispatch_rst_00:
-	jp 0
-	.db 0
-dispatch_rst_08:
-	jp 0
-	.db 0
-dispatch_rst_10:
-	jp 0
-	.db 0
-dispatch_rst_18:
-	jp 0
-	.db 0
-dispatch_rst_20:
-	jp 0
-	.db 0
-dispatch_rst_28:
-	jp 0
-	.db 0
-dispatch_rst_30:
-	jp 0
-	.db 0
-dispatch_rst_38:
-	jp 0
-	.db 0
-dispatch_vblank:
-	jp 0
-	.db 0
-dispatch_stat:
-	jp 0
-	.db 0
-dispatch_timer:
-	jp 0
-	.db 0
-dispatch_serial:
-	jp 0
-	.db 0
-dispatch_joypad:
-	jp 0
-	.db 0
-	
-flush_mem_handler:
-	exx
-	ex af,af'
-	ld iyl,a
-	ld a,b
-	pop bc
-	jp.lil flush_mem
-	
-coherency_handler:
-	pop ix
-	pea ix+RAM_PREFIX_SIZE-3
-	ld ix,(ix)
-	jp.lil check_coherency_helper
-
-coherency_return:
-	pop.l hl
-	exx
-	ex af,af'
-	ret
-
-handle_overlapped_op_1_1:
-	pop ix
-	jp.lil handle_overlapped_op_1_1_helper
-	
-handle_overlapped_op_1_2:
-	pop ix
-	jp.lil handle_overlapped_op_1_2_helper
-	
-handle_overlapped_op_2_1:
-	pop ix
-	jp.lil handle_overlapped_op_2_1_helper
 	
 do_swap_c:
 	ld iyl,a
@@ -3919,11 +3807,13 @@ get_mem_info_for_branch:
 	inc hl
 	inc hl
 	ld a,l
-	inc hl
-	inc hl
-	inc hl
-	sub dispatch_rst_00 & $FF
-	add a,a
+	add a,3
+	ld e,a
+	add a,(4*10)-3
+	rra
+	ld l,a
+	ld a,(hl)
+	ld l,e
 	ld ix,mem_info_scratch
 	ld (ix-2),a
 	ld (ix-1),0
@@ -4510,6 +4400,96 @@ updateTIMAoverflow_loop:
 	 jr nc,updateTIMAcontinue
 	 jr updateTIMAoverflow_loop
 	
+	; Cached RST and interrupt handlers are combined in this space
+	; Handlers consist of a jump followed by a cycle count
+	; Interrupt handlers are indexed by 1, 2, 4, 8, 16
+	; Address info is stored in halves of empty handler slots
+	; Handler to address info mapping: add 10 slots and divide by 2
+	; Unused slot halves: 7.5, 9.5, 10.0, 12.0, 12.5
+	.block (-$)&$FF
+dispatch_rst_00: ;0 -> 5.0
+	jp 0 \ .db 0
+dispatch_vblank: ;1 -> 5.5
+	jp 0 \ .db 0
+dispatch_stat:   ;2 -> 6.0
+	jp 0 \ .db 0
+dispatch_rst_08: ;3 -> 6.5
+	jp 0 \ .db 0
+dispatch_timer:  ;4 -> 7.0
+	jp 0 \ .db 0
+	; Address info for RST 00h, VBLANK, STAT, RST 08h, TIMER
+	.dw $0000, $0040, $0048, $0008, $0050, 0
+dispatch_serial: ;8 -> 9.0
+	jp 0 \ .db 0
+	; Address info for SERIAL, RST 10h
+	.dw $0058, 0, 0, $0010
+dispatch_rst_10: ;11 -> 10.5
+	jp 0 \ .db 0
+	; Address info for JOYPAD, RST 18h - 38h
+	.dw 0, 0, $0060, $0018, $0020, $0028, $0030, $0038
+dispatch_joypad: ;16 -> 13.0
+	jp 0 \ .db 0
+dispatch_rst_18: ;17 -> 13.5
+	jp 0 \ .db 0
+dispatch_rst_20: ;18 -> 14.0
+	jp 0 \ .db 0
+dispatch_rst_28: ;19 -> 14.5
+	jp 0 \ .db 0
+dispatch_rst_30: ;20 -> 15.0
+	jp 0 \ .db 0
+dispatch_rst_38: ;21 -> 15.5
+	jp 0 \ .db 0
+	
+wait_for_interrupt_stub:
+	ei
+	halt
+	ret.l
+	
+flush_handler:
+	exx
+flush_address = $+1
+	ld de,0
+	jp.lil flush_normal
+	
+flush_mem_handler:
+	exx
+	ex af,af'
+	ld iyl,a
+	ld a,b
+	pop bc
+	jp.lil flush_mem
+	
+coherency_handler:
+	pop ix
+	pea ix+RAM_PREFIX_SIZE-3
+	ld ix,(ix)
+	jp.lil check_coherency_helper
+
+coherency_return:
+	pop.l hl
+	exx
+	ex af,af'
+	ret
+	
+handle_overlapped_op_1_1:
+	pop ix
+	jp.lil handle_overlapped_op_1_1_helper
+	
+handle_overlapped_op_1_2:
+	pop ix
+	jp.lil handle_overlapped_op_1_2_helper
+	
+handle_overlapped_op_2_1:
+	pop ix
+	jp.lil handle_overlapped_op_2_1_helper
+	
+Z80InvalidOpcode:
+	jp.lil Z80InvalidOpcode_helper
+	
+Z80Error:
+	jp.lil runtime_error
+	
+	.echo (-$-59)&$FF, " wasted Z80 bytes"
 	.block (-$-59)&$FF
 _
 	ld de,disabled_counter_checker
