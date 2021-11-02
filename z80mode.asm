@@ -868,6 +868,7 @@ trigger_int_callstack_overflow:
 	push.l hl
 	ASSERT_NC
 	sbc hl,hl ;active_ints
+	scf
 	jr trigger_int_selected
 	
 trigger_interrupt_retry_dispatch:
@@ -916,12 +917,10 @@ trigger_int_selected:
 	ld (hl),e
 event_gb_address = $+1
 	ld de,event_gb_address
-	; Get number of cycles to be taken, and check if zero
+	; Get number of cycles to be taken, minus 1
 	ld a,(ix+3)
-	or a
-	jr z,decode_intcache
-dispatch_int_decoded:
-	add a,iyl
+	ASSERT_C
+	adc a,iyl ; Carry is set, to add additional cycle over RST cache
 	jr c,dispatch_int_maybe_overflow
 dispatch_int_no_overflow:
 	pop.l hl
@@ -956,12 +955,6 @@ cycle_overflow_for_rst_or_int:
 #else
 	jp.lil schedule_event_helper_for_call
 #endif
-	
-decode_intcache:
-	call.il decode_intcache_helper
-	ld (ix+1),hl
-	ld (ix+3),a
-	jr dispatch_int_decoded
 	
 dispatch_int_handle_events:
 	; Set IY to the 4-cycle-added value
@@ -3829,16 +3822,15 @@ resolve_mem_info:
 
 get_mem_info_for_branch:
 	; This is a push related to an RST, CALL, or interrupt
-	ld a,h
-	cp jit_start >> 8
-	jp.lil nc,get_mem_info_for_call_helper
+	ld a,dispatch_rst_00 >> 8
+	cp h
+	jp.lil c,get_mem_info_for_call_helper
 	
 	; Retrieve the cycle info and actual target address,
 	; and infer the Game Boy address
-	inc hl
-	inc hl
+	ld h,a
 	ld a,l
-	add a,3
+	add a,2+3
 	ld e,a
 	add a,(4*10)-3
 	rra
@@ -3848,11 +3840,11 @@ get_mem_info_for_branch:
 	ld ix,mem_info_scratch
 	ld (ix-2),a
 	ld (ix-1),0
-	; Subtract from 3 cycles for RST, or 4 for interrupt
-	cp $40
-	ld a,4
+	; Both RST and interrupt caches have an additional 4 cycles included,
+	; so subtract from 3 cycles to get the last instruction cycle offset
+	ld a,3
 get_mem_info_for_call_finish:
-	sbc a,(hl)
+	sub (hl)
 	dec hl
 	dec hl
 	ld hl,(hl) ; Get the actual target from the dispatch

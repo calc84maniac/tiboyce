@@ -375,23 +375,6 @@ _
 	pop bc
 	jp.sis banked_call_mismatch_continue
 	
-decode_intcache_helper:
-	push bc
-	 push de
-	  ; Get the interrupt target address
-	  lea hl,ix+(10*4)
-	  srl l
-	  ld.s de,(hl)
-	  push ix
-	   call lookup_code
-	   ; Spend 5 cycles for interrupt dispatch overhead
-	   add a,5
-	   ex (sp),ix
-	  pop hl
-	 pop de
-	pop bc
-	ret.l
-	
 decode_halt_helper:
 	push hl
 	 ex af,af'

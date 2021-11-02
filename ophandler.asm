@@ -1940,7 +1940,6 @@ _
 	pop de
 	; Subtract from 5 cycles for CALL
 	ld a,5
-	ASSERT_NC
 	jp.sis get_mem_info_for_call_finish
 	
 	

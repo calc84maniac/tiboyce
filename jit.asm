@@ -69,18 +69,9 @@ flush_code:
 	 ; Reset the event address
 	 ld hl,event_value
 	 ld.sis (event_address),hl
-	 ; Reset the interrupt target caches
-	 ld hl,z80codebase+dispatch_joypad+3
-	 ld de,2
-	 ld b,5
-_
-	 ld (hl),d
-	 srl l
-	 add hl,de
-	 djnz -_
 	 ; Reset the RST target caches
 	 ld hl,z80codebase+do_rst_08-1
-	 ld e,do_rst_08 - do_rst_00
+	 ld de,do_rst_08 - do_rst_00
 	 ld a,decode_rst - do_rst_08
 	 ld b,8
 _
@@ -90,6 +81,26 @@ _
 	 djnz -_
 	 ld a,MAX_CACHE_FLUSHES_ALLOWED
 	 ld (cache_flushes_allowed),a
+	 ; Resolve the interrupt target caches
+	 ld hl,z80codebase+dispatch_vblank+3
+	 ld e,$40-8
+_
+	 ld a,e
+	 add a,8
+	 ld e,a
+	 push de
+	  push hl
+	   call lookup_code
+	  pop hl
+	 pop de
+	 ; Add 4 cycles to mimic RST target caches
+	 sub -4 ; Sets carry
+	 ld (hl),a
+	 dec hl
+	 dec hl
+	 ld.s (hl),ix
+	 rl l
+	 jp p,-_
 	pop de
 	ret
 	
