@@ -728,6 +728,13 @@ _
 	pop.l hl
 	ret
 	
+start_emulation:
+	call set_gb_stack
+	ex af,af'
+	exx
+	push.l hl
+	jr event_not_expired
+	
 do_event:
 event_value = $+1
 	ld (hl),0
@@ -840,13 +847,6 @@ cpu_exit_halt_no_interrupt:
 	ld (cpu_halted_smc),hl
 	jr cpu_halted_smc
 	
-start_emulation:
-	call set_gb_stack
-	ex af,af'
-	exx
-	push.l hl
-	jr event_not_expired
-	
 event_maybe_reschedule:
 	inc iyh
 	jr nz,event_no_reschedule
@@ -870,32 +870,19 @@ trigger_int_callstack_overflow:
 	sbc hl,hl ;active_ints
 	jr trigger_int_selected
 	
+trigger_interrupt_retry_dispatch:
+	; Count the full dispatch cycles again, without causing another retry
+	lea iy,iy-4
+	; Skip the first SMC for disabling interrupts and the RET cycle
+	; count adjustment, which have already been done
+	ld e,a
+	jr trigger_interrupt_retry_dispatch_continue
+	
 cpu_exit_halt_trigger_interrupt:
 	ld de,$7DFD ; LD A,IYL
 	ld (cpu_halted_smc),de
 trigger_interrupt:
-	; Get the lowest set bit of the active interrupts, times 2
-	ld l,a
-	dec a
-	xor l
-	inc a
-	; Index the dispatch routines by the interrupt bit times 4
-	rlca
-	ld ixl,a
-	ld ixh,dispatch_vblank >> 8
-	; Divide by 4 and clear the active interrupt bit
-	rrca
-	rrca
-	xor h
-	; Check for callstack overflow
-	ld hl,(-call_stack_lower_bound) & $FFFF
-	add hl,sp
-	jr nc,trigger_int_callstack_overflow
-	ld l,h ;active_ints
-trigger_int_selected:
-	ld (hl),a
-event_gb_address = $+1
-	ld de,event_gb_address
+	ld e,a
 	; Disable interrupts
 	ld a,$08 ;EX AF,AF'
 	ld (intstate_smc_1),a
@@ -903,11 +890,35 @@ event_gb_address = $+1
 	rrca	;ld a,4
 	add a,c
 	ld c,a
+trigger_interrupt_retry_dispatch_continue:
 	; More disabling interrupts
 	xor a
 	ld (intstate_smc_2),a
+	; Get the lowest set bit of the active interrupts
+	sub e
+	and e
+	; Clear the IF bit
+	xor h
+	ld e,a
+	; Index the dispatch routines by the interrupt bit times 4
+	xor h
+	add a,a
+	add a,a
+	ld ixl,a
+	ld ixh,dispatch_vblank >> 8
+	; Check for callstack overflow
+	ld hl,(-call_stack_lower_bound) & $FFFF
+	add hl,sp
+	jr nc,trigger_int_callstack_overflow
+	ld l,h ;active_ints
+trigger_int_selected:
+	; Save the new IF value
+	ld (hl),e
+event_gb_address = $+1
+	ld de,event_gb_address
 	; Get number of cycles to be taken, and check if zero
-	or (ix+3)
+	ld a,(ix+3)
+	or a
 	jr z,decode_intcache
 dispatch_int_decoded:
 	add a,iyl
@@ -921,22 +932,21 @@ callstack_reti:
 dispatch_int_maybe_overflow:
 	inc iyh
 	jr nz,dispatch_int_no_overflow
+	; Check if an event was scheduled during the first 4 cycles of dispatch
+	lea hl,iy+4
+	ld iyl,a
+	sbc a,l ; Carry is set
+	jr nc,dispatch_int_handle_events
 	; Push the special return value used as a sentinel
 	ld hl,callstack_reti
 	push hl
-	; Reset carry
-	or a
 cycle_overflow_for_rst_or_int:
-	ld iyl,a
 	dec b
 	push bc
 	inc b
+	ld c,a
 	push ix
 	push de
-	ld a,(ix+3)
-	; Subtract 4 for RST, 5 for CALL
-	adc a,-5
-	ld c,a
 	lea hl,ix+(10*4)
 	srl l
 	ld de,(hl)
@@ -952,6 +962,25 @@ decode_intcache:
 	ld (ix+1),hl
 	ld (ix+3),a
 	jr dispatch_int_decoded
+	
+dispatch_int_handle_events:
+	; Set IY to the 4-cycle-added value
+	ld a,l
+	ld iyl,a
+	; Restore the original value of IF
+	ld a,ixl
+	rrca
+	rrca
+	ASSERT_NC
+	sbc hl,hl ;active_ints
+	or (hl)
+	ld (hl),a
+	; Set the restoring interrupt trigger
+	ld a,trigger_interrupt_retry_dispatch - (intstate_smc_2 + 1)
+	ld (intstate_smc_2),a
+	 ; The correct SP restore value is already saved, so enter the loop directly
+	push bc
+	 jp event_expired_halt_loop
 	
 ppu_mode2_line_0_lyc_match:
 	; The LYC match bit was already set by the scheduled LYC event
@@ -1668,8 +1697,10 @@ _
 	jp nc,do_call_no_overflow
 	inc iyh
 	jp nz,do_call_no_overflow
-	; Carry is set
 	push.l hl
+	ld iyl,a
+	ld a,(ix+3)
+	sub 4
 	call cycle_overflow_for_rst_or_int
 	jp callstack_ret
 	
