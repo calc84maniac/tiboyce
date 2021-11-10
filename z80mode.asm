@@ -822,7 +822,8 @@ event_counter_checkers_done:
 	 sbc hl,de
 	 ld i,hl
 event_save_sp = $+1
-	 ld sp,0   
+	 ; Use this initial value in case an interrupt happens when loading a save state
+	 ld sp,myz80stack-4-4
 	pop bc
 event_not_expired:
 	ld hl,(IE)
@@ -866,6 +867,10 @@ trigger_int_callstack_overflow:
 	pop.l hl
 	call.il callstack_overflow_helper
 	push.l hl
+	; Just in case the dispatch is retried, save the adjusted event SP
+	push bc
+	 ld (event_save_sp),sp
+	pop bc
 	ASSERT_NC
 	sbc hl,hl ;active_ints
 	scf
