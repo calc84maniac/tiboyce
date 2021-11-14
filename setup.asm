@@ -859,6 +859,7 @@ _
 	 ; Add to the DIV counter
 	 add hl,de
 	 ld.sis (vblank_counter),hl
+	 ld.sis (persistent_vblank_counter),hl
 	
 	 ; Update LY and STAT caches based on DIV and vblank counters
 	 call.is updateSTAT_full_for_setup

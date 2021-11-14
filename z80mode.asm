@@ -1230,6 +1230,9 @@ ppu_expired_lcd_off:
 	ld hl,CYCLES_PER_FRAME
 	add hl,bc
 	ld (vblank_counter),hl
+	; Save a persistent time by which the next vblank must occur,
+	; in case the LCD is toggled on and off
+	ld (persistent_vblank_counter),hl
 	; Set the next event time and handler
 ppu_post_vblank_event_offset = $+1
 	ld hl,-CYCLES_PER_FRAME
@@ -3708,9 +3711,16 @@ write_audio_enable:
 	
 	; This cannot be implemented as a mixed-mode call; get_mem_cycle_offset
 	; relies on the ADL stack having only one pushed value
-lcd_enable_helper:
+lcd_enable_disable_helper:
 	call get_mem_cycle_offset
-	jp.lil do_lcd_enable
+	; Get the value of DIV
+	ld hl,i
+	add hl,de
+	ex de,hl
+	; Get the persistent vblank counter, just in case
+persistent_vblank_counter = $+1
+	ld hl,0
+	jp.lil lcd_enable_disable_continue
 	
 get_mem_cycle_offset_swap_push:
 	exx

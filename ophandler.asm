@@ -699,7 +699,7 @@ do_lcd_disable:
 	ld (lyc_write_disable_smc), hl
 	ld h,stat_lyc_write_no_reschedule - (stat_write_disable_smc+2)
 	ld (stat_write_disable_smc),hl
-	 
+	
 	; Update PPU scheduler to do events once per "frame"
 	push ix
 	ld ix,z80codebase+ppu_expired_lcd_off
@@ -1007,16 +1007,16 @@ _
 _
 	 bit 7,c
 	 jp z,return_from_write_helper
+	 ; Get the current cycle offset safely
+	 jp.sis lcd_enable_disable_helper
+	 
+lcd_enable_disable_continue:
 	 ld a,(LCDC_7_smc)
 	 xor $08	;JR NZ vs JR Z
 	 ld (LCDC_7_smc),a
-	 jp.sis pe,lcd_enable_helper
+	 jp po,lcd_disable_helper
+	 ; Enable the LCD
 	 
-	 ; Disable the LCD
-	 call do_lcd_disable
-	 jp.sis reschedule_event_PPU
-	 
-do_lcd_enable:
 	 ; Enable cache updates for STAT and LY registers
 	 ld a,$ED ;LD HL,I
 	 ld (z80codebase+updateSTAT_disable_smc),a
@@ -1046,10 +1046,6 @@ do_lcd_enable:
 	 ld hl,lcd_on_STAT_handler
 	 ld.sis (event_counter_checker_slot_PPU),hl
 	 
-	 ; Get the value of DIV
-	 ld hl,i
-	 add hl,de
-	 ex de,hl
 	 ; Schedule vblank relative to now (minus 1 cycle because the LCD is wack)
 	 ld hl,(CYCLES_PER_SCANLINE * 144) - 1
 	 add hl,de
@@ -1094,6 +1090,43 @@ _
 	 ; trigger an event unconditionally
 	 jp.sis trigger_event_pushed
 	
+lcd_disable_helper:
+	; Determine whether the persistent vblank time has already passed
+	push bc
+	 ld.sis bc,(vblank_counter)
+	 ; Check how many cycles the persistent vblank is before the current vblank
+	 ASSERT_NC
+	 sbc hl,bc
+	 ; Check if the persistent vblank is at or after the current vblank
+	 ; This should work in both single and double speed
+	 ld a,h
+	 cp (((CYCLES_PER_SCANLINE * 10) + 1) >> 7) + 1
+	 ; If so, use the persistent vblank
+	 jr c,_
+	 ; Get the number of cycles left until the current vblank
+	 ex de,hl
+	 sbc hl,bc
+	 ; If current vblank was passed in this instruction, make no change
+	 ld a,h
+	 or a
+	 jr z,++_
+	 ; Check whether the current time is after the persistent vblank time
+	 sbc.s hl,de
+	 ; If not, use the persistent vblank time
+	 ex de,hl
+	 jr c,_
+	 ; If so, use the current time
+	 add hl,de
+_
+	 add hl,bc
+	 ld.sis (vblank_counter),hl
+_
+	pop bc
+	
+	; Disable the LCD
+	call do_lcd_disable
+	jp.sis reschedule_event_PPU
+	
 lcd_on_STAT_restore_helper:
 	ld a,$C9
 	ld (z80codebase+lcd_on_STAT_restore),a
@@ -1118,12 +1151,15 @@ div_write_helper:
 	  ; If bit 11 of DIV was already reset, delay audio counter
 	  ld a,d
 	  cpl
-	  add a,a
-	  and $10 ;4096 >> 8
-	  ld (z80codebase+audio_counter+1),a
+	  and $08 ;(4096 >> 8) >> 1
 	  ld.sis hl,(vblank_counter)
 	  sbc hl,de
 	  ld.sis (vblank_counter),hl
+	  add a,a
+	  ld (z80codebase+audio_counter+1),a
+	  ld.sis hl,(persistent_vblank_counter)
+	  sbc hl,de
+	  ld.sis (persistent_vblank_counter),hl
 	  ld.sis hl,(ppu_counter)
 	  add hl,de
 	  ld.sis (ppu_counter),hl
