@@ -2166,6 +2166,8 @@ handle_waitloop_finish:
 	ex af,af'
 	jp (ix)
 	
+handle_waitloop_set_sentinel_push:
+	push.l hl
 handle_waitloop_set_sentinel:
 	ld hl,waitloop_sentinel
 	ld (event_address),hl
@@ -2194,10 +2196,21 @@ handle_waitloop_variable:
 	pop ix
 	ex af,af'
 	exx
-	; Skip straight to the counter expiration
+	; Add the next jump cycles, and don't skip anything if expired
 	ld c,(ix+5)
+	add a,c
+	jr nc,_
+	inc iyh
+	jr z,handle_waitloop_overflow
+_
+	; Check if the waitloop sentinel is set
+	ld de,(event_address)
+	inc d
+	dec d
+	jr nz,handle_waitloop_set_sentinel_push
+	; Skip straight to the counter expiration
 	ld iyl,c
-	ld iyh,0
+	ld iyh,d
 	jr handle_waitloop_variable_finish
 
 ophandlerEI_delay_expired:
