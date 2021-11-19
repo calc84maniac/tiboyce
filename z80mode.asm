@@ -3555,7 +3555,11 @@ mem_write_cart_always:
 	ld a,h
 mem_write_cart_always_a:
 mbc_impl:
-	.block MBC_IMPL_SIZE
+	; No-MBC default implementation
+	ld a,iyl
+	ex af,af'
+	ret
+	.block MBC_IMPL_SIZE - ($ - mbc_impl)
 mbc_zero_page_continue:
 	 ; Adjust value to physical page based on ROM size
 mbc1_large_rom_smc = $ ; Or combine with upper bits of page

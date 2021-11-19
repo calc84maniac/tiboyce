@@ -624,6 +624,9 @@ _
 	
 	APTR(mbc_impl_code - MBC_IMPL_SIZE)
 	ld a,(mbc)
+	; For no-MBC, skip the copy (and C=0 as desired)
+	cp 1
+	jr c,setup_ram_bank_no_rtc_trampoline
 	ld e,a
 	ld d,MBC_IMPL_SIZE
 	; Fold MBC3+RTC into MBC3
