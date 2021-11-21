@@ -1033,7 +1033,7 @@ _
 	inc a
 	ld (WX_smc_3),a
 	jr c,_
-	ld a,$18 ;JR (overriding default JR C)
+	ld a,$18 ;JR (overriding default JR NZ)
 	ld (WX_smc_1),a
 _
 	

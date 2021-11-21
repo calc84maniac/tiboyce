@@ -416,8 +416,8 @@ scroll_write_WX:
 	 inc a
 	 ld (WX_smc_3),a
 	 sbc a,a
-	 and $20
-	 or $18	;JR vs JR C
+	 and $08
+	 add a,$18	;JR vs JR NZ
 	 ld (WX_smc_1),a
 	 jr scroll_write_done_swap
 	

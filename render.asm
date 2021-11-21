@@ -552,16 +552,18 @@ LCDC_5_smc:
 	   ; Carry flag is reset
 	   jr nc,scanline_no_window
 	 
-	   ld a,c
 WY_smc = $+1
-	   cp 0
-WX_smc_1:
-	   jr c,scanline_no_window
-	   
-WX_smc_2 = $+1
 	   ld a,0
-	   sub b
-	   call nc,scanline_do_render
+window_trigger_smc_1 = $
+	   xor c ; Replaced with XOR A
+WX_smc_1 = $
+	   jr nz,scanline_no_window
+	   
+window_trigger_smc_2 = $
+	   jr do_window_trigger ; Replaced with SUB B \ ADD A,n
+WX_smc_2 = $
+	   .db 0
+	   call c,scanline_do_render
 	 
 window_tile_ptr = $+2
 	   ld.sis sp,(vram_tiles_start & $FFFF) + $80	;(+$2000) (-$80)
@@ -603,6 +605,15 @@ render_scanline_next:
 	 call sync_frame_flip
 	pop bc
 	ret
+	
+do_window_trigger:
+	   ld a,$AF ; XOR A
+	   ld (window_trigger_smc_1),a
+	   ld a,$90 ; SUB B
+	   ld (window_trigger_smc_2),a
+	   ld a,$C6 ; ADD A,n
+	   ld (window_trigger_smc_2+1),a
+	   jr window_trigger_smc_1
 	
 palettecodesize = $-mpLcdPalette
 	.org palettecode+palettecodesize

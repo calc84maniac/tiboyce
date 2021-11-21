@@ -414,11 +414,18 @@ _
 	ld (scanlineLUT_ptr),hl
 	ld (scanlineLUT_sprite_ptr),hl
 	ld (scanlineLUT_palette_ptr),hl
+	; Reset window state
 	ld a,(hram_base+LCDC)
 	rrca
 	and $20
 	add a,(vram_tiles_start >> 8) & $FF
 	ld (window_tile_ptr+1),a
+	ld a,$A9 ;XOR C
+	ld (window_trigger_smc_1),a
+	ld a,$18 ;JR
+	ld (window_trigger_smc_2),a
+	ld a,do_window_trigger - (window_trigger_smc_2+2)
+	ld (window_trigger_smc_2+1),a
 	; Disable rendering catchup during vblank (or LCD off)
 	xor a
 	ld r,a
