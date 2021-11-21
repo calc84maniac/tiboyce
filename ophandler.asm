@@ -1017,6 +1017,15 @@ lcd_enable_disable_continue:
 	 jp po,lcd_disable_helper
 	 ; Enable the LCD
 	 
+	 ; Force skip rendering the first frame after the LCD is enabled,
+	 ; this is consistent with hardware behavior to avoid glitch frames
+	 ld a,$7E ;RSMIX
+	 ld (z80codebase+updateSTAT_enable_catchup_smc),a
+	 ld (z80codebase+updateSTAT_full_enable_catchup_smc),a
+	 ld (z80codebase+ppu_mode0_enable_catchup_smc),a
+	 ld (z80codebase+ppu_mode2_enable_catchup_smc),a
+	 ld (z80codebase+ppu_lyc_enable_catchup_smc),a
+	 
 	 ; Enable cache updates for STAT and LY registers
 	 ld a,$ED ;LD HL,I
 	 ld (z80codebase+updateSTAT_disable_smc),a
