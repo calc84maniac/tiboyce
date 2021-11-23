@@ -462,6 +462,7 @@ DoItemCallback:
 	dec.s hl
 	add hl,bc
 	ld b,a
+	ld c,0
 	ld a,(de)
 	jp (hl)
 	
@@ -483,23 +484,27 @@ ItemChangeDigit:
 	cp 2
 	jr nz,_
 	ld hl,FrameskipValue
+	ld a,(current_config)
+	or a
+	jr z,_
+	ld c,(hl)
+	ld hl,GameFrameskipValue
+	ld a,(hl)
+	inc a
+	jr nz,_
+	ld (hl),c
 _
-	xor a
 	rrd
+	res 2,b
+	res 1,b
 	add a,b
-	cp 10
-	jr c,_
-	add a,10
-	jr c,_
-	xor a
-_
+	daa
 	rld
 	jr draw_current_menu_trampoline
 	
 ItemChangeOption:
 	ld d,b
 	ACALL(GetOption)
-	ld a,(bc)
 	add a,d
 	cp (hl)
 	jr c,_
@@ -659,6 +664,12 @@ draw_menu_title:
 	   ld (cursorCol),a
 	   push hl
 	    push de
+	     inc c
+	     ld a,' '
+	     jr nz,_
+	     ld a,'*'
+_
+	     call PutChar
 	     ACALL(PutStringFormat)
 	    pop hl
 	   pop de
@@ -824,14 +835,31 @@ _
 	ret
 	
 GetOption:
-	ld hl,OptionConfig
+	ld hl,current_config
 	ld bc,0
 	ld c,a
+	add a,a
+	ld a,(hl)
+	jr c,++_
+	dec a
+	ld hl,OptionConfig
+	jr nz,_
+	ld hl,GameOptionConfig
+_
 	add hl,bc
+	ld a,(hl)
+	cp $FF
+	jr nz,_
+	push bc
+	 ld c,game_config_start - config_start
+	 sbc hl,bc
+	 ld a,(hl)
+	 add hl,bc
+	pop bc
+_
 	push hl
 	 ld hl,OptionList
-	 ld b,2
-	 mlt bc
+	 sla c
 	 add hl,bc
 	 ld bc,(ArcBase)
 	 add hl,bc
@@ -846,7 +874,12 @@ GetKeyConfig:
 	or a
 	sbc hl,hl
 	ld l,a
+	ld a,(current_config)
+	or a
 	ld bc,KeyConfig
+	jr z,_
+	ld bc,GameKeyConfig
+_
 	add hl,bc
 	ret
 	
@@ -855,7 +888,15 @@ ItemDisplayDigit:
 	sbc hl,hl
 	cp 2
 	ld a,(current_state)
-	jr nz,_
+	jr nz,++_
+	ld a,(current_config)
+	or a
+	ld a,(GameFrameskipValue)
+	jr z,_
+	cp $FF
+	jr nz,++_
+	ld c,a
+_
 	ld a,(FrameskipValue)
 _
 	ld l,a
@@ -873,6 +914,14 @@ ItemDisplayKey:
 	jr z,_
 	ld a,57
 _
+	ld c,(hl)
+	inc c
+	jr nz,_
+	ld bc,game_config_start - config_start
+	sbc hl,bc
+	ld c,b
+_
+	dec c
 	add a,(hl)
 	push de
 	 APTR(KeyNames)
@@ -882,7 +931,10 @@ _
 ItemDisplayOption:
 	ACALL(GetOption)
 	inc hl
-	ld a,(bc)
+	push af
+	 ld a,(bc)
+	 ld c,a
+	pop af
 ItemDisplayKeyEntry:
 	ld b,a
 	or a
@@ -918,6 +970,7 @@ OptionList:
 	.dw OptionScalingType+1
 	.dw OptionMessageDisplay+1
 	.dw OptionAdjustColors+1
+	.dw OptionConfigSelect+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -950,27 +1003,29 @@ ItemSelectCallbacks:
 	.dw ItemSelectRom+1
 	
 MainMenu:
-	.db 9
+	.db 10
 	.db 0,9
 	.db "TI-Boy CE Alpha v0.1.3\n https://calc84maniac.github.io/tiboyce",0
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT | ITEM_ROMONLY,0, 50,1,"Load State Slot %c",0
+	.db ITEM_DIGIT | ITEM_ROMONLY,0, 50,0,"Load State Slot %c",0
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT | ITEM_ROMONLY,1, 60,1,"Save State Slot %c",0
+	.db ITEM_DIGIT | ITEM_ROMONLY,1, 60,0,"Save State Slot %c",0
+	.db "Choose configuration options to edit.\n Inherited global options show a '*'.\n Press DEL to delete a per-game option.",0
+	.db ITEM_OPTION | ITEM_ROMONLY,option_config_count-$81, 80,0,"Config: %-8s",0
 	.db "Select to set appearance and\n frameskip behavior.",0
-	.db ITEM_LINK,2, 80,1,"Graphics Options",0
+	.db ITEM_LINK,2, 100,0,"Graphics Options",0
 	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
-	.db ITEM_LINK,3, 100,1,"Control Options",0
+	.db ITEM_LINK,3, 110,0,"Control Options",0
 	.db "Select to manage miscellaneous options.",0
-	.db ITEM_LINK,4, 120,1,"Emulation Options",0
+	.db ITEM_LINK,4, 120,0,"Emulation Options",0
 	.db "Select to load a new game\n (will exit a currently playing game).",0
-	.db ITEM_LINK,1, 140,1,"Load new game",0
+	.db ITEM_LINK,1, 140,0,"Load new game",0
 	.db "Select to reset the Game Boy\n with the current game loaded.",0
-	.db ITEM_CMD | ITEM_ROMONLY,3, 150,1,"Restart game",0
+	.db ITEM_CMD | ITEM_ROMONLY,3, 150,0,"Restart game",0
 	.db "Select to exit this menu and\n resume gameplay.",0
-	.db ITEM_CMD | ITEM_ROMONLY,0, 160,1,"Return to game",0
+	.db ITEM_CMD | ITEM_ROMONLY,0, 160,0,"Return to game",0
 	.db "Select to exit the emulator and\n return to TI-OS.",0
-	.db ITEM_CMD,2, 180,1,"Exit TI-Boy CE",0
+	.db ITEM_CMD,2, 180,0,"Exit TI-Boy CE",0
 	
 NoRomLoadedDescription:
 	.db _-$-1,"No ROM currently loaded"
@@ -1058,6 +1113,11 @@ EmulationMenu:
 	.db ITEM_OPTION,5, 90,1,"Daylight Saving Time: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
+	
+OptionConfigSelect:
+	.db 2
+	.db "global",0
+	.db "per-game",0
 	
 OptionFrameskipType:
 	.db 3

@@ -122,14 +122,15 @@ NoRomMenuLoop:
 	; Set current description and main menu selection
 	APTR(NoRomLoadedDescription)
 	ld (current_description),hl
-	ld a,6
+	ld a,7
 	ld (main_menu_selection),a
 	
-	; Reset exit reason, ROM name, and state index
+	; Reset exit reason, ROM name, state index, and selected config
 	xor a
 	ld (exitReason),a
 	ld (ROMName+1),a
 	ld (current_state),a
+	ld (current_config),a
 	; Start with Load ROM menu
 	inc a
 	ACALL(emulator_menu)
@@ -223,25 +224,6 @@ InsertMemSafe:
 	ld (asm_prgm_size),hl
 	ret
 	
-	; Input: HL = deletion point, pointing to (fake) size bytes
-	; Output: Memory is deleted according to size bytes, asm_prgm_size is adjusted
-DelMemSafeSizeBytes:
-	ld de,(hl)
-	inc.s de
-	inc de
-	
-	; Input:  HL = deletion point
-	;         DE = deletion size
-	; Output: Memory is deleted, asm_prgm_size is adjusted
-DelMemSafe:
-	push hl
-	 ld hl,(asm_prgm_size)
-	 or a
-	 sbc hl,de
-	 ld (asm_prgm_size),hl
-	pop hl
-	jp _DelMem
-	
 	; Input: HL = filename
 	;        DE = location to convert
 	;        Note: Location must have size bytes initialized and
@@ -287,19 +269,74 @@ ConvertMemToFile:
 	pop hl
 	ret
 	
-StartROMAutoStateError:
+LoadROMAndRAMFailed:
+	push af
+	 ld hl,game_config_start
+	 ACALL(DelMemSafeSizeBytes)
+	pop af
+	ret
+	
+StartROM:
+	; Insert memory to hold the game config and initialize to default config
+	APTR(DefaultGameConfig)
+	push hl
+	 ld hl,game_config_start
+	 ld de,game_config_end - game_config_start
+	 ACALL(InsertMemSafe)
+	pop hl
+	ret c
+	ldir
+	
+	; Look up the game config file and apply it
+	ld hl,ROMName
+	push hl
+	 xor a
+_
+	 inc hl
+	 cp (hl)
+	 jr nz,-_
+	 ld (hl),'C'
+	 inc hl
+	 ld (hl),'f'
+	 inc hl
+	 ld (hl),'g'
+	 inc hl
+	 ld (hl),a
+	pop hl
+	ACALL(LookUpAppvar)
+	ld de,game_config_start + (FrameskipValue - config_start)
+	ACALL(LoadConfigFileAny)
+	
+	ACALL_SAFERET(LoadROMAndRAMRestoreName)
+	jr c,LoadROMAndRAMFailed
+	
+	xor a
+	ld (emulatorMessageText),a
+	ld (current_state),a
+	ACALL(LoadStateFiles)
+	push af
+	 ld a,'0'
+	 ld (current_state),a
+	pop af
+	jr nc,StartROMAutoStateNoError
+	
 	cp ERROR_NOT_ENOUGH_MEMORY
 	jr nz,RestartFromHere
 	ld hl,(cram_size)
-	ld de,6
+	ld de,(game_config_end - game_config_start) + 6
 	add hl,de
 	ex de,hl
-	ld hl,save_state_size_bytes
+	ld hl,game_config_start
 	ACALL(DelMemSafe)
-_
+OutOfMemoryFinish:
 	ld a,ERROR_NOT_ENOUGH_MEMORY
 	scf
 	ret
+	
+StartROMAutoStateNoError:
+	ld de,AutoStateLoadedMessage
+	ACALL(SetEmulatorMessage)
+	jr StartFromHere
 	
 StartROMInitStateOutOfMemory:
 	xor a
@@ -315,28 +352,10 @@ StartROMInitStateOutOfMemory:
 	set 1,(hl)
 	ld hl,(errorArg)
 	push hl
-	 ACALL_SAFERET(SaveStateFiles)
+	 ACALL_SAFERET(SaveStateFilesAndGameConfig)
 	pop hl
 	ld (errorArg),hl
-	jr -_
-	
-StartROM:
-	ACALL_SAFERET(LoadROMAndRAM)
-	ret c
-	
-	xor a
-	ld (emulatorMessageText),a
-	ld (current_state),a
-	ACALL(LoadStateFiles)
-	push af
-	 ld a,'0'
-	 ld (current_state),a
-	pop af
-	jr c,StartROMAutoStateError
-	
-	ld de,AutoStateLoadedMessage
-	ACALL(SetEmulatorMessage)
-	jr StartFromHere
+	jr OutOfMemoryFinish
 	
 RestartFromHere:
 	ld hl,save_state_size_bytes
@@ -1326,13 +1345,15 @@ ExitDone:
 	push af
 	 xor a
 	 ld (current_state),a
-	 ACALL_SAFERET(SaveStateFiles)
+	 ACALL_SAFERET(SaveStateFilesAndGameConfig)
 	pop af
 	ret
 	
 LoadConfigFile:
 	ld hl,ConfigFileName
 	ACALL(LookUpAppvar)
+	ld de,FrameskipValue
+LoadConfigFileAny:
 	ret c
 	
 	; Check the version byte
@@ -1341,48 +1362,113 @@ LoadConfigFile:
 	dec a
 	ret nz
 	
-	ld de,FrameskipValue
 	ld bc,0
 	ld c,(hl)
 	inc hl
 	ld a,c
 	dec a
-	cp option_config_count
+	sub option_config_count
 	ret nc
 	ldir
 	
-	ld de,KeyConfig
+	cpl
+	ld c,a
+	ex de,hl
+	add hl,bc
+	ex de,hl
 	ld c,(hl)
 	inc hl
 	ld a,c
 	dec a
 	cp key_config_count
 	ret nc
+	inc de
 	ldir
 	ret
+
+SaveStateFilesAndGameConfig:
+	ACALL_SAFERET(SaveStateFiles)
+	
+	; Generate the config file name
+	ld hl,ROMName
+	push hl
+	 xor a
+_
+	 inc hl
+	 cp (hl)
+	 jr nz,-_
+	 dec hl
+	 ld (hl),'g'
+	 dec hl
+	 ld (hl),'f'
+	 dec hl
+	 ld (hl),'C'
+	
+	 ; Check if the config is still default
+	 APTR(DefaultGameConfig)
+	 ld de,game_config_start
+	 push de
+	  ld bc,game_config_end - game_config_start
+	  call memcmp
+	 pop de
+	pop hl
+	jr nz,SaveConfigFileAny
+	
+	; If so, delete the config file and memory
+	push de
+	 call _Mov9ToOP1
+	 call _chkFindSym
+	 call nc,_DelVarArc
+	pop de
+SaveConfigFileDelMem:
+	ex de,hl
+	
+	; Input: HL = deletion point, pointing to (fake) size bytes
+	; Output: Memory is deleted according to size bytes, asm_prgm_size is adjusted
+DelMemSafeSizeBytes:
+	ld de,(hl)
+	inc.s de
+	inc de
+	
+	; Input:  HL = deletion point
+	;         DE = deletion size
+	; Output: Memory is deleted, asm_prgm_size is adjusted
+DelMemSafe:
+	push hl
+	 ld hl,(asm_prgm_size)
+	 or a
+	 sbc hl,de
+	 ld (asm_prgm_size),hl
+	pop hl
+	jp _DelMem
 	
 SaveConfigFile:
 	ld hl,ConfigFileName
+	ld de,config_start
+SaveConfigFileAny:
 	push hl
-	 ACALL(LookUpAppvar)
+	 push de
+	  ACALL(LookUpAppvar)
+	 pop de
 	 jr c,_
 	
 	 dec hl
 	 dec hl
 	 inc bc
 	 inc bc
-	 ld de,config_start
-	 call memcmp
+	 push de
+	  call memcmp
+	 pop de
 	pop hl
-	ret z
-	
+	jr z,SaveConfigFileDelMem
 	push hl
-	 call _Mov9ToOP1
-	 call _chkFindSym
-	 call nc,_DelVarArc
+	 push de
+	  call _Mov9ToOP1
+	  call _chkFindSym
+	  call nc,_DelVarArc
+	 pop de
 _
 	pop hl
-	ld de,config_start
 	ACALL(ConvertMemToFile)
 	AJUMP(ArchiveWithWarning)
 	
@@ -2999,6 +3085,20 @@ DefaultPaletteIndexTable:
 	.db $A8,$6A,$6E,$13,$A0,$2D,$A8,$2B,$AC,$64,$AC,$6D,$87
 	.db $BC,$60,$B4,$13,$72,$7C,$B5,$AE,$AE,$7C,$7C,$65,$A2
 	.db $6C,$64,$85
+	
+DefaultGameConfig:
+; Size bytes
+	.dw config_end - ConfigVersion
+; Version
+	.db 1	
+; Number of option bytes
+	.db option_config_count
+; Option bytes defaulting to global
+	.block option_config_count, $FF
+; Number of key bytes
+	.db key_config_count
+; Key bytes defaulting to global
+	.block key_config_count, $FF
 	
 #macro DEFINE_ERROR(name, text)
 	#define NUM_ERRORS eval(NUM_ERRORS+1)

@@ -1060,6 +1060,10 @@ menuNextItem:
 ; The currently chosen save state index.
 current_state:
 	.db 0
+; The currently chosen configuration to edit.
+; 0=Global, 1=Game
+current_config:
+	.db 0
 ; The currently set LCD settings
 currentLcdSettings:
 	.dl originalLcdSettings
@@ -1106,8 +1110,8 @@ originalLcdSettings:
 	
 	.echo "User RAM code size: ", $ - userMem
 	
-	; Pad to an even number of bytes
-	.block (-$) & 1
+	; Pad to an odd number of bytes
+	.block (~$) & 1
 	
 ; Active configuration info:
 config_start:
@@ -1175,8 +1179,15 @@ program_end:
 program_size = program_end - userMem
 	.echo "User RAM program size: ", program_size
 
-; The size of the save state is located at the end of the program.
-save_state_size_bytes:
+; Space for the game-specific config is located at the end of the program.
+game_config_start:
+GameFrameskipValue = game_config_start + (FrameskipValue - config_start)
+GameOptionConfig = game_config_start + (OptionConfig - config_start)
+GameKeyConfig = game_config_start + (KeyConfig - config_start)
+game_config_end = game_config_start + (config_end - config_start)
+
+; The size of the save state is located after the game-specific config.
+save_state_size_bytes = game_config_end
 
 save_state_start = save_state_size_bytes + 3
 ; A saved copy of OAM/HRAM, when saving/loading state. 512 bytes in size.
