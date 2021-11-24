@@ -812,6 +812,29 @@ read_config_item:
 	ld a,(ix-1)
 	ret
 	
+; Checks whether the digit item is load state and the state exists
+check_valid_load_state:
+	; Return zero if no ROM loaded
+	or a
+	ret z
+	; Return non-zero if not Load State
+	inc hl
+	ld a,(hl)
+	dec hl
+	or a
+	ret nz
+check_valid_state:
+	ld a,(current_state)
+	sub '0'-1
+	ld bc,(existing_state_map)
+_
+	srl b
+	rr c
+	dec a
+	jr nz,-_
+	adc a,a
+	ret
+	
 ; Sets the current string BG color. Must be called before SetStringColor.
 SetStringBgColor:
 	ld (PutChar_BgColorSMC1),a
@@ -1067,16 +1090,19 @@ menuPrevItem:
 ; Index of the next menu item
 menuNextItem:
 	.db 0
+; The currently chosen configuration to edit. Must precede current_state.
+; 0=Global, 1=Game
+current_config:
+	.db 0
 ; The currently chosen save state index.
 current_state:
 	.db 0
 ; Boolean for whether to auto save state. Must follow current_state.
 should_auto_save:
 	.db 0
-; The currently chosen configuration to edit.
-; 0=Global, 1=Game
-current_config:
-	.db 0
+; A bitmap of existing save states for the currently loaded game.
+existing_state_map:
+	.dw 0
 ; The currently set LCD settings
 currentLcdSettings:
 	.dl originalLcdSettings

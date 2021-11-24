@@ -318,8 +318,25 @@ _
 	ld (current_state),a
 	ACALL(LoadStateFiles)
 	push af
-	 ld a,'0'
+	 ; Build the existing state map
+	 ld a,'9'+1
+_
+	 dec a
 	 ld (current_state),a
+	 push hl
+	  ACALL(GetStateFileName)
+	  ACALL(LookUpAppvar)
+	 pop hl
+	 ccf
+	 adc hl,hl
+	 ld a,(current_state)
+	 cp '0'
+	 jr nz,-_
+	 ld a,l
+	 ld (existing_state_map),a
+	 ld a,h
+	 and 3
+	 ld (existing_state_map+1),a
 	pop af
 	jr nc,StartROMAutoStateNoError
 	
@@ -1968,19 +1985,9 @@ SaveState:
 	 ld hl,(current_state)
 	 ld a,l
 	 or a
-	 jr nz,_
+	 jr nz,SaveManualState
 	 or h ;should_auto_save
-	 jr z,SaveAutoStateDeleteMem
-_
-	 
-	 ld hl,save_state_size_bytes
-	 push hl
-	  ACALL(CompressFile)
-	 pop de
-	 ld hl,ROMName
-	 ACALL(ConvertMemToFile)
-	 ACALL_SAFERET(ArchiveWithWarning)
-	 jr ArchiveSaveRAM
+	 jr nz,SaveAutoState
 	
 SaveAutoStateDeleteMem:
 	 ld hl,save_state_size_bytes
@@ -2002,14 +2009,42 @@ ArchiveWithWarning:
 	ld a,ERROR_NOT_ENOUGH_ARCHIVE
 DisplayWarning:
 	APTR(warning_text)
-	jr _
+	jr DisplayErrorAny
+
+SaveManualState:
+	 ; Update the existing state mao
+	 sbc hl,hl
+	 add a,1-'0' ; Sets carry
+_
+	 adc hl,hl
+	 dec a
+	 jr nz,-_
+	 ex de,hl
+	 ld hl,existing_state_map
+	 or e
+	 jr nz,_
+	 inc hl
+	 ld a,d
+_
+	 or (hl)
+	 ld (hl),a
+	 
+SaveAutoState:
+	 ld hl,save_state_size_bytes
+	 push hl
+	  ACALL(CompressFile)
+	 pop de
+	 ld hl,ROMName
+	 ACALL(ConvertMemToFile)
+	 ACALL_SAFERET(ArchiveWithWarning)
+	 jr ArchiveSaveRAM
 
 	; A = error code
 	; (errorArg) = error argument
 	; Returns A=0 and Z flag set if ON was pressed
 DisplayError:
 	APTR(error_text)
-_
+DisplayErrorAny:
 	ld de,(current_buffer)
 	push af
 	 push de
@@ -3142,4 +3177,7 @@ StateSavedMessage:
 	
 StateSlotMessage:
 	.db "State %c selected",0
+	
+StateNotFoundMessage:
+	.db "State %c not found",0
 	

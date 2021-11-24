@@ -266,10 +266,13 @@ _
 key_smc_save_state = $+2
 	    bit 1,(ix+2*2)	;STO>
 	    jr nz,_
-	    inc a
 key_smc_load_state = $+2
 	    bit 2,(ix+2*2)	;LN
 	    jr z,++_
+	    call check_valid_state
+	    ld hl,(current_state)
+	    ld de,StateNotFoundMessage
+	    jr z,load_state_not_found
 _
 	    ld (main_menu_selection),a
 	    ld a,4
@@ -281,8 +284,9 @@ key_smc_state_slot = $+2
 	    call update_state_with_numpad
 	    ld a,l
 	    ld (current_state),a
+	    ld de,StateSlotMessage
+load_state_not_found:
 	    push hl
-	     ld de,StateSlotMessage
 	     ld a,30
 	     ACALL(SetEmulatorMessageWithDuration)
 	    pop hl

@@ -367,6 +367,14 @@ CmdExit:
 
 emulator_menu_ingame:
 	call convert_palette_for_menu
+	; If the state slot was changed, verify load state is valid
+	ld hl,main_menu_selection
+	ld b,(hl)
+	djnz _
+	call check_valid_state
+	jr nz,_
+	inc (hl)
+_
 	xor a
 emulator_menu:
 	push af
@@ -494,12 +502,13 @@ _
 	jr redraw_current_menu
 	
 ItemChangeDigit:
+	ld e,a
 	ld hl,current_state
-	cp 2
+	sub 2
 	jr nz,_
+	dec hl
+	or (hl) ;current_config
 	ld hl,FrameskipValue
-	ld a,(current_config)
-	or a
 	jr z,_
 	ld c,(hl)
 	ld hl,GameFrameskipValue
@@ -508,12 +517,18 @@ ItemChangeDigit:
 	jr nz,_
 	ld (hl),c
 _
+	ld a,b
+	and 9
+	ld d,a
+_
 	rrd
-	res 2,b
-	res 1,b
-	add a,b
+	add a,d
 	daa
 	rld
+	ld a,e
+	or a
+	call z,check_valid_state
+	jr z,-_
 	jr draw_current_menu_trampoline
 	
 ItemDeleteDigit:
@@ -675,12 +690,15 @@ draw_menu_loop:
 _
 	  xor a
 	  cpir
+	  ld a,(hl)
+	  add a,a
+	  jr nc,_
+	  cp ITEM_DIGIT<<1
 	  ld a,(ROMName+1)
+	  call z,check_valid_load_state
 	  or a
-	  jr nz,_
 	  ld a,GRAY
-	  bit 7,(hl)
-	  jr nz,draw_menu_item_push
+	  jr z,draw_menu_item_push
 _
 	 pop bc
 	 push bc
