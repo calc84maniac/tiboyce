@@ -469,6 +469,17 @@ DoItemCallback:
 	ld a,(de)
 	jp (hl)
 	
+ItemDeleteKeyUnmap:
+	; Don't allow unmapping in-game buttons or menu
+	ld a,d
+	dec a
+	cp 9
+	ret c
+	ld a,41
+	cp (hl)
+	jr nz,ItemDeleteKeyUnmapFinish
+	ret
+	
 ItemChangeRom:
 	ld hl,romListFrameStart
 	ld a,(hl)
@@ -516,11 +527,18 @@ ItemDeleteDigit:
 	jr draw_current_menu_trampoline
 	
 ItemDeleteKey:
+	ld d,a
 	ACALL(GetKeyConfig)
+	; If already inheriting from global, unmap instead
+	ld a,(hl)
+	inc a
+	jr z,ItemDeleteKeyUnmap
+	; If global config is selected, unmap
 	ld a,(current_config)
 	dec a
-	ret nz
+	jr nz,ItemDeleteKeyUnmap
 	dec a
+ItemDeleteKeyUnmapFinish:
 	ld (hl),a
 	jr draw_current_menu_trampoline
 	
@@ -1133,13 +1151,13 @@ ControlsMenu:
 	.db ITEM_KEY,8, 120,1,"Start:  %-9s",0
 	.db "Open the emulator menu.",0
 	.db ITEM_KEY,9, 135,1,"Open menu:  %-9s",0
-	.db "Enable or toggle turbo mode.",0
+	.db "Enable or toggle turbo mode.\n Press DEL to unmap this key.",0
 	.db ITEM_KEY,0, 145,1,"Turbo mode: %-9s",0
-	.db "Save state to the current slot.",0
+	.db "Save state to the current slot.\n Press DEL to unmap this key.",0
 	.db ITEM_KEY,10, 155,1,"Save state: %-9s",0
-	.db "Load state from the current slot.",0
+	.db "Load state from the current slot.\n Press DEL to unmap this key.",0
 	.db ITEM_KEY,11, 165,1,"Load state: %-9s",0
-	.db "Show or select the current state slot.\n Press a number while holding to select.",0
+	.db "Show or select the current state slot.\n Press a number while holding to select.\n Press DEL to unmap this key.",0
 	.db ITEM_KEY,12, 175,1,"State slot: %-9s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 190,1,"Back",0
@@ -1291,7 +1309,7 @@ KeyNames:
 	.db "sin",0
 	.db "apps",0
 	.db "XT0n",0
-	.db 0
+	.db "(none)",0
 	.db "sto>",0
 	.db "ln",0
 	.db "log",0
@@ -1346,7 +1364,7 @@ KeyNames:
 	.db "trig",0
 	.db "matrice",0
 	.db "XT0n",0
-	.db 0
+	.db "(rien)",0
 	.db "sto>",0
 	.db "ln",0
 	.db "log",0
