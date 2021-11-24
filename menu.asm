@@ -404,6 +404,8 @@ _
 	jr z,menu_select
 	cp 54-1
 	jr z,menu_select
+	cp 56-1
+	jr z,menu_delete
 	cp 15-1
 	jr nz,menu_loop
 	
@@ -437,8 +439,13 @@ menu_left_right:
 	add a,a
 	dec a
 	ld de,ItemChangeCallbacks
+_
 	ACALL(DoCurrentItemCallback)
 	jr menu_loop_trampoline
+	
+menu_delete:
+	ld de,ItemDeleteCallbacks
+	jr -_
 	
 menu_select:
 	ld de,ItemSelectCallbacks
@@ -496,6 +503,36 @@ _
 	add a,b
 	daa
 	rld
+	jr draw_current_menu_trampoline
+	
+ItemDeleteDigit:
+	cp 2
+	ret nz
+	ld a,(current_config)
+	dec a
+	ret nz
+	dec a
+	ld (GameFrameskipValue),a
+	jr draw_current_menu_trampoline
+	
+ItemDeleteKey:
+	ACALL(GetKeyConfig)
+	ld a,(current_config)
+	dec a
+	ret nz
+	dec a
+	ld (hl),a
+	jr draw_current_menu_trampoline
+	
+ItemDeleteOption:
+	or a
+	ret m
+	ACALL(GetOption)
+	ld a,(current_config)
+	dec a
+	ret nz
+	dec a
+	ld (bc),a
 	jr draw_current_menu_trampoline
 	
 ItemChangeOption:
@@ -901,6 +938,9 @@ ItemDisplayCmd:
 ItemChangeLink:
 ItemChangeCmd:
 ItemChangeKey:
+ItemDeleteLink:
+ItemDeleteCmd:
+ItemDeleteRom:
 	ret
 	
 ItemDisplayKey:
@@ -997,6 +1037,14 @@ ItemSelectCallbacks:
 	.dw ItemSelectOption+1
 	.dw ItemSelectKey+1
 	.dw ItemSelectRom+1
+	
+ItemDeleteCallbacks:
+	.dw ItemDeleteLink+1
+	.dw ItemDeleteCmd+1
+	.dw ItemDeleteDigit+1
+	.dw ItemDeleteOption+1
+	.dw ItemDeleteKey+1
+	.dw ItemDeleteRom+1
 	
 MainMenu:
 	.db 10
