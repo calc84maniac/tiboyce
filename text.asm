@@ -46,7 +46,11 @@ SetEmulatorMessageWithDuration:
 	ld (hl),a
 	inc hl
 	push hl
+	 ld a,(GameMessageDisplay)
+	 cp $FF
+	 jr nz,_
 	 ld a,(MessageDisplay)
+_
 	 or a
 	 call nz,_sprintf
 	pop hl
@@ -57,7 +61,7 @@ PutEmulatorMessage:
 	xor a
 	ld (cursorCol),a
 	ld (cursorRow),a
-	ld a,(ScalingMode)
+	ld a,(active_scaling_mode)
 	or a
 	ld a,BLACK_BYTE
 	jr nz,_

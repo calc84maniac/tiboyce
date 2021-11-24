@@ -149,6 +149,9 @@ LoadNewGameLoop:
 	ld bc,9
 	add hl,bc
 	ldir
+	; Switch to per-game config editing
+	ld a,1
+	ld (current_config),a
 	
 	ACALL_SAFERET(StartROM)
 	; If NC is returned, we're loading another game
@@ -341,15 +344,14 @@ StartROMAutoStateNoError:
 StartROMInitStateOutOfMemory:
 	xor a
 	ld (current_state),a
+	; Temporarily prevent auto state saving because state is clean
+	ld (should_auto_save),a
 	dec de
 	dec de
 	ld (de),a
 	dec de
 	inc a
 	ld (de),a
-	; Temporarily prevent auto state saving because state is clean
-	ld hl,AutoSaveState
-	set 1,(hl)
 	ld hl,(errorArg)
 	push hl
 	 ACALL_SAFERET(SaveStateFilesAndGameConfig)
@@ -1963,14 +1965,12 @@ SaveState:
 	 call _chkFindSym
 	 call nc,_DelVarArc
 	
-	 ld a,(current_state)
+	 ld hl,(current_state)
+	 ld a,l
 	 or a
 	 jr nz,_
-	 ld hl,AutoSaveState
-	 ld a,(hl)
-	 res 1,(hl)
-	 dec a
-	 jr nz,SaveAutoStateDeleteMem
+	 or h ;should_auto_save
+	 jr z,SaveAutoStateDeleteMem
 _
 	 
 	 ld hl,save_state_size_bytes
@@ -2594,7 +2594,7 @@ SetLcdSettingsFast:
 	ret
 	
 SetScalingMode:
-	ld a,(ScalingMode)
+	ld a,(active_scaling_mode)
 	or a
 	ld a,$33
 	jr nz,_
@@ -2707,7 +2707,11 @@ _
 	ld (update_palettes_bgp0_smc),hl
 	call update_palettes
 	
+	ld a,(GameSkinDisplay)
+	cp $FF
+	jr nz,_
 	ld a,(SkinDisplay)
+_
 	rra
 	jr nc,_
 	ld hl,(skin_file_ptr)

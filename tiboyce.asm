@@ -802,6 +802,16 @@ current_menu_selection = $+1
 	ld bc,main_menu_selection
 	ret
 	
+; Resolves the config item at IX via game and global config,
+; and advances to the next item.
+read_config_item:
+	ld a,(ix-config_start+game_config_start)
+	inc ix
+	cp $FF
+	ret nz
+	ld a,(ix-1)
+	ret
+	
 ; Sets the current string BG color. Must be called before SetStringColor.
 SetStringBgColor:
 	ld (PutChar_BgColorSMC1),a
@@ -1060,6 +1070,9 @@ menuNextItem:
 ; The currently chosen save state index.
 current_state:
 	.db 0
+; Boolean for whether to auto save state. Must follow current_state.
+should_auto_save:
+	.db 0
 ; The currently chosen configuration to edit.
 ; 0=Global, 1=Game
 current_config:
@@ -1182,6 +1195,8 @@ program_size = program_end - userMem
 ; Space for the game-specific config is located at the end of the program.
 game_config_start:
 GameFrameskipValue = game_config_start + (FrameskipValue - config_start)
+GameSkinDisplay = game_config_start + (SkinDisplay - config_start)
+GameMessageDisplay = game_config_start + (MessageDisplay - config_start)
 GameOptionConfig = game_config_start + (OptionConfig - config_start)
 GameKeyConfig = game_config_start + (KeyConfig - config_start)
 game_config_end = game_config_start + (config_end - config_start)

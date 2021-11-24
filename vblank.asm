@@ -121,7 +121,7 @@ NoSpeedDisplay:
 	    ; Swap buffers
 	    call prepare_next_frame
 	    call do_frame_flip
-	    ld a,(ScalingMode)
+	    ld a,(active_scaling_mode)
 	    or a
 	    call nz,do_scale_fill
 	    call sync_frame_flip
@@ -186,7 +186,7 @@ frameskip_end:
 	    ; Get keys
 	    ld ix,mpKeypadGrp0
 
-key_smc_turbo:
+key_smc_turbo = $+2
 	    bit 2,(ix+1*2)	;ZOOM
 turbo_keypress_smc = $
 	    jr z,_
@@ -203,23 +203,23 @@ turbo_skip_toggle:
 _
 	    
 	    ld a,$FF
-key_smc_right:
+key_smc_right = $+2
 	    bit 2,(ix+7*2)	;Right
 	    jr z,_
 	    dec a
 _
-key_smc_left:
+key_smc_left = $+2
 	    bit 1,(ix+7*2)	;Left
 	    jr z,_
 	    rlca
 	    xor 2
 _
-key_smc_up:
+key_smc_up = $+2
 	    bit 3,(ix+7*2)	;Up
 	    jr z,_
 	    res 2,a
 _
-key_smc_down:
+key_smc_down = $+2
 	    bit 0,(ix+7*2)	;Down
 	    jr z,_
 	    sub 4
@@ -228,29 +228,29 @@ key_smc_down:
 _
 	    ld (z80codebase+keys_low),a
 	    ld a,$FF
-key_smc_a:
+key_smc_a = $+2
 	    bit 5,(ix+1*2)	;2ND
 	    jr z,_
 	    dec a
 _
-key_smc_b:
+key_smc_b = $+2
 	    bit 7,(ix+2*2)	;ALPHA
 	    jr z,_
 	    res 1,a
 _
-key_smc_select:
+key_smc_select = $+2
 	    bit 7,(ix+3*2)	;X,T,0,n
 	    jr z,_
 	    res 2,a
 _
-key_smc_start:
+key_smc_start = $+2
 	    bit 6,(ix+1*2)	;MODE
 	    jr z,_
 	    res 3,a
 _
 	    ld (z80codebase+keys_high),a
 
-key_smc_menu:
+key_smc_menu = $+2
 	    bit 6,(ix+6*2)	;CLEAR
 	    jr z,_
 	    ex af,af'
@@ -263,11 +263,11 @@ key_smc_menu:
 	    jr keys_done
 _
 	    xor a
-key_smc_save_state:
+key_smc_save_state = $+2
 	    bit 1,(ix+2*2)	;STO>
 	    jr nz,_
 	    inc a
-key_smc_load_state:
+key_smc_load_state = $+2
 	    bit 2,(ix+2*2)	;LN
 	    jr z,++_
 _
@@ -275,7 +275,7 @@ _
 	    ld a,4
 	    ld (exitReason),a
 _
-key_smc_state_slot:
+key_smc_state_slot = $+2
 	    bit 3,(ix+2*2)	;LOG
 	    jr z,_
 	    call update_state_with_numpad
@@ -500,7 +500,7 @@ convert_palette_obp_finish:
 convert_palette_obp_restore:
 	ld hl,convert_palette_LUT + $88
 	ld de,-$11
-	ld a,(ScalingMode)
+	ld a,(active_scaling_mode)
 	or a
 	ld a,6
 	jr nz,_
@@ -529,7 +529,7 @@ _
 	ld hl,convert_palette_LUT + $44
 	ld de,-$11
 	ld b,4
-	ld a,(ScalingMode)
+	ld a,(active_scaling_mode)
 	or a
 	jr nz,_
 	ld l,b
@@ -558,8 +558,8 @@ convert_palette_row_smc_3 = $+1
 do_scale_fill:
 	ld hl,(current_display)
 	ld ix,160
-	ld a,(ScalingType)
-	ld b,a
+active_scaling_type = $+1
+	ld b,0
 	djnz do_scale_full
 	ld a,(hram_base+SCY)
 last_frame_scy = $+1
@@ -897,7 +897,7 @@ _
 	jr nc,-_
 	ld a,h
 	ld (scale_offset_preserve_smc_1),a
-	ld a,(ScalingMode)
+	ld a,(active_scaling_mode)
 	or a
 	ld a,l
 	jr nz,_
@@ -1083,7 +1083,7 @@ convert_palette_loop_continue:
 	jp sync_frame_flip
 	
 convert_palette_setup_obp:
-	ld a,(ScalingMode)
+	ld a,(active_scaling_mode)
 	or a
 	ld hl,convert_palette_LUT + $22
 	ld c,BG_COLOR_0 - 8
@@ -1131,7 +1131,8 @@ _
 	ret
 	
 convert_palette_setup:
-	ld a,(ScalingMode)
+active_scaling_mode = $+1
+	ld a,0
 	or a
 	ld hl,convert_palette_LUT + $23
 	ld b,4
@@ -1208,6 +1209,7 @@ setup_menu_palette:
 ;
 adjust_color:
 	; D = r
+adjust_color_enable_smc = $
 	ld a,l
 	and %00011111
 	ld d,a

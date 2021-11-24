@@ -201,8 +201,8 @@ runtime_error:
 _
 	ld (exitReason),a
 	; Temporarily prevent auto state saving because state is unrecoverable
-	ld hl,AutoSaveState
-	set 1,(hl)
+	xor a
+	ld (should_auto_save),a
 	AJUMP(ExitEmulationWithoutState)
 	
 lookup_gb_found_start:

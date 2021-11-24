@@ -19,16 +19,16 @@ ApplyConfiguration:
 	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
 	
 	; Frameskip value
-	ld hl,FrameskipValue
-	ld a,(hl)
+	ld ix,FrameskipValue
+	call read_config_item
 	ld (speed_display_smc_0),a
 	inc a
 	ld (frameskip_value_smc),a
 	ld (skippable_frames),a
-	inc hl
 	
 	; Frameskip type
-	ld a,(hl)
+	call read_config_item
+	ld c,a
 	sub 2
 	jr nz,_
 	ld (speed_display_smc_0),a
@@ -36,63 +36,54 @@ _
 	and $10
 	add a,$18
 	ld (frameskip_type_smc),a
-	ld a,(hl)
+	ld a,c
 	or a
 	jr z,_
 	ld a,no_frameskip - (frameskip_type_smc+2)
 _
 	ld (frameskip_type_smc+1),a
-	inc hl
 	
 	; Speed display
-	ld a,(hl)
+	call read_config_item
+	ld c,a
 	sub 1
 	sbc a,a
 	and NoSpeedDisplay - YesSpeedDisplay
 	add a,YesSpeedDisplay - (speed_display_smc_1 + 1)
 	ld (speed_display_smc_1),a
-	ld a,(hl)
+	ld a,c
 	sub 2
 	and $10
 	add a,$CE
 	ld (speed_display_smc_3),a
-	ld a,(hl)
+	ld a,c
 	sub 3
 	and $10
 	add a,$18
 	ld (speed_display_smc_2),a
-	inc hl
 	
-	; Auto-Archive
-	inc hl
+	; Auto Save State
+	call read_config_item
+	ld (should_auto_save),a
 	
 	; Palette selection
-	ld a,(hl)
-	inc hl
-	push hl
-	 ld hl,default_palette
-	 or a
-	 ld bc,0
-	 jr z,_
-	 APTR(ManualPaletteIndexTable-1)
-	 ld c,a
-	 add hl,bc
+	call read_config_item
+	ld hl,default_palette
+	or a
+	ld bc,0
+	jr z,_
+	APTR(ManualPaletteIndexTable-1)
+	ld c,a
+	add hl,bc
 _
-	 push bc
-	  ld a,(hl)
-	  ACALL(LoadPalettes)
-	  ld de,mpLcdPalette + (3*2)
-	  call update_palettes_obp_only
-	 pop bc
-	pop hl
-	
-	; Time zone
-	ld c,(hl)
-	inc hl
-	; Daylight saving time
 	ld a,(hl)
-	inc hl
-	push hl
+	push af
+	
+	 ; Time zone
+	 call read_config_item
+	 ld c,a
+	 ; Daylight saving time
+	 call read_config_item
 	 APTR(TimeZoneOffsetTable)
 	 add hl,bc
 	 ld e,(hl)
@@ -111,66 +102,73 @@ _
 	 add hl,de
 _
 	 ld (timeZoneOffset),hl
-	pop hl
 	
-	; Scaling mode
-	inc hl
-	; Skin display
-	inc hl
+	 ; Scaling mode
+	 call read_config_item
+	 ld (active_scaling_mode),a
+	 ; Skin display
+	 inc ix
 	
-	; Turbo toggle
-	ld a,(hl)
-	inc hl
-	dec a
-	and turbo_skip_toggle - (turbo_toggle_smc+1)
-	ld (turbo_toggle_smc),a
-	ld a,(turbo_active)
-	add a,a
-	add a,a
-	add a,a
-	add a,$20
-	ld (turbo_keypress_smc),a
+	 ; Turbo toggle
+	 call read_config_item
+	 dec a
+	 and turbo_skip_toggle - (turbo_toggle_smc+1)
+	 ld (turbo_toggle_smc),a
+	 ld a,(turbo_active)
+	 add a,a
+	 add a,a
+	 add a,a
+	 add a,$20
+	 ld (turbo_keypress_smc),a
 	
-	; Scaling type
-	inc hl
-	; Message display
-	inc hl
-	; Adjust colors
-	inc hl
+	 ; Scaling type
+	 call read_config_item
+	 ld (active_scaling_type),a
+	 ; Message display
+	 inc ix
+	 ; Adjust colors
+	 call read_config_item
+	 dec a
+	 and $C9 - $7C
+	 add a,$7C ;RET or LD A,L
+	 ld (adjust_color_enable_smc),a
+	pop af
+	; Load palettes only after setting adjust color SMC
+	ACALL(LoadPalettes)
+	ld de,mpLcdPalette + (3*2)
+	call update_palettes_obp_only
 	
 	; Key configuration
-	ld ix,key_smc_turbo
-	push hl
-	 APTR(KeySMCList)
-	 ex de,hl
-	pop hl
-	ld b,(hl)
-	inc hl
+	APTR(KeySMCList)
+	ex de,hl
+	ld hl,key_smc_turbo
+	ld ix,KeyConfig
+	ld b,key_config_count
 key_config_loop:
-	ld a,(hl)
+	call read_config_item
 	dec a
+	ld c,a
 	cpl
 	and %00111000
 	rrca
 	rrca
-	ld (ix+2),a
-	ld a,(hl)
+	ld (hl),a
 	inc hl
-	dec a
+	ld a,c
 	and %00000111
 	add a,a
 	add a,a
 	add a,a
 	add a,$46
-	ld (ix+3),a
+	ld (hl),a
 	ld a,(de)
 	inc de
-	add a,ixl
+	add a,l
 	jr nc,_
-	ld ixl,$FF
-	inc ix
+	ld l,$FF
+	inc hl
 _
-	ld ixl,a
+	ld l,a
 	djnz key_config_loop
 	ret
 	
@@ -266,9 +264,7 @@ load_single_palette_input_loop:
 	  push hl
 	   ld hl,(hl)
 	   push de
-	    ld a,(AdjustColors)
-		or a
-	    call nz,adjust_color
+	    call adjust_color
 	   pop de
 	   ld c,l
 	   ld b,h
@@ -1320,19 +1316,18 @@ KeyNames:
 	.db "suppr",0
 	
 KeySMCList:
-	.db key_smc_right - key_smc_turbo
-	.db key_smc_left - key_smc_right
-	.db key_smc_up - key_smc_left
-	.db key_smc_down - key_smc_up
-	.db key_smc_a - key_smc_down
-	.db key_smc_b - key_smc_a
-	.db key_smc_select - key_smc_b
-	.db key_smc_start - key_smc_select
-	.db key_smc_menu - key_smc_start
-	.db key_smc_save_state - key_smc_menu
-	.db key_smc_load_state - key_smc_save_state
-	.db key_smc_state_slot - key_smc_load_state
-	.db 0
+	.db key_smc_right - key_smc_turbo - 1
+	.db key_smc_left - key_smc_right - 1
+	.db key_smc_up - key_smc_left - 1
+	.db key_smc_down - key_smc_up - 1
+	.db key_smc_a - key_smc_down - 1
+	.db key_smc_b - key_smc_a - 1
+	.db key_smc_select - key_smc_b - 1
+	.db key_smc_start - key_smc_select - 1
+	.db key_smc_menu - key_smc_start - 1
+	.db key_smc_save_state - key_smc_menu - 1
+	.db key_smc_load_state - key_smc_save_state - 1
+	.db key_smc_state_slot - key_smc_load_state - 1
 	
 TimeZoneOffsetTable:
 	.db $00,$10,$20,$30,$38,$40,$48,$50,$58,$60,$68,$70,$80,$90,$98,$A0,$B0,$C0,$D0
