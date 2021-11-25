@@ -139,40 +139,68 @@ _
 	ACALL(LoadPalettes)
 	ld de,mpLcdPalette + (3*2)
 	call update_palettes_obp_only
+	; BC=0
 	
-	; Key configuration
-	APTR(KeySMCList)
-	ex de,hl
-	ld hl,key_smc_turbo
+	; Check for conflicting keys between configs
+	ld e,c
+key_conflict_retry:
 	ld ix,KeyConfig
-	ld b,key_config_count
-key_config_loop:
+	ld d,key_config_count
+key_conflict_loop:
 	call read_config_item
-	dec a
-	ld c,a
-	cpl
-	and %00111000
-	rrca
-	rrca
-	ld (hl),a
-	inc hl
-	ld a,c
-	and %00000111
-	add a,a
-	add a,a
-	add a,a
-	add a,$46
-	ld (hl),a
-	ld a,(de)
-	inc de
-	add a,l
-	jr nc,_
-	ld l,$FF
-	inc hl
+	jr nz,_
+	; This key is inherited from global, so make sure it has no conflict
+	; among game-specific keys
+	ld hl,GameKeyConfig
+	ld c,key_config_count
+	cpir
+	jr nz,_
+	; If a conflict was found, reset it to global and start over
+	dec hl
+	ld e,$FF
+	ld (hl),e
+	jr key_conflict_retry
 _
-	ld l,a
-	djnz key_config_loop
-	ret
+	dec d
+	jr nz,key_conflict_loop
+	
+	push de
+	 ; Key configuration
+	 APTR(KeySMCList)
+	 ex de,hl
+	 ld hl,key_smc_turbo
+	 lea ix,ix-key_config_count
+	 ld b,key_config_count
+key_config_loop:
+	 call read_config_item
+	 dec a
+	 ld c,a
+	 cpl
+	 and %00111000
+	 rrca
+	 rrca
+	 ld (hl),a
+	 inc hl
+	 ld a,c
+	 and %00000111
+	 add a,a
+	 add a,a
+	 add a,a
+	 add a,$46
+	 ld (hl),a
+	 ld a,(de)
+	 inc de
+	 add a,l
+	 jr nc,_
+	 ld l,$FF
+	 inc hl
+_
+	 ld l,a
+	 djnz key_config_loop
+	pop af
+	ret nc
+	ld a,ERROR_KEY_CONFLICT
+	AJUMP(DisplayWarning)
 	
 RefreshRomListFrame:
 	ld a,(romListFrameStart)
@@ -201,6 +229,16 @@ _
 	cp (hl)
 	ret nc
 	ld (hl),a
+	ret
+	
+ClearMenuBuffer:
+	ld hl,(current_buffer)
+	push hl
+	pop de
+	inc de
+	ld bc,160*240-1
+	ld (hl),BLUE_BYTE
+	ldir
 	ret
 	
 	; Input: A = palette index
@@ -600,13 +638,16 @@ draw_current_menu_trampoline:
 redraw_current_menu:
 	ACALL(RefreshRomListFrame)
 	
-	ld hl,(current_buffer)
-	push hl
-	pop de
-	inc de
-	ld bc,160*240-1
-	ld (hl),BLUE_BYTE
-	ldir
+	; Apply configuration if ROM is loaded (updates palette settings)
+	ld a,(ROMName+1)
+	or a
+	jr z,_
+	push af
+	 ACALL(ApplyConfiguration)
+	pop af
+_
+	
+	ACALL(ClearMenuBuffer)
 	
 	; Skip description display if on ROM list
 	ld hl,(current_menu)
@@ -614,15 +655,9 @@ redraw_current_menu:
 	jr z,draw_current_menu
 	
 	; Display only description if no ROM is loaded
-	ld a,(ROMName+1)
 	or a
 	ld a,30
 	jr z,draw_current_description
-
-	; Apply configuration if ROM is loaded (updates palette settings)
-	push hl
-	 ACALL(ApplyConfiguration)
-	pop hl
 	
 	; Draw mini screen if on main menu
 	inc l

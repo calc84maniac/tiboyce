@@ -807,6 +807,7 @@ current_menu_selection = $+1
 	
 ; Resolves the config item at IX via game and global config,
 ; and advances to the next item.
+; Returns Z flag set if item was inherited from global config.
 read_config_item:
 	ld a,(ix-config_start+game_config_start)
 	inc ix

@@ -2049,15 +2049,11 @@ DisplayError:
 DisplayErrorAny:
 	ld de,(current_buffer)
 	push af
-	 push de
-	  ex (sp),hl
-	  inc de
-	  ld bc,160*240-1
-	  ld (hl),BLUE_BYTE
-	  ldir
+	 push hl
+	  ACALL(ClearMenuBuffer)
 	 pop hl
 	 push bc
-	   
+	  
 	  ld a,5
 	  ld (cursorRow),a
 	  ld a,1
@@ -2083,10 +2079,18 @@ _
 	  ACALL(PutStringFormat)
 	 pop hl
 	pop hl
-	call setup_menu_palette
 	
-	ACALL(SetCustomHardwareSettings)
-	ACALL(WaitForKey)
+	; If already in the menu, just wait for a key
+	APTR(WaitForKey)
+	push hl
+	 ld a,i
+	 ret po
+	 
+	 ; Otherwise, switch to the menu state and back
+	 call setup_menu_palette
+	 ACALL(SetCustomHardwareSettings)
+	pop hl
+	call CallHL
 	push af
 	 ACALL(RestoreOriginalHardwareSettings)
 	pop af
@@ -3164,6 +3168,7 @@ error_messages:
 	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Need %d more bytes free RAM")
 	DEFINE_ERROR("ERROR_RUNTIME", "Encountered a runtime error!")
 	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Ran an invalid Game Boy opcode\n at %06X")
+	DEFINE_ERROR("ERROR_KEY_CONFLICT", "Duplicate key mappings in\n per-game config have been removed")
 	
 ErrorNoROMsFound:
 	.db "No ROMs found!",0
