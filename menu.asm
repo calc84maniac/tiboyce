@@ -9,6 +9,8 @@
 
 #define ROMS_PER_PAGE 16
 
+#define UNMAPPED_KEY 41
+
 ApplyConfiguration:
 	; Display next frame always
 	ld a,$4F ;LD R,A
@@ -345,6 +347,11 @@ ItemSelectKey:
 	jr nz,_
 	ld a,c
 _
+	ld b,a
+	ld a,c
+	cp UNMAPPED_KEY
+	ld a,b
+	jr z,RemapKey
 	ld b,key_config_count
 _
 	cp (hl)
@@ -353,9 +360,17 @@ _
 _
 	inc hl
 	djnz --_
+_
 	ld (de),a
 	ACALL(draw_current_menu)
 	jr menu_loop
+	
+RemapKey:
+	ld bc,key_config_count
+	cpir
+	jr nz,-_
+	ld a,UNMAPPED_KEY
+	jr -_
 	
 ItemSelectDigit:
 	cp 2
@@ -483,7 +498,7 @@ ItemDeleteKeyUnmap:
 	dec a
 	cp 9
 	ret c
-	ld a,41
+	ld a,UNMAPPED_KEY
 	cp (hl)
 	jr nz,ItemDeleteKeyUnmapFinish
 	ret
