@@ -1197,7 +1197,7 @@ _
 	
 setup_menu_palette:
 	; (MAG)ENTA | BLUE
-	ld hl,($EA56 << 16) | $2882
+	ld hl,($EA56 << 16) | $1882
 	ld (mpLcdPalette),hl
 	; OLIVE | MAG(ENTA)
 	ld hl,($CA8B << 8) | ($EA56 >> 8)
