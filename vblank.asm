@@ -290,8 +290,26 @@ load_state_not_found:
 	     ld a,30
 	     ACALL(SetEmulatorMessageWithDuration)
 	    pop hl
+	    jr keys_done
 _
 
+	    xor a
+key_smc_brightness_up = $+2
+	    bit 1,(ix+1*2)
+	    jr nz,_
+	    inc a
+key_smc_brightness_down = $+2
+	    bit 2,(ix+1*2)
+	    jr z,++_
+_
+	    add a,a
+	    dec a
+	    ld hl,mpBlLevel
+	    add a,(hl)
+	    jr z,_
+	    ld (hl),a
+_
+	
 keys_done:
 	    ld a,(mpIntMaskedStatus)
 	    or a

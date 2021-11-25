@@ -1149,34 +1149,38 @@ GraphicsMenu:
 	.db ITEM_LINK,0, 190,1,"Back",0
 	
 ControlsMenu:
-	.db 14
+	.db 16
 	.db 5,12,"Control Options",0
 	.db "",0
-	.db ITEM_KEY,1,  50,1,"Right:  %-9s",0
+	.db ITEM_KEY,1,  50,1,"Right: %-9s",0
 	.db "",0
-	.db ITEM_KEY,2,  60,1,"Left:   %-9s",0
+	.db ITEM_KEY,2,  60,1,"Left:  %-9s",0
 	.db "",0
-	.db ITEM_KEY,3,  70,1,"Up:     %-9s",0
+	.db ITEM_KEY,3,  70,1,"Up:    %-9s",0
 	.db "",0
-	.db ITEM_KEY,4,  80,1,"Down:   %-9s",0
+	.db ITEM_KEY,4,  80,1,"Down:  %-9s",0
 	.db "",0
-	.db ITEM_KEY,5,  90,1,"A:      %-9s",0
+	.db ITEM_KEY,5, 50,19,"A:      %-9s",0
 	.db "",0
-	.db ITEM_KEY,6, 100,1,"B:      %-9s",0
+	.db ITEM_KEY,6, 60,19,"B:      %-9s",0
 	.db "",0
-	.db ITEM_KEY,7, 110,1,"Select: %-9s",0
+	.db ITEM_KEY,7, 70,19,"Select: %-9s",0
 	.db "",0
-	.db ITEM_KEY,8, 120,1,"Start:  %-9s",0
+	.db ITEM_KEY,8, 80,19,"Start:  %-9s",0
 	.db "Open the emulator menu.",0
-	.db ITEM_KEY,9, 135,1,"Open menu:  %-9s",0
+	.db ITEM_KEY,9, 100,1,"Open menu:       %-9s",0
 	.db "Enable or toggle turbo mode.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,0, 145,1,"Turbo mode: %-9s",0
+	.db ITEM_KEY,0, 110,1,"Turbo mode:      %-9s",0
 	.db "Save state to the current slot.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,10, 155,1,"Save state: %-9s",0
+	.db ITEM_KEY,10, 120,1,"Save state:      %-9s",0
 	.db "Load state from the current slot.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,11, 165,1,"Load state: %-9s",0
+	.db ITEM_KEY,11, 130,1,"Load state:      %-9s",0
 	.db "Show or select the current state slot.\n Press a number while holding to select.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,12, 175,1,"State slot: %-9s",0
+	.db ITEM_KEY,12, 140,1,"State slot:      %-9s",0
+	.db "Turn screen brightness up.\n Press DEL to unmap this key.",0
+	.db ITEM_KEY,13, 150,1,"Brightness up:   %-9s",0
+	.db "Turn screen brightness down.\n Press DEL to unmap this key.",0
+	.db ITEM_KEY,14, 160,1,"Brightness down: %-9s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 190,1,"Back",0
 	
@@ -1412,6 +1416,8 @@ KeySMCList:
 	.db key_smc_save_state - key_smc_menu - 1
 	.db key_smc_load_state - key_smc_save_state - 1
 	.db key_smc_state_slot - key_smc_load_state - 1
+	.db key_smc_brightness_up - key_smc_state_slot - 1
+	.db key_smc_brightness_down - key_smc_brightness_up - 1
 	
 TimeZoneOffsetTable:
 	.db $00,$10,$20,$30,$38,$40,$48,$50,$58,$60,$68,$70,$80,$90,$98,$A0,$B0,$C0,$D0

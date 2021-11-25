@@ -168,6 +168,8 @@ SaveConfigAndQuit:
 SaveConfigAndQuitForError:
 	ACALL(RestoreOriginalHardwareSettings)
 	ACALL_SAFERET(SaveConfigFile)
+	ld a,(brightness)
+	ld (mpBlLevel),a
 RestoreHomeScreen:
 	; Set all palette entries to white to smooth the transition
 	ld hl,mpLcdPalette

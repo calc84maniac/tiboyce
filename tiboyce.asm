@@ -149,6 +149,7 @@ _FindFreeArcSpot = $022078
 ; RAM addresses used
 ramStart = $D00000
 flags = $D00080
+brightness = $D0058F
 asm_data_ptr1 = $D0067E
 penCol = $D008D2
 penRow = $D008D5
@@ -233,6 +234,8 @@ mpKeypadGrp4 = $F50018
 mpKeypadGrp5 = $F5001A
 mpKeypadGrp6 = $F5001C
 mpKeypadGrp7 = $F5001E
+
+mpBlLevel = $F60024
 
 mpSpiConfig = $F80000
 mpSpiUnknown0 = $F80004
@@ -1207,7 +1210,7 @@ AdjustColors:
 	.db key_config_count
 ; Key configuration. Each is a GetCSC scan code.
 KeyConfig:
-	.db 51,3,2,4,1,54,48,40,55,15,42,43,44
+	.db 51,3,2,4,1,54,48,40,55,15,42,43,44,10,11
 	
 config_end:
 option_config_count = (KeyConfig-1) - FrameskipValue
