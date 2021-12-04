@@ -3196,8 +3196,8 @@ SecondPaletteChecksumTable:
 	.db $52
 	
 DefaultPaletteIndexTable:
-	; Dummy entry was formerly $7C, but grayscale is better
-	.db $16,$08,$12,$A3,$A2,$07,$87,$4B,$20,$12,$65,$A8,$16
+	; Dummy entry was formerly $7C, but classic is better
+	.db $1D,$08,$12,$A3,$A2,$07,$87,$4B,$20,$12,$65,$A8,$16
 	.db $A9,$86,$B1,$68,$A0,$87,$66,$12,$A1,$30,$3C,$12,$85
 	.db $12,$64,$1B,$07,$06,$6F,$6E,$6E,$AE,$AF,$6F,$B2,$AF
 	.db $B2,$A8,$AB,$6F,$AF,$86,$AE,$A2,$A2,$12,$AF,$13,$12

@@ -78,8 +78,7 @@ _
 	ld c,a
 	add hl,bc
 _
-	ld a,(hl)
-	push af
+	push hl
 	
 	 ; Time zone
 	 call read_config_item
@@ -128,14 +127,18 @@ _
 	 ld (active_scaling_type),a
 	 ; Message display
 	 inc ix
-	 ; Adjust colors
-	 call read_config_item
-	 dec a
-	 and $C9 - $7C
-	 add a,$7C ;RET or LD A,L
-	 ld (adjust_color_enable_smc),a
-	pop af
+	pop hl
+	; Disable color adjustment for classic palette
+	ld a,(hl)
+	sub $1D
+	; Adjust colors
+	call nz,read_config_item
+	dec a
+	and $C9 - $7C
+	add a,$7C ;RET or LD A,L
+	ld (adjust_color_enable_smc),a
 	; Load palettes only after setting adjust color SMC
+	ld a,(hl)
 	ACALL(LoadPalettes)
 	ld de,mpLcdPalette + (3*2)
 	call update_palettes_obp_only
@@ -1446,7 +1449,7 @@ OptionScalingType:
 	.db "scrolling",0
 	
 OptionPaletteSelection:
-	.db 13
+	.db 14
 	.db "default",0
 	.db "grayscale",0
 	.db "brown",0
@@ -1460,6 +1463,7 @@ OptionPaletteSelection:
 	.db "dark brown",0
 	.db "yellow",0
 	.db "inverted",0
+	.db "classic",0
 	
 OptionTimeZone:
 	.db 32
@@ -1630,6 +1634,7 @@ TimeZoneOffsetTable:
 	
 ManualPaletteIndexTable:
 	.db $16,$12,$17,$B8,$05,$B0,$07,$AD,$7C,$79,$BA,$13
+	.db $1D ;Classic
 	
 PaletteIndex:
 	.db $80,$B0,$40, $88,$20,$68, $DE,$00,$70, $DE,$20,$78
@@ -1639,7 +1644,7 @@ PaletteIndex:
 	.db $18,$E0,$20, $A8,$E0,$20, $18,$E0,$00, $20,$18,$D8
 	.db $C8,$18,$E0, $00,$E0,$40, $28,$28,$28, $18,$E0,$60
 	.db $20,$18,$E0, $00,$00,$08, $E0,$18,$30, $D0,$D0,$D0
-	.db $20,$E0,$E8
+	.db $20,$E0,$E8, $F0,$F0,$F0 ; Classic
 	
 PaletteDictionary:
 	.dw $7FFF,$32BF,$00D0,$0000
@@ -1672,3 +1677,4 @@ PaletteDictionary:
 	.dw $0000,$4200,$037F,$7FFF
 	.dw $7FFF,$7E8C,$7C00,$0000
 	.dw $7FFF,$1BEF,$6180,$0000
+	.dw $4778,$3290,$1D87,$0861 ; Classic
