@@ -337,6 +337,26 @@ load_single_palette_output_loop:
 	pop af
 	ret
 	
+ShowConfirmStateOperation:
+	; Just return NZ if the state does not exist
+	call check_valid_state
+	dec a
+	ret m
+	; Return NZ if confirmation is disabled for this type
+	ld ix,ConfirmStateOperation
+	call read_config_item
+	ld hl,main_menu_selection
+	and (hl)
+	dec a
+	ret m
+	ld de,ConfirmLoadState
+	jr z,_
+	ld de,ConfirmSaveState
+_
+	push de
+	 call setup_menu_palette
+	pop de
+	ld hl,(current_state)
 ShowConfirmationDialog:
 	push hl
 	 ld hl,(ArcBase)
@@ -395,14 +415,21 @@ _
 	jr ConfirmationDialogDisplayLoop
 _
 	cp 15
-	ret z
-	cp 9
-	jr z,_
-	cp 54
 	jr z,_
 	push bc
+	 cp 9
+	 jr z,++_
+	 cp 54
+	 jr z,++_
 	 jr ConfirmationDialogKeyLoop
 _
+	ld b,2
+	push bc
+_
+	 ACALL(GetKeyCode)
+	 or a
+	 jr nz,-_
+	pop bc
 	dec b
 	dec b
 	ret
@@ -490,8 +517,11 @@ RemapKey:
 ItemSelectDigit:
 	cp 2
 	jr z,menu_loop
+	ACALL(ShowConfirmStateOperation)
 	ld a,4
-	jr CmdExit
+	jr nz,CmdExit
+	xor a
+	jr ItemSelectLink
 
 emulator_menu_ingame:
 	call convert_palette_for_menu
@@ -556,7 +586,7 @@ CmdExit:
 _
 	ACALL(GetKeyCode)
 	or a
-	jr nz,-_ 
+	jr nz,-_
 	ret
 	
 menu_up:
@@ -1176,7 +1206,13 @@ ConfirmDeleteROM:
 	.db "Delete ROM files for %s?",0
 	
 ConfirmDeleteState:
-	.db "Delete state %c?",0
+	.db "Delete state slot %c?",0
+	
+ConfirmLoadState:
+	.db "Load state slot %c?",0
+	
+ConfirmSaveState:
+	.db "Overwrite state slot %c?",0
 	
 TitleChecksumFormat:
 	.db "%.16s  %04X",0
@@ -1201,6 +1237,7 @@ OptionList:
 	.dw OptionScalingType+1
 	.dw OptionMessageDisplay+1
 	.dw OptionAdjustColors+1
+	.dw OptionConfirmState+1
 	.dw OptionConfigSelect+1
 	
 CmdList:
@@ -1344,16 +1381,18 @@ ControlsMenu:
 	.db ITEM_LINK,0, 190,1,"Back",0
 	
 EmulationMenu:
-	.db 5
+	.db 6
 	.db 5,11,"Emulation Options",0
 	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
 	.db ITEM_OPTION,2, 50,1,"Auto save state: %-3s",0
 	.db "",0
-	.db ITEM_OPTION,8, 60,1,"Turbo mode: %-6s",0
+	.db ITEM_OPTION,12, 60,1,"Confirm state save/load: %-9s",0
+	.db "",0
+	.db ITEM_OPTION,8, 70,1,"Turbo mode: %-6s",0
 	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
-	.db ITEM_OPTION,4, 80,1,"Time zone: UTC%-6s",0
+	.db ITEM_OPTION,4, 90,1,"Time zone: UTC%-6s",0
 	.db "Set to on if DST is currently active.",0
-	.db ITEM_OPTION,5, 90,1,"Daylight Saving Time: %-3s",0
+	.db ITEM_OPTION,5, 100,1,"Daylight Saving Time: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
@@ -1381,6 +1420,13 @@ OptionAdjustColors:
 	.db 2
 	.db "off",0
 	.db "on",0
+	
+OptionConfirmState:
+	.db 4
+	.db "never",0
+	.db "load only",0
+	.db "overwrite",0
+	.db "both",0
 	
 OptionTurboMode:
 	.db 2

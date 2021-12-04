@@ -259,12 +259,13 @@ key_smc_menu = $+2
 	    pop af
 	    ex af,af'
 	    or a
-	    jr nz,do_exit
+	    jr nz,do_exit_trampoline
+state_operation_denied:
 	    ACALL(SetScalingMode)
 	    call reset_preserved_area
 	    jr keys_done
 _
-	    xor a
+	    ld a,2
 key_smc_save_state = $+2
 	    bit 1,(ix+2*2)	;STO>
 	    jr nz,_
@@ -277,8 +278,12 @@ key_smc_load_state = $+2
 	    jr z,load_state_not_found
 _
 	    ld (main_menu_selection),a
+	    ACALL(ShowConfirmStateOperation)
+	    jr z,state_operation_denied
 	    ld a,4
 	    ld (exitReason),a
+do_exit_trampoline:
+	    jr do_exit
 _
 key_smc_state_slot = $+2
 	    bit 3,(ix+2*2)	;LOG

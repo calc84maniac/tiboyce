@@ -1215,6 +1215,9 @@ MessageDisplay:
 ; Adjust colors (0=Off, 1=On)
 AdjustColors:
 	.db 1
+; Confirm state save/load (Bit 0=Load, Bit 1=Save)
+ConfirmStateOperation:
+	.db 3
 	
 ; Number of key bytes
 	.db key_config_count
