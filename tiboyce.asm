@@ -644,6 +644,12 @@ GlobalErrorHandler:
 	res 7,a
 	jp _JError
 	
+DelVarByName:
+	call _Mov9ToOP1
+	call _chkFindSym
+	jp nc,_DelVarArc
+	ret
+	
 	; Input: B=index
 GetRomDescriptionByIndex:
 	ld iy,romListStart
@@ -655,9 +661,11 @@ GetRomDescriptionByIndex:
 	; Output: HL=Description string start
 	;         IX=ROM pointer
 	;         BC=12
+	;         Carry is reset
 	;         A, DE, IY are preserved
 GetRomDescription:
 	ld ix,(iy)
+GetRomDescriptionFromVAT:
 	ld hl,(ix)
 	ld h,(ix+3)
 	ld l,(ix+4)
@@ -1012,6 +1020,7 @@ ROMName:
 	.block 9
 ; The name of the ROM to be loaded next.
 ROMNameToLoad:
+	.db appVarObj
 	.block 9
 ; The ROM appvar magic header.
 MetaHeader:

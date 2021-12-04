@@ -258,6 +258,8 @@ key_smc_menu = $+2
 	     ACALL(emulator_menu_ingame)
 	    pop af
 	    ex af,af'
+	    or a
+	    jr nz,do_exit
 	    ACALL(SetScalingMode)
 	    call reset_preserved_area
 	    jr keys_done
@@ -318,9 +320,17 @@ keys_done:
 	    inc a
 	    ld (exitReason),a
 _
+	    ; Reasons for exiting:
+	    ; 1: load new game
+	    ; 2: exit emulator
+	    ; 3: restart game
+	    ; 4: load or save state (depending on main_menu_selection)
+	    ; 5: delete save state or ROM (depending on current_menu)
+	    ; 5+(error*4): exit rom and show error
 exitReason = $+1
 	    or 0
 	    jr z,_
+do_exit:
 	    APTR(ExitEmulation)
 	    ex de,hl
 	    ld hl,z80codebase+event_not_expired

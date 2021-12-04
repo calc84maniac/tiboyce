@@ -125,9 +125,8 @@ NoRomMenuLoop:
 	ld a,7
 	ld (main_menu_selection),a
 	
-	; Reset exit reason, ROM name, state index, and selected config
+	; Reset ROM name, state index, and selected config
 	xor a
-	ld (exitReason),a
 	ld (ROMName+1),a
 	ld (current_state),a
 	ld (current_config),a
@@ -135,18 +134,21 @@ NoRomMenuLoop:
 	inc a
 	ACALL(emulator_menu)
 
+	; Check for deleting a ROM
+	ex af,af'
+	cp 5
+	jr z,DeleteROM
 	; If not loading a new ROM, exit
-	ld a,(exitReason)
 	dec a
 	jr nz,SaveConfigAndQuit
 	
 	ACALL(RestoreOriginalHardwareSettings)
 LoadNewGameLoop:
 	; Copy the name from ROMNameToLoad
-	ld hl,ROMName+1
+	ld hl,ROMName
 	push hl
 	pop de
-	ld bc,9
+	ld bc,ROMNameToLoad - ROMName
 	add hl,bc
 	ldir
 	; Switch to per-game config editing
@@ -161,6 +163,7 @@ LoadNewGameLoop:
 	jr z,SaveConfigAndQuit
 	; Display the error, and return to the menu if ON wasn't pressed
 	ACALL(DisplayError)
+NoRomMenuLoopTrampoline:
 	jr nz,NoRomMenuLoop
 	
 SaveConfigAndQuit:
@@ -195,6 +198,12 @@ RestoreHomeScreen:
 	call _HomeUp
 	; Change the LCD settings to fullscreen 16-bit
 	AJUMP(RestoreOriginalLcdSettings)
+	
+DeleteROM:
+	ACALL(RestoreOriginalHardwareSettings)
+	ACALL(DeleteROMFiles)
+	or a ; Non-zero
+	jr NoRomMenuLoopTrampoline
 	
 	; Input: HL = insertion point
 	;        DE = insertion size
@@ -1321,13 +1330,13 @@ _
 	ld sp,(saveSP)
 	ACALL(RestoreOriginalHardwareSettings)
 	ld a,(exitReason)
+NewExitReason:
 	dec a
 	srl a
 	jr z,ExitDone
 	jr c,_
 	rra
-	ccf
-	jr c,ExitDone
+	jr nc,ExitOrDelete
 	AJUMP(RestartFromHere)
 _
 	ld de,StateLoadedMessage
@@ -1345,14 +1354,14 @@ _
 	 ACALL(SetEmulatorMessage)
 	pop hl
 	ACALL(LoadStateFiles)
-	jr nc,++_
+	jr nc,StartFromHereTrampoline
 	cp ERROR_NOT_ENOUGH_MEMORY
 	jr nz,_
 	ld hl,(save_state_size_bytes)
 	ld a,l
 	dec a
 	or h
-	jr z,++_
+	jr z,StartFromHereTrampoline
 	ld a,ERROR_NOT_ENOUGH_MEMORY
 _
 	ACALL(DisplayError)
@@ -1360,14 +1369,98 @@ _
 	jr z,ExitDone
 	xor a
 	ld (emulatorMessageText),a
-_
+StartFromHereTrampoline:
 	AJUMP(StartFromHere)
+ExitOrDelete:
+	cp 1
+	jr z,DeleteInGame
+	adc a,-1 ; Sets carry
 ExitDone:
 	push af
 	 xor a
 	 ld (current_state),a
 	 ACALL_SAFERET(SaveStateFilesAndGameConfig)
 	pop af
+	ret
+	
+DeleteInGame:
+	ACALL(DeleteSelectedFiles)
+	ACALL(SetCustomHardwareSettings)
+	ld a,(current_menu)
+	ACALL(emulator_menu)
+	ex af,af'
+	push af
+	 ACALL(RestoreOriginalHardwareSettings)
+	pop af
+	or a
+	jr z,StartFromHereTrampoline
+	AJUMP(NewExitReason)
+	
+DeleteSelectedFiles:
+	ld a,(current_menu)
+	or a
+	jr nz,DeleteROMFiles
+	
+	; Update the existing state map
+	ld a,(current_state)
+	ACALL(GetStateMask)
+	xor (hl)
+	ld (hl),a
+	
+	ACALL(GetStateFileName)
+	call DelVarByName
+	ACALL(GetStateRAMFileName)
+	jp DelVarByName
+	
+DeleteROMFiles:
+	ld hl,ROMNameToLoad
+	push hl
+	 call DelVarByName
+	pop hl
+_
+	inc hl
+	ld a,(hl)
+	or a
+	jr nz,-_
+	ld (hl),'R'
+	inc hl
+	ld (hl),'0'
+	inc hl
+	ld (hl),'0'
+	push hl
+	 inc hl
+	 ld (hl),a
+_
+	 ld hl,ROMNameToLoad
+	 call DelVarByName
+	pop hl
+	push hl
+	 inc (hl)
+	 ld a,(hl)
+	 cp '9'+1
+	 jr c,-_
+	 ld (hl),'0'
+	 dec hl
+	 inc (hl)
+	 ld a,(hl)
+	 cp '9'+1
+	 jr c,-_
+	pop hl
+	ret
+	
+GetStateMask:
+	sbc hl,hl
+	add a,1-'0' ; Sets carry
+_
+	adc hl,hl
+	dec a
+	jr nz,-_
+	ex de,hl
+	ld hl,existing_state_map
+	or e
+	ret nz
+	inc hl
+	ld a,d
 	ret
 	
 LoadConfigFile:
@@ -1437,9 +1530,7 @@ _
 	
 	; If so, delete the config file and memory
 	push de
-	 call _Mov9ToOP1
-	 call _chkFindSym
-	 call nc,_DelVarArc
+	 call DelVarByName
 	pop de
 SaveConfigFileDelMem:
 	ex de,hl
@@ -1484,9 +1575,7 @@ SaveConfigFileAny:
 	jr z,SaveConfigFileDelMem
 	push hl
 	 push de
-	  call _Mov9ToOP1
-	  call _chkFindSym
-	  call nc,_DelVarArc
+	  call DelVarByName
 	 pop de
 _
 	pop hl
@@ -1980,9 +2069,7 @@ SaveRAMDeleteMem:
 SaveState:
 	push af
 	 ACALL(GetStateFileName)
-	 call _Mov9ToOP1
-	 call _chkFindSym
-	 call nc,_DelVarArc
+	 call DelVarByName
 	
 	 ld hl,(current_state)
 	 ld a,l
@@ -2014,20 +2101,8 @@ DisplayWarning:
 	jr DisplayErrorAny
 
 SaveManualState:
-	 ; Update the existing state mao
-	 sbc hl,hl
-	 add a,1-'0' ; Sets carry
-_
-	 adc hl,hl
-	 dec a
-	 jr nz,-_
-	 ex de,hl
-	 ld hl,existing_state_map
-	 or e
-	 jr nz,_
-	 inc hl
-	 ld a,d
-_
+	 ; Update the existing state map
+	 ACALL(GetStateMask)
 	 or (hl)
 	 ld (hl),a
 	 

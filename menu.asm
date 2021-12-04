@@ -337,6 +337,76 @@ load_single_palette_output_loop:
 	pop af
 	ret
 	
+ShowConfirmationDialog:
+	push hl
+	 ld hl,(ArcBase)
+	 add hl,de
+	 push hl
+	  ACALL(ClearMenuBuffer)
+	
+	  ld a,5
+	  ld (cursorRow),a
+	  ld a,1
+	  ld (cursorCol),a
+	
+	  ld a,WHITE
+	  ACALL(PutStringFormatColor)
+	 pop hl
+	pop hl
+	
+	ld b,2
+	ld c,b
+ConfirmationDialogDisplayLoop:
+	APTR(ConfirmText)
+	ld a,20
+	ld (cursorRow),a
+	push bc
+_
+	 ld a,1
+	 ld (cursorCol),a
+	 ld a,WHITE
+	 ld e,'>'
+	 djnz _
+	 ld a,OLIVE
+	 ld e,' '
+_
+	 call SetStringColor
+	 ld a,e
+	 push bc
+	  push hl
+	   call PutChar
+	  pop hl
+	  ACALL(PutString)
+	 pop bc
+	 dec c
+	 jr nz,--_
+ConfirmationDialogKeyLoop:
+	 ACALL(WaitForKey)
+	pop bc
+	ret z
+	cp 1
+	jr nz,_
+	ld b,a
+	jr ConfirmationDialogDisplayLoop
+_
+	cp 4
+	jr nz,_
+	ld b,2
+	jr ConfirmationDialogDisplayLoop
+_
+	cp 15
+	ret z
+	cp 9
+	jr z,_
+	cp 54
+	jr z,_
+	push bc
+	 jr ConfirmationDialogKeyLoop
+_
+	dec b
+	dec b
+	ret
+	
 ItemSelectCmd:
 	ld hl,CmdList
 	ld c,a
@@ -351,6 +421,9 @@ ItemSelectCmd:
 	jp (hl)
 	
 ItemSelectRom:
+	APTR(CmdExit)
+	push hl
+GetSelectedROMName:
 	ld l,a
 	ld h,3
 	mlt hl
@@ -358,17 +431,21 @@ ItemSelectRom:
 	add hl,de
 	ld hl,(hl)
 	ld bc,(hl)
-	ld de,ROMNameToLoad
+	ld de,ROMNameToLoad+1
+	push hl
+	 push de
 _
-	ld a,(hl)
-	ld (de),a
-	dec hl
-	inc de
-	djnz -_
-	xor a
-	ld (de),a
+	  ld a,(hl)
+	  ld (de),a
+	  dec hl
+	  inc de
+	  djnz -_
+	  xor a
+	  ld (de),a
+	 pop de
+	pop ix
 	inc a
-	jr CmdExit
+	jp GetRomDescriptionFromVAT
 	
 ItemSelectKey:
 	ACALL(GetKeyConfig)
@@ -414,24 +491,22 @@ ItemSelectDigit:
 	cp 2
 	jr z,menu_loop
 	ld a,4
-CmdExit:
-	ld (exitReason),a
-	jr exit_menu
+	jr CmdExit
 
 emulator_menu_ingame:
 	call convert_palette_for_menu
-	; If the state slot was changed, verify load state is valid
-	ld hl,main_menu_selection
-	ld b,(hl)
-	djnz _
-	call check_valid_state
-	jr nz,_
-	inc (hl)
-_
 	xor a
 emulator_menu:
 	push af
 	 call setup_menu_palette
+	 ; If the state slot was changed, verify load state is valid
+	 ld hl,main_menu_selection
+	 ld b,(hl)
+	 djnz _
+	 call check_valid_state
+	 jr nz,_
+	 inc (hl)
+_
 	pop af
 	
 ItemSelectLink:
@@ -475,7 +550,9 @@ _
 	cp (hl)
 	jr nz,ItemSelectLink
 	
-exit_menu:
+CmdExit:
+	ld (exitReason),a
+	ex af,af'
 _
 	ACALL(GetKeyCode)
 	or a
@@ -530,6 +607,28 @@ DoItemCallback:
 	ld a,(de)
 	jp (hl)
 	
+ItemDeleteRom:
+	ACALL(GetSelectedROMName)
+	; Don't allow deleting the currently loaded ROM
+	ld bc,(current_description)
+	sbc hl,bc
+	ret z
+	ex de,hl
+	ld de,ConfirmDeleteROM
+ItemDeleteStateFinish:
+	ACALL(ShowConfirmationDialog)
+	jr z,redraw_current_menu_trampoline
+	pop de
+	ld a,5
+	jr CmdExit
+	
+ItemDeleteState:
+	call check_valid_state
+	ret z
+	ld de,ConfirmDeleteState
+	ld hl,(current_state)
+	jr ItemDeleteStateFinish
+	
 ItemDeleteKeyUnmap:
 	; Don't allow unmapping in-game buttons or menu
 	ld a,d
@@ -544,14 +643,15 @@ ItemDeleteKeyUnmap:
 ItemChangeRom:
 	ld hl,romListFrameStart
 	ld a,(hl)
-	djnz ++_
+	djnz _
 	add a,ROMS_PER_PAGE
-_
-	ld (hl),a
-	jr redraw_current_menu
+	jr ++_
 _
 	sub ROMS_PER_PAGE
-	jr nc,--_
+	jr c,redraw_current_menu
+_
+	ld (hl),a
+redraw_current_menu_trampoline:
 	jr redraw_current_menu
 	
 ItemChangeDigit:
@@ -586,7 +686,7 @@ _
 	
 ItemDeleteDigit:
 	cp 2
-	ret nz
+	jr nz,ItemDeleteState
 	ld a,(current_config)
 	dec a
 	ret nz
@@ -1026,7 +1126,6 @@ ItemChangeCmd:
 ItemChangeKey:
 ItemDeleteLink:
 ItemDeleteCmd:
-ItemDeleteRom:
 	ret
 	
 ItemDisplayKey:
@@ -1068,6 +1167,16 @@ _
 	jr nz,-_
 	djnz -_
 	ret
+	
+ConfirmText:
+	.db "No\n",0
+	.db "Yes",0
+	
+ConfirmDeleteROM:
+	.db "Delete ROM files for %s?",0
+	
+ConfirmDeleteState:
+	.db "Delete state %c?",0
 	
 TitleChecksumFormat:
 	.db "%.16s  %04X",0
@@ -1169,7 +1278,7 @@ LoadGameMenu:
 	.db ITEM_LINK,0, 185,1,"Back",0
 	
 LoadRomHelpText:
-	.db "Press 2nd/Enter to start the game.\n Press left/right to scroll pages.",0
+	.db "Press 2nd/Enter to start the game.\n Press left/right to scroll pages.\n Press DEL to delete ROM files.",0
 	
 LoadRomNoRomsText:
 	.db "No ROMs found!",0

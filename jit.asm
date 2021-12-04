@@ -187,7 +187,7 @@ Z80InvalidOpcode_helper:
 	call lookup_gb_code_address
 	call get_banked_address
 	ld (errorArg),de
-	ld a,(ERROR_INVALID_OPCODE << 2) + 1
+	ld a,(ERROR_INVALID_OPCODE << 2) + 5
 	jr _
 runtime_error:
 #ifdef DEBUG
@@ -197,7 +197,7 @@ runtime_error:
 	ld ($FFFFFF),a
 	APRINTF(RuntimeErrorMessage)
 #endif
-	ld a,(ERROR_RUNTIME << 2) + 1
+	ld a,(ERROR_RUNTIME << 2) + 5
 _
 	ld (exitReason),a
 	; Temporarily prevent auto state saving because state is unrecoverable
