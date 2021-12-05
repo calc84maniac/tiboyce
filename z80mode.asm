@@ -4878,7 +4878,7 @@ mem_write_port_lut:
 	.db write_scroll - mem_write_port_routines
 	.db write_port_ignore - mem_write_port_routines
 	.db writeLYC - mem_write_port_routines
-	.db write_scroll - mem_write_port_routines
+	.db writeDMA - mem_write_port_routines
 	.db writeBGP - mem_write_port_routines
 ;48
 	.db write_scroll - mem_write_port_routines
