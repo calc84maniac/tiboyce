@@ -3073,26 +3073,7 @@ opgenVRAMwrite:
 	 jr -_
 	
 opgenCRAMwrite:
-	 ld a,(cram_size)
-	 or a
-	 jr nz,_
-	 ld a,(cram_size+1)
-	 add a,a
-	 jr c,_
-	 push hl
-	  ld hl,(cram_bank_base)
-	  add hl,bc
-	  ex de,hl
-	  ld (hl),$5B ;LD.LIL (addr),A
-	  inc hl
-	  ld (hl),$32
-	  inc hl
-	  ld (hl),de
-	  inc hl
-	  inc hl
-	 pop de
-	 jr -_
-_
+	 ; Direct pointer optimization is impossible since cart RAM can be disabled
 	 ex de,hl
 	 ld (hl),$CD
 	 inc hl
@@ -3103,7 +3084,7 @@ _
 	 ld (hl),c
 	 inc hl
 	 ld (hl),b
-	 jr --_
+	 jr -_
 	
 opgenHMEMwrite:
 	xor a
@@ -3330,8 +3311,9 @@ opgenCRAMread:
 	ld a,(cram_size+1)
 	add a,a
 	jr c,_
+	; For now on 8KB carts, ignore RAM disable for reads to use a direct pointer
 	push hl
-	 ld hl,(cram_bank_base)
+	 ld hl,(cram_actual_bank_base)
 	 add hl,bc
 	 ex de,hl
 	 ld (hl),$5B ;LD.LIL A,(addr)
