@@ -21,6 +21,7 @@ Grab the latest pre-built releases at <https://github.com/calc84maniac/tiboyce/r
 *   Turbo mode (with speed display)
 *   GBC-style selectable color palettes for Game Boy games
 *   Customizable controls
+*   Per-game configuration settings
 
 ## Converting ROM Files
 
@@ -49,6 +50,8 @@ Send the `TIBOYCE.8xp` and `TIBoyDat.8xv` files to the calculator. Optionally al
 
 If your calculator is running OS v5.3 or newer, you can keep all of these files in Archive and run `prgmTIBOYCE` from the <kbd>prgm</kbd> menu.
 
+If your calculator is running OS v5.5 or newer, you must also jailbreak your calculator with a tool such as [arTIfiCE](https://yvantt.github.io/arTIfiCE).
+
 If your calculator is older than OS v5.3, the `TIBOYCE` program must be unarchived. Run it with `Asm(prgmTIBOYCE)`.
 
 You should now see a list of the ROMs on the calculator. Choose one with <kbd>↑</kbd> <kbd>↓</kbd> and start it with <kbd>2nd</kbd> <kbd>enter</kbd>.
@@ -68,13 +71,65 @@ You should now see a list of the ROMs on the calculator. Choose one with <kbd>�
 *   Save state: <kbd>sto></kbd>
 *   Load state: <kbd>ln</kbd>
 *   State slot: <kbd>log</kbd> + <kbd>0</kbd>-<kbd>9</kbd>
+*   Brightness up: <kbd>+</kbd>
+*   Brightness down: <kbd>-</kbd>
 *   Quick exit (non-configurable): <kbd>on</kbd>
 
 ### Menu controls (non-configurable):
 *   Choose menu item: <kbd>↑</kbd> <kbd>↓</kbd>
 *   Change option: <kbd>←</kbd> <kbd>→</kbd>
 *   Select item: <kbd>2nd</kbd> <kbd>enter</kbd>
+*   Delete ROM or save state: <kbd>del</kbd>
+*   Unmap key or remove per-game config item: <kbd>del</kbd>
 *   Close menu: <kbd>clear</kbd>
+
+## Configuration
+
+All emulator configuration items can be edited on either a global or per-game basis. The configuration to edit can be selected on the main menu after loading a ROM.
+
+When editing the per-game configuration, options used from the global configuration are marked with a `*`. Editing such an item will override the global configuration. Press <kbd>del</kbd> on a per-game configuration item to revert it to global.
+
+### Graphics Options
+*   Scaling mode: Choose the display mode.
+    *   No scaling: Displays pixel-accurate and has slightly better performance, but appears small.
+    *   Fullscreen: Fills the screen, but has a squished aspect ratio and experiences diagonal screen tearing.
+*   Scaling type: Choose the scaling method to use for fullscreen mode.
+    *   Static: The same horizontal lines on the screen are always doubled. This appears consistent but may cause shimmering effects when scrolling vertically.
+    *   Scrolling: Attempts to double the same lines relative to the game's scrolling background. This reduces scrolling artifacts but may cause sudden shifts.
+*   Skin display: Choose whether to display the skin in no scaling mode. Requires the `TIBoySkn.8xv` file.
+*   Frameskip type: Choose the type of frameskip.
+    *   Auto: Skip up to N frames as needed, or fewer if there is enough processing time. Always skips N frames when turbo mode is active.
+    *   Manual: Always skip N frames, so 1 of every N+1 frames is rendered.
+    *   Off: Never skip frames. May cause lag depending on the game.
+*   Frameskip value: Choose the value of N described above, from 0 to 9. Ignored if frameskip is off.
+*   Speed display: Choose when to show an indicator of the percentage of actual game speed.
+    *   Never: Never display.
+    *   Turbo: Display when turbo mode is active. Note this may be below 100% if the game cannot be emulated at full speed.
+    *   Slowdown: Display when turbo mode is active, or when running below 100% speed.
+    *   Always: Always display.
+*   Message display: Choose whether to display emulator message overlays, for example when a save state is loaded.
+*   Palette selection: Chooses GBC-style colorization options to apply to original Game Boy games.
+    *   Default: Use the official palette for a game as a GBC would select. If no official palette exists, reverts to Classic.
+    *   Classic: Use a green-ish palette to evoke the feel of an original Game Boy.
+    *   Others: The palettes choosable on a GBC through button combinations are made available as additional options.
+*   Adjust colors: Choose whether to adjust colors to more closely mimic a GBC display. Ignored for the Classic palette.
+
+### Control options
+
+Remap controls as described in the [Default controls](#default-controls) section. Select an option to remap, then press the button to remap it to or press <kbd>on</kbd> to cancel.
+
+If a chosen button is already mapped to another button, the two buttons are swapped. Any conflicting buttons between the global and per-game configuration will be removed from the per-game configuration automatically.
+
+Emulator shortcut buttons, aside from the menu and quick exit buttons, may be unmapped using the <kbd>del</kbd> key.
+
+### Emulation options
+*   Auto save state: Choose whether to create an auto save state when exiting a game. This state is separate from slots 0-9, and is automatically loaded the next time the game is started.
+*   Confirm state save/load: Choose whether to prompt for confirmation when loading a state and/or overwriting a state. Useful to prevent accidental loss of progress.
+*   Turbo mode: Choose how turbo mode is activated.
+    *   Toggle: Press the turbo button once to toggle the turbo mode on or off.
+    *   Hold: Hold the turbo button to turn turbo mode on, and release the button to turn it off.
+*   Time zone: For games using real-time clock functionality, choose the time zone used relative to the time set in the calculator OS. Relevant when [Converting Save Files](#converting-save-files).
+*   Daylight Saving Time: Turn this option on or off after adjusting the time in the calculator OS to keep the game clock consistent.
 
 ## File Types
 
@@ -83,6 +138,7 @@ The various files used by the emulator are as follows (replace Name with ROM pre
 | File         | Description                                                  |
 |:-------------|:-------------------------------------------------------------|
 | Name.8xv     | The file specifying the game title and how large the ROM is. |
+| NameCfg.8xv  | Per-game configuration settings for this ROM, if any.        |
 | NameR##.8xv  | Multiple files containing the actual ROM data.               |
 | NameSAV.8xv  | The contents of the battery-backed cartridge save data.      |
 | NameStA.8xv  | The automatic save state for this game.                      |
@@ -143,4 +199,4 @@ Report issues / bugs to the issue tracker, found here:
 ## License
 
 TI-Boy CE — a Game Boy emulator for the TI-84 Plus CE calculator family.
-Copyright © 2018 – 2019 Brendan Fletcher
+Copyright © 2018 – 2021 Brendan Fletcher
