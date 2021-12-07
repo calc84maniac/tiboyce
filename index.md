@@ -28,3 +28,4 @@ Features
 * Turbo mode (with speed display)
 * GBC-style selectable color palettes for Game Boy games
 * Customizable controls
+* Per-game configuration settings
