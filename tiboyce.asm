@@ -158,7 +158,8 @@ tSymPtr1 = $D0257B
 pTemp = $D0259A
 progPtr = $D0259D
 drawFGColor = $D026AC
-pixelShadow = $D031F6
+pixelShadow = $D031F6 ; Start of SafeRAM
+usbArea	= $D13FD8 ; End of SafeRAM
 osYear = $D177CF
 osDay = $D177D8
 osMonth = $D177DB
@@ -324,8 +325,8 @@ flags_lut = myz80stack - 512
 ; The end of the memory routines.
 memroutine_end = flags_lut - 3
 
-; The bottom of the ADL stack. Grows down from the end of palette memory.
-myADLstack = mpLcdPalette + $01FE
+; The bottom of the ADL stack. Grows down from the end of SafeRAM.
+myADLstack = usbArea
 
 ; Preprocessed Game Boy tilemap entries. 16KB in size.
 ; Each tile entry is a 2-byte offset of the pixel data from vram_pixels_start.
