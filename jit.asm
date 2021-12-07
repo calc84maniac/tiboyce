@@ -1096,6 +1096,16 @@ rerecompile:
 	 sbc hl,de
 	 jr nc,coherency_flush
 	
+	 ; Check for collision of end of recompiled code with memroutines
+	 push de
+	  ld hl,(recompile_struct_end)
+	  ld de,(hl)
+	  ld hl,(z80codebase+memroutine_next)
+	  or a
+	  sbc hl,de
+	 pop de
+	 jr c,coherency_flush_no_padding
+	
 	; Copy the new opcodes, from first to last
 	pop hl
 	ldir
@@ -1105,6 +1115,8 @@ rerecompile:
 	ld (de),a
 	jr check_coherency_cycles
 	
+coherency_flush_no_padding:
+	sbc hl,hl
 coherency_flush:
 	pop de
 	pop.s de
