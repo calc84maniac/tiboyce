@@ -1284,7 +1284,7 @@ ItemDeleteCallbacks:
 MainMenu:
 	.db 10
 	.db 0,9
-	.db "TI-Boy CE Alpha v0.1.3\n https://calc84maniac.github.io/tiboyce",0
+	.db "TI-Boy CE Alpha v0.2.0\n https://calc84maniac.github.io/tiboyce",0
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
 	.db ITEM_DIGIT | ITEM_ROMONLY,0, 50,0,"Load State Slot %c",0
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
