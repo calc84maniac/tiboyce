@@ -3325,7 +3325,7 @@ opgenCRAMread:
 	jr c,_
 	; For now on 8KB carts, ignore RAM disable for reads to use a direct pointer
 	push hl
-	 ld hl,(cram_actual_bank_base)
+	 ld hl,(z80codebase+cram_actual_bank_base)
 	 add hl,bc
 	 ex de,hl
 	 ld (hl),$5B ;LD.LIL A,(addr)
