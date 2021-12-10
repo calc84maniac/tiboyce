@@ -570,6 +570,15 @@ _
 	dec c
 	jr nz,--_
 	
+	; Clear memroutineLUT to avoid corrupting z80 code when applying RTC SMC
+	xor a
+_
+	ld (de),a
+	inc de
+	ld (de),a
+	inc de
+	djnz -_
+	
 	ld a,vram_tiles_start >> 16
 	ld mb,a
 	ld ix,vram_tiles_start + 128
@@ -762,7 +771,6 @@ _
 	jr c,setup_ram_bank
 	ld c,a
 	call mbc_rtc_toggle_smc
-	ld b,0
 	ld hl,z80codebase+rtc_latched
 	jr setup_ram_bank_any
 	
