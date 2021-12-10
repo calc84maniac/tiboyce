@@ -27,7 +27,7 @@ plugins:
   - jekyll-paginate
 
 # Custom vars
-version:            Alpha v0.2.0
+version:            Alpha v0.2.0a
 sidebar_home_link:  true
 sidebar_blog_link:  '/blog/'    # By default, your home page is your blog
                                 # page. If you change your paginate_path,
