@@ -1,7 +1,12 @@
 # TI-Boy CE Changelog
 All notable changes to this project will be documented in this file.
 
-## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.2.0...HEAD)
+## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.2.1...HEAD)
+
+## [Alpha v0.2.0a — 2021-12-09](https://github.com/calc84maniac/tiboyce/releases/tag/v0.2.0a)
+
+### Fixed
+-   Fix an intermittent code corruption when loading RTC save states.
 
 ## [Alpha v0.2.0 — 2021-12-07](https://github.com/calc84maniac/tiboyce/releases/tag/v0.2.0)
 
