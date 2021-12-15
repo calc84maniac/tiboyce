@@ -809,9 +809,14 @@ schedule_ei_delay:
 	 ; which will run after the one GB cycle elapses
 	 call event_counter_checkers_done
 schedule_ei_delay_startup:
-	 ; Enable interrupts
-	 ld a,trigger_interrupt - (intstate_smc_2 + 1)
-	 ld (intstate_smc_2),a
+	 ; Enable interrupts, but check for halt spin
+	 ld hl,intstate_smc_2
+	 ld a,(hl)
+	 or a
+	 ld (hl),trigger_interrupt - (intstate_smc_2 + 1)
+	 jr z,_
+	 ld (hl),cpu_exit_halt_trigger_interrupt - (intstate_smc_2 + 1)
+_
 	 ; Restore the default counter checker end pointer
 	 call event_counter_checkers_done
 event_counter_checkers_done:
