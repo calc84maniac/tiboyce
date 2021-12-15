@@ -3310,17 +3310,23 @@ mem_update_DIV_TIMA:
 mem_update_bail:
 	pop ix
 	ld a,RST_MEM
-	cp (ix-5)
+	; HL read
+	cp (ix-8)
 	jr z,_
+	; DE read
+	ex de,hl
 	dec ix
-	cp (ix-5)
+	cp (ix-8)
 	jr z,_
+	; BC read
+	ex de,hl
+	pop hl
 	lea ix,ix-2
 _
 	ld a,iyl
 	ex af,af'
 	push af
-	pea ix-5
+	pea ix-8
 	ret
 	
 mem_read_any_before_write_swap:
