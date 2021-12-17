@@ -468,7 +468,9 @@ _
 	ld iy,state_start+state_size
 	ld (saveSP),sp
 	
-	ld sp,myADLstack
+	ld sp,myADLstack + 3
+	ld hl,$004000 ; Dummy banked return address to act as a loop terminator
+	push hl
 	
 	ld hl,z80codebase
 	push hl
@@ -642,8 +644,8 @@ _
 	ld.sis sp,myz80stack
 	ld hl,ophandlerRET  ; Return handler when no cached calls are available
 	push.s hl
-	ld c,4  ; Cycle count of 4 for default return handler
-	push.s bc
+	ld a,4  ; Cycle count of 4 for default return handler
+	push.s af
 	
 	; Copy palette conversion code to SHA hardware, if possible
 	APTR(sha_code)
@@ -786,6 +788,7 @@ _
 	ld c,a
 	call mbc_rtc_toggle_smc
 	ld hl,z80codebase+rtc_latched
+	ld b,0
 	jr setup_ram_bank_any
 	
 setup_ram_bank_no_rtc:
@@ -1028,7 +1031,7 @@ _
 	; Check if audio is disabled in NR52
 	bit 7,(hl)
 	jr nz,_
-	ld a,$C9 ;RET (overriding PUSH AF)
+	ld a,$C9 ;RET (overriding EXX)
 	ld (z80codebase+write_audio_disable_smc),a
 _
 	
@@ -1131,7 +1134,7 @@ _
 	; Push the target JIT address to the Z80 stack
 	push.s ix
 	
-	; Get the GB registers in BDEHL'
+	; Get the GB registers in BCDEHL'
 	ld.s bc,(iy-state_size+STATE_REG_BC)
 	ld.s de,(iy-state_size+STATE_REG_DE)
 	ld.s hl,(iy-state_size+STATE_REG_HL)
@@ -1146,30 +1149,29 @@ _
 	push de
 	pop af
 	; Get GB SP before we destroy IY
-	ld.s hl,(iy-state_size+STATE_REG_SP)
+	ld.s iy,(iy-state_size+STATE_REG_SP)
 
 	; Set the cycle count for the current event,
 	; which will occur in 1 cycle to force a reschedule
-	ld iy,$FFFF
+	ld ix,$FFFF
 
 	; Set the Game Boy stack, dispatch interrupt if pending,
 	; and reschedule events after 1 cycle
 	jp.sis start_emulation
 	
 ExitEmulation:
-	ld ix,state_start+state_size
+	ld.sis sp,state_start-hram_base+STATE_FRAME_COUNTER
 	ld.sis hl,(event_gb_address)
-	ld (ix-state_size+STATE_REG_PC),hl
+	push.s hl ;STATE_REG_PC
 	
-	pop hl
 	ld.sis de,(sp_base_address_neg)
-	add hl,de
-	ld.s (ix-state_size+STATE_REG_SP),hl
+	add iy,de
+	push.s iy ;STATE_REG_SP
 	
 	exx
-	push.s hl
-	push.s de
-	push.s bc
+	push.s hl ;STATE_REG_HL
+	push.s de ;STATE_REG_DE
+	push.s bc ;STATE_REG_BC
 	
 	ex af,af'
 	push af
@@ -1177,24 +1179,11 @@ ExitEmulation:
 	ld h,flags_lut >> 8
 	ld.s l,(hl)
 	ld h,a
-	push.s hl
-	
-	xor a
-	ld (ix-state_size+STATE_SYSTEM_TYPE),a
-	ld b,a
-	sbc hl,hl
-	; Save the active interrupts in IF
-	ld.s a,(hl) ;active_ints
-	or $E0
-	ld (ix-ioregs+IF),a
-	add.s hl,sp
-	lea de,ix-state_size+STATE_REG_AF
-	ld c,8
-	ldir.s
+	push.s hl ;STATE_REG_AF
 	
 	; Calculate the DIV cycle count
 	ld hl,i
-	lea de,iy
+	lea de,ix
 	add hl,de
 	ex de,hl
 	
@@ -1211,6 +1200,7 @@ _
 	add hl,bc
 	ld bc,CYCLES_PER_FRAME
 	jr nc,-_
+	ld ix,state_start+state_size
 	ld (ix-state_size+STATE_FRAME_COUNTER),hl
 	
 	; Save the serial cycle count
@@ -1249,10 +1239,11 @@ _
 	rla
 	dec a
 	and 3
-	ld (ix-state_size+STATE_INTERRUPTS),a
+	push.s af ;STATE_INTERRUPTS
 	
 	; Set CPU mode, 0 = running, 1 = halted
 	xor a
+	ld (ix-state_size+STATE_SYSTEM_TYPE),a
 	add hl,hl
 	rla
 	ld (ix-state_size+STATE_CPU_MODE),a
@@ -1295,6 +1286,11 @@ _
 	lea de,ix-ioregs+NR10
 	ld bc,audio_port_masks - audio_port_values
 	ldir
+	
+	; Save the active interrupts in IF
+	ld.s a,(bc) ;active_ints
+	or $E0
+	ld (ix-ioregs+IF),a
 	
 	; Zero-fill the rest of the state
 	lea hl,ix-state_size+STATE_END
@@ -2952,7 +2948,7 @@ sha_code_entry_offset = (15 - (160 % 15)) * 4
 convert_palette_row = mpShaData + sha_code_entry_offset
 convert_palette_row_loop_count = (160 / 15) + 1
 	
-MBC_IMPL_SIZE = 16
+MBC_IMPL_SIZE = 15
 mbc_impl_code:
 	.assume adl=0
 	
@@ -2961,16 +2957,15 @@ mbc_impl_code:
 	add a,a
 	add a,a
 	jr c,mbc_4000 - mbc_impl
-	push bc
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
-	 ld a,c
-	 jp p,mbc_0000
+	ex af,af'
+	ld e,a
+	ex af,af'
+	ld a,e
+	jp p,mbc_0000
 mbc1_large_rom_continue:
-	 ; Mask the new value and check if 0-page should be overridden
-	 and $1F
-	 jr z,mbc_zero_page_override - mbc_impl
+	; Mask the new value and check if 0-page should be overridden
+	and $1F
+	jr z,mbc_zero_page_override - mbc_impl
 #if $ != MBC_IMPL_SIZE
 	.error "MBC1 impl size is incorrect"
 #endif
@@ -2980,14 +2975,13 @@ mbc1_large_rom_continue:
 	bit 6,a
 	jr nz,mbc_denied - mbc_impl
 	rra
-	push bc
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
-	 ld a,c
-	 jr nc,mbc_0000 - mbc_impl
-	 and $0F
-	 jr z,mbc_zero_page_override - mbc_impl
+	ex af,af'
+	ld e,a
+	ex af,af'
+	ld a,e
+	jr nc,mbc_0000 - mbc_impl
+	and $0F
+	jr z,mbc_zero_page_override - mbc_impl
 #if $ != MBC_IMPL_SIZE
 	.error "MBC2 impl size is incorrect"
 #endif
@@ -2997,14 +2991,13 @@ mbc1_large_rom_continue:
 	add a,a
 	add a,a
 	jr c,mbc_4000 - mbc_impl
-	push bc
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
-	 ld a,c
-	 jp p,mbc_0000
-	 and $7F
-	 jr z,mbc_zero_page_override - mbc_impl
+	ex af,af'
+	ld e,a
+	ex af,af'
+	ld a,e
+	jp p,mbc_0000
+	and $7F
+	jr z,mbc_zero_page_override - mbc_impl
 #if $ != MBC_IMPL_SIZE
 	.error "MBC3 impl size is incorrect"
 #endif
@@ -3015,14 +3008,13 @@ mbc1_large_rom_continue:
 	add a,a
 	jr c,mbc_4000 - mbc_impl
 	add a,a
-	push bc
-	 ex af,af'
-	 ld c,a
-	 ex af,af'
-	 ld a,c
-	 jr nc,mbc5_0000 - mbc_impl
-	 jp m,mbc_denied_restore
-	 nop
+	ex af,af'
+	ld e,a
+	ex af,af'
+	ld a,e
+	jr nc,mbc5_0000 - mbc_impl
+	jp m,mbc_denied
+	nop
 #if $ != MBC_IMPL_SIZE
 	.error "MBC5 impl size is incorrect"
 #endif
@@ -3034,7 +3026,7 @@ mbc3rtc_4000_impl:
 	ld a,(cram_actual_bank_base+2)
 	cp z80codebase>>16
 	jp.lil z,mbc_rtc_switch_from_rtc_helper
-	bit 3,c
+	bit 3,e
 	jr z,mbc_ram - mbc_4000_impl
 	jp.lil mbc_rtc_switch_to_rtc_helper
 mbc3rtc_4000_impl_size = $

@@ -204,4 +204,9 @@ RuntimeErrorMessage:
 	
 InvalidOpcodeErrorMessage:
 	.db "Encountered invalid opcode at %04X\n",0
+
+#ifdef SCHEDULER_LOG	
+SchedulerLogMessage:
+	.db "%06X: AF=%04X, BC=%04X, DE=%04X, HL=%04X, SP=%04X\n",0
+#endif
 #endif

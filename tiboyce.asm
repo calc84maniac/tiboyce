@@ -371,7 +371,7 @@ flags_lut = myz80stack - 512
 memroutine_end = flags_lut - 3
 
 ; The bottom of the ADL stack. Grows down from the end of SafeRAM.
-myADLstack = usbArea
+myADLstack = usbArea - 3
 
 ; Preprocessed Game Boy tilemap entries. 16KB in size.
 ; Each tile entry is a 2-byte offset of the pixel data from vram_pixels_start.

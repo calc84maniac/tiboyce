@@ -168,11 +168,9 @@ decode_jump_bank_switch_continue:
 	jp.sis decode_bank_switch_return
 	
 decode_rst_helper:
-	ex af,af'
 	exx
-	ld c,a
-	push bc
-	 push hl
+	push af
+	 push bc
 	  push ix
 	   ; Get the RST target address
 	   lea hl,ix+(10*4)
@@ -198,9 +196,8 @@ decode_rst_helper:
 	  ld.s (ix+3),a
 	  ; Emit the jump target
 	  ld.s (ix+1),hl
-	 pop hl
-	pop bc
-	ld a,c
+	 pop bc
+	pop af
 	jp.sis do_rst_decoded
 	
 decode_call_helper:
@@ -376,13 +373,13 @@ _
 	jp.sis banked_call_mismatch_continue
 	
 decode_halt_helper:
-	push hl
-	 ex af,af'
-	 ld c,a
+	ex af,af'
+	push af
 	 push bc
 	  call lookup_code
 	 pop bc
-	 jp.sis decode_halt_continue
+	pop de
+	jp.sis decode_halt_continue
 	
 ; Most emitted single-byte memory access instructions consist of RST_MEM
 ; followed inline by the opcode byte in question (and one padding byte).
@@ -421,17 +418,15 @@ decode_halt_helper:
 ; memory region, decode_mem is called with the new region and the direct call
 ; is patched again with the new memory access routine.
 ;
-; Inputs:  IX = address following the RST_MEM instruction
+; Inputs:  A = opcode byte
+;          HL' = address following the RST_MEM instruction
 ;          BCDEHL = Game Boy BCDEHL
-; Outputs: IX = address of the RST_MEM instruction
+; Outputs: HL' = address following the RST_MEM instruction
 ;          DE = address of the memory access routine, or flush_mem_handler
 ;          When flush_mem_handler is returned, Z is set for 2-byte instructions
 ; Destroys AF,HL
 decode_mem_helper:
-	dec ix
-	
 	; Get index 0-31
-	ld.s a,(ix+1)
 	sub $70
 	cp 8
 	jr c,++_
@@ -493,9 +488,12 @@ _
 	; Routine doesn't exist, let's generate it!
 	push bc \ push hl
 	 ex de,hl
-	 ld.s d,(ix+1)
+	 exx
+	 ld.s a,(hl)
+	 exx
 	 ; Save on the stack in case the original memory location is overwritten
-	 push de
+	 push af
+	  ld d,a
 	 
 	  ; Emit RET and possible post-increment/decrement
 	  ld hl,(z80codebase+memroutine_next)
@@ -546,10 +544,7 @@ _
 	  ld (hl),$F1 ;POP AF
 	  dec hl
 	  ld (hl),$77 ;LD (HL),A
-	  dec hl
-	  ld (hl),$7D
-	  dec hl
-	  ld (hl),$FD ;LD A,IYL
+	  call memroutine_gen_ixh_load
 _
 	  dec hl
 	  ld (hl),-10
@@ -669,9 +664,9 @@ _
 	  dec hl
 	  inc a
 	  jr nz,_
-	  ld (hl),$7D
+	  ld (hl),$7C
 	  dec hl
-	  ld a,$FD-$7E	;LD A,IYL
+	  ld a,$DD-$7E	;LD A,IXH
 _
 	  add a,$7E	;LD A,r
 	  ld (hl),a
@@ -785,6 +780,7 @@ memroutine_gen_not_vram:
 memroutine_rtc_smc_1 = $+1
 	  and 0	; 5 when RTC bank selected
 	  call memroutine_gen_index_offset
+	  ld b,d
 	  ld de,cram_bank_base
 	  ld (hl),de
 memroutine_rtc_smc_2 = $
@@ -804,6 +800,9 @@ _
 	  ld (hl),$DD
 	  dec hl
 	  ld (hl),$5B	;LD.LIL IX,(cram_bank_base)
+	  ld a,b
+	  cp $76
+	  call z,memroutine_gen_ixh_load
 	  dec hl
 	  ld (hl),-10
 	  dec hl
@@ -825,6 +824,8 @@ _
 memroutine_gen_not_cram:
 	  ;We're in RAM, cool!
 	  call memroutine_gen_index
+	  ld a,d
+	  cp $76
 	  ;Mirrored RAM
 	  ld de,wram_base-$2000
 	  ld a,$1E
@@ -840,6 +841,7 @@ _
 	  ld (hl),$DD
 	  dec hl
 	  ld (hl),$5B	;LD.LIL IX,wram_base
+	  call z,memroutine_gen_ixh_load
 	  dec hl
 	  ld (hl),-10
 	  dec hl
@@ -881,12 +883,9 @@ _
 	ld (hl),$DD	;IX prefix
 	dec hl
 	ld (hl),$5B	;.LIL prefix
+	jr z,_
 	dec hl
 	ld (hl),$F1	;POP AF
-	jr nz,_
-	ld (hl),$7D
-	dec hl
-	ld (hl),$FD	;LD A,IYL
 _
 	dec hl
 	ld a,c
@@ -944,3 +943,11 @@ memroutine_gen_no_cycle_info:
 	dec hl
 	ld (hl),$DD ;LD IXL,NO_CYCLE_INFO[ | NO_RESCHEDULE]
 	ret
+	
+memroutine_gen_ixh_load:
+	dec hl
+	ld (hl),$7C
+	dec hl
+	ld (hl),$DD	;LD A,IXH
+	ret
+	

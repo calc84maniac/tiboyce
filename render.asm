@@ -232,137 +232,127 @@ draw_sprite_priority_hdir_2:
 	jp draw_next_sprite_2
 	
 _
-	   call write_vram_check_sprite_catchup
-	   jr _
+	 call write_vram_check_sprite_catchup
+	 jr _
 write_vram_and_expand_catchup:
-	 push bc
-	  push de
-	   bit 4,d
-	   jr z,-_
-	   call render_catchup
+	push de
+	 bit 4,d
+	 jr z,-_
+	 call render_catchup
 _
-	  pop de
-	  jr _
-write_vram_and_expand_push:
-	push hl
+	pop de
 write_vram_and_expand:
-	 push bc
-_
-	  ld hl,vram_base
-	  add hl,de
-	  ex af,af'
-	  ld c,a
-	  ex af,af'
-	  ld a,(hl)
-	  cp c
-	  jr z,write_vram_no_change
-	  ld (hl),c
-	  ld a,d
-	  add a,256-$98
-	  jr nc,write_vram_pixels
-	  ld h,a
-	  ld a,e
-	  and $E0
-	  ld l,a
-	  xor e
-	  add a,a
-	  add hl,hl
-	  add hl,hl
-	  add.s hl,hl
-	  ld de,vram_tiles_start
-	  ld e,a
-	  add hl,de
-	  ld de,64
-	  ld b,e
-	  mlt bc
-	  ld (hl),c
-	  inc hl
-	  ld (hl),b
-	  add hl,de
-	  ld (hl),b
-	  dec hl
-	  ld (hl),c
-	  add hl,de
-	  ld a,b
-	  add a,a
-	  cpl
-	  and e
-	  or b
-	  ld (hl),c
-	  inc hl
-	  ld (hl),a
-	  add hl,de
-	  ld (hl),a
-	  dec hl
-	  ld (hl),c
+	ld hl,vram_base
+	add hl,de
+	ex af,af'
+	ld c,a
+	ex af,af'
+	ld a,(hl)
+	cp c
+	jr z,write_vram_no_change
+	ld (hl),c
+	ld a,d
+	add a,256-$98
+	jr nc,write_vram_pixels
+	ld h,a
+	ld a,e
+	and $E0
+	ld l,a
+	xor e
+	add a,a
+	add hl,hl
+	add hl,hl
+	add.s hl,hl
+	ld de,vram_tiles_start
+	ld e,a
+	add hl,de
+	ld de,64
+	ld b,e
+	mlt bc
+	ld (hl),c
+	inc hl
+	ld (hl),b
+	add hl,de
+	ld (hl),b
+	dec hl
+	ld (hl),c
+	add hl,de
+	ld a,b
+	add a,a
+	cpl
+	and e
+	or b
+	ld (hl),c
+	inc hl
+	ld (hl),a
+	add hl,de
+	ld (hl),a
+	dec hl
+	ld (hl),c
 write_vram_no_change:
-	 pop bc
-	pop hl
-	jp.sis z80_restore_swap_ret
+	jp.sis z80_pop_restore_swap_ret
+	
 write_vram_catchup:
-	 push bc
-	  ; Disable the normal return to z80 mode by using a false jump condition
-	  ld a,$EA ;JP PE,
-	  ld (write_vram_catchup_smc),a
-	  ; Carry is set, which forces the written value to have bit 0 reset
+	; Disable the normal return to z80 mode by using a false jump condition
+	ld a,$EA ;JP PE,
+	ld (write_vram_catchup_smc),a
+	; Carry is set, which forces the written value to have bit 0 reset
 write_vram_pixels:
-	  ; Check if writing to the same slice as the last write
-	  set 0,l
+	; Check if writing to the same slice as the last write
+	set 0,l
 write_vram_last_slice = $+1
-	  ld de,0
-	  sbc hl,de
-	  ; If equivalent, clear the last write slice
-	  jr z,_
-	  ; Otherwise, save the currently written slice
-	  add hl,de
+	ld de,0
+	sbc hl,de
+	; If equivalent, clear the last write slice
+	jr z,_
+	; Otherwise, save the currently written slice
+	add hl,de
 _
-	  ld (write_vram_last_slice),hl
-	  ; If the last slice was cleared, defer pixel generation
-	  bit 0,e
-	  jr z,write_vram_defer_pixels
-	  ; Write pixels from the last slice
-	  ex de,hl
-	  ; Get the HIGH and low bitplanes with nibbles X and Y
-	  ld b,(hl)  ;B=[X][Y]
-	  dec hl
-	  ld a,(hl)  ;A=[x][y]
-	  add hl,hl
-	  add hl,hl
-	  ld de,vram_pixels_start-((vram_start*4) & $FFFFFF)
-	  add hl,de
-	  ex de,hl
-	  rlca \ rlca \ rlca \ rlca  ;A=[y][x]
-	  xor b   ;A=[X^y][Y^x]
-	  ld c,a  ;C=[X^y][Y^x]
-	  and $0F ;A=[0][Y^x]
-	  xor b   ;A=[X][x]
-	  ld hl,overlapped_pixel_index_lut
-	  ld b,l  ;B=0
-	  ld l,a  ;L=[X][x]
-	  xor c   ;A=[y][Y]
-	  rrca \ rrca \ rrca \ rrca  ;A=[Y][y]
-	  ; Look up sequence of pixels for nibble X
-	  ld l,(hl)
-	  inc h
-	  ; Copy 4 pixels to cached VRAM tile data
-	  ld c,4
-	  ldir
-	  ld l,a  ;L=[Y][y]
-	  ; Look up sequence of pixels for nibble Y
-	  ld h,(overlapped_pixel_index_lut >> 8) & $FF
-	  ld l,(hl)
-	  inc h
-	  ; Copy 4 pixels to cached VRAM tile data
-	  ld c,4
-	  ldir
+	ld (write_vram_last_slice),hl
+	; If the last slice was cleared, defer pixel generation
+	bit 0,e
+	jr z,write_vram_defer_pixels
+	; Write pixels from the last slice
+	ex de,hl
+	; Get the HIGH and low bitplanes with nibbles X and Y
+	ld b,(hl)  ;B=[X][Y]
+	dec hl
+	ld a,(hl)  ;A=[x][y]
+	add hl,hl
+	add hl,hl
+	ld de,vram_pixels_start-((vram_start*4) & $FFFFFF)
+	add hl,de
+	ex de,hl
+	rlca \ rlca \ rlca \ rlca  ;A=[y][x]
+	xor b   ;A=[X^y][Y^x]
+	ld c,a  ;C=[X^y][Y^x]
+	and $0F ;A=[0][Y^x]
+	xor b   ;A=[X][x]
+	ld hl,overlapped_pixel_index_lut
+	ld b,l  ;B=0
+	ld l,a  ;L=[X][x]
+	xor c   ;A=[y][Y]
+	rrca \ rrca \ rrca \ rrca  ;A=[Y][y]
+	; Look up sequence of pixels for nibble X
+	ld l,(hl)
+	inc h
+	; Copy 4 pixels to cached VRAM tile data
+	ld c,4
+	ldir
+	ld l,a  ;L=[Y][y]
+	; Look up sequence of pixels for nibble Y
+	ld h,(overlapped_pixel_index_lut >> 8) & $FF
+	ld l,(hl)
+	inc h
+	; Copy 4 pixels to cached VRAM tile data
+	ld c,4
+	ldir
 write_vram_defer_pixels:
-	 pop bc
-	pop hl
 write_vram_catchup_smc = $+1
-	jp.sis z80_restore_swap_ret ;Replaced with JP PE when catching up
+	jp.sis z80_pop_restore_swap_ret ;Replaced with JP PE when catching up
 	ld a,$C3 ;JP
 	ld (write_vram_catchup_smc),a
-	jp (hl)
+	ret
 	
 scanline_do_subtile:
 	ld a,8
@@ -449,4 +439,3 @@ cursorcodesize = $-mpLcdCursorImg
 	.org cursorcode+cursorcodesize
 	
 	.echo "Cursor memory code size: ", cursorcodesize
-	

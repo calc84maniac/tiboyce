@@ -108,17 +108,15 @@ _
 ;
 ; Inputs:  DE = GB address
 ; Outputs: DE = GB address plus (bank << 24), depending on region
-; Destroys AF
+; Destroys AF, HL
 get_banked_address:
 	ld a,d
 	add a,$40
 	ret po
-	push hl
-	 ld hl,(z80codebase+curr_rom_bank-2)
-	 ld h,d
-	 ld l,e
-	 ex de,hl
-	pop hl
+	ld hl,(z80codebase+curr_rom_bank-2)
+	ld h,d
+	ld l,e
+	ex de,hl
 	ret
 	
 ; Gets the recompile struct entry for a given code pointer.
@@ -421,9 +419,8 @@ _
 	
 	 ; When a match is found, load it from the cache
 lookup_code_cached_found:
-	 ld a,(ix-3)
-	 ld ix,(ix-5)
-	pop hl
+	ld a,(ix-3)
+	ld ix,(ix-5)
 	ret.l
 	
 	
@@ -437,119 +434,116 @@ lookup_code_cached_found:
 ; Outputs: IX = recompiled code address
 ;          DE = Game Boy address (banked)
 ;          A = number of cycles until block end
-; Destroys AF,BC,DE
+; Destroys AF,BC,DE,HL
 lookup_code_cached:
 	; Get the banked address in DE
 	call get_banked_address
 
 lookup_code_cached_with_bank:
-	push hl
-	 ; Search the cache for the pointer, indexing by the LSB
-	 ld ix,recompile_cache_end
-	 ld hl,recompile_cache_LUT
-	 ld l,e
-	 ld a,(hl)
-	 dec l
-	 ld c,(hl)
-	 inc h
-	 ld b,(hl)
-	 inc l
-	 jr z,_
-	 ld ixl,c
-	 ld ixh,b
+	; Search the cache for the pointer, indexing by the LSB
+	ld ix,recompile_cache_end
+	ld hl,recompile_cache_LUT
+	ld l,e
+	ld a,(hl)
+	dec l
+	ld c,(hl)
+	inc h
+	ld b,(hl)
+	inc l
+	jr z,_
+	ld ixl,c
+	ld ixh,b
 _
-	 sub ixl
-	 jr z,lookup_code_cached_miss
-	 ld bc,-5
+	sub ixl
+	jr z,lookup_code_cached_miss
+	ld bc,-5
 lookup_code_cached_loop:
-	 ld hl,(ix-3)
-	 ld l,e
-	 or a
-	 sbc hl,de
-	 jr z,lookup_code_cached_found
-	 add ix,bc
-	 sub c
-	 jr nz,lookup_code_cached_loop
+	ld hl,(ix-3)
+	ld l,e
+	or a
+	sbc hl,de
+	jr z,lookup_code_cached_found
+	add ix,bc
+	sub c
+	jr nz,lookup_code_cached_loop
 	
 	; If a cached code lookup misses, resolve it and insert into the cache
 lookup_code_cached_miss:
-	 push de
-	  push ix
+	push de
+	 push ix
 #ifdef DEBUG
-	   push de
-	    APRINTF(CacheMissMessage)
-	   pop de
+	  push de
+	   APRINTF(CacheMissMessage)
+	  pop de
 #endif
-	   call lookup_code_with_bank
-	   ; Check if the cache needs to be flushed
-	   ld hl,(recompile_struct_end)
-	   ld de,(recompile_cache)
-	   ld bc,3+5
-	   add hl,bc
-	   sbc hl,de
-	   jr c,_
-	   ; Allow a certain number of cache flushes before flushing the entire JIT space
-	   ld hl,cache_flushes_allowed
-	   dec (hl)
-	   ; Get the GB banked pointer in HL
-	   pop de
-	   pop hl
-	   push hl
-	   push de
-	   ; If no cache flushes remaining, prepare a JIT flush (replacing IX and A)
-	   call z,prepare_flush
-	   ; Flush the cache
-	   call flush_cache
-	   ex de,hl
-_
-	  pop hl
-	  ; Copy back the entries below the insert point to make room
-	  or a
+	  call lookup_code_with_bank
+	  ; Check if the cache needs to be flushed
+	  ld hl,(recompile_struct_end)
+	  ld de,(recompile_cache)
+	  ld bc,3+5
+	  add hl,bc
 	  sbc hl,de
-	  jr nc,_
-	  cp a	;Set Z
-_
-	  ld b,h
-	  ld c,l
-	  ld hl,-5
-	  add hl,de
-	  ld (recompile_cache),hl
-	  jr z,_
+	  jr c,_
+	  ; Allow a certain number of cache flushes before flushing the entire JIT space
+	  ld hl,cache_flushes_allowed
+	  dec (hl)
+	  ; Get the GB banked pointer in HL
+	  pop de
+	  pop hl
+	  push hl
+	  push de
+	  ; If no cache flushes remaining, prepare a JIT flush (replacing IX and A)
+	  call z,prepare_flush
+	  ; Flush the cache
+	  call flush_cache
 	  ex de,hl
-	  ldir
-	  ex de,hl
 _
-	 pop de
-	 ; Assign to the new entry
-	 ld (hl),ix
-	 inc hl
-	 inc hl
-	 ld (hl),de
-	 ld (hl),a
-	 ; Update range bounds for each LSB range copied back
-	 ld hl,recompile_cache_LUT + 5
-	 ld b,l
-	 ld l,e
-	 ld c,a
+	 pop hl
+	 ; Copy back the entries below the insert point to make room
+	 or a
+	 sbc hl,de
+	 jr nc,_
+	 cp a	;Set Z
 _
-	 ld a,(hl)
-	 sub b
-	 ld (hl),a
-	 jr c,_
-	 inc l
-	 jr nz,-_
-	 ld a,c
-	pop hl
+	 ld b,h
+	 ld c,l
+	 ld hl,-5
+	 add hl,de
+	 ld (recompile_cache),hl
+	 jr z,_
+	 ex de,hl
+	 ldir
+	 ex de,hl
+_
+	pop de
+	; Assign to the new entry
+	ld (hl),ix
+	inc hl
+	inc hl
+	ld (hl),de
+	ld (hl),a
+	; Update range bounds for each LSB range copied back
+	ld hl,recompile_cache_LUT + 5
+	ld b,l
+	ld l,e
+	ld c,a
+_
+	ld a,(hl)
+	sub b
+	ld (hl),a
+	jr c,_
+	inc l
+	jr nz,-_
+	ld a,c
 	ret.l
 	
 _
-	 inc h
-	 dec (hl)
-	 dec h
-	 inc l
-	 jr nz,--_
-	 ld a,c
-	pop hl
+	inc h
+	dec (hl)
+	dec h
+	inc l
+	jr nz,--_
+	ld a,c
 	ret.l
 	
 	
@@ -977,68 +971,65 @@ flush_cache:
 	
 	
 check_coherency_helper:
-	exx
-	push hl
 	ex af,af'
-	ld c,a
-	push bc
-	ld de,recompile_struct
-	add ix,de
-	ld b,e
-	ld c,(ix+5)
-	inc c
-	ld hl,(ix+2)
-	ex.s de,hl
-	GET_BASE_ADDR_FAST
-	add hl,de
-	ex de,hl
-	ld hl,i
-	ld l,(ix+8)
-	ld h,(ix+9)
-	sbc hl,bc
+	push af
+	 ld de,recompile_struct
+	 add ix,de
+	 ld b,e
+	 ld c,(ix+5)
+	 inc c
+	 ld hl,(ix+2)
+	 ex.s de,hl
+	 GET_BASE_ADDR_FAST
+	 add hl,de
+	 ex de,hl
+	 ld hl,i
+	 ld l,(ix+8)
+	 ld h,(ix+9)
+	 sbc hl,bc
 check_coherency_loop:
-	ld a,(de)
-	inc de
-	cpi
-	jr nz,_
-	ld a,(de)
-	inc de
-	cpi
-	jr nz,_
-	ld a,(de)
-	inc de
-	cpi
-	jr nz,_
-	ld a,(de)
-	inc de
-	cpi
-	jr z,check_coherency_loop
+	 ld a,(de)
+	 inc de
+	 cpi
+	 jr nz,_
+	 ld a,(de)
+	 inc de
+	 cpi
+	 jr nz,_
+	 ld a,(de)
+	 inc de
+	 cpi
+	 jr nz,_
+	 ld a,(de)
+	 inc de
+	 cpi
+	 jr z,check_coherency_loop
 _
-	jp pe,rerecompile
-	; Make sure the last (complemented) byte matches
-	cpl
-	dec hl
-	xor.s (hl)
-	jr nz,rerecompile
+	 jp pe,rerecompile
+	 ; Make sure the last (complemented) byte matches
+	 cpl
+	 dec hl
+	 xor.s (hl)
+	 jr nz,rerecompile
 	
 check_coherency_cycles:
-	pop bc
-	ld a,(ix+7)
-	add a,c
-	jp.sis nc,coherency_return
-	inc iyh
-	jp.sis nz,coherency_return
-	ld iyl,a
-	sub c
-	ld c,a
+	pop af
+	pop.s bc
+	add a,(ix+7)
+	jp.sis nc,z80_double_swap_ret
+	inc c
+	jp.sis nz,z80_double_swap_ret
+	ld c,(ix+7)
 	ld hl,(ix+2)
 	ex.s de,hl
 	pop.s ix
 	push.s ix
+	push.s bc
+	ld b,a
 #ifdef VALIDATE_SCHEDULE
-	call schedule_event_helper
+	call schedule_event_helper_a
 #else
-	jp schedule_event_helper
+	jp schedule_event_helper_a
 #endif
 	
 ; Recompiles an existing RAM code block in-place.
@@ -1119,7 +1110,6 @@ coherency_flush_no_padding:
 	sbc hl,hl
 coherency_flush:
 	pop de
-	pop.s de
 	; Get the number of bytes in the overflow
 	inc hl
 	; Add that many bytes to the RAM block padding to avoid future issues
@@ -1137,9 +1127,8 @@ coherency_flush:
 	ld de,(ix+2)
 	call flush_code
 	call lookup_code_with_bank
-	pop bc
-	pop hl
-	ld a,c
+	pop af
+	pop.s bc
 	ex af,af'
 	exx
 	; Flush entire call stack, including interrupt returns
@@ -2932,10 +2921,10 @@ _opgen08:
 	.dw ophandler08
 	
 _opgen36:
-	ld a,$FD	;LD IYL,nn
+	ld a,$DD	;LD IXH,nn
 	ld (de),a
 	inc de
-	ld a,$2E
+	ld a,$26
 	ld (de),a
 	inc de
 	inc hl
@@ -3407,3 +3396,39 @@ opgenHRAMread:
 	inc hl
 	ld (hl),b
 	jp opgen_next_swap_skip
+	
+#ifdef SCHEDULER_LOG
+scheduler_log:
+	push ix
+	 ld.sis hl,(sp_base_address_neg)
+	 lea de,iy
+	 add.s hl,de
+	 ex af,af'
+	 push af
+	  push hl
+	   exx
+	   push hl
+	    push de
+	     push bc
+	      push af
+	      pop de
+	      ld hl,z80codebase+flags_lut
+	      ld l,e
+	      ld e,(hl)
+	      push de
+	       ld.sis de,(event_gb_address)
+	       call get_banked_address
+	       push de
+	        APRINTF(SchedulerLogMessage)
+	       pop hl
+	      pop de
+	     pop bc
+	    pop de
+	   pop hl
+	   exx
+	  pop hl
+	 pop af
+	 ex af,af'
+	pop ix
+	ret.l
+#endif

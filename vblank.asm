@@ -413,7 +413,7 @@ wait_for_interrupt:
 	ld hl,z80codebase+rst38h
 	ld (hl),$C9	;RET
 	call.is wait_for_interrupt_stub
-	ld (hl),$FD	;LD IYL,A
+	ld (hl),$D9	;EXX
 	ex de,hl
 	ld (hl),bc
 	ret
@@ -1210,7 +1210,7 @@ render_scanline_off:
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
 ; Outputs: Scanlines rendered if applicable
-; Destroys: AF, DE, HL, IX
+; Destroys: AF, DE, HL
 render_catchup:
 	; Disable catch-up until at least one more scanline passes
 	ld hl,hram_base+STAT
@@ -1240,120 +1240,122 @@ myLY = $+1
 	 push bc
 render_scanlines_wait_smc = $+1
 	  call sync_frame_flip
+	  ; Handle any deferred VRAM writes
+	  ld a,(write_vram_last_slice)
+	  rra
+	  call c,write_vram_catchup
 	 pop bc
-	 ; Handle any deferred VRAM writes
-	 ld a,(write_vram_last_slice)
-	 rra
-	 call c,write_vram_catchup
-	 push iy
+	 push ix
+	  push iy
 scanlineLUT_ptr = $+2
-	  ld iy,0
-	  ld.sis (render_save_sps),sp
-	  ld a,vram_tiles_start >> 16
-	  ld mb,a
-	  or a
-	  ld hl,-6
-	  add hl,sp
-	  ld (render_save_spl),hl
+	   ld iy,0
+	   ld.sis (render_save_sps),sp
+	   ld a,vram_tiles_start >> 16
+	   ld mb,a
+	   or a
+	   ld hl,-6
+	   add hl,sp
+	   ld (render_save_spl),hl
 render_scanline_loop:
-	  push bc
-	   ; Get current scanline pointer from LUT
-	   ld de,(iy)
-	   lea iy,iy+3
+	   push bc
+	    ; Get current scanline pointer from LUT
+	    ld de,(iy)
+	    lea iy,iy+3
 	   
-	   ; Zero flag is reset
+	    ; Zero flag is reset
 LCDC_7_smc = $
-	   jr z,render_scanline_off
+	    jr z,render_scanline_off
 SCY_smc = $+1
-	   ld l,0
-	   add hl,bc
-	   ld h,32
-	   mlt hl
-	   ld a,l
+	    ld l,0
+	    add hl,bc
+	    ld h,32
+	    mlt hl
+	    ld a,l
 SCX_smc_1 = $+1
-	   ld l,0
+	    ld l,0
 	
 LCDC_4_smc = $+2
 LCDC_3_smc = $+3
-	   ld.sis sp,(vram_tiles_start & $FFFF) + $80
+	    ld.sis sp,(vram_tiles_start & $FFFF) + $80
 LCDC_0_smc = $+1
-	   add.sis hl,sp
-	   ld.sis sp,hl
+	    add.sis hl,sp
+	    ld.sis sp,hl
 	 
-	   ld hl,vram_pixels_start
-	   rrca
-	   rrca
-	   ld l,a
+	    ld hl,vram_pixels_start
+	    rrca
+	    rrca
+	    ld l,a
 	   
 SCX_smc_2 = $+1
-	   ld b,8
+	    ld b,8
 	 
 LCDC_5_smc = $
-	   ; Carry flag is reset
-	   jr nc,scanline_no_window
+	    ; Carry flag is reset
+	    jr nc,scanline_no_window
 	 
 WY_smc = $+1
-	   ld a,0
+	    ld a,0
 window_trigger_smc_1 = $
-	   xor c ; Replaced with XOR A
+	    xor c ; Replaced with XOR A
 WX_smc_1 = $
-	   jr nz,scanline_no_window
+	    jr nz,scanline_no_window
 	   
 window_trigger_smc_2 = $
-	   jr do_window_trigger ; Replaced with SUB B \ ADD A,n
+	    jr do_window_trigger ; Replaced with SUB B \ ADD A,n
 WX_smc_2 = $
-	   .db 0
-	   call c,scanline_do_render
+	    .db 0
+	    call c,scanline_do_render
 	 
 window_tile_ptr = $+2
-	   ld.sis sp,(vram_tiles_start & $FFFF) + $80	;(+$2000) (-$80)
+	    ld.sis sp,(vram_tiles_start & $FFFF) + $80	;(+$2000) (-$80)
 	 
 window_tile_offset = $+1
-	   ld hl,vram_pixels_start
-	   ld a,l
-	   add a,8
-	   cp 64
-	   jr c,_
-	   ld a,(window_tile_ptr+1)
-	   inc a
-	   ld (window_tile_ptr+1),a
-	   xor a
+	    ld hl,vram_pixels_start
+	    ld a,l
+	    add a,8
+	    cp 64
+	    jr c,_
+	    ld a,(window_tile_ptr+1)
+	    inc a
+	    ld (window_tile_ptr+1),a
+	    xor a
 _
-	   ld (window_tile_offset),a
+	    ld (window_tile_offset),a
 	 
 WX_smc_3 = $+1
-	   ld b,0
+	    ld b,0
 	 
 scanline_no_window:
-	   ld a,167
-	   sub b
-	   call scanline_do_render
+	    ld a,167
+	    sub b
+	    call scanline_do_render
 	 
 render_scanline_next:
-	   ; Advance to next scanline
-	  pop bc
-	  inc c
-	  djnz render_scanline_loop
-	  ld (scanlineLUT_ptr),iy
-	  ld a,c
-	  ld (myLY),a
-	  ; Restore important Z80 things
-	  ld a,z80codebase >> 16
-	  ld mb,a
-	  ld.sis sp,(render_save_sps)
-	 pop iy
+	    ; Advance to next scanline
+	   pop bc
+	   inc c
+	   djnz render_scanline_loop
+	   ld (scanlineLUT_ptr),iy
+	   ld a,c
+	   ld (myLY),a
+	   ; Restore important Z80 things
+	   ld a,z80codebase >> 16
+	   ld mb,a
+	   ld.sis sp,(render_save_sps)
+	  pop iy
+	 pop ix
 	 call sync_frame_flip
 	pop bc
 	ret
 	
 do_window_trigger:
-	   ld a,$AF ; XOR A
-	   ld (window_trigger_smc_1),a
-	   ld a,$90 ; SUB B
-	   ld (window_trigger_smc_2),a
-	   ld a,$C6 ; ADD A,n
-	   ld (window_trigger_smc_2+1),a
-	   jr window_trigger_smc_1
+	    ld a,$AF ; XOR A
+	    ld (window_trigger_smc_1),a
+	    ld a,$90 ; SUB B
+	    ld (window_trigger_smc_2),a
+	    ld a,$C6 ; ADD A,n
+	    ld (window_trigger_smc_2+1),a
+	    jr window_trigger_smc_1
 
 spiDrawBufferLeft:
 	SPI_START
