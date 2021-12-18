@@ -1,7 +1,13 @@
 # TI-Boy CE Changelog
 All notable changes to this project will be documented in this file.
 
-## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.2.1...HEAD)
+## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.2.0b...HEAD)
+
+## [Alpha v0.2.0b — 2021-12-17](https://github.com/calc84maniac/tiboyce/releases/tag/v0.2.0b)
+
+### Fixed
+-   Fix a game freeze occuring in certain conditions after a delayed EI is followed by a HALT. Fixes Donkey Kong Land.
+-   Fix a likely runtime error when a memory access instruction reads an I/O register and later reads other memory.
 
 ## [Alpha v0.2.0a — 2021-12-09](https://github.com/calc84maniac/tiboyce/releases/tag/v0.2.0a)
 
