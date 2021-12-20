@@ -642,10 +642,9 @@ _
 	ldir
 	
 	ld.sis sp,myz80stack
-	ld hl,ophandlerRET  ; Return handler when no cached calls are available
+	ld hl,callstack_ret_dummy_target  ; Return handler when no cached calls are available
 	push.s hl
-	ld a,4  ; Cycle count of 4 for default return handler
-	push.s af
+	push.s bc ; Cycle count of 0 for default return handler
 	
 	; Copy palette conversion code to SHA hardware, if possible
 	APTR(sha_code)

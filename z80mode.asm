@@ -72,13 +72,13 @@ rst38h:
 #endif
 	
 do_pop_check_overflow:
-	ld e,a
+	ld d,a
 	ld a,iyh
 do_pop_bound_smc_1 = $+1
 	cp 0
 _
 	jp p,do_pop_overflow
-	ld a,e
+	ld a,d
 do_pop_jump_smc_2 = $+1
 	jr do_pop_hmem
 do_pop_z80:
@@ -146,61 +146,57 @@ do_call:
 	ld l,b  ; Current stack offset
 	jr c,do_call_maybe_overflow
 do_call_no_overflow:
-	call do_push_for_call
-	; BCDEHL' are swapped, D=cached stack offset, E=cached RET cycles
-callstack_ret:
 	ex af,af'
-	ld ixh,a  ; Save cycle counter
-	ld a,e  ; Compare the cached stack offset to the current one
-	dec a
-	cp b
-	jr nz,callstack_ret_stack_mismatch
-callstack_ret_check_overflow_smc = $+1
-	and $FF ; Check if the stack may be overflowing its bounds
-	jr z,callstack_ret_bound
-callstack_ret_nobound:
-	ld a,d  ; Save the RET cycle count
-	; Pop the return address into DE
-callstack_ret_pop_prefix_smc = $
-	ld.l hl,(iy)
-	lea.l iy,iy+2
-	inc b   ; Increment the stack bound counter
-	ex de,hl
-callstack_ret_do_compare:
-	; Save the GB stack pointer and get the cached return address.
-	; The high byte of this address is non-zero if and only if
-	; the mapped bank is different than when the call occurred.
-	pop.l hl
-	; Both compare the return addresses and ensure the bank has not changed.
-	sbc.l hl,de
-	jr nz,callstack_ret_target_mismatch
-	add a,ixh  ; Count cycles
-	jr c,callstack_ret_maybe_overflow
-callstack_ret_no_overflow:
+	push.l de  ; Cache Game Boy return address
+	push hl  ; Push stack offset and RET cycle count
+do_push_for_call_jump_smc_1 = $+1
+	djnz do_push_for_call_hmem
+do_push_for_call_check_overflow:
+	ex af,af'
+	ld h,a
+	ld a,iyh
+do_push_bound_smc_2 = $+1
+	cp 0
+	ld a,h
+	jp m,do_push_for_call_overflow
+	ex af,af'
+do_push_for_call_jump_smc_2 = $+1
+	jr do_push_for_call_hmem
+	
+do_push_for_call_z80:
+	lea iy,iy-2
+	ld (iy),de
 	exx
-	ex af,af'
-	ret
+	jp (ix)
 	
-do_call_maybe_overflow:
-	inc c
-	jr nz,do_call_no_overflow
-	call cycle_overflow_for_call
-	jr callstack_ret
+do_push_for_call_adl:
+	lea.l iy,iy-2
+	ld.l (iy),e
+	ld.l (iy+1),d
+	exx
+	jp (ix)
+
+do_push_for_call_rtc:
+	ld hl,(sp_base_address)
+	inc hl \ inc hl \ inc hl \ inc hl \ inc hl
+	ld (hl),e
+	lea.l iy,iy-2
+	exx
+	jp (ix)
 	
-callstack_ret_stack_mismatch:
-	; Get the previous top of the stack
-	ld hl,-4
-	add hl,sp
-	ld a,d  ; Get the requested cycles taken
-	jp m,callstack_ret_skip
-	; Restore the stack to that position, preserving the present values
-	ld sp,hl
-	inc hl
-	sub (hl)  ; Get the taken RET cycles
-	add a,4
-	ld d,a
-	ld e,ixh
-	jr do_ret_full
+do_push_for_call_cart:
+	push ix
+	ld hl,mem_write_cart_always
+	jp do_push_generic
+	
+do_push_for_call_vram:
+	push ix
+	ld hl,mem_write_vram_always
+	jp do_push_generic
+	
+do_push_for_call_hmem:
+	push ix
+	jp do_push_hmem
 	
 do_rom_bank_call:
 	exx
@@ -235,180 +231,11 @@ banked_call_mismatch_continue:
 	jr nc,do_call_no_overflow
 	inc c
 	jr nz,do_call_no_overflow
-	call cycle_overflow_for_call
-	jr callstack_ret
+	jr cycle_overflow_for_call
 	
-callstack_ret_bound:
-	ld a,iyh
-do_pop_bound_smc_4 = $+1
-	cp 0
-callstack_ret_overflow:
-	jp p,_callstack_ret_overflow
-	or a
-	jr callstack_ret_nobound
-
-callstack_ret_target_mismatch:
-	; If the subtraction carried, the high byte of HL was definitely zero
-	jr c,callstack_ret_bank_mismatch_continue
-	; Check if the bank difference is non-zero
-	dec.l sp
-	dec.l sp
-	pop.l hl
-	inc h
-	dec h
-	jr nz,callstack_ret_bank_mismatch
-	dec.l sp
-callstack_ret_bank_mismatch_continue:
-	ld hl,-4
-	sub l     ; Add 4 cycles for the RET itself
-	add hl,sp ; Get the old stack pointer
-	inc hl
-	sub (hl)  ; Get the taken RET cycles
-	pop hl    ; Remove the cached JIT return address
-	ex de,hl
-	ld d,a
-	ld e,ixh
-	jr do_ret_full_continue_swap
-	
-callstack_ret_maybe_overflow:
+do_call_maybe_overflow:
 	inc c
-	jr nz,callstack_ret_no_overflow
-	; HL was 0, get the stack pointer and get the JIT target address
-	add hl,sp
-	ld ix,(hl)
-	; Get the original cycle count (unmodified by conditional RET)
-	dec hl \ dec hl \ dec hl
-	ld c,(hl)
-	dec c \ dec c \ dec c \ dec c  ; Subtract taken RET cycles to get the block cycle offset
-	push bc
-	 ld b,a
-#ifdef VALIDATE_SCHEDULE
-	 call.il schedule_event_helper_a
-#else
-	 jp.lil schedule_event_helper_a
-#endif
-	
-ophandlerRET:
-	ld sp,myz80stack-4  ; Restore the stack to above this default handler
-	ex af,af'
-	ld e,a  ; Save the cycle count
-	; Taken cycle count is in D (4=unconditional, 5=conditional)
-do_ret_full:
-	inc b
-do_pop_for_ret_jump_smc_1 = $+1
-	djnz do_pop_for_ret_overflow
-	ld a,iyh
-do_pop_bound_smc_2 = $+1
-	cp 0
-	jp p,do_pop_for_ret_overflow
-do_pop_for_ret_jump_smc_2 = $+1
-	jr do_pop_for_ret_overflow
-	
-banked_call_stack_overflow:
-	call callstack_overflow_helper
-	jr banked_call_stack_overflow_continue
-	
-banked_call_mismatch:
-	jp.lil banked_call_mismatch_helper
-	
-do_pop_for_ret_adl:
-	inc b
-	ld.l hl,(iy)
-	lea.l iy,iy+2
-do_ret_full_continue_swap:
-	ex de,hl
-do_ret_full_continue:
-	push bc
-	 push hl
-	  call.il lookup_code_cached
-	 pop hl
-	pop bc
-	add a,h  ; Add the taken cycles for RET
-	add a,l  ; Count cycles
-	jr c,do_ret_full_maybe_overflow
-do_ret_full_no_overflow:
-	exx
-	ex af,af'
-	jp (ix)
-	
-callstack_ret_bank_mismatch:
-	push de
-	 jp.lil callstack_ret_bank_mismatch_helper
-	
-do_pop_for_ret_z80:
-	bit 6,b
-	jr nz,do_pop_for_ret_overflow
-	inc b
-	ld hl,(iy)
-	lea iy,iy+2
-	jr do_ret_full_continue_swap
-	
-do_pop_for_ret_overflow:
-	ld ixh,e
-	call pop_overflow
-	ex af,af'
-	exx
-	pop de
-	lea hl,ix
-	jr do_ret_full_continue
-	
-do_ret_full_maybe_overflow:
-	inc c
-	jr nz,do_ret_full_no_overflow
-	inc de \ dec de ; Clears top byte of DE
-	push ix
-	; Get the target cycle offset
-	sub l
-	sub h
-	ld c,a
-	add a,h
-	add a,l
-	push bc
-	 ld b,a
-#ifdef VALIDATE_SCHEDULE
-	 call.il schedule_event_helper_a
-#else
-	 jp.lil schedule_event_helper_a
-#endif
-	
-callstack_ret_skip:
-	inc hl
-	sub (hl) ; Get the conditional RET cycle offset
-	inc sp  ; Skip the JIT return address
-	inc sp
-	; Skip the Game Boy return address, but make sure
-	; to propagate any bank mismatch
-	inc.l sp
-	pop.l hl
-	inc h
-	dec h
-	jr nz,callstack_ret_skip_propagate
-	dec.l sp
-callstack_ret_skip_continue:
-	pop de  ; Prepare the next return inputs
-	add a,d ; Add the conditional offset
-	ld d,a
-	ld a,ixh  ; Restore the cycle counter
-	ex af,af'
-	ret
-	
-callstack_ret_skip_propagate:
-	jp.lil callstack_ret_skip_propagate_helper
-	
-_callstack_ret_overflow:
-	push de  ; Save the requested RET taken cycles
-	dec sp
-	dec sp   ; Preserve the original RET taken cycles
-	call pop_overflow_for_callstack_ret
-	ex af,af'
-	exx
-	pop de  ; Get popped GB address
-	inc sp
-	inc sp
-	pop af  ; Pop requested taken cycles into A
-	or a
-	jp callstack_ret_do_compare
-	
+	jr nz,do_call_no_overflow
 cycle_overflow_for_call:
 	push hl
 	push ix
@@ -426,6 +253,13 @@ cycle_overflow_for_call:
 #else
 	jp.lil schedule_call_event_helper
 #endif
+	
+banked_call_stack_overflow:
+	call callstack_overflow_helper
+	jr banked_call_stack_overflow_continue
+	
+banked_call_mismatch:
+	jp.lil banked_call_mismatch_helper
 	
 cycle_overflow_for_bridge:
 	exx
@@ -564,19 +398,17 @@ do_pop_overflow:
 	ld (do_pop_overflow_smc),a
 	inc hl
 	push hl
-	ld ixh,e
-	call pop_overflow
+	call pop_overflow_d
 do_pop_overflow_smc = $
 	pop bc
 	ret
 
-	; Requested cycles are in D
-pop_overflow_for_callstack_ret:
+	; Low byte of cycle count is in D
+pop_overflow_d:
+	ld ixh,d
 	; Low byte of cycle count is in IXH
-	; The value of DE is preserved into IX
-	ld d,ixh
 pop_overflow:
-	push de
+	push ix
 	 ld de,(sp_base_address_neg)
 	 add iy,de
 	 exx
@@ -593,13 +425,12 @@ pop_overflow:
 	  exx
 	  call mem_read_any
 	 pop hl
-	pop ix
-	exx
-	ld l,b
-	ld h,a
+	 exx
+	 ld l,b
+	 ld h,a
+	pop af
 	ex (sp),hl
 	push hl
-	ld a,ixl
 	ex af,af'
 
 ; Get a literal 24-bit pointer to the Game Boy stack.
@@ -746,9 +577,12 @@ do_event_any:
 	jr nz,$
 #endif
 #ifdef VALIDATE_STACK
-	ld hl,(((myz80stack - 4 - 2) / 2) - myADLstack) & $FFFF
+	ld hl,($AABD - myADLstack) & $FFFF
 	add.l hl,sp
+	mlt hl
+	ld l,h
 	add hl,hl
+	ld h,(myz80stack - 4) >> 8
 	sbc hl,sp
 	jr nz,$
 #endif
@@ -939,8 +773,7 @@ dispatch_int_no_overflow:
 event_gb_address = $+1
 	ld de,event_gb_address
 	ld l,b
-	call do_push_for_call
-	jp callstack_ret
+	jp do_call_no_overflow
 	
 dispatch_int_maybe_overflow:
 	inc d
@@ -950,9 +783,6 @@ dispatch_int_maybe_overflow:
 	inc e \ inc e \ inc e \ inc e
 	sbc a,e ; Carry is set
 	jr nc,dispatch_int_handle_events
-	call cycle_overflow_for_rst_or_int
-	jp callstack_ret
-	
 cycle_overflow_for_rst_or_int:
 	ld l,b
 	push hl
@@ -1742,8 +1572,7 @@ _
 	ld d,a
 	ld a,(ix+3)
 	sub 4
-	call cycle_overflow_for_rst_or_int
-	jp callstack_ret
+	jp cycle_overflow_for_rst_or_int
 	
 _
 	call callstack_overflow_helper
@@ -2911,11 +2740,8 @@ schedule_event_finish_for_call_no_schedule:
 	push.l de  ; Cache Game Boy return address
 do_push_and_return_jump_smc = $+1
 	djnz do_push_adl
-	pop ix
-	jr do_push_for_call_check_overflow
+	jr do_push_check_overflow
 
-do_push_for_call_rtc:
-	push ix
 do_push_rtc:
 	ld hl,(sp_base_address)
 	inc hl \ inc hl \ inc hl \ inc hl \ inc hl
@@ -2924,20 +2750,14 @@ do_push_rtc:
 	exx
 	ret
 	
-do_push_for_call_cart:
-	push ix
 do_push_cart:
 	ld hl,mem_write_cart_always
 	jr do_push_generic
 	
-do_push_for_call_vram:
-	push ix
 do_push_vram:
 	ld hl,mem_write_vram_always
 	jr do_push_generic
 	
-do_push_for_call_hmem:
-	push ix
 do_push_hmem:
 	push af
 	 ex af,af'
@@ -2961,37 +2781,6 @@ do_push_hmem:
 	pop af
 	lea iy,iy-2
 	ret
-	
-do_push_for_call:
-	ex af,af'
-	push.l de  ; Cache Game Boy return address
-	push hl  ; Push stack offset and RET cycle count
-do_push_for_call_jump_smc_1 = $+1
-	djnz do_push_for_call_adl
-do_push_for_call_check_overflow:
-	ex af,af'
-	ld h,a
-	ld a,iyh
-do_push_bound_smc_2 = $+1
-	cp 0
-	ld a,h
-	jp m,do_push_for_call_overflow
-	ex af,af'
-do_push_for_call_jump_smc_2 = $+1
-	jr do_push_for_call_rtc
-	
-do_push_for_call_z80:
-	lea iy,iy-2
-	ld (iy),de
-	exx
-	jp (ix)
-	
-do_push_for_call_adl:
-	lea.l iy,iy-2
-	ld.l (iy),e
-	ld.l (iy+1),d
-	exx
-	jp (ix)
 	
 	; Pushes using the memory write routine passed in IX
 	; Unswaps BCDEHL'
@@ -3072,16 +2861,6 @@ ophandlerF9:
 	exx
 	jp set_gb_stack
 	
-ophandlerRETcond:
-	; Increment the taken cycle count by 1 before returning
-	exx
-	pop de
-	; Make sure not to destroy flags
-	ld l,d
-	inc hl
-	ld d,l
-	ret
-	
 ophandlerRETI:
 	exx
 	ld e,a
@@ -3094,36 +2873,279 @@ ophandlerRETI:
 	ld hl,(IE)
 	ld a,h
 	and l
-	jr nz,_
 	ld a,e
-	ex af,af'
-	pop de
-	ret
-_
+	jr z,ophandlerRET_swapped_nc
 	; Schedule an event after the return
-	ld a,e
-	add a,4
-	jr nc,_
-	inc c
-	jr nz,_
-	; If an event will already be scheduled on return, just return
-	dec c
-	ld a,e
-	ex af,af'
-	pop de
-	ret
-_
-	; Update the cycle counter
-	ld e,a
 	ld d,c
+	; If an event will already be scheduled on return, just return
+	ld hl,4
+	add hl,de
+	jr c,ophandlerRET_swapped
+	; Update the cycle counter
+	ex de,hl
 	ld hl,i
 	add hl,de
 	ld i,hl
 	ld c,-1
 	ld a,-4
+	exx
+	
+	; (SPS) = cached RET cycles, cached stack offset
+	; (SPS+2) = cached JIT address
+	; (SPL) = cached bank delta, cached GB address
+	; AF' is swapped
+ophandlerRET:
+	exx
+ophandlerRET_swapped:
+	or a
+ophandlerRET_swapped_nc:
+	; Check if the stack may be overflowing its bounds
+callstack_ret_check_overflow_smc = $
+	inc b
+	dec b 
+	jr z,callstack_ret_bound
+callstack_ret_nobound:
+	inc b   ; Increment the stack bound counter
+	; Pop the return address into DE
+callstack_ret_pop_prefix_smc = $
+	ld.l hl,(iy)
+	lea.l iy,iy+2
+	ex de,hl
+callstack_ret_do_compare:
+	; Get the cached return address in UHL.
+	; The high byte of this address is non-zero if and only if
+	; the mapped bank is different than when the call occurred.
+	pop.l hl
+	; Both compare the return addresses and ensure the bank has not changed.
+	sbc.l hl,de
+	pop hl
+	jr nz,callstack_ret_target_mismatch
+	; Count cycles
+	add a,h
+	jr c,callstack_ret_maybe_overflow
+callstack_ret_no_overflow:
+	exx
 	ex af,af'
-	pop de
 	ret
+	
+callstack_ret_bound:
+	ld d,a
+	ld a,iyh
+do_pop_bound_smc_2 = $+1
+	sub 0
+	or a
+	ld a,d
+	jp m,callstack_ret_nobound
+callstack_ret_bound_overflow:
+	call pop_overflow_d
+	ex af,af'
+	exx
+	pop de
+	or a
+	jr callstack_ret_do_compare
+
+callstack_ret_maybe_overflow:
+	inc c
+	jr z,callstack_ret_overflow
+	exx
+	ex af,af'
+	ret
+	
+callstack_ret_cond_maybe_overflow:
+	inc c
+	jr nz,callstack_ret_cond_no_overflow
+	dec h
+	; Make sure this wasn't the bottom of the callstack
+	jr z,callstack_ret_preserve_entry
+callstack_ret_overflow:
+	; Subtract taken RET cycles to get the block cycle offset
+	dec h \ dec h \ dec h \ dec h
+	ld c,h
+	; Get the cached JIT target address
+	pop ix
+	push ix
+	push bc
+	 ld b,a
+#ifdef VALIDATE_SCHEDULE
+	 call.il schedule_event_helper_a
+#else
+	 jp.lil schedule_event_helper_a
+#endif
+
+callstack_ret_maybe_bank_mismatch:
+	sub l
+	or a
+	ld a,h
+	jp m,callstack_ret_preserve_entry
+	
+	; Check if the bank difference is non-zero
+	dec.l sp
+	dec.l sp
+	pop.l hl
+	inc h
+	dec h
+	call nz,callstack_ret_bank_mismatch
+	dec.l sp
+	pop hl
+	or a
+	jr callstack_ret_do_compare
+
+callstack_ret_target_mismatch:
+	; Check for the bottom of the callstack
+	dec h
+	jp m,callstack_ret_preserve_entry
+	ld h,a
+	ld a,b
+	; If the target comparison carried, the bank delta was definitely zero
+	jr nc,callstack_ret_maybe_bank_mismatch
+	sub l
+	rla
+	ld a,h
+	; Pop the JIT return address
+	pop hl
+	jr z,do_ret_full ; If this was the exact stack depth, avoid popping the next entry
+	jr nc,callstack_ret_do_compare
+	or a ; Unconditional RET
+	push hl
+callstack_ret_preserve_entry:
+	dec sp
+	dec sp
+	dec.l sp
+	dec.l sp
+	dec.l sp
+do_ret_full:
+	push af
+	 push bc
+	  call.il lookup_code_cached
+	 pop bc
+	pop hl
+	srl l
+	ld l,a
+	adc a,4  ; Add the taken cycles for RET (possibly conditional)
+	add a,h  ; Count cycles
+	jr c,do_ret_full_maybe_overflow
+do_ret_full_no_overflow:
+	exx
+	ex af,af'
+	jp (ix)
+	
+ophandlerRETcond:
+	ex af,af'
+	exx
+	; Check if the stack may be overflowing its bounds
+callstack_ret_cond_check_overflow_smc = $
+	inc b
+	dec b 
+	jr z,callstack_ret_cond_bound
+callstack_ret_cond_nobound:
+	inc b   ; Increment the stack bound counter
+	; Pop the return address into DE
+callstack_ret_cond_pop_prefix_smc = $
+	ld.l hl,(iy)
+	lea.l iy,iy+2
+	ex de,hl
+callstack_ret_cond_do_compare:
+	; Get the cached return address in UHL.
+	; The high byte of this address is non-zero if and only if
+	; the mapped bank is different than when the call occurred.
+	pop.l hl
+	; Both compare the return addresses and ensure the bank has not changed.
+	or a
+	sbc.l hl,de
+	pop hl
+	jr nz,callstack_ret_cond_target_mismatch
+	; Count cycles
+	inc h
+	add a,h
+	jr c,callstack_ret_cond_maybe_overflow
+callstack_ret_cond_no_overflow:
+	exx
+	ex af,af'
+	ret
+	
+callstack_ret_dummy_target:
+	ex af,af'
+	exx
+	dec sp
+	dec sp
+	; Check for conditional RET
+	srl h
+	jr nc,callstack_ret_preserve_entry
+	; Remove the counted cycle
+	ld l,a
+	ld h,c
+	dec hl
+	ld c,h
+	ld a,l
+	jr callstack_ret_preserve_entry
+	
+do_ret_full_maybe_overflow:
+	inc c
+	jr nz,do_ret_full_no_overflow
+	inc de \ dec de ; Clears top byte of DE
+	push ix
+	; Get the target cycle offset
+	ld c,l
+	push bc
+	 ld b,a
+#ifdef VALIDATE_SCHEDULE
+	 call.il schedule_event_helper_a
+#else
+	 jp.lil schedule_event_helper_a
+#endif
+
+callstack_ret_cond_target_mismatch:
+	; Check for the bottom of the callstack
+	dec h
+	jp m,callstack_ret_cond_preserve_entry
+	ld h,a
+	ld a,b
+	; If the target comparison carried, the bank delta was definitely zero
+	jr nc,callstack_ret_cond_maybe_bank_mismatch
+	sub l
+	ld a,h
+	; Pop the JIT return address
+	pop hl
+	jp p,callstack_ret_cond_do_compare
+	push hl
+callstack_ret_cond_preserve_entry:
+	scf
+	jr callstack_ret_preserve_entry
+	
+callstack_ret_cond_maybe_bank_mismatch:
+	sub l
+	rla
+	ld a,h
+	jr c,callstack_ret_preserve_entry
+	
+	; Check if the bank difference is non-zero
+	dec.l sp
+	dec.l sp
+	pop.l hl
+	inc h
+	dec h
+	call nz,callstack_ret_bank_mismatch
+	dec.l sp
+	pop hl
+	jr callstack_ret_cond_do_compare
+	
+callstack_ret_cond_bound:
+	ld d,a
+	ld a,iyh
+do_pop_bound_smc_4 = $+1
+	sub 0
+	ld a,d
+	jp m,callstack_ret_cond_nobound
+callstack_ret_cond_bound_overflow:
+	call pop_overflow_d
+	ex af,af'
+	exx
+	pop de
+	jr callstack_ret_cond_do_compare
+	
+callstack_ret_bank_mismatch:
+	push de
+	 jp.lil callstack_ret_bank_mismatch_helper
 	
 pop_hmem:
 	inc b
@@ -3844,10 +3866,17 @@ get_mem_info_full:
 	add a,$7F - (NO_CYCLE_INFO | NO_RESCHEDULE)
 	jp pe,$
 #endif
-	; Get the address of the recompiled code: the bottom stack entry
-	ld hl,(((myz80stack - 4 - 2) / 2) - myADLstack) & $FFFF
+	; Get the address of the recompiled code: the bottom stack entry.
+	; The depth of the ADL stack is used to determine what the depth of the
+	; Z80 stack was when the memory routine was called from the JIT.
+	; Since the ADL callstack is 3 bytes per cache entry and the Z80 callstack
+	; is 4 bytes per cache entry, the ADL stack depth is multiplied by 4/3.
+	ld hl,($AABD - myADLstack) & $FFFF
 	add.l hl,sp
+	mlt hl
+	ld l,h
 	add hl,hl
+	ld h,(myz80stack - 4) >> 8
 	ld hl,(hl)
 	; Get the byte at the JIT target address which, if it's a jump,
 	; indicates that the memory access is a branch dispatch
@@ -3967,26 +3996,12 @@ resolve_mem_info_for_routine:
 	jp.lil nc,resolve_mem_info_for_routine_helper
 	; The second read of an unconditional RET is always two cycles after
 	; the end of a JIT sub-block. A conditional RET adds an extra cycle,
-	; so we must retrieve this information which is saved on the stack.
-	ld a,ixl
-	cp pop_overflow & $FF
-	; Get the address of the cycle count stored on the stack,
-	; this is just above the return address of the call to pop_overflow
-	ld hl,(((myz80stack - 4 - 4) / 2) - myADLstack) & $FFFF
-	add.l hl,sp
-	add hl,hl
-	ld a,(hl)
+	; so we must check which call to pop_overflow this is.
+	ld a,l
+	cp callstack_ret_bound_overflow & $FF
 	jr z,_
-	; For a callstack-based return, we must subtract the original count
-	; which is located underneath the return address
-	inc hl
-	inc hl
-	inc hl
-	inc hl
-	sub (hl)
+	scf
 _
-	; Check the low bit to see if it was conditional
-	rra
 	; IX and HL returns are never used by reads; just get the cycle count
 	ld a,d
 	; The cycle offset is guaranteed (NO_CYCLE_INFO[-1]) | NO_RESCHEDULE,

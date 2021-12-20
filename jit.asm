@@ -2230,11 +2230,13 @@ mem_write_port_handler_table_end:
 	.db do_push_for_call_rtc - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_rtc - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_overflow - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_rtc - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $00 ;none
 	; callstack pop overflow check
-	.db $00
-	jr $+(callstack_ret_overflow - (callstack_ret_check_overflow_smc+1))
+	nop
+	nop
+	.db $18 ;JR
 	.block 3
 
 ; A table of information for stack memory areas
@@ -2247,11 +2249,12 @@ hram_unbanked_base:
 	.db do_push_for_call_z80 - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_z80 - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_z80 - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_z80 - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $40 ;.SIS
 	; callstack pop overflow check
-	.db $40
-	jr nz,$+(callstack_ret_overflow - (callstack_ret_check_overflow_smc+1))
+	bit 6,b
+	.db $20 ;JR NZ,
 	.block 3
 
 ; The start address of Game Boy ROM page 0.
@@ -2263,11 +2266,13 @@ rom_start:
 	.db do_push_for_call_cart - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $49 ;.LIS
 	; callstack pop overflow check
-	.db $FF
-	jr z,$+(callstack_ret_bound - (callstack_ret_check_overflow_smc+1))
+	inc b
+	dec b
+	.db $28 ;JR Z,
 	.block 3
 
 hmem_unbanked_base:
@@ -2278,11 +2283,13 @@ hmem_unbanked_base:
 	.db do_push_for_call_hmem - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_hmem - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_overflow - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_hmem - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $00 ;none
 	; callstack pop overflow check
-	.db $00
-	jr $+(callstack_ret_overflow - (callstack_ret_check_overflow_smc+1))
+	nop
+	nop
+	.db $18 ;JR
 	.block 3
 
 ; The address of the currently banked ROM page, minus $4000.
@@ -2295,11 +2302,13 @@ rom_bank_base:
 	.db do_push_for_call_cart - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $49 ;.LIS
 	; callstack pop overflow check
-	.db $FF
-	jr z,$+(callstack_ret_bound - (callstack_ret_check_overflow_smc+1))
+	inc b
+	dec b
+	.db $28 ;JR Z,
 	.block 3
 
 vram_bank_base:
@@ -2310,11 +2319,13 @@ vram_bank_base:
 	.db do_push_for_call_vram - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $49 ;.LIS
 	; callstack pop overflow check
-	.db $FF
-	jr z,$+(callstack_ret_bound - (callstack_ret_check_overflow_smc+1))
+	inc b
+	dec b
+	.db $28 ;JR Z,
 	.block 3
 
 ; The address of the currently banked RAM page, minus $A000.
@@ -2327,11 +2338,13 @@ cram_bank_base:
 	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $49 ;.LIS
 	; callstack pop overflow check
-	.db $FF
-	jr z,$+(callstack_ret_bound - (callstack_ret_check_overflow_smc+1))
+	inc b
+	dec b
+	.db $28 ;JR Z,
 	.block 3
 
 wram_unbanked_base:
@@ -2342,11 +2355,13 @@ wram_unbanked_base:
 	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $49 ;.LIS
 	; callstack pop overflow check
-	.db $FF
-	jr z,$+(callstack_ret_bound - (callstack_ret_check_overflow_smc+1))
+	inc b
+	dec b
+	.db $28 ;JR Z,
 	.block 3
 
 wram_mirror_unbanked_base:
@@ -2357,11 +2372,13 @@ wram_mirror_unbanked_base:
 	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
 	; pop jump targets
 	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db do_pop_for_ret_adl - (do_pop_for_ret_jump_smc_1 + 1)
 	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
+	; callstack pop prefix
+	.db $49 ;.LIS
 	; callstack pop overflow check
-	.db $FF
-	jr z,$+(callstack_ret_bound - (callstack_ret_check_overflow_smc+1))
+	inc b
+	dec b
+	.db $28 ;JR Z,
 	.block 3
 
 mem_region_lut:
@@ -2684,11 +2701,13 @@ opgen_emit_ret:
 	call opgen_reset_cycle_count
 	bit 0,c
 	jr z,opgen_finish_cond_ret
-	ld (hl),$D9	;EXX
+	ld (hl),$08	;EX AF,AF'
 	inc hl
-	ld (hl),$D1	;POP DE
+	ld (hl),$C3	;JP ophandlerRET
 	inc hl
-	ld (hl),c	;RET
+	ld (hl),ophandlerRET & $FF
+	inc hl
+	ld (hl),ophandlerRET >> 8
 	inc hl
 	ret
 	

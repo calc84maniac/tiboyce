@@ -69,16 +69,9 @@ set_gb_stack_bank_helper:
 ; Inputs: IX = cram_bank_base
 ;         Z if setting RTC routines, NZ if setting CRAM routines
 set_gb_stack_cram_bank_helper:
-	jr nz,++_
+	jr nz,_
 	ld l,(stack_bank_info_table - $10 + 2) & $FF
 _
-	; Set callstack memory access prefixes
-	sub (hram_unbanked_base + 2) & $FF	; For high RAM, use NOP as the prefix
-	jr z,++_
-_
-	ld a,$49	; Otherwise, use .lis
-_
-	ld (z80codebase+callstack_ret_pop_prefix_smc),a
 	; Set push jump offsets
 	inc hl
 	inc hl
@@ -108,11 +101,6 @@ _
 	ld (z80codebase+do_pop_jump_smc_2),a
 	inc hl
 	ld a,(hl)
-	ld (z80codebase+do_pop_for_ret_jump_smc_1),a
-	sub do_pop_for_ret_jump_smc_2 - do_pop_for_ret_jump_smc_1
-	ld (z80codebase+do_pop_for_ret_jump_smc_2),a
-	inc hl
-	ld a,(hl)
 	ld (z80codebase+ophandlerF1_jump_smc_1),a
 	add a,(ophandlerF1_jump_smc_1 + 1) & $FF
 	ld e,a
@@ -120,13 +108,25 @@ _
 	sub e
 	ld d,a
 	ld.sis (ophandlerF1_jump_smc_2),de
+	; Set callstack memory access prefixes
+	inc hl
+	ld a,(hl)
+	ld (z80codebase+callstack_ret_pop_prefix_smc),a
+	ld (z80codebase+callstack_ret_cond_pop_prefix_smc),a
 	; Copy callstack pop overflow check
 	inc hl
-	ld a,l
 	ld hl,(hl)
 	ld (z80codebase+callstack_ret_check_overflow_smc),hl
-	cp (hram_unbanked_base + 10) & $FF
-	jp.sis set_gb_stack_bank_done
+	ld (z80codebase+callstack_ret_cond_check_overflow_smc),hl
+	add a,a
+	add a,a
+_
+	jp.sis c,set_gb_stack_bank_done	
+	; Force overflow for all hmem pops
+	sub 2
+	ld (z80codebase+do_pop_bound_smc_2),a
+	ld (z80codebase+do_pop_bound_smc_4),a
+	jr -_
 
 	; Propagate the bank mismatch value to the next callstack entry
 	; in the same region as the return address
@@ -154,40 +154,11 @@ _
 callstack_ret_bank_mismatch_smc = $+1
 	ld sp,0
 _
-	dec sp
 	ld a,e
 	pop.s de
-	jp.sis callstack_ret_bank_mismatch_continue
+	pop.s hl
+	jp.s (hl)
 	
-	; Propagate the skipped bank value to the next callstack entry
-	; in the same region as the return address
-callstack_ret_skip_propagate_helper:
-	ld d,h
-	ld e,a
-	; Ensure the return address is in the $4000-$7FFF bank
-	ld a,$BF
-	cp l
-#ifdef DEBUG
-	jp po,$
-#else
-	jp po,++_
-#endif
-	ld (callstack_ret_skip_propagate_smc),sp
-_
-	pop hl
-	cp l
-	jp po,-_
-	; Combine the callstack entry high bytes
-	ld a,d
-	xor h
-	ld h,a
-	push hl
-callstack_ret_skip_propagate_smc = $+1
-	ld sp,0
-_
-	dec sp
-	ld a,e
-	jp.sis callstack_ret_skip_continue
 	
 ; Flushes the JIT code and recompiles anew.
 ; Does not use a traditional call/return, must be jumped to directly.
