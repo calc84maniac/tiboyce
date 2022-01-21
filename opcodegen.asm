@@ -1,6 +1,10 @@
 ; Allocate at 256-byte aligned cursor memory
 
 opgenroutines:
+opgen08:
+	jp _opgen08
+opgen36:
+	jp _opgen36
 opgenE0:
 	jp opgenFFwrite
 opgenEA:
@@ -19,87 +23,101 @@ opgenRST:
 opgenJR:
 opgenJP:
 	jp opgen_emit_jump
-opgenRET:
 opgenRETcond:
-	jp opgen_emit_ret
-
-opgen08:
-	jp _opgen08
-opgen31:
-	call opgenroutinecall2byte_3cc
-	.dw ophandler31
-opgenE8:
-	call opgenroutinecall1byte_4cc
-	.dw ophandlerE8
-opgenF8:
-	call opgenroutinecall1byte_3cc
-	.dw ophandlerF8
-opgen36:
-	jp _opgen36
-opgen34:
-	call opgenroutinecall_3cc
-	.dw ophandler34
-opgen35:
-	call opgenroutinecall_3cc
-	.dw ophandler35
-opgen39:
-	call opgenroutinecall_2cc
-	.dw ophandler39
-opgenC5:
-	call opgenroutinecall_4cc
-	.dw ophandlerC5
-opgenD5:
-	call opgenroutinecall_4cc
-	.dw ophandlerD5
-opgenE2:
-	call opgenroutinecall_2cc
-	.dw ophandlerE2
-opgenE5:
-	call opgenroutinecall_4cc
-	.dw ophandlerE5
-opgenF1:
-	call opgenroutinecall_3cc
-	.dw ophandlerF1
-opgenF2:
-	call opgenroutinecall_2cc
-	.dw ophandlerF2
-opgenF3:
-	call opgenroutinecall_1cc
-	.dw ophandlerF3
-opgenF5:
-	call opgenroutinecall_4cc
-	.dw ophandlerF5
-opgenF9:
-	call opgenroutinecall_2cc
-	.dw ophandlerF9
-opgenEI:
-	call opgenroutinecall_1cc
-	.dw ophandlerEI
-opgen33:
-	call opgenroutinecall_2cc
-	.dw ophandler33
-opgen3B:
-	call opgenroutinecall_2cc
-	.dw ophandler3B
-opgenE9:
-	call opgenblockend
-	.dw ophandlerE9
-opgenRETI:
-	call opgenblockend
-	.dw ophandlerRETI
+	jp opgen_emit_cond_ret
 	
-opgenMEM:
-	inc hl
-opgen36_finish:
-	ex de,hl
-	ld (hl),RST_MEM
-	inc hl
-	ld (hl),c
-	inc hl
-	inc hl
-	ex de,hl
+opgenE9:
+opgenRET:
+opgenRETI:
+	jp opgenblockend
+
+opgen34:
+	ld c,$30
+	jr opgenF1
+	
+opgen35:
+	ld c,$37
+	jr opgenF1
+	
+opgenE8:
 	dec iyl
-	jr opgen_next_fast
+opgenF8:
+	dec iyl
+	call opgenroutinecall
+	djnz opgen1byte
+
+opgen31:
+	call opgenroutinecall
+	djnz opgen2byte
+	
+opgenC5:
+opgenD5:
+opgenE5:
+opgenF5:
+	dec iyl
+opgenF1:
+	dec iyl
+opgen39:
+opgen33:
+opgen3B:
+opgenE2:
+opgenF2:
+opgenF9:
+	dec iyl
+opgen27:
+opgenF3:
+opgenEI:
+	call opgenroutinecall
+	djnz opgen_next_fast
+	
+opgen01:
+#ifdef USE_IX
+	ld a,$DD
+	ld (de),a
+	inc de
+#endif
+	ld a,$21
+	ld (de),a
+	inc de
+	inc hl
+	inc c
+	jr opgen2byte
+	
+opgen3byte_remap:
+	inc b
+	ld a,(bc)
+	ld (de),a
+	inc de
+	inc hl
+	djnz opgen2byte
+	
+opgen2byte_remap_ix:
+#ifdef USE_IX
+	ld a,$DD
+	ld (de),a
+	inc de
+#endif
+opgen2byte_remap:
+	inc b
+	ld a,(bc)
+	ld (de),a
+	inc de
+	inc hl
+	djnz opgen1byte
+	
+opgen1byte_remap_ix:
+#ifdef USE_IX
+	ld a,$DD
+	ld (de),a
+	inc de
+#endif
+opgen1byte_remap:
+	inc b
+	ld a,(bc)
+	ld (de),a
+	inc de
+	inc hl
+	djnz opgen_next_fast
 	
 opgenPOP:
 	xor a
@@ -108,24 +126,40 @@ opgenPOP:
 	ld a,RST_POP
 	ld (de),a
 	inc de
-opgen1byte_3cc:
 	dec iyl
-opgen1byte_2cc:
-	dec iyl
-	ld a,c
+	jr opgen1byte_2cc_remap
+	
+opgen1byte_2cc_remap_ix:
+#ifdef USE_IX
+	ld a,$DD
 	ld (de),a
 	inc de
-opgenNOP:
-	inc hl
-	jr opgen_next_fast
-	
-opgen_next_swap_skip:
-	ex de,hl
-opgen_next_skip:
+#endif
+opgen1byte_2cc_remap:
+	inc b
+	ld a,(bc)
+	ld (de),a
 	inc de
 	inc hl
-opgen_next:
-	ld bc,opgentable
+	dec iyl
+	djnz opgen_next_fast
+	
+opgenMEM:
+	inc hl
+opgen36_finish:
+	ld a,RST_MEM
+	ld (de),a
+	inc de
+	inc b
+	ld a,(bc)
+	ld (de),a
+	inc de
+	inc de
+	dec iyl
+	djnz opgen_next_fast
+	
+opgenNOP:
+	inc hl
 	jr opgen_next_fast
 	
 opgen76:
@@ -139,13 +173,19 @@ opgenCB:
 	and $F8
 	jr z,opgenCB_swap
 	xor c
-	jr nz,opgen1byte
-	jr opgenCB_mem
+	jr z,opgenCB_mem
+	srl a
+	jr z,opgen1byte
+	add a,-2
+	adc a,a
+	inc a
+	and 6
+	xor (hl)
+	ld (de),a
+	inc hl
+	inc de
+	jr opgen_next_fast
 	
-opgen3byte_low:
-	inc b
-opgen3byte:
-	ldi
 opgen2byte:
 	ldi
 opgen1byte:
@@ -160,6 +200,42 @@ opgen_next_no_bound_check:
 	ld ixl,a
 	jp (ix)
 	
+opgen09:
+	ex de,hl
+#ifdef USE_IX
+	ld (hl),$DD ;LEA HL,IX
+	inc hl
+	ld (hl),$22
+	inc hl
+	ld (hl),$00
+#endif
+	ld c,$19
+	jr _
+opgen19:
+opgen29:
+	res 4,c
+	ex de,hl
+#ifndef USE_IX
+_
+#endif
+	ld (hl),$EB ;EX DE,HL
+	inc hl
+#ifdef USE_IX
+_
+#endif
+	ld (hl),c
+	inc hl
+	ld (hl),$EB ;EX DE,HL
+	dec iyl
+opgen_next_swap_skip:
+	ex de,hl
+opgen_next_skip:
+	inc de
+	inc hl
+opgen_next:
+	ld bc,opgentable
+	jr opgen_next_fast
+	
 opgenINVALID:
 	jp opgenblockend_invalid
 opgen3F:
@@ -168,10 +244,6 @@ opgenJRcond:
 	jr _opgenJRcond
 opgenJPcond:
 	jr _opgenJPcond
-	
-opgen27:
-	call opgenroutinecall_1cc
-	.dw ophandler27
 	
 opgenROT:
 	ex de,hl

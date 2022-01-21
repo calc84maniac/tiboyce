@@ -1134,9 +1134,13 @@ _
 	push.s ix
 	
 	; Get the GB registers in BCDEHL'
-	ld.s bc,(iy-state_size+STATE_REG_BC)
-	ld.s de,(iy-state_size+STATE_REG_DE)
-	ld.s hl,(iy-state_size+STATE_REG_HL)
+#ifdef USE_IX
+	ld.s ix,(iy-state_size+STATE_REG_BC)
+#else
+	ld.s hl,(iy-state_size+STATE_REG_BC)
+#endif
+	ld.s bc,(iy-state_size+STATE_REG_DE)
+	ld.s de,(iy-state_size+STATE_REG_HL)
 	exx
 	; Save the block cycle offset of the current instruction to C
 	ld c,a
@@ -1168,9 +1172,13 @@ ExitEmulation:
 	push.s iy ;STATE_REG_SP
 	
 	exx
-	push.s hl ;STATE_REG_HL
-	push.s de ;STATE_REG_DE
-	push.s bc ;STATE_REG_BC
+	push.s de ;STATE_REG_HL
+	push.s bc ;STATE_REG_DE
+#ifdef USE_IX
+	push.s ix ;STATE_REG_BC
+#else
+	push.s hl ;STATE_REG_BC
+#endif
 	
 	ex af,af'
 	push af

@@ -439,16 +439,15 @@ _
 _
 	add a,24
 	
-	; Check for BC access
-	cp 2
+	; Check for BC/DE access 
+	cp 4
 	jr nc,_
+	ex de,hl
+	; Check for DE access
+	cp 2
+	jr c,_
 	ld d,b
 	ld e,c
-_
-	; Check for HL access 
-	cp 4
-	jr c,_
-	ex de,hl
 _
 	
 	; Address is now in DE
@@ -512,38 +511,48 @@ _
 _
 	  dec hl
 	  rra
-	  ld (hl),$23 ;INC HL
+	  ld (hl),$13 ;INC DE
 	  jr nc,_
-	  ld (hl),$2B ;DEC HL
+	  ld (hl),$1B ;DEC DE
 _
 	  dec hl
 	  
 	  ; Get register pair index (BC=-4, DE=-2, HL=0)
 	  ld a,e
 	  and $1E
-	  sub 4
-	  jr c,_
-	  xor a
-_
 	  ld c,a
-	 
+	  jr z,++_
+	  sub 2
+	  jr nz,_
+	  sub c
+_
+	  sub c
+	  ld c,a
+_
+	  
 	  ld a,e
 	  rlca
 	  rlca
 	  rlca
 	  and 7
 	  jr nz,memroutine_gen_not_high
-	 
-	  ld (hl),d   ;opcode
+	  
+	  call memroutine_remap_opcode
+	  ld (hl),$EB ;EX DE,HL
+	  dec hl
+	  ld (hl),a   ;opcode
+	  dec hl
+	  ld (hl),$EB ;EX DE,HL
 	  dec hl
 	  ld (hl),$F1 ;POP AF
-	  ld a,d
 	  cp $76
 	  jr nz,_
 	  inc hl
+	  inc hl
+	  inc hl
 	  ld (hl),$F1 ;POP AF
 	  dec hl
-	  ld (hl),$77 ;LD (HL),A
+	  ld (hl),$12 ;LD (DE),A
 	  call memroutine_gen_ixh_load
 _
 	  dec hl
@@ -648,18 +657,21 @@ memroutine_gen_write_hmem:
 	  ld de,mem_write_hmem
 	  ; B = NO_CYCLE_INFO - 1
 memroutine_gen_write:
-	  sra c
-	  call nz,memroutine_gen_restore_hl
 	  inc a
 	  jr z,_
 	  ld (hl),$F1	;POP AF
 	  dec hl
 _
+	  rlc c
+	  call pe,memroutine_gen_restore_de
 	  ld (hl),d
 	  dec hl
 	  ld (hl),e
 	  dec hl
 	  ld (hl),$CD	;CALL routine
+	  rrc c
+	  call pe,memroutine_gen_swap_de
+	  or a
 	  jr z,++_
 	  dec hl
 	  inc a
@@ -673,8 +685,6 @@ _
 	  dec hl
 	  ld (hl),$F5	;PUSH AF
 _
-	  sra c
-	  call nz,memroutine_gen_swap_hl
 	  inc b
 	  call nz,memroutine_gen_no_cycle_info
 	  jp memroutine_gen_end
@@ -692,17 +702,20 @@ memroutine_gen_not_cart0:
 	  djnz memroutine_gen_not_hmem
 	  jr c,memroutine_gen_write_hmem
 	  
-	  sra c
-	  call nz,memroutine_gen_restore_hl
-	  ld (hl),d	;op r,(HL)
+	  rlc c
+	  call m,memroutine_gen_restore_de_swapped
+	  call memroutine_remap_opcode
+	  ld (hl),a	;op r,(HL)
+	  dec hl
+	  ld (hl),$EB ;EX DE,HL
 	  dec hl
 	  ld (hl),mem_update_hmem >> 8
 	  dec hl
 	  ld (hl),mem_update_hmem & $FF
 	  dec hl
 	  ld (hl),$CD	;CALL mem_update_hmem
-	  sra c
-	  call nz,memroutine_gen_swap_hl
+	  rrc c
+	  call pe,memroutine_gen_swap_de
 	  ld b,NO_CYCLE_INFO | NO_RESCHEDULE
 	  call memroutine_gen_no_cycle_info
 	  jp memroutine_gen_end
@@ -891,7 +904,7 @@ _
 	ld a,c
 	or a
 	jr nz,_
-	ld (hl),$EB	;EX DE,HL	(if accessing HL)
+	ld (hl),$EB	;EX DE,HL	(if accessing BC)
 	dec hl
 	ld a,-2
 _
@@ -915,23 +928,30 @@ _
 	dec hl
 	ret
 	
-memroutine_gen_swap_hl:
+memroutine_gen_swap_de:
 	dec hl
 	ld (hl),$EB	;EX DE,HL
-	ret c
-	ld (hl),$60	;LD H,B
+	ret z
+	ld (hl),$50	;LD D,B
 	dec hl
-	ld (hl),$69	;LD L,C
+	ld (hl),$59	;LD E,C
 	dec hl
-	ld (hl),$E5	;PUSH HL
+	ld (hl),$D5	;PUSH DE
 	ret
 	
-memroutine_gen_restore_hl:
+memroutine_gen_restore_de:
 	ld (hl),$EB	;EX DE,HL
+	jr nz,_
 	dec hl
-	ret pe
+	ret
+	
+memroutine_gen_restore_de_swapped:
+	ld (hl),$EB ;EX DE,HL
+	dec hl
+	ret po
 	inc hl
-	ld (hl),$E1	;POP HL
+_
+	ld (hl),$D1	;POP DE
 	dec hl
 	ret
 	
@@ -949,5 +969,26 @@ memroutine_gen_ixh_load:
 	ld (hl),$7C
 	dec hl
 	ld (hl),$DD	;LD A,IXH
+	ret
+	
+memroutine_remap_opcode:
+	; Remap opcode
+	ld a,d
+	cp $40
+	ret pe
+	jr nc,_
+	xor $10
+	ret
+_
+	and $12
+	rlca
+	ld b,a
+	ld a,d
+	and $24
+	rrca
+	or b
+	xor d
+	and $36
+	xor d
 	ret
 	

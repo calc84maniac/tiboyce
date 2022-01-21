@@ -1281,6 +1281,9 @@ opcycleCB_maybe_swap:
 	jr nz,opcycleCB_normal
 	; 1b op, 3b rec, 2cc
 opcycleMEM:
+opcycle09:
+opcycle19:
+opcycle29:
 opcycle33:
 opcycle39:
 opcycle3B:
@@ -1439,7 +1442,7 @@ opcounttable:
 	.db opcycleROT - opcycleroutines
 ;08
 	.db opcycle08 - opcycleroutines
-	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle09 - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1457,7 +1460,7 @@ opcounttable:
 	.db opcycleROT - opcycleroutines
 ;18
 	.db opcycleJR - opcycleroutines
-	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle19 - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1475,7 +1478,7 @@ opcounttable:
 	.db opcycle27 - opcycleroutines
 ;28
 	.db opcycleJRcond - opcycleroutines
-	.db opcycle1byte_2cc - opcycleroutines
+	.db opcycle29 - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1720,11 +1723,11 @@ opcounttable:
 ; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
 opcoderecsizes:
 	.db 0,3,3,1,1,1,2,4
-	.db 7,1,3,1,1,1,2,4
+	.db 7,3,3,1,1,1,2,4
 	.db 0,3,3,1,1,1,2,4
-	.db 0,1,3,1,1,1,2,4
+	.db 0,3,3,1,1,1,2,4
 	.db 19-1,3,3,1,1,1,2,3
-	.db 19-1,1,3,1,1,1,2,1
+	.db 19-1,3,3,1,1,1,2,1
 	.db 19-1,5,3,3,3,3,6,1
 	.db 19-1,3,3,3,1,1,2,3
 	
@@ -1840,57 +1843,57 @@ opcodesizes:
 opgentable:
 ;00
 	.db opgenNOP - opgenroutines
-	.db opgen3byte_low - opgenroutines
+	.db opgen01 - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen2byte - opgenroutines
+	.db opgen1byte_2cc_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen2byte_remap_ix - opgenroutines
 	.db opgenROT - opgenroutines
 ;08
 	.db opgen08 - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
+	.db opgen09 - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen2byte - opgenroutines
+	.db opgen1byte_2cc_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen2byte_remap_ix - opgenroutines
 	.db opgenROT - opgenroutines
 ;10
 	.db opgenNOP - opgenroutines
-	.db opgen3byte - opgenroutines
+	.db opgen3byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen2byte - opgenroutines
+	.db opgen1byte_2cc_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen2byte_remap - opgenroutines
 	.db opgenROT - opgenroutines
 ;18
 	.db opgenJR - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
+	.db opgen19 - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen2byte - opgenroutines
+	.db opgen1byte_2cc_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen2byte_remap - opgenroutines
 	.db opgenROT - opgenroutines
 ;20
 	.db opgenJRcond - opgenroutines
-	.db opgen3byte - opgenroutines
+	.db opgen3byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen2byte - opgenroutines
+	.db opgen1byte_2cc_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen2byte_remap - opgenroutines
 	.db opgen27 - opgenroutines
 ;28
 	.db opgenJRcond - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
+	.db opgen29 - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte_2cc - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen2byte - opgenroutines
+	.db opgen1byte_2cc_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen2byte_remap - opgenroutines
 	.db opgen1byte - opgenroutines
 ;30
 	.db opgenJRcond - opgenroutines
@@ -1912,58 +1915,58 @@ opgentable:
 	.db opgen3F - opgenroutines
 ;40
 	.db opgenNOP - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
 ;48
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
 	.db opgenNOP - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
 ;50
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
 	.db opgenNOP - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 ;58
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenNOP - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 ;60
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenNOP - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 ;68
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenNOP - opgenroutines
 	.db opgenMEM - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 ;70
 	.db opgenMEM - opgenroutines
 	.db opgenMEM - opgenroutines
@@ -1974,84 +1977,84 @@ opgentable:
 	.db opgen76 - opgenroutines
 	.db opgenMEM - opgenroutines
 ;78
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgenNOP - opgenroutines
 ;80
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;88
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;90
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;98
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;A0
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;A8
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;B0
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;B8
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
-	.db opgen1byte - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap_ix - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
+	.db opgen1byte_remap - opgenroutines
 	.db opgenMEM - opgenroutines
 	.db opgen1byte - opgenroutines
 ;C0
@@ -2126,6 +2129,128 @@ opgentable:
 	.db opgenINVALID - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
+	
+; A supplemental table for opcode generation.
+; Determines translations or routine addresses for certain opcodes.
+	;00
+	.db 0,  0,$02,$23,$24,$25,$26,0
+	.db 0,  0,$0A,$2B,$2C,$2D,$2E,0
+	.db 0,$01,$12,$03,$04,$05,$06,0
+	.db 0,  0,$1A,$0B,$0C,$0D,$0E,0
+	.db 0,$11,$22,$13,$14,$15,$16,ophandler27 & $FF
+	.db ophandler27 >> 8
+	.db     0,$2A,$1B,$1C,$1D,$1E,0
+	;30
+	.db ophandler34 & $FF
+	.db ophandler31 & $FF
+	.db $32
+	.db ophandler33 & $FF
+	.db ophandler3B >> 8
+	.db $76
+	.db ophandler39 >> 8
+	.db ophandler35 & $FF
+	;38
+	.db ophandler35 >> 8
+	.db ophandler39 & $FF
+	.db $3A
+	.db ophandler3B & $FF
+	.db ophandler33 >> 8
+	.db 0
+	.db ophandler31 >> 8
+	.db ophandler34 >> 8
+	
+	;40
+	.db   0,$65,$60,$61,$62,$63,$66,$67
+	.db $6C,  0,$68,$69,$6A,$6B,$6E,$6F
+	.db $44,$45,  0,$41,$42,$43,$46,$47
+	.db $4C,$4D,$48,  0,$4A,$4B,$4E,$4F
+	.db $54,$55,$50,$51,  0,$53,$56,$57
+	.db $5C,$5D,$58,$59,$5A,  0,$5E,$5F
+	.db $74,$75,$70,$71,$72,$73,  0,$77
+	.db $7C,$7D,$78,$79,$7A,$7B,$7E,  0
+	
+	;80
+	.db $84,$85,$80,$81,$82,$83,$86,0
+	.db $8C,$8D,$88,$89,$8A,$8B,$8E,0
+	.db $94,$95,$90,$91,$92,$93,$96,0
+	.db $9C,$9D,$98,$99,$9A,$9B,$9E,0
+	.db $A4,$A5,$A0,$A1,$A2,$A3,$A6,0
+	.db $AC,$AD,$A8,$A9,$AA,$AB,$AE,0
+	.db $B4,$B5,$B0,$B1,$B2,$B3,$B6,0
+	.db $BC,$BD,$B8,$B9,$BA,$BB,$BE,0
+	
+	;C0
+	.db 0
+	.db $E1
+	.db 0
+	.db 0
+	.db 0
+	.db ophandlerC5 & $FF
+	.db ophandlerRET >> 8
+	.db 0
+	;C8
+	.db 0
+	.db ophandlerRET & $FF
+	.db ophandlerC5 >> 8
+	.db 0
+	.db 0
+	.db 0
+	.db 0
+	.db 0
+	;D0
+	.db 0
+	.db $C1
+	.db 0
+	.db 0
+	.db 0
+	.db ophandlerD5 & $FF
+	.db ophandlerRETI >> 8
+	.db 0
+	;D8
+	.db 0
+	.db ophandlerRETI & $FF
+	.db ophandlerD5 >> 8
+	.db 0
+	.db 0
+	.db 0
+	.db 0
+	.db 0
+	;E0
+	.db 0
+	.db $D1
+	.db ophandlerE2 & $FF
+	.db 0
+	.db 0
+	.db ophandlerE5 & $FF
+	.db ophandlerE9 >> 8
+	.db ophandlerE8 >> 8
+	;E8
+	.db ophandlerE8 & $FF
+	.db ophandlerE9 & $FF
+	.db ophandlerE5 >> 8
+	.db 0
+	.db 0
+	.db ophandlerE2 >> 8
+	.db 0
+	.db 0
+	;F0
+	.db 0
+	.db ophandlerF1 & $FF
+	.db ophandlerF2 & $FF
+	.db ophandlerF3 & $FF
+	.db ophandlerEI >> 8
+	.db ophandlerF5 & $FF
+	.db ophandlerF9 >> 8
+	.db ophandlerF8 >> 8
+	;F8
+	.db ophandlerF8 & $FF
+	.db ophandlerF9 & $FF
+	.db ophandlerF5 >> 8
+	.db ophandlerEI & $FF
+	.db ophandlerF3 >> 8
+	.db ophandlerF2 >> 8
+	.db ophandlerF1 >> 8
+	.db 0
 	
 ; A table indexing port write handlers.
 ; All entry points live in a 256-byte space.
@@ -2696,22 +2821,9 @@ opgen_emit_jump:
 	inc de
 	ret
 	
-opgen_emit_ret:
+opgen_emit_cond_ret:
 	ex de,hl
 	call opgen_reset_cycle_count
-	bit 0,c
-	jr z,opgen_finish_cond_ret
-	ld (hl),$08	;EX AF,AF'
-	inc hl
-	ld (hl),$C3	;JP ophandlerRET
-	inc hl
-	ld (hl),ophandlerRET & $FF
-	inc hl
-	ld (hl),ophandlerRET >> 8
-	inc hl
-	ret
-	
-opgen_finish_cond_ret:
 	dec iyl
 	ld a,c
 	xor $C0 ^ $C2
@@ -2774,9 +2886,16 @@ opgen_base_address_smc_2 = $+1
 	ret
 	
 opgenblockend:
-	ex (sp),hl
-	ld hl,(hl)
+	push hl
 	ex de,hl
+	inc b
+	ld a,(bc)
+	ld e,a
+	ld a,c
+	xor $0F
+	ld c,a
+	ld a,(bc)
+	ld d,a
 	; No JIT opcode can begin with an absolute jump;
 	; this is to prevent the memory cycle offset resolver from
 	; confusing the end of the preceding instruction with a
@@ -2784,7 +2903,14 @@ opgenblockend:
 	ld (hl),$08 ;EX AF,AF'
 	inc hl
 	ld (hl),$C3	;JP
-opgenblockend_invalid_finish:
+	djnz opgenblockend_finish
+	
+opgenblockend_invalid:
+	push hl
+	ex de,hl
+	ld (hl),$CD	;CALL
+	ld de,Z80InvalidOpcode
+opgenblockend_finish:
 	inc hl
 	ld (hl),e
 	inc hl
@@ -2835,13 +2961,6 @@ _
 	ld (port_access_trampoline_count_smc),a
 	ret
 	
-opgenblockend_invalid:
-	push hl
-	ex de,hl
-	ld (hl),$CD	;CALL
-	ld de,Z80InvalidOpcode
-	jr opgenblockend_invalid_finish
-	
 _opgen76:
 	ex de,hl
 	ld (hl),$CD
@@ -2882,48 +3001,32 @@ _opgen76:
 	; If the bugged opcode is a HALT, it will bug eternally
 	; To avoid infinite code generation, instead we emit an invalid opcode
 	jr z,opgenblockend_invalid
-	; For opgen3byte_low, increment the B register
-	and 1
-	add a,b
-	ld b,a
 	; Write the first byte manually
 	ld a,c
 	ld (de),a
 	inc de
 	inc hl
 	; Adjust the entry point
-	; For opgen3byte_low, this causes an AND B to be executed, which is harmless
 	lea ix,ix+2
 _
 	jp (ix)
 	
-opgenroutinecall2byte_5cc:
-	dec iyl
-	dec iyl
-opgenroutinecall2byte_3cc:
+opgenroutinecall:
 	inc hl
 	ld a,$CD
 	ld (de),a
 	inc de
-	ex (sp),hl
-	ldi
-	ldi
-	pop hl
-	jp opgen2byte
-	
-opgenroutinecall1byte_4cc:
-	dec iyl
-opgenroutinecall1byte_3cc:
-	dec iyl
-	inc hl
-	ld a,$CD
+	inc b
+	ld a,(bc)
 	ld (de),a
 	inc de
-	ex (sp),hl
-	ldi
-	ldi
-	pop hl
-	jp opgen1byte
+	ld a,c
+	xor $0F
+	ld c,a
+	ld a,(bc)
+	ld (de),a
+	inc de
+	ret
 	
 _opgen08:
 	ld a,$D9	;EXX
@@ -2947,8 +3050,7 @@ _opgen36:
 	ld (de),a
 	inc de
 	inc hl
-	ldi
-	ld c,$76
+	ldi ; Decrements C to $35
 	jp opgen36_finish
 	
 _opgenCB_mem:

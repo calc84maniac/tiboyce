@@ -110,19 +110,19 @@ waitloop_found_read_2:
 waitloop_found_read_bc:
 	exx
 	; Use BC as read address
-	push bc
+	push hl
 	 jr waitloop_found_read_rr
 	
 waitloop_found_read_de:
 	exx
 	; Use DE as read address
-	push de
+	push bc
 	 jr waitloop_found_read_rr
 
 waitloop_found_read_c:
 	; Use C as HRAM read address
 	exx
-	ld a,c
+	ld a,l
 	exx
 	ld c,a
 	; Set 0 for read in 2nd cycle, and set Z flag to indicate HRAM
@@ -142,7 +142,7 @@ waitloop_found_read_bitwise:
 waitloop_found_read_hl:
 	exx
 	; Use HL as read address
-	push hl
+	push de
 waitloop_found_read_rr:
 	 ; Use stack value as read address
 	 exx
