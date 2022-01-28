@@ -13,12 +13,22 @@ sidebar_link: true
   If not, create an issue for the problem through the link above. Thanks!
 </p>
 
+**I get ERR:INVALID when I try to run the emulator! What's wrong?**
+
+<p class="message">
+  TI-OS versions 5.5 and newer removed the ability to run ASM programs.
+  You have to use a jailbreak such as <a href="https://yvantt.github.io/arTIfiCE/">arTIfiCE</a> to restore this functionality.
+  <br/><br/>
+  Also, on TI-OS versions prior to 5.3 you must unarchive the TIBOYCE program in the Memory menu and use the <b>Asm(</b> command from the Catalog to run it.
+</p>
+
 **Can this play Game Boy Color games?**
 
 <p class="message">
-  Not for now, but support may be added in a future version.
+  Not for now, but support is currently being worked on for future versions. I can't make any promises about performance, though.
   <br/><br/>
-  I can't make any promises about performance, though.
+  Note that some Game Boy Color games are compatible with the original Game Boy, and these can already run in TI-Boy but without full color.
+  The <a href="https://en.wikipedia.org/wiki/List_of_Game_Boy_Color_games">game list on Wikipedia</a> helpfully specifies these Dual Mode games.
 </p>
 
 **What about Game Boy Advance?**
@@ -48,7 +58,7 @@ sidebar_link: true
   (to a file ending with St#, and potentially one with Sv# if there are in-game saves, where # is the slot number).
   These will stick around more reliably than auto save states, but keep in mind that a pair of St# and Sv# files can't be mixed and matched.
   <br/><br/>
-  Currently all these files must be managed through the calculator's Memory menu, but in future releases I may make it possible to delete
+  Currently most of these files must be managed through the calculator's Memory menu, though it's now possible to delete save states and ROM
   files directly from the emulator.
   However, all of this information will still be useful when you need to transfer files to a PC or another calculator.
 </p>
