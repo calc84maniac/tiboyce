@@ -1,11 +1,11 @@
-#define RST_BITS $C7+r_bits
-#define RST_MEM $C7+r_mem
-#define RST_POP $C7+r_pop
-#define RST_CALL $C7+r_call
+#define RST_GET_HL_READ_PTR $C7+r_get_hl_read_ptr
+#define RST_GET_HL_READWRITE_PTR $C7+r_get_hl_readwrite_ptr
+#define RST_GET_HL_HRAM_PTR $C7+r_get_hl_hram_ptr
 #define RST_EVENT $C7+r_event
+#define RST_CALL $C7+r_call
 #define RST_CYCLE_CHECK $C7+r_cycle_check
 
-#define RAM_PREFIX_SIZE 5
+#define RAM_PREFIX_SIZE 7
 ; Define such that cycles per block (at most 4x the bytes) is at most 249.
 ; This limitation is for two reasons:
 ; 1) Up to 6 cycles may be combined with the block cycle count for a taken CALL
@@ -54,52 +54,58 @@ flush_code:
 	 ld de,z80codebase+jit_start
 	 ld (hl),de
 	 ; Set the next memory access routine output below the Z80 stack
-	 ld hl,z80codebase+memroutine_end
-	 ld (z80codebase+memroutine_next),hl
+	 ld hl,z80codebase+trampoline_end
+	 ld (z80codebase+trampoline_next),hl
 	 ld de,ERROR_CATCHER
 	 ld (hl),de
 	 ; Empty the recompiled code mapping cache
 	 ld hl,recompile_cache_end
 	 ld (recompile_cache),hl
 	 ; Fill unused memory with DI to catch bad execution
-	 MEMSET_FAST(z80codebase+jit_start, memroutine_end - jit_start, $F3)
+	 MEMSET_FAST(z80codebase+jit_start, trampoline_end - jit_start, $F3)
 	 ; Invalidate the memory routines, recompile index, and recompile cache LUT
-	 MEMSET_FAST(memroutineLUT, $0500, 0)
+	 MEMSET_FAST(recompile_index_LUT, $0300, 0)
 	 MEMSET_FAST(recompile_cache_LUT+256, 256, (recompile_cache_end>>8)&$FF)
 	 ; Reset the event address
 	 ld hl,event_value
 	 ld.sis (event_address),hl
-	 ; Reset the RST target caches
-	 ld hl,z80codebase+do_rst_08-1
-	 ld de,do_rst_08 - do_rst_00
-	 ld a,decode_rst - do_rst_08
-	 ld b,8
-_
-	 ld (hl),a
-	 add hl,de
-	 sub e
-	 djnz -_
+	 ; Reset the max allowed cache flushes
 	 ld a,MAX_CACHE_FLUSHES_ALLOWED
 	 ld (cache_flushes_allowed),a
-	 ; Resolve the interrupt target caches
-	 ld hl,z80codebase+dispatch_vblank+3
-	 ld e,$40-8
+	 ; Reset the RST target caches
+	 ld ix,z80codebase+do_rst_00
+	 ld de,decode_rst
+	 ld b,8
+	 xor a
 _
-	 ld a,e
-	 add a,8
-	 ld e,a
+	 ld hl,(ix+2)
+	 ld.s (hl),a ;0-cycle dispatch
+	 inc hl
+	 inc hl
+	 ld.s (hl),de ;decode_rst
+	 lea ix,ix+do_rst_08-do_rst_00
+	 djnz -_
+	 ; Resolve the interrupt target caches
+	 ld hl,z80codebase+dispatch_vblank+2
+	 ld d,a
+	 ld e,$40
+_
 	 push de
 	  push hl
 	   call lookup_code
 	  pop hl
 	 pop de
-	 ; Add 4 cycles to mimic RST target caches
-	 sub -4 ; Sets carry
-	 ld (hl),a
-	 dec hl
-	 dec hl
 	 ld.s (hl),ix
-	 rl l
+	 dec hl
+	 dec hl
+	 ; Add 4 cycles to mimic RST target caches
+	 add a,4
+	 ld (hl),a
+	 inc hl
+	 ld a,e
+	 add a,8
+	 ld e,a
+	 sla l
 	 jp p,-_
 	pop de
 	ret
@@ -262,12 +268,14 @@ _
 	 push bc
 	  add hl,de
 	  bit 7,d	; Check whether the GB address is in ROM
-	  ld de,opcodesizes
+	  ld de,opcoderecsizes
 	  ld bc,RAM_PREFIX_SIZE
 	  jr nz,lookup_gb_add
 lookup_gb_found_loop:
 	  ld e,(hl)
 	  ex de,hl
+	  inc h
+	  inc h
 	  ld c,(hl)
 	  ex de,hl
 	  add hl,bc
@@ -276,8 +284,6 @@ lookup_gb_found_loop:
 	  sub (hl)
 	  dec h
 	  ld c,(hl)
-	  inc h
-	  inc h
 	  ex de,hl
 	  jr c,lookup_gb_new_sub_block
 lookup_gb_add:
@@ -313,10 +319,10 @@ lookup_gb_new_sub_block_end:
 	 dec ix
 	 add ix,bc
 	 jr nc,runtime_error_trampoline
-	 jr z,_
-	 inc ix  ; For CALL/RST/HALT, count is at -3 bytes
+	 jr nz,_
+	 inc ix  ; For RET/JR/JP/RST, count is at -4 bytes
 _
-	 add.s a,(ix-3)  ; For RET/JR/JP, count is at -4 bytes
+	 add.s a,(ix-4)  ; For CALL, count is at -5 bytes
 	 ASSERT_C
 	 jr lookup_gb_finish
 	
@@ -325,18 +331,19 @@ lookup_gb_new_sub_block:
 	  jr c,lookup_gb_prefix
 	  ; Note: for an overlapped instruction, the following transformations
 	  ; may end up incorrect, but they will be discarded after the bounds check
+	  inc e
 	  bit 2,e
-	  jr nz,_
-	  inc bc ; For RET/JR/JP, offsets are stored -1
+	  jr z,_
+	  inc bc ; For CALL, offsets are stored -1
 _
 	  add ix,bc
 	 pop bc
 	 ; This jump will not be taken for an overlapped instruction
 	 jr c,lookup_gb_new_sub_block_end
 	 push hl
-	  lea hl,ix-4 ; For RET/JR/JP, count is at -4 bytes
+	  lea hl,ix-4 ; For RET/JR/JP/RST, count is at -4 bytes
 	  jr z,_
-	  inc hl  ; For CALL/RST, count is at -3 bytes
+	  dec hl  ; For CALL, count is at -5 bytes
 _
 	  add hl,bc
 	  add.s a,(hl)
@@ -364,29 +371,25 @@ lookup_gb_prefix:
 	  ; this means it must have been an overlapped instruction
 	  ; This path is also taken if we reached a HALT
 	  jr c,lookup_gb_found_overlapped_or_halt
-	  ld c,a
+	  ; Look up the second byte in the CB opcode table
 	  dec hl
-	  ld a,(hl)
+	  ld e,(hl)
 	  inc hl
-	  xor $36
+	  ex de,hl
+	  dec h
+	  ld c,(hl)
+	  inc h
+	  ex de,hl
 	  ; Check for (HL) access
-	  tst a,7
-	  jr z,_
-	  ; Check for SWAP to adjust JIT code size appropriately
-	  cp 8
-	  ld a,c
-	  ld c,1
-	  rl c
+	  srl c
+	  jr nc,lookup_gb_add
+	  ; Check for BIT b,(HL)
+	  jr nz,_
+	  ld c,4
+	  dec a ; Adjust cycles for read
 	  jr lookup_gb_add
 _
-	  ; Check for BIT to adjust cycle count appropriately
-	  add a,$80
-	  cp $C0
-	  sbc a,a
-	  dec a
-	  add a,c
-	  ASSERT_C
-	  ld c,4
+	  sub 2 ; Adjust cycles for read/write
 	  jr lookup_gb_add
 	  
 lookup_gb_found_overlapped_or_halt:
@@ -562,11 +565,12 @@ internal_found_start:
 internal_found_new_subblock:
 	  cp -5
 	  jr c,internal_found_prefix
-	  add.s a,(ix-3)
+	  add.s a,(ix-4)
 	  ;ASSERT_C
+	  inc e
 	  bit 2,e
-	  jr nz,_ ; For CALL/RST, offsets are normal
-	  inc ix  ; For RET/JR/JP, offsets are stored -1
+	  jr z,_ ; For RET/JR/JP/RST, offsets are normal
+	  inc ix  ; For CALL, offsets are stored -1
 _
 	  add hl,bc
 	  add iy,bc
@@ -578,28 +582,33 @@ internal_found_prefix:
 	  sbc a,c
 	  ; If we're stepping past a HALT, then continue
 	  jr c,foundloop_internal_continue
-	  ; Analyze the first byte of JIT code
-	  ld.s e,(ix-2)
-	  ; Check for CB prefix, as opposed to CALL, LD IXH, or LD A,A
-	  bit 2,e
-	  jr z,foundloop_internal_continue
-	  inc ix
-	  ; Check for CALL, as opposed to LD IXH or LD A,A
-	  bit 4,e
-	  jr z,foundloop_internal_continue
-	  ld e,a
-	  inc ix
+	  ; Look up the second byte in the CB opcode table
 	  inc hl
-	  ld a,(hl)
-	  dec hl
-	  ; Check for BIT to adjust cycle count
-	  add a,$80
-	  cp $C0
-	  sbc a,a
-	  dec a
-	  add a,e
-	  jr foundloop_internal_continue
-	  
+	  ld e,(hl)
+	  inc hl
+	  ex de,hl
+	  dec h
+	  ld c,(hl)
+	  inc h
+	  ex de,hl
+	  ; Check for (HL) access
+	  srl c
+	  jr nc,++_
+	  ; Check for BIT b,(HL)
+	  jr nz,_
+	  ; Set actual recompiled code size
+	  ld c,4
+	  ; Adjust cycle count for read
+	  inc a
+_
+	  ; Adjust cycle count for read/write
+	  sub 2
+_
+	  ; Add actual recompiled code size
+	  add ix,bc
+	  ; Restore GB instruction size
+	  ld c,2
+	  jr foundloop_internal_continue_2
 	
 lookup_code_link_internal:
 	call get_banked_address
@@ -638,7 +647,7 @@ lookup_code_link_internal_with_bank:
 	  ex de,hl
 	  GET_BASE_ADDR_NO_ASSERT
 	  add hl,de
-	  ld de,opcodesizes
+	  ld de,opcoderecsizes
 	  ld a,(ix+7)
 	  ld ix,(ix)
 	  lea ix,ix+RAM_PREFIX_SIZE
@@ -647,8 +656,6 @@ foundloop_internal:
 	  ld e,(hl)
 	  ex de,hl
 	  ; Add recompiled instruction size
-	  dec h
-	  dec h
 	  ld c,(hl)
 	  add ix,bc
 	  ; Add cycles
@@ -657,10 +664,13 @@ foundloop_internal:
 	  inc h
 	  ; Add GB instruction size
 	  ld c,(hl)
+	  dec h
+	  dec h
 	  ex de,hl
 	  jr c,internal_found_new_subblock
 foundloop_internal_continue:
 	  add hl,bc
+foundloop_internal_continue_2:
 	  add iy,bc
 	  jr nc,foundloop_internal
 foundloop_internal_finish:
@@ -736,7 +746,7 @@ lookuploop:
 	   ex de,hl
 	   GET_BASE_ADDR_FAST
 	   add hl,de
-	   ld de,opcodesizes
+	   ld de,opcoderecsizes
 	   ld a,(ix+7)
 	   ld ix,(ix)
 lookup_found_loop:
@@ -744,8 +754,6 @@ lookup_found_loop:
 	   ld e,(hl)
 	   ex de,hl
 	   ; Add recompiled instruction size
-	   dec h
-	   dec h
 	   ld c,(hl)
 	   add ix,bc
 	   ; Add cycles
@@ -754,10 +762,13 @@ lookup_found_loop:
 	   inc h
 	   ; Add GB instruction size
 	   ld c,(hl)
+	   dec h
+	   dec h
 	   ex de,hl
 	   jr c,lookup_found_new_subblock
 lookup_found_continue:
 	   add hl,bc
+lookup_found_continue_2:
 	   add iy,bc
 	   jr nc,lookup_found_loop
 lookup_found_loop_finish:
@@ -772,11 +783,12 @@ lookup_found_loop_finish:
 lookup_found_new_subblock:
 	   cp -5
 	   jr c,lookup_found_prefix
-	   add.s a,(ix-3)
+	   add.s a,(ix-4)
 	   ASSERT_C
+	   inc e
 	   bit 2,e
-	   jr nz,_ ; For CALL/RST, offsets are normal
-	   inc ix  ; For RET/JR/JP, offsets are stored -1
+	   jr nz,_ ; For RET/JR/JP/RST, offsets are normal
+	   inc ix  ; For CALL, offsets are stored -1
 _
 	   add hl,bc
 	   add iy,bc
@@ -791,27 +803,33 @@ lookup_found_prefix:
 	   sbc a,c
 	   ; If we're stepping past a HALT, then continue
 	   jr c,lookup_found_continue
-	   ; Analyze the first byte of JIT code
-	   ld.s e,(ix-2)
-	   ; Check for CB prefix, as opposed to CALL, LD IXH, or LD A,A
-	   bit 2,e
-	   jr z,lookup_found_continue
-	   inc ix
-	   ; Check for CALL, as opposed to LD IXH or LD A,A
-	   bit 4,e
-	   jr z,lookup_found_continue
-	   ld e,a
-	   inc ix
+	   ; Look up the second byte in the CB opcode table
 	   inc hl
-	   ld a,(hl)
-	   dec hl
-	   ; Check for BIT to adjust cycle count
-	   add a,$80
-	   cp $C0
-	   sbc a,a
-	   dec a
-	   add a,e
-	   jr lookup_found_continue
+	   ld e,(hl)
+	   inc hl
+	   ex de,hl
+	   dec h
+	   ld c,(hl)
+	   inc h
+	   ex de,hl
+	   ; Check for (HL) access
+	   srl c
+	   jr nc,++_
+	   ; Check for BIT b,(HL)
+	   jr nz,_
+	   ; Set actual recompiled code size
+	   ld c,4
+	   ; Adjust cycle count for read
+	   inc a
+_
+	   ; Adjust cycle count for read/write
+	   sub 2
+_
+	   ; Add actual recompiled code size
+	   add ix,bc
+	   ; Restore GB instruction size
+	   ld c,2
+	   jr lookup_found_continue_2
 	
 	
 ; Recompiles a new code block starting from a banked GB address.
@@ -875,8 +893,8 @@ _
 	 jr nc,-_
 	pop af
 	
-	; Check for collision with memroutines
-	ld hl,(z80codebase+memroutine_next)
+	; Check for collision with trampolines
+	ld hl,(z80codebase+trampoline_next)
 	sbc hl,de
 	jr c,_
 	; Check for collision with cache
@@ -901,8 +919,6 @@ prepare_flush:
 	ld hl,$C3 | (schedule_event_finish_no_schedule << 8)	;JP schedule_event_finish_no_schedule
 	ld (flush_event_smc_1),hl
 	ld (flush_event_smc_2),hl
-	ld hl,$D2 | (schedule_event_finish_for_call_no_schedule << 8)	;JP NC,schedule_event_finish_for_call_no_schedule
-	ld (flush_event_for_call_smc),hl
 	; Dispatch to the flush handler instead of the recompiled code
 	ld ix,flush_handler
 	; Don't consume any cycles during dispatch
@@ -933,28 +949,38 @@ recompile_ram:
 	 ld (hl),ix
 	 inc hl
 	 inc hl
-	 
-	 call generate_opcodes
-	 
-	 ; Add in padding to avoid flushes
-	 ex de,hl
+	 push hl
+	  inc hl
+	  inc hl
+	  
+	  call generate_opcodes
+	  
+	  ; Add in padding to avoid flushes
+	  ex de,hl
 ram_block_padding = $+1
-	 ld bc,0
-	 add hl,bc
-	 ex de,hl
-	 ; Copy the GB opcodes for coherency
-	 ld c,a
-	 xor a
-	 ld b,a
-	 sbc hl,bc
-	 inc bc
-	 ldir
-	 ; Complement the final byte to force the match to end here
-	 dec de
-	 ld a,(de)
-	 cpl
-	 ld (de),a
-	 inc de
+	  ld bc,0
+	  add hl,bc
+	  ex de,hl
+	  ; Copy the GB opcodes for coherency
+	  ld c,a
+	  xor a
+	  ld b,a
+	  sbc hl,bc
+	  inc bc
+	  ldir
+	  ; Complement the final byte to force the match to end here
+	  dec de
+	  ld a,(de)
+	  cpl
+	  ld (de),a
+	  inc de
+	 
+	 pop hl
+	 ; Save the block end pointer in the block prefix, in case the next
+	 ; block pointer is advanced by a low-pool trampoline allocation
+	 ld (hl),e
+	 inc hl
+	 ld (hl),d
 	 
 	 ; Report block cycle length of 0
 	 xor a
@@ -971,65 +997,70 @@ flush_cache:
 	
 	
 check_coherency_helper:
-	ex af,af'
-	push af
-	 ld de,recompile_struct
-	 add ix,de
-	 ld b,e
-	 ld c,(ix+5)
-	 inc c
-	 ld hl,(ix+2)
-	 ex.s de,hl
-	 GET_BASE_ADDR_FAST
-	 add hl,de
-	 ex de,hl
-	 ld hl,i
-	 ld l,(ix+8)
-	 ld h,(ix+9)
-	 sbc hl,bc
-check_coherency_loop:
-	 ld a,(de)
-	 inc de
-	 cpi
-	 jr nz,_
-	 ld a,(de)
-	 inc de
-	 cpi
-	 jr nz,_
-	 ld a,(de)
-	 inc de
-	 cpi
-	 jr nz,_
-	 ld a,(de)
-	 inc de
-	 cpi
-	 jr z,check_coherency_loop
-_
-	 jp pe,rerecompile
-	 ; Make sure the last (complemented) byte matches
-	 cpl
-	 dec hl
-	 xor.s (hl)
-	 jr nz,rerecompile
-	
-check_coherency_cycles:
-	pop af
-	pop.s bc
-	add a,(ix+7)
-	jp.sis nc,z80_double_swap_ret
-	inc c
-	jp.sis nz,z80_double_swap_ret
-	ld c,(ix+7)
+	ld de,recompile_struct
+	add ix,de
 	ld hl,(ix+2)
 	ex.s de,hl
+	GET_BASE_ADDR_FAST
+	add hl,de
+	ex de,hl
+	ld hl,i ;HLU=z80codebase>>16
+	ld h,b
+	ld l,c
+	ld b,0
+	ld c,(ix+5)
+	inc c
+	sbc hl,bc
+check_coherency_loop:
+	ld a,(de)
+	inc de
+	cpi
+	jr nz,_
+	ld a,(de)
+	inc de
+	cpi
+	jr nz,_
+	ld a,(de)
+	inc de
+	cpi
+	jr nz,_
+	ld a,(de)
+	inc de
+	cpi
+	jr z,check_coherency_loop
+_
+	jp pe,rerecompile
+	; Make sure the last (complemented) byte matches
+	dec hl
+	xor (hl)
+	inc a
+	jr nz,rerecompile
+	
+check_coherency_cycles:
+	pop.s de
+	ld a,e
+	add a,(ix+7)
+	jr c,++_
+_
 	pop.s ix
-	push.s ix
-	push.s bc
+	exx
+	jp.s (hl)	
+_
+	inc d
+	jr nz,--_
+	ld c,a
+	sub e
 	ld b,a
+	ld hl,(ix+2)
+	ex.s de,hl
+	exx
+	push hl
+	pop ix
+	exx
 #ifdef VALIDATE_SCHEDULE
-	call schedule_event_helper_a
+	call schedule_event_helper
 #else
-	jp schedule_event_helper_a
+	jp schedule_event_helper
 #endif
 	
 ; Recompiles an existing RAM code block in-place.
@@ -1060,24 +1091,28 @@ rerecompile:
 	inc.s hl
 	ld de,z80codebase + RAM_PREFIX_SIZE - 1
 	add hl,de
-	ld de,(ix+2)
-	push iy
-	 call generate_opcodes
-	pop iy
-	
-	; Get the address to copy the opcodes from
-	ld c,a
-	xor a
-	ld b,a
-	inc.s bc
-	inc hl
-	sbc hl,bc
-	
 	push hl
+	 ld de,(ix+2)
+	 push iy
+	  call generate_opcodes
+	 pop iy
+	
+	 ; Get the address to copy the opcodes from
+	 ld c,a
+	 xor a
+	 ld b,a
+	 inc.s bc
+	 inc hl
+	 sbc hl,bc
+	
 	 ; Get the address to copy the opcodes to
-	 ld hl,i
-	 ld l,(ix+8)
-	 ld h,(ix+9)
+	 ex (sp),hl
+	 ; Load the lower two bytes individually to preserve the upper byte
+	 dec hl
+	 ld a,(hl)
+	 dec hl
+	 ld l,(hl)
+	 ld h,a
 	 sbc hl,bc	; Carry is reset
 	 ASSERT_NC
 	 ex de,hl
@@ -1087,11 +1122,11 @@ rerecompile:
 	 sbc hl,de
 	 jr nc,coherency_flush
 	
-	 ; Check for collision of end of recompiled code with memroutines
+	 ; Check for collision of end of recompiled code with trampolines
 	 push de
 	  ld hl,(recompile_struct_end)
 	  ld de,(hl)
-	  ld hl,(z80codebase+memroutine_next)
+	  ld hl,(z80codebase+trampoline_next)
 	  or a
 	  sbc hl,de
 	 pop de
@@ -1127,14 +1162,16 @@ coherency_flush:
 	ld de,(ix+2)
 	call flush_code
 	call lookup_code_with_bank
-	pop af
-	pop.s bc
+	pop.s de
+	ld a,e
 	ex af,af'
 	exx
+	lea hl,ix
+	pop.s ix
 	; Flush entire call stack, including interrupt returns
 	ld sp,myADLstack
 	ld.sis sp,myz80stack-4
-	jp.s (ix)
+	jp.s (hl)
 	
 	
 ; Inputs:  IX = struct entry
@@ -1158,15 +1195,13 @@ generate_opcodes:
 	 inc.s de
 	 ld bc,opgentable + MAX_OPCODE_BYTES_PER_BLOCK
 	 ; Get memory region base address and check if region changes in next 256 bytes
-	 ld hl,mem_region_lut
+	 ld hl,z80codebase+mem_read_lut
 	 ld l,d
 	 inc l
 	 ld a,(hl)
 	 dec l
 	 ld l,(hl)
-	 dec h
 	 cp l
-	 ld hl,(hl)
 	 ld a,c  ;MAX_OPCODE_BYTES_PER_BLOCK
 	 jr z,++_
 	 ; On region change, clamp input boundary to 256-byte range
@@ -1177,6 +1212,9 @@ _
 	 sub e
 _
 	 ld (opgen_byte_limit_smc),a
+	 inc h ;mem_get_ptr_routines
+	 inc l \ inc l
+	 ld hl,(hl)
 	 ex de,hl
 	 add hl,de
 	 ex de,hl
@@ -1249,12 +1287,6 @@ _
 	.block (-$)&255	
 opcycleroutines:
 	
-	; 1b op, 3b rec, 1cc
-opcycle27:
-opcycle3F:
-opcycleF3:
-opcycleEI:
-	dec ix
 	; 1b op, 4b rec, 1cc
 opcycleROT:
 	add ix,bc
@@ -1275,20 +1307,35 @@ opcycle_first:
 	dec h
 	jp (hl)
 	
-opcycleCB_maybe_swap:
-	; Differentiate between CB prefix and CALL
-	bit 1,l
-	jr nz,opcycleCB_normal
+	; 1b op, 2b rec, 1cc
+opcycle1byte_ix:
+	dec ix
+	; 1b op, 3b rec, 1cc
+opcycleROTC:
+opcycle27:
+opcycle3F:
+opcycleF3:
+opcycleEI:
+	add ix,bc
+	inc de
+	ex de,hl
+	inc a
+	ret z
+	inc d
+	ld e,(hl)
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+	
+	; 2b op, 3b rec, 2cc
+opcycle2byte_ix:
+	inc de
 	; 1b op, 3b rec, 2cc
 opcycleMEM:
-opcycle09:
 opcycle19:
 opcycle29:
-opcycle33:
 opcycle39:
-opcycle3B:
-opcycleE2:
-opcycleF2:
 opcycleF9:
 	add ix,bc
 	inc de
@@ -1296,6 +1343,13 @@ opcycleF9:
 	add a,2
 	OPCYCLE_NEXT
 	
+	; 1b op, 6b rec, 2cc
+opcycleE2:
+opcycleF2:
+	inc ix
+	; 1b op, 5b rec, 2cc
+opcycle09:
+	lea ix,ix+4
 	; 1b op, 1b rec, 2cc
 opcycle1byte_2cc:
 	inc ix
@@ -1304,19 +1358,36 @@ opcycle1byte_2cc:
 	add a,2
 	OPCYCLE_NEXT
 	
+	; 1b op, 7b rec, 2cc
+opcycleMEM_7b:
+	add ix,bc
+	; 1b op, 4b rec, 2cc
+opcycle33:
+opcycle3B:
+opcycleMEM_4b:
+	lea ix,ix+4
+	inc de
+	ex de,hl
+	add a,2
+	OPCYCLE_NEXT
+	
 	; 2b op, 2b rec, 2cc
 opcycle2byte:
 	inc de
-opcycleCB_normal:
+	; 1b op, 2b rec, 2cc
+opcycle1byte_2cc_ix:
 	lea ix,ix+2
 	inc de
 	ex de,hl
 	add a,2
 	OPCYCLE_NEXT
-
-	; 3b op, 5b rec, 3cc
+	
+	; 3b op, 7b rec, 3cc
 opcycle31:
-	lea ix,ix+(5-3)
+	add ix,bc
+	; 3b op, 4b rec, 3cc
+opcycle3byte_ix:
+	inc ix
 	; 3b op, 3b rec, 3cc
 opcycle3byte:
 	add ix,bc
@@ -1325,21 +1396,29 @@ opcycle3byte:
 	add a,c
 	OPCYCLE_NEXT
 	
-	; 2b op, 4b rec, 3cc
-opcycleF8:
-	lea ix,ix+(4-6)
-	; 2b op, 6b rec, 3cc
-opcycle36:
-	add ix,bc
-	; 2b op, 3b rec, 3cc
+	; 2b op, 8b rec, 3cc
 opcycleE0:
 opcycleF0:
+	lea ix,ix+8
 	inc de
+	inc de
+	ex de,hl
+	add a,c
+	OPCYCLE_NEXT
+	
+	; 2b op, 5b rec, 3cc
+opcycleF8:
+	inc ix
+	; 2b op, 4b rec, 3cc
+opcycle36:
+	inc de
+	; 1b op, 4b rec, 3cc
+opcyclePOP:
+	inc ix
 	; 1b op, 3b rec, 3cc
 opcycle34:
 opcycle35:
 opcycleF1:
-opcyclePOP:
 	add ix,bc
 	inc de
 	ex de,hl
@@ -1347,42 +1426,68 @@ opcyclePOP:
 	OPCYCLE_NEXT
 
 opcycleCB:
-	; Check for CB prefix or CALL (as opposed to LD IXH or LD A,A)
-	ld.s l,(ix)
-	bit 4,l
-	inc de
-	jr z,opcycleCB_maybe_swap
-	; 2b op, 4b rec,
-	lea ix,ix+4
-	ld l,a
-	ld a,(de)
-	; 3cc if second opcode byte is between $40-$7F, 4cc otherwise
-	sub $40
-	add a,$C0
-	ld a,l
-	inc de
+	; Look up second opcode byte in opcoderecsizes_CB
 	ex de,hl
-	adc a,c
-	OPCYCLE_NEXT
+	inc hl
+	ld e,(hl)
+	inc hl
+	ex de,hl
+	inc h
+	inc h
+	ld c,(hl)
+	dec h
+	ex de,hl
+	ld e,(hl)
+	; Check for (HL) access
+	srl c
+	jr c,opcycleCB_hl
+	; 2b op, variable rec, 2cc
+	add ix,bc
+	ld c,3
+	add a,2
+	ret c
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+opcycleCB_hl:
+	; Check for BIT
+	jr z,opcycleCB_bit_hl
+	; 2b op, variable rec, 4cc
+	add ix,bc
+	ld c,3
+	add a,4
+	ret c
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+opcycleCB_bit_hl:
+	; 2b op, 4b rec, 3cc
+	lea ix,ix+4
+	ld c,3
+	add a,c
+	ret c
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
 
-	; 3b op, 5b rec, 4cc
+	; 3b op, 8b rec, 4cc
 opcycleEA:
 opcycleFA:
-	lea ix,ix+5
+	lea ix,ix+8
 	ex de,hl
 	add hl,bc
 	add a,4
 	OPCYCLE_NEXT
 
-	; 2b op, 4b rec, 4cc
+	; 2b op, 5b rec, 4cc
 opcycleE8:
 	inc de
-	inc ix
+	lea ix,ix+2
 	; 1b op, 3b rec, 4cc
-opcycleC5:
-opcycleD5:
-opcycleE5:
-opcycleF5:
+opcyclePUSH:
 	inc de
 	add ix,bc
 	ex de,hl
@@ -1433,22 +1538,22 @@ opcycleE9:
 opcounttable:
 ;00
 	.db opcycleNOP - opcycleroutines
-	.db opcycle3byte - opcycleroutines
-	.db opcycleMEM - opcycleroutines
-	.db opcycle1byte_2cc - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle2byte - opcycleroutines
-	.db opcycleROT - opcycleroutines
+	.db opcycle3byte_ix - opcycleroutines
+	.db opcycleMEM_4b - opcycleroutines
+	.db opcycle1byte_2cc_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle2byte_ix - opcycleroutines
+	.db opcycleROTC - opcycleroutines
 ;08
 	.db opcycle08 - opcycleroutines
 	.db opcycle09 - opcycleroutines
-	.db opcycleMEM - opcycleroutines
-	.db opcycle1byte_2cc - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle2byte - opcycleroutines
-	.db opcycleROT - opcycleroutines
+	.db opcycleMEM_4b - opcycleroutines
+	.db opcycle1byte_2cc_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle2byte_ix - opcycleroutines
+	.db opcycleROTC - opcycleroutines
 ;10
 	.db opcycleNOP - opcycleroutines
 	.db opcycle3byte - opcycleroutines
@@ -1470,7 +1575,7 @@ opcounttable:
 ;20
 	.db opcycleJRcond - opcycleroutines
 	.db opcycle3byte - opcycleroutines
-	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM_4b - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1479,7 +1584,7 @@ opcounttable:
 ;28
 	.db opcycleJRcond - opcycleroutines
 	.db opcycle29 - opcycleroutines
-	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM_4b - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1488,7 +1593,7 @@ opcounttable:
 ;30
 	.db opcycleJRcond - opcycleroutines
 	.db opcycle31 - opcycleroutines
-	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM_4b - opcycleroutines
 	.db opcycle33 - opcycleroutines
 	.db opcycle34 - opcycleroutines
 	.db opcycle35 - opcycleroutines
@@ -1497,7 +1602,7 @@ opcounttable:
 ;38
 	.db opcycleJRcond - opcycleroutines
 	.db opcycle39 - opcycleroutines
-	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM_4b - opcycleroutines
 	.db opcycle3B - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1505,25 +1610,25 @@ opcounttable:
 	.db opcycle3F - opcycleroutines
 ;40
 	.db opcycleNOP - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycleMEM - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycleMEM_7b - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 ;48
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycleNOP - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
-	.db opcycleMEM - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycleMEM_7b - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 ;50
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycleNOP - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1531,8 +1636,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;58
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycleNOP - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1540,8 +1645,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;60
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycleNOP - opcycleroutines
@@ -1549,8 +1654,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;68
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1558,8 +1663,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;70
-	.db opcycleMEM - opcycleroutines
-	.db opcycleMEM - opcycleroutines
+	.db opcycleMEM_7b - opcycleroutines
+	.db opcycleMEM_7b - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 	.db opcycleMEM - opcycleroutines
@@ -1567,8 +1672,8 @@ opcounttable:
 	.db opcycleHALT - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 ;78
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1576,8 +1681,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycleNOP - opcycleroutines
 ;80
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1585,8 +1690,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;88
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1594,8 +1699,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;90
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1603,8 +1708,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;98
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1612,8 +1717,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;A0
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1621,8 +1726,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;A8
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1630,8 +1735,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;B0
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1639,8 +1744,8 @@ opcounttable:
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 ;B8
-	.db opcycle1byte - opcycleroutines
-	.db opcycle1byte - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
+	.db opcycle1byte_ix - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
 	.db opcycle1byte - opcycleroutines
@@ -1653,7 +1758,7 @@ opcounttable:
 	.db opcycleJPcond - opcycleroutines
 	.db opcycleJP - opcycleroutines
 	.db opcycleCALLcond - opcycleroutines
-	.db opcycleC5 - opcycleroutines
+	.db opcyclePUSH - opcycleroutines
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 ;C8
@@ -1671,7 +1776,7 @@ opcounttable:
 	.db opcycleJPcond - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
 	.db opcycleCALLcond - opcycleroutines
-	.db opcycleD5 - opcycleroutines
+	.db opcyclePUSH - opcycleroutines
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 ;D8
@@ -1689,7 +1794,7 @@ opcounttable:
 	.db opcycleE2 - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
-	.db opcycleE5 - opcycleroutines
+	.db opcyclePUSH - opcycleroutines
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 ;E8
@@ -1707,7 +1812,7 @@ opcounttable:
 	.db opcycleF2 - opcycleroutines
 	.db opcycleF3 - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
-	.db opcycleF5 - opcycleroutines
+	.db opcyclePUSH - opcycleroutines
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 ;F8
@@ -1720,43 +1825,86 @@ opcounttable:
 	.db opcycle2byte - opcycleroutines
 	.db opcycleRST - opcycleroutines
 	
-; A table of recompiled opcode sizes. Does not apply to block-ending opcodes.
+; A table of recompiled bitwise opcode sizes.
+; The value is scaled by 2, and bit 0 is set for (HL) accesses.
+; BIT b,(HL) opcodes report a size of 0 for easy detection,
+; but their actual size is 4 bytes.
+opcoderecsizes_CB:
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 6,6,6,6,6,6,7,10
+	.db 16,16,4,4,4,4,9,4
+	
+	.db 10,10,4,4,4,4,1,4
+	.db 10,10,4,4,4,4,1,4
+	.db 10,10,4,4,4,4,1,4
+	.db 10,10,4,4,4,4,1,4
+	.db 10,10,4,4,4,4,1,4
+	.db 10,10,4,4,4,4,1,4
+	.db 10,10,4,4,4,4,1,4
+	.db 10,10,4,4,4,4,1,4
+	
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	.db 16,16,4,4,4,4,9,4
+	
+; A table of recompiled opcode sizes.
+; Does not apply to block-ending or CB-prefix opcodes.
+; CALL opcodes are offset by 1 to make it easier to find sub-block cycles.
 opcoderecsizes:
+	.db 0,4,4,2,2,2,3,3
+	.db 7,5,4,2,2,2,3,3
 	.db 0,3,3,1,1,1,2,4
-	.db 7,3,3,1,1,1,2,4
 	.db 0,3,3,1,1,1,2,4
-	.db 0,3,3,1,1,1,2,4
-	.db 19-1,3,3,1,1,1,2,3
-	.db 19-1,3,3,1,1,1,2,1
-	.db 19-1,5,3,3,3,3,6,1
-	.db 19-1,3,3,3,1,1,2,3
+	.db 19,3,4,1,1,1,2,3
+	.db 19,3,4,1,1,1,2,1
+	.db 19,7,4,4,3,3,4,1
+	.db 19,3,4,4,1,1,2,3
 	
-	.db 0,1,1,1,1,1,3,1
-	.db 1,0,1,1,1,1,3,1
-	.db 1,1,0,1,1,1,3,1
-	.db 1,1,1,0,1,1,3,1
-	.db 1,1,1,1,0,1,3,1
-	.db 1,1,1,1,1,0,3,1
-	.db 3,3,3,3,3,3,1,3
-	.db 1,1,1,1,1,1,3,0
+	.db 0,2,2,2,2,2,7,2
+	.db 2,0,2,2,2,2,7,2
+	.db 2,2,0,1,1,1,3,1
+	.db 2,2,1,0,1,1,3,1
+	.db 2,2,1,1,0,1,3,1
+	.db 2,2,1,1,1,0,3,1
+	.db 7,7,3,3,3,3,1,3
+	.db 2,2,1,1,1,1,3,0
 	
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
-	.db 1,1,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
+	.db 2,2,1,1,1,1,3,1
 	
-	.db 12-1,3,19-1,0,10,3,2,6
-	.db 12-1,0,19-1,2,10,8,2,6
-	.db 12-1,3,19-1,0,10,3,2,6
-	.db 12-1,0,19-1,0,10,0,2,6
-	.db 3,3,3,0,0,3,2,6
-	.db 4,0,5,0,0,0,2,6
-	.db 3,3,3,3,0,3,2,6
-	.db 4,3,5,3,0,0,2,6
+	.db 12,4,19,0,11-1,3,2,9
+	.db 12,0,19,0,11-1,11-1,2,9
+	.db 12,4,19,0,11-1,3,2,9
+	.db 12,0,19,0,11-1,0,2,9
+	.db 8,4,6,0,0,3,2,9
+	.db 5,0,8,0,0,0,2,9
+	.db 8,3,6,3,0,3,2,9
+	.db 5,3,8,3,0,0,2,9
 	
 ; A table of Game Boy opcode cycles. Block-ending opcodes are set to 0.
 ; Conditional branches are assumed not taken.
@@ -1844,7 +1992,7 @@ opgentable:
 ;00
 	.db opgenNOP - opgenroutines
 	.db opgen01 - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenBCwrite - opgenroutines
 	.db opgen1byte_2cc_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1853,7 +2001,7 @@ opgentable:
 ;08
 	.db opgen08 - opgenroutines
 	.db opgen09 - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenBCread - opgenroutines
 	.db opgen1byte_2cc_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1862,7 +2010,7 @@ opgentable:
 ;10
 	.db opgenNOP - opgenroutines
 	.db opgen3byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenDEwrite - opgenroutines
 	.db opgen1byte_2cc_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
@@ -1871,7 +2019,7 @@ opgentable:
 ;18
 	.db opgenJR - opgenroutines
 	.db opgen19 - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenDEread - opgenroutines
 	.db opgen1byte_2cc_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
@@ -1880,7 +2028,7 @@ opgentable:
 ;20
 	.db opgenJRcond - opgenroutines
 	.db opgen3byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLwrite_post - opgenroutines
 	.db opgen1byte_2cc_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
@@ -1889,7 +2037,7 @@ opgentable:
 ;28
 	.db opgenJRcond - opgenroutines
 	.db opgen29 - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread_post - opgenroutines
 	.db opgen1byte_2cc_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
@@ -1898,16 +2046,16 @@ opgentable:
 ;30
 	.db opgenJRcond - opgenroutines
 	.db opgen31 - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLwrite_post - opgenroutines
 	.db opgen33 - opgenroutines
-	.db opgen34 - opgenroutines
-	.db opgen35 - opgenroutines
+	.db opgenHLreadwrite - opgenroutines
+	.db opgenHLreadwrite - opgenroutines
 	.db opgen36 - opgenroutines
 	.db opgen1byte - opgenroutines
 ;38
 	.db opgenJRcond - opgenroutines
 	.db opgen39 - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread_post - opgenroutines
 	.db opgen3B - opgenroutines
 	.db opgen1byte - opgenroutines
 	.db opgen1byte - opgenroutines
@@ -1920,7 +2068,7 @@ opgentable:
 	.db opgen1byte_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread_bc - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
 ;48
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1929,7 +2077,7 @@ opgentable:
 	.db opgen1byte_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread_bc - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
 ;50
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1938,7 +2086,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 ;58
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1947,7 +2095,7 @@ opgentable:
 	.db opgenNOP - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 ;60
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1956,7 +2104,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgenNOP - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 ;68
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1965,17 +2113,17 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgenNOP - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 ;70
-	.db opgenMEM - opgenroutines
-	.db opgenMEM - opgenroutines
-	.db opgenMEM - opgenroutines
-	.db opgenMEM - opgenroutines
-	.db opgenMEM - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLwrite_bc - opgenroutines
+	.db opgenHLwrite_bc - opgenroutines
+	.db opgenHLwrite - opgenroutines
+	.db opgenHLwrite - opgenroutines
+	.db opgenHLwrite - opgenroutines
+	.db opgenHLwrite - opgenroutines
 	.db opgen76 - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLwrite - opgenroutines
 ;78
 	.db opgen1byte_remap_ix - opgenroutines
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1983,7 +2131,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgenNOP - opgenroutines
 ;80
 	.db opgen1byte_remap_ix - opgenroutines
@@ -1992,7 +2140,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;88
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2001,7 +2149,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;90
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2010,7 +2158,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;98
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2019,7 +2167,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;A0
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2028,7 +2176,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;A8
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2037,7 +2185,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;B0
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2046,7 +2194,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;B8
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2055,7 +2203,7 @@ opgentable:
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
 	.db opgen1byte_remap - opgenroutines
-	.db opgenMEM - opgenroutines
+	.db opgenHLread - opgenroutines
 	.db opgen1byte - opgenroutines
 ;C0
 	.db opgenRETcond - opgenroutines
@@ -2063,7 +2211,7 @@ opgentable:
 	.db opgenJPcond - opgenroutines
 	.db opgenJP - opgenroutines
 	.db opgenCALLcond - opgenroutines
-	.db opgenC5 - opgenroutines
+	.db opgenPUSH - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;C8
@@ -2081,7 +2229,7 @@ opgentable:
 	.db opgenJPcond - opgenroutines
 	.db opgenINVALID - opgenroutines
 	.db opgenCALLcond - opgenroutines
-	.db opgenD5 - opgenroutines
+	.db opgenPUSH - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;D8
@@ -2099,7 +2247,7 @@ opgentable:
 	.db opgenE2 - opgenroutines
 	.db opgenINVALID - opgenroutines
 	.db opgenINVALID - opgenroutines
-	.db opgenE5 - opgenroutines
+	.db opgenPUSH - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;E8
@@ -2117,7 +2265,7 @@ opgentable:
 	.db opgenF2 - opgenroutines
 	.db opgenF3 - opgenroutines
 	.db opgenINVALID - opgenroutines
-	.db opgenF5 - opgenroutines
+	.db opgenPUSH - opgenroutines
 	.db opgen2byte - opgenroutines
 	.db opgenRST - opgenroutines
 ;F8
@@ -2133,40 +2281,41 @@ opgentable:
 ; A supplemental table for opcode generation.
 ; Determines translations or routine addresses for certain opcodes.
 	;00
-	.db 0,  0,$02,$23,$24,$25,$26,0
-	.db 0,  0,$0A,$2B,$2C,$2D,$2E,0
-	.db 0,$01,$12,$03,$04,$05,$06,0
-	.db 0,  0,$1A,$0B,$0C,$0D,$0E,0
-	.db 0,$11,$22,$13,$14,$15,$16,ophandler27 & $FF
+	.db 0,  0,0,$23,$24,$25,$26,0
+	.db 0,  0,0,$2B,$2C,$2D,$2E,0
+	.db 0,$01,0,$03,$04,$05,$06,0
+	.db 0,  0,0,$0B,$0C,$0D,$0E,0
+	.db ophandler31 >> 8
+	.db   $11,$23,$13,$14,$15,$16,ophandler27 & $FF
 	.db ophandler27 >> 8
-	.db     0,$2A,$1B,$1C,$1D,$1E,0
+	.db     0,$23,$1B,$1C,$1D,$1E,ophandler31 & $FF
 	;30
-	.db ophandler34 & $FF
-	.db ophandler31 & $FF
-	.db $32
+	.db 0
+	.db 0
+	.db $2B
 	.db ophandler33 & $FF
 	.db ophandler3B >> 8
-	.db $76
+	.db 0
 	.db ophandler39 >> 8
-	.db ophandler35 & $FF
+	.db 0
 	;38
-	.db ophandler35 >> 8
+	.db 0
 	.db ophandler39 & $FF
-	.db $3A
+	.db $2B
 	.db ophandler3B & $FF
 	.db ophandler33 >> 8
 	.db 0
-	.db ophandler31 >> 8
-	.db ophandler34 >> 8
+	.db 0
+	.db 0
 	
 	;40
-	.db   0,$65,$60,$61,$62,$63,$66,$67
-	.db $6C,  0,$68,$69,$6A,$6B,$6E,$6F
+	.db   0,$65,$60,$61,$62,$63,$63,$67
+	.db $6C,  0,$68,$69,$6A,$6B,$6B,$6F
 	.db $44,$45,  0,$41,$42,$43,$46,$47
 	.db $4C,$4D,$48,  0,$4A,$4B,$4E,$4F
 	.db $54,$55,$50,$51,  0,$53,$56,$57
 	.db $5C,$5D,$58,$59,$5A,  0,$5E,$5F
-	.db $74,$75,$70,$71,$72,$73,  0,$77
+	.db $7C,$7D,$70,$71,$72,$73,  0,$77
 	.db $7C,$7D,$78,$79,$7A,$7B,$7E,  0
 	
 	;80
@@ -2181,7 +2330,7 @@ opgentable:
 	
 	;C0
 	.db 0
-	.db $E1
+	.db ophandlerC1 & $FF
 	.db 0
 	.db 0
 	.db 0
@@ -2195,11 +2344,11 @@ opgentable:
 	.db 0
 	.db 0
 	.db 0
-	.db 0
+	.db ophandlerC1 >> 8
 	.db 0
 	;D0
-	.db 0
-	.db $C1
+	.db ophandlerF8_zero & $FF
+	.db ophandlerD1 & $FF
 	.db 0
 	.db 0
 	.db 0
@@ -2213,307 +2362,45 @@ opgentable:
 	.db 0
 	.db 0
 	.db 0
-	.db 0
-	.db 0
+	.db ophandlerD1 >> 8
+	.db ophandlerF8_zero >> 8
 	;E0
-	.db 0
-	.db $D1
-	.db ophandlerE2 & $FF
+	.db ophandlerE8_non_negative & $FF
+	.db ophandlerE1 & $FF
+	.db op_write_c_hmem & $FF
 	.db 0
 	.db 0
 	.db ophandlerE5 & $FF
 	.db ophandlerE9 >> 8
-	.db ophandlerE8 >> 8
+	.db ophandlerE8_negative >> 8
 	;E8
-	.db ophandlerE8 & $FF
+	.db ophandlerE8_negative & $FF
 	.db ophandlerE9 & $FF
 	.db ophandlerE5 >> 8
 	.db 0
 	.db 0
-	.db ophandlerE2 >> 8
-	.db 0
-	.db 0
+	.db op_write_c_hmem >> 8
+	.db ophandlerE1 >> 8
+	.db ophandlerE8_non_negative >> 8
 	;F0
-	.db 0
+	.db ophandlerF8_positive & $FF
 	.db ophandlerF1 & $FF
-	.db ophandlerF2 & $FF
+	.db op_read_c_hmem & $FF
 	.db ophandlerF3 & $FF
 	.db ophandlerEI >> 8
 	.db ophandlerF5 & $FF
 	.db ophandlerF9 >> 8
-	.db ophandlerF8 >> 8
+	.db ophandlerF8_negative >> 8
 	;F8
-	.db ophandlerF8 & $FF
+	.db ophandlerF8_negative & $FF
 	.db ophandlerF9 & $FF
 	.db ophandlerF5 >> 8
 	.db ophandlerEI & $FF
 	.db ophandlerF3 >> 8
-	.db ophandlerF2 >> 8
+	.db op_read_c_hmem >> 8
 	.db ophandlerF1 >> 8
-	.db 0
+	.db ophandlerF8_positive >> 8
 	
-; A table indexing port write handlers.
-; All entry points live in a 256-byte space.
-#define WRITE_PORT_NO_HANDLER_DIRECT 0
-#define WRITE_PORT_NO_HANDLER_IGNORE 1
-mem_write_port_handler_table:
-	.db writeIEhandler - mem_write_port_routines
-;00
-	.db writeP1handler - mem_write_port_routines
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db writeSChandler - mem_write_port_routines
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db writeDIVhandler - mem_write_port_routines
-	.db writeTIMAhandler - mem_write_port_routines
-	.db writeTMAhandler - mem_write_port_routines
-	.db writeTAChandler - mem_write_port_routines
-;08
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db writeIFhandler - mem_write_port_routines
-;10
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-;18
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-;20
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db write_audio_handler - mem_write_port_routines
-	.db writeNR52handler - mem_write_port_routines
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-;28
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-;30
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-;38
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-	.db WRITE_PORT_NO_HANDLER_DIRECT
-;40
-	.db writeLCDChandler - mem_write_port_routines
-	.db writeSTAThandler - mem_write_port_routines
-	.db write_scroll_handler - mem_write_port_routines
-	.db write_scroll_handler - mem_write_port_routines
-	.db WRITE_PORT_NO_HANDLER_IGNORE
-	.db writeLYChandler - mem_write_port_routines
-	.db writeDMAhandler - mem_write_port_routines
-	.db writeBGPhandler - mem_write_port_routines
-;48
-	.db write_scroll_handler - mem_write_port_routines
-	.db write_scroll_handler - mem_write_port_routines
-	.db write_scroll_handler - mem_write_port_routines
-	.db write_scroll_handler - mem_write_port_routines
-mem_write_port_handler_table_end:
-	
-	.block (128-11-$)&255
-; Information for stack jump targets when RTC is mapped
-; The base address and bound information are omitted,
-; those are taken from the main CRAM stack info
-	; push jump targets
-	.db do_push_rtc - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_rtc - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_rtc - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_rtc - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $00 ;none
-	; callstack pop overflow check
-	nop
-	nop
-	.db $18 ;JR
-	.block 3
-
-; A table of information for stack memory areas
-stack_bank_info_table:
-hram_unbanked_base:
-	.dl hram_base	;$ff80-$ffff
-	.db ($ff+1)&$ff,($ff+1)&$ff
-	; push jump targets
-	.db do_push_z80 - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_z80 - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_z80 - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_z80 - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $40 ;.SIS
-	; callstack pop overflow check
-	bit 6,b
-	.db $20 ;JR NZ,
-	.block 3
-
-; The start address of Game Boy ROM page 0.
-rom_start:
-	.dl 0	;$0000-$3fff
-	.db $00+1,$3f+1
-	; push jump targets
-	.db do_push_cart - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_cart - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $49 ;.LIS
-	; callstack pop overflow check
-	inc b
-	dec b
-	.db $28 ;JR Z,
-	.block 3
-
-hmem_unbanked_base:
-	.dl hram_base	;$fe00-$ffff
-	.db $fe+1,($ff+1)&$ff
-	; push jump targets
-	.db do_push_hmem - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_hmem - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_hmem - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_hmem - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $00 ;none
-	; callstack pop overflow check
-	nop
-	nop
-	.db $18 ;JR
-	.block 3
-
-; The address of the currently banked ROM page, minus $4000.
-; Can be indexed directly by the Game Boy address.
-rom_bank_base:
-	.dl 0	;$4000-$7fff
-	.db $40+1,$7f+1
-	; push jump targets
-	.db do_push_cart - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_cart - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $49 ;.LIS
-	; callstack pop overflow check
-	inc b
-	dec b
-	.db $28 ;JR Z,
-	.block 3
-
-vram_bank_base:
-	.dl vram_base	;$8000-$9fff
-	.db $80+1,$9f+1
-	; push jump targets
-	.db do_push_vram - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_vram - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $49 ;.LIS
-	; callstack pop overflow check
-	inc b
-	dec b
-	.db $28 ;JR Z,
-	.block 3
-
-; The address of the currently banked RAM page, minus $A000.
-; Can be indexed directly by the Game Boy address.
-cram_bank_base:
-	.dl 0	;$a000-$bfff
-	.db $a0+1,$bf+1
-	; push jump targets
-	.db do_push_adl - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $49 ;.LIS
-	; callstack pop overflow check
-	inc b
-	dec b
-	.db $28 ;JR Z,
-	.block 3
-
-wram_unbanked_base:
-	.dl wram_base	;$c000-$dfff
-	.db $c0+1,$df+1
-	; push jump targets
-	.db do_push_adl - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $49 ;.LIS
-	; callstack pop overflow check
-	inc b
-	dec b
-	.db $28 ;JR Z,
-	.block 3
-
-wram_mirror_unbanked_base:
-	.dl wram_base-$2000	;$e000-$fdff
-	.db $e0+1,$fd+1
-	; push jump targets
-	.db do_push_adl - (do_push_jump_smc_1 + 1)
-	.db do_push_for_call_adl - (do_push_for_call_jump_smc_1 + 1)
-	; pop jump targets
-	.db do_pop_adl - (do_pop_jump_smc_1 + 1)
-	.db ophandlerF1_pop_adl - (ophandlerF1_jump_smc_1 + 1)
-	; callstack pop prefix
-	.db $49 ;.LIS
-	; callstack pop overflow check
-	inc b
-	dec b
-	.db $28 ;JR Z,
-	.block 3
-
-mem_region_lut:
-	.fill $40, rom_start & $FF
-	.fill $40, rom_bank_base & $FF
-	.fill $20, vram_bank_base & $FF
-	.fill $20, cram_bank_base & $FF
-	.fill $20, wram_unbanked_base & $FF
-	.fill $1E, wram_mirror_unbanked_base & $FF
-	.fill $02, hmem_unbanked_base & $FF
 	
 block_bridge_template:
 	.assume adl=0
@@ -2535,11 +2422,15 @@ jump_template_size = $-jump_template
 	.db 0 ;padding for struct pointer write
 	
 opgen_region_overflow:
+	; Check if block was forced to end
+	or a
+	jr z,_
 	; Check if a memory region crossing should be handled
 opgen_byte_limit_smc = $+1
 	ld a,0
 	cp MAX_OPCODE_BYTES_PER_BLOCK
 	jr nz,opgen_cross_mem_region
+_
 	; Special case for RET/RETI/JP HL; emit directly to prevent redundant jumps
 	ld a,c
 	xor $F9
@@ -2662,10 +2553,11 @@ _
 	  sub d
 	  neg
 	  ; Get the base address of the new memory region
-	  ld hl,mem_region_lut
+	  ld hl,z80codebase+mem_read_lut
 	  ld l,a
 	  ld l,(hl)
-	  dec h
+	  inc h ;mem_get_ptr_routines
+	  inc l \ inc l
 	  ld hl,(hl)
 	  ; Get the pointer to the start of the region
 	  push bc
@@ -2705,102 +2597,131 @@ opgen_emit_overlapped_opcode:
 	jr nz,_
 	; Ensure a consistent generated size for CB opcodes
 	; This allows recompilation in-place in all cases
+	ld bc,opcoderecsizes_CB
 	inc hl
-	ld a,(hl)
+	ld c,(hl)
 	dec hl
-	and $07
-	cp $06
-	; No adjustment for three-byte operations
-	jr z,_
-	; Emit NOP before two-byte operations
+	ld a,(bc)
+	srl a
+	jr nz,_
+	ld a,4
+_
+	; Subtract the size from the maximum size of 8
+	cpl
+	add a,9
+	jr z,++_
+	; Emit NOPs before the operation
+	ld b,a
 	xor a
+_
 	ld (de),a
 	inc de
+	djnz -_	
 _
 	; Generate the opcode
 	jp opgen_next
 	
+	; RST instruction format:
+	;  EXX
+	;  LD HL,gb_ret_addr
+	;  LD B,ret_cycles
+	;  CALL do_rst_NN
 _opgenRST:
 	ex de,hl
-	ld (hl),$CD
+	ld (hl),$D9 ;EXX
+	inc hl
+	ld (hl),$21 ;LD HL,gb_ret_addr
+	call opgen_reset_cycle_count
+	inc de
+	call opgen_emit_gb_address
+	ld (hl),$06 ;LD B,ret_cycles
+	inc hl
+	ld (opgen_last_cycle_count_smc),hl
+	inc hl
+	ld (hl),$CD ;CALL do_rst_NN
 	inc hl
 	; Translate the opcode into a routine entry offset
 	ld a,c
 	rrca
-	rrca
-	cpl
-	add a,c
+	adc a,c
 	add a,(do_rst_38+1) & $FF
 	ld (hl),a
 	adc a,((do_rst_38+1) >> 8) - 1
 	sub (hl)
 	inc hl
 	ld (hl),a
-	call opgen_reset_cycle_count
 	dec iyl
 	dec iyl
-	jr opgen_finish_rst
+	jp opgen_next_swap_skip_1cc
 	
+	; CALL CC instruction format:
+	;  LD HL,jit_target
+	;  CALL do_call_CC (or do_*_bank_call_CC)
+	;  .DB ret_cycles
+	;  .DB call_cycles
+	;  .DW gb_ret_addr
+	;  .DB target_bank (if applicable)
+	; For non-decoded calls, jit_target=decode_call and call_cycles=0
 _opgenCALLcond:
-	ex de,hl
-	ld a,c
-	xor $C4 ^ $CC
-	ld (hl),a
-	inc hl
+	xor a ;call_cycles=0
 	bit 4,c
-	jr nz,++_
-	bit 3,c
 	jr nz,_
-	ld (hl),do_call_nz & $FF
-	inc hl
-	ld (hl),do_call_nz >> 8
-	jr opgen_finish_cond_call
-_
-	ld (hl),do_call_z & $FF
-	inc hl
-	ld (hl),do_call_z >> 8
+	bit 3,c
+	ld bc,(do_call_nz << 8) | $CD ;CALL do_call_nz
+	jr nz,opgen_finish_cond_call
+	ld bc,(do_call_z << 8) | $CD ;CALL do_call_z
 	jr opgen_finish_cond_call
 _
 	bit 3,c
-	jr nz,_
-	ld (hl),do_call_nc & $FF
-	inc hl
-	ld (hl),do_call_nc >> 8
+	ld bc,(do_call_nc << 8) | $CD ;CALL do_call_nc
+	jr nz,opgen_finish_cond_call
+	ld bc,(do_call_c << 8) | $CD ;CALL do_call_c
 	jr opgen_finish_cond_call
-_
-	ld (hl),do_call_c & $FF
-	inc hl
-	ld (hl),do_call_c >> 8
-opgen_finish_cond_call:
-	inc hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),decode_call_cond & $FF
-	inc hl
-	ld (hl),decode_call_cond >> 8
-	jr opgen_finish_call
 
+	; CALL instruction format:
+	;  LD HL,jit_target
+	;  EXX
+	;  LD BC,(ret_cycles << 8) | call_cycles
+	;  LD HL,gb_ret_addr
+	;  RST r_call
+	; For non-decoded calls, jit_target=decode_call and call_cycles=0
+	; Decoded calls which target a banked address use the following format:
+	;  LD HL,jit_target
+	;  CALL do_*_bank_call
+	;  .DB ret_cycles
+	;  .DB call_cycles
+	;  .DW gb_ret_addr
+	;  .DB target_bank
 _opgenCALL:
+	ld a,$21 ;LD HL,
+	ld bc,$0001D9 ;EXX / LD BC,$XX00
+opgen_finish_cond_call:
 	ex de,hl
-	ld (hl),$CD
+	ld (hl),$21 ;LD HL,decode_call
 	inc hl
 	ld (hl),decode_call & $FF
 	inc hl
 	ld (hl),decode_call >> 8
 	inc hl
-opgen_finish_call:
+	ld (hl),bc
 	inc hl
+	inc hl
+	inc hl
+	inc hl
+	ld (hl),a
+	dec hl
 	call opgen_reset_cycle_count
 	inc de
 	inc de
 opgen_finish_rst:
 	dec iyl
-	inc de
-	inc hl
 	ld (opgen_last_cycle_count_smc),hl
+	inc hl
+	inc de
 	call opgen_emit_gb_address
-	ex de,hl
-	jp opgen_next_fast
+	dec de
+	ld (hl),RST_CALL
+	jp opgen_next_swap_skip
 
 opgen_emit_jump:
 	ld a,c
@@ -2925,40 +2846,33 @@ opgen_reset_cycle_count_any:
 opgen_last_cycle_count_smc = $+1
 	ld (0),a
 	ld iyl,e
-port_access_trampoline_count_smc = $+1
-	ld a,0
-	or a
+	ld a,(recompile_cycle_offset_sp)
+	inc a
 	ret z
 	push bc
 	 push de
 	  push hl
-	   ld b,a
-	   sbc hl,hl
-	   ex de,hl
+	   ex de,hl ;DEU=z80codebase>>16
 	   ld hl,(opgen_last_cycle_count_smc)
 	   ld c,(hl)
-	   ld hl,(z80codebase+memroutine_next)
+	   ld hl,recompile_cycle_offset_stack - 1
+	   ld l,a
 _
-	   ld a,(hl)
-	   ld (hl),$C3
-	   cpl
-	   ld e,a
-	   res 0,e
-	   add hl,de
-	   inc hl
-	   xor e
-	   ld e,a
-	   ld a,(hl)
+	   ld e,(hl)
+	   inc l
+	   ld d,(hl)
+	   ld a,(de)
 	   sub c
-	   ld (hl),a
-	   add hl,de
-	   inc hl
-	   djnz -_
+	   ld (de),a
+	   inc l
+	   jr nz,-_
+	   ASSERT_C
+	   sbc a,a
+	   ld (recompile_cycle_offset_sp),a
 	  pop hl
 	 pop de
 	pop bc
 	xor a
-	ld (port_access_trampoline_count_smc),a
 	ret
 	
 _opgen76:
@@ -3011,6 +2925,43 @@ _opgen76:
 _
 	jp (ix)
 	
+opgenroutinecall_displacement:
+	dec iyl
+	ld a,$2E ;LD L,displacement
+	ld (de),a
+	inc de
+	inc hl
+	ld a,(hl)
+	ld (de),a
+	inc de
+	; Check for negative displacement
+	add a,a
+	jr c,opgenroutinecall
+	res 3,c
+	; Check for positive displacement
+	jr nz,opgenroutinecall
+	res 5,c
+	; Only generate a routine call for LD HL,SP+0
+	bit 4,c
+	jr nz,opgenroutinecall
+	; For ADD SP,0 just clear all flags
+	ex de,hl
+	ld (hl),$ED ;LD HL,I
+	inc hl
+	ld (hl),$D7
+	inc hl
+	ld (hl),a ;NOP
+	inc hl
+	inc de
+	ex de,hl
+	inc b
+	ret
+	
+_opgenF2:
+	call opgen_emit_load_cycle_offset_swap
+	ex de,hl
+opgenroutinecall_2cc:
+	dec iyl
 opgenroutinecall:
 	inc hl
 	ld a,$CD
@@ -3023,101 +2974,412 @@ opgenroutinecall:
 	ld a,c
 	xor $0F
 	ld c,a
+	sub $FB ^ $0F ; Check for EI
 	ld a,(bc)
 	ld (de),a
 	inc de
+	ret nz
+	inc sp \ inc sp \ inc sp
+	ld c,(hl) ; Read next opcode
+	dec b ; Sets sign flag
 	ret
 	
-_opgen08:
-	ld a,$D9	;EXX
-	ld (de),a
-	inc de
-	ld a,$11	;LD DE,nnnn
-	ld (de),a
-	inc de
-	inc hl
-	ldi
-	ldi
-	dec hl
-	call opgenroutinecall_3cc
-	.dw ophandler08
-	
-_opgen36:
-	ld a,$DD	;LD IXH,nn
-	ld (de),a
-	inc de
-	ld a,$26
-	ld (de),a
-	inc de
-	inc hl
-	ldi ; Decrements C to $35
-	jp opgen36_finish
-	
-_opgenCB_mem:
+_opgenE2:
+	ld bc,op_write_c_hmem
 	ex de,hl
-	dec hl
-	ld (hl),$DD ;LD IXH,
-	inc hl
-	ld (hl),$26
-	inc hl
-	dec iyl
-	ld a,c
-	; Check for RES/SET
-	add a,$87 ; Use A register in implementation
-	jr c,_
-	add a,2-7 ; Use D register in implementation
-	; Check for BIT
-	cp $C0
-	jr nc,++_
+	inc de
+	push hl
+	 ld a,5
+	 call.il allocate_high_trampoline
+	 ; If allocation failed, skip writing the trampoline
+	 ; Aggregated allocation failure is detected at the end of recompilation
+	 jr c,_
+	 ; Emit the GB address before the jump
+	 call opgen_emit_gb_address_noinc
+	 ; Emit the jump to the handler
+	 push hl
+	  ld (hl),$C3 ;JP op_write_c_hmem
+	  inc hl
+	  ld (hl),c
+	  inc hl
+	  ld (hl),b
+	 ; Use the trampoline as the handler
+	 pop bc
 _
-	dec iyl
+	pop hl
+	call opgen_emit_load_cycle_offset
+	ld (hl),$CD
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),b
+	jp opgen_next_swap_skip_1cc
+	
+opgen_emit_load_cycle_offset_swap:
+	ex de,hl
+opgen_emit_load_cycle_offset:
+	ld (hl),$D9 ;EXX
+	inc hl
+	ld (hl),$0E ;LD C,cycle_offset
+opgen_emit_cycle_offset:
+	inc hl
+	ld a,iyl
+	sub e
+	ld (hl),a
+	ex de,hl
+	push hl
+	 ex de,hl
+recompile_cycle_offset_sp = $+1
+	 ld hl,recompile_cycle_offset_stack - 1
+	 ld (hl),d
+	 dec hl
+	 ld (hl),e
+	 dec hl
+	 ld (recompile_cycle_offset_sp),hl
+	pop hl
+	ex de,hl
+	inc hl
+	ret
+	
+_opgen31:
+	ld a,$D9 ;EXX
+	ld (de),a
+	inc de
+	ld a,$01 ;LD BC,nnnn
+	ld (de),a
+	inc de
+	inc hl
+	ldi
+	ldi
+	jr opgenroutinecall
+	
+_opgen08:
+	inc hl
+	ld c,(hl)
+	inc hl
+	ld a,(hl)
+	ex de,hl
+	ld (hl),$D9 ;EXX
+	inc de
+	; Check for $FFxx
+	inc a
+	jr nz,_
+	; Check for HRAM
+	bit 7,c
+	jr nz,opgen08_hram
 _
-	rra ; Reset top bit only for BIT instructions
-	xor ($80 ^ $30) >> 1 ; Revert to original instruction type
+	; Do fast implementation for WRAM, OAM, or HRAM
+	cp $C0+1
+	jr c,opgen08_slow
+opgen08_hram:
+	ld (hl),$21 ;LD HL,nnnn
+	inc hl
+	ld (hl),c
+	ld bc,ophandler08_fast
+	or a
+	jr nz,opgen08_finish
+	ld bc,ophandler08_hram
+opgen08_finish:
+	inc hl
+	dec a
 	ld (hl),a
 	inc hl
-	ld (hl),RST_BITS
-	jp opgen_next_swap_skip
+	ld (hl),$CD ;CALL opgen08_*
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),b
+	dec iyl
+	jp opgen_next_swap_skip_1cc	
+opgen08_slow:
+	ld (hl),$01 ;LD BC,nnnn
+	inc hl
+	ld (hl),c
+	ld bc,ophandler08_slow
+	jr opgen08_finish
 	
-_opgenCB_swap:
+_opgen36:
+	dec iyl
+	ex de,hl
+	ld (hl),RST_GET_HL_READWRITE_PTR
+	inc hl
+	ld (hl),$5B ;.LIL
+	inc hl
+	ex de,hl
+	jp opgen2byte
+	
+opgenCB_bc:
+	ld c,$54 ;LD D,H
+	jr z,_
+	ld c,$5D ;LD E,L
+_
 	ex de,hl
 	dec hl
-	or c
-	jr nz,_
-	ld (hl),$7F ;LD A,A
+	; Check for BIT
+	cp $C0
+	jp pe,opgenCB_bc_bit
+	ld (hl),$EB ;EX DE,HL
 	inc hl
+	ld (hl),$DD
+	inc hl
+	ld (hl),c ;LD D,IXH or LD E,IXL
+	inc hl
+	ld (hl),$CB
+	inc hl
+	; Translate from B/C to D/E
+	add a,2
+	ld (hl),a
+	inc hl
+	ld (hl),$DD
+	inc hl
+	; Translate to LD IXH,D or LD IXL,E
+	ld a,c
+	add a,$62-$54
+	ld (hl),a
+	jp opgen_next_swap_skip
+	
+opgenCB_bc_bit:
+	ld (hl),$DD ;LEA HL,IX
+	inc hl
+	ld (hl),$22
+	inc hl
+	ld (hl),$00
+	inc hl
+	ld (hl),$CB
+	inc hl
+	; Translate from B/C to H/L
+	add a,4
+	ld (hl),a
+	jp opgen_next_swap_skip
+	
+_opgenCB:
+	ldi
+	ld a,(hl)
+	xor $36
+	ld c,a
+	and $F8
+	jr z,opgenCB_swap
+	xor c
+	jr z,opgenCB_mem
+	dec a
+	jp z,opgen1byte
+	cp 5
+	ld a,(hl)
+	jr nc,opgenCB_bc
+	; Translate from D/E/H/L to B/C/D/E
+	sub 2
+	ld (de),a
+	inc hl
+	inc de
+	jp opgen_next_fast
+	
+opgenCB_mem:
+	dec hl
+	dec de
+	dec iyl
+	; Check for BIT
+	ld a,c
+	cp $C0
+	jp po,_opgen36
+	ex de,hl
+	ld (hl),RST_GET_HL_READ_PTR
+	inc hl
+	ld (hl),$5B ;.LIL
+	inc hl
+	ex de,hl
+	jp opgen2byte
+	
+opgenCB_swap:
+	ex de,hl
+	dec hl
+	inc a
+	xor c
+	jr nz,_
+	ld a,$0F ;RRCA
+	ld (hl),a \ inc hl
+	ld (hl),a \ inc hl
+	ld (hl),a \ inc hl
+	ld (hl),a \ inc hl
+	ld (hl),$B7 ;OR A
+	jp opgen_next_swap_skip
+_
+	dec a
+	jr nz,_
 	dec iyl
 	dec iyl
 _
 	ld (hl),$CD
 	inc hl
+	ld c,a
 	ld b,do_swap_b - do_swap_c
 	mlt bc
-	ld a,do_swap_hl & $FF
+	ld a,do_swap_hl_normal & $FF
 	sub c
 	ld (hl),a
 	inc hl
-	ld a,do_swap_hl >> 8
+	ld a,do_swap_hl_normal >> 8
 	sbc a,b
 	ld (hl),a
 	jp opgen_next_swap_skip
 	
-opgenroutinecall_4cc:
-	dec iyl
-opgenroutinecall_3cc:
-	dec iyl
-opgenroutinecall_2cc:
-	dec iyl
-opgenroutinecall_1cc:
+opgen_emit_hl_read:
+	ex de,hl
+	ld (hl),RST_GET_HL_READ_PTR
 	inc hl
-	ld a,$CD
-	ld (de),a
-	inc de
-	ex (sp),hl
-	ldi
-	ldi
-	pop hl
-	jp opgen_next_fast
+	ld (hl),$49 ;.LIS
+	ex de,hl
+	jp opgen1byte_2cc_remap_inc
+	
+opgen_emit_hl_write:
+	ex de,hl
+	ld (hl),RST_GET_HL_READWRITE_PTR
+	inc hl
+	ld (hl),$49 ;.LIS
+	ex de,hl
+	jp opgen1byte_2cc_remap_inc
+	
+opgen_emit_hl_readwrite:
+	ex de,hl
+	ld (hl),RST_GET_HL_READWRITE_PTR
+	inc hl
+	ld (hl),$49 ;.LIS
+	inc hl
+	ex de,hl
+	dec iyl
+	dec iyl
+	jp opgen1byte
+	
+opgen_emit_hl_read_post:
+	ex de,hl
+	ld (hl),RST_GET_HL_READ_PTR
+	inc hl
+	ld (hl),$5B ;.LIL
+	inc hl
+	ld (hl),$7E ;LD A,(HL)
+	ex de,hl
+	jp opgen1byte_2cc_remap_inc
+	
+opgen_emit_hl_write_post:
+	ex de,hl
+	ld (hl),RST_GET_HL_READWRITE_PTR
+	inc hl
+	ld (hl),$5B ;.LIL
+	inc hl
+	ld (hl),$77 ;LD (HL),A
+	ex de,hl
+	jp opgen1byte_2cc_remap_inc
+	
+opgen_emit_hl_read_bc:
+	ex de,hl
+	ld (hl),RST_GET_HL_READ_PTR
+	inc hl
+	ld (hl),$49 ;.LIS
+	inc hl
+	ld (hl),$6E ;LD L,(HL)
+	inc hl
+	ld (hl),$EB ;EX DE,HL
+	inc hl
+	ld (hl),$DD ;LD IXH/IXL,E
+	inc hl
+	ld a,c
+	add a,$63-$46 ; Convert from LD B/C,(HL)
+	ld (hl),a
+	jp opgen_next_ex_swap_skip_1cc ;EX DE,HL
+	
+opgen_emit_hl_write_bc:
+	ex de,hl
+	ld (hl),$F5 ;PUSH AF
+	inc hl
+	ld (hl),$DD ;LD A,IXH/IXL
+	inc hl
+	ld a,c
+	add a,$7C-$70 ; Convert from LD (HL),B/C
+	ld (hl),a
+	inc hl
+	ld (hl),RST_GET_HL_READWRITE_PTR
+	inc hl
+	ld (hl),$5B ;.LIL
+	inc hl
+	ld (hl),$77 ;LD (HL),A
+	inc hl
+	ld (hl),$F1 ;POP AF
+	jp opgen_next_swap_skip_1cc
+	
+opgen_emit_de_read:
+	ex de,hl
+	ld (hl),$CD ;CALL op_read_de_normal
+	inc hl
+	ld (hl),op_read_de_normal & $FF
+	inc hl
+	ld (hl),op_read_de_normal >> 8
+	jp opgen_next_swap_skip_1cc
+	
+opgen_emit_de_write:
+	ex de,hl
+	ld (hl),$CD ;CALL op_write_de_normal
+	inc hl
+	ld (hl),op_write_de_normal & $FF
+	inc hl
+	ld (hl),op_write_de_normal >> 8
+	jp opgen_next_swap_skip_1cc
+	
+opgen_emit_bc_read:
+	ex de,hl
+	ld (hl),$CD ;CALL op_read_bc_normal
+	inc hl
+	ld (hl),op_read_bc_normal & $FF
+	inc hl
+	ld (hl),op_read_bc_normal >> 8
+	inc hl
+	ld (hl),$D9 ;EXX
+	jp opgen_next_swap_skip_1cc
+
+opgen_emit_bc_write:
+	ex de,hl
+	ld (hl),$CD ;CALL op_write_bc_normal
+	inc hl
+	ld (hl),op_write_bc_normal & $FF
+	inc hl
+	ld (hl),op_write_bc_normal >> 8
+	inc hl
+	ld (hl),$D9 ;EXX
+	jp opgen_next_swap_skip_1cc
+	
+opgenMBCorVRAMwrite:
+	 add a,a
+	 jr c,opgenVRAMwrite
+	 ; Get the routine address
+	 inc l
+	 ld hl,(hl)
+	 ex de,hl
+	 ld (hl),$6F ;LD L,A
+	 inc hl
+	 ld (hl),$CD ;CALL mbc_write_*_handler
+	 inc hl
+	 ld (hl),e
+	 inc hl
+	 ld (hl),d
+	 inc hl
+	 ld (hl),$18 ;JR $+4
+	 inc hl
+	 ld (hl),$02
+	 inc hl
+	 inc hl
+	pop de
+	jp opgen_next_swap_skip
+	
+opgenVRAMwrite:
+	 call opgen_emit_load_cycle_offset_swap
+	 ld (hl),$CD ;CALL vram_banked_write_handler
+	 inc hl
+	 ld (hl),vram_banked_write_handler & $FF
+	 inc hl
+	 ld (hl),vram_banked_write_handler >> 8
+	 inc hl
+	 ld (hl),c ;.DW addr
+	 inc hl
+	 ld (hl),b
+	 jr opgenRAMwrite_finish
 	
 opgenCONSTwrite:
 	dec iyl
@@ -3127,240 +3389,203 @@ opgenCONSTwrite:
 	inc hl
 	ld b,(hl)
 	ld a,b
-	add a,a
-	jr nc,opgencartwrite
-	
-	cp $FC
-	jr nc,opgenHMEMwrite
+	inc a
+	jr z,opgenHMEMwrite
+	inc a
+	cp $E0+2
+	jr c,_
+	res 5,b ;Handle WRAM mirroring
+_
 	
 	push hl
+	 ld hl,mem_write_lut
+	 ld l,b
+	 ld l,(hl)
+	 
+	 ld a,b
+	 cp $A0
+	 jr c,opgenMBCorVRAMwrite
+	 
+	 ; Check if there's a banked access routine
+	 dec l
+	 ld a,(hl)
+	 cp $08 ;EX AF,AF'
+	 jr z,opgen_banked_write
+	 ; Get the raw write address
+	 dec h \ dec h ;mem_get_ptr_routines
+	 inc l \ inc l \ inc l
+	 ld hl,(hl)
+	 add hl,bc
+	 ex de,hl
+	 ld (hl),$5B ;LD.LIL (addr),A
+	 inc hl
+	 ld (hl),$32
+	 inc hl
+	 ld (hl),de
+	 inc hl \ inc hl \ inc hl
+	 ld (hl),$21 ;LD HL,
+	 inc hl
+	 inc hl
+opgenRAMwrite_finish:
+	 inc hl
+	 ex de,hl
+	 ; Check if the write is within 64 bytes of the block start,
+	 ; potentially causing SMC
 opgenCONSTwrite_smc = $+1
 	 ld hl,0
 	 add hl,bc
-	 ex (sp),hl
-	
-	 add a,a
-	 jr nc,opgenVRAMwrite
-	
-opgenWRAMwrite:
-	 push hl
-	  ld hl,wram_base
-	  res 5,b ; Handle mirroring
-	  add hl,bc
-	  ex de,hl
-	  ld (hl),$5B ;LD.LIL (addr),A
-	  inc hl
-	  ld (hl),$32
-	  inc hl
-	  ld (hl),de
-	  inc hl
-	  inc hl
-	 pop de
-_
-	 ex de,hl
-	 inc hl
-	 inc de
-	pop af
-	or a
+	 ld a,l
+	 and $C0
+	 or h
+	pop hl
+	inc hl
 	jp nz,opgen_next
-	dec a	; Set sign flag
+	; Set sign flag
+	dec a
 	ret
 	
-opgencartwrite:
-	ex de,hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),write_cart_handler & $FF
-	inc hl
-	ld (hl),write_cart_handler >> 8
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip
-	
-opgenVRAMwrite:
-	 add a,a
-	 jr c,opgenCRAMwrite
+opgen_banked_write:
 	 ex de,hl
-	 ld (hl),$CD
+	 ld (hl),$D9 ;EXX
 	 inc hl
-	 ld (hl),write_vram_handler & $FF
-	 inc hl
-	 ld (hl),write_vram_handler >> 8
+	 ld (hl),$01 ;LD BC,addr
 	 inc hl
 	 ld (hl),c
 	 inc hl
 	 ld (hl),b
-	 jr -_
-	
-opgenCRAMwrite:
-	 ; Direct pointer optimization is impossible since cart RAM can be disabled
-	 ex de,hl
-	 ld (hl),$CD
 	 inc hl
-	 ld (hl),write_cram_bank_handler & $FF
+	 ld (hl),$CD ;CALL *_banked_write_handler
 	 inc hl
-	 ld (hl),write_cram_bank_handler >> 8
+	 ld (hl),e
 	 inc hl
-	 ld (hl),c
+	 ld (hl),d
 	 inc hl
-	 ld (hl),b
-	 jr -_
-	
-opgenHMEMwrite:
-	xor a
-	ld (de),a
-	inc de
-	ld (de),a
-	inc de
-	bit 0,b
-	jr nz,_
-	jr ++_
+	 ld (hl),$D9 ;EXX
+	 jr opgenRAMwrite_finish
 	
 opgenFFwrite:
 	dec iyl
 	inc hl
 	ld c,(hl)
-	ld b,$FF
-_
-	ld a,c
-	cp $7F
-_
-	ex de,hl
-	jp pe,opgenHRAMwrite
-	inc a
+opgenHMEMwrite:
+	ld b,mem_write_port_lut >> 8
+	ld.s a,(bc)
+	ld b,3 ;JR $+5 offset
+	; Check for direct write (no handler call)
+	cp write_port_direct - mem_write_port_routines
+	jr z,opgenHMEMwrite_direct
+	; Set bit 0 of B if a trampoline should be emitted, and also adjust
+	; the JR offset to $+8 if write is ignored
+	rl b
+	; Check for ignored write (no handler call)
+	cp write_port_ignore - mem_write_port_routines
+	jr z,opgenHMEMwrite_direct
 	push hl
-	 ld hl,mem_write_port_handler_table_end
-	 cp l
+	 ; Resolve the real handler address
+	 ld hl,z80codebase+mem_write_port_routines
 	 ld l,a
+	 ; Check the first byte of the handler to see if it's a trampoline
 	 ld a,(hl)
-	pop hl
-	jr nc,opgenHRAMignore
-	cp 1
-	jr c,opgenHRAMwrite
-	jr z,opgenHRAMignore
-	ld b,mem_write_port_routines >> 8
-	; Set Z flag and reset C flag for scroll write
-	cp write_scroll_handler - mem_write_port_routines
-	jr z,emit_port_handler_trampoline
-	; Set Z flag for audio write, set C flag for reschedulable write
-	cp write_audio_handler - mem_write_port_routines
-emit_port_handler_trampoline:
+	 cp $18 ;JR
+	 jr z,_
+	 cp $10 ;DJNZ
+	 jr nz,++_
+	 dec c ; Adjust the passed port LSB
+_
+	 ; Get the JR offset
+	 inc hl
+	 ld a,(hl)
+	 dec hl
+	 ; Check for a backwards jump, which corresponds to write_audio_disable SMC
+	 rlca
+	 jr c,opgen_port_write_resolved_jp
+	 rrca
+	 ; This is always a forward jump to the next code MSB
+	 add a,l
+	 ld l,a
+	 inc h
+	 jr opgen_port_write_resolved_jr
+_
+	 cp $C3 ;JP
+	 jr nz,opgen_port_write_resolved_jp
+	 inc hl
+	 ld hl,(hl)
+opgen_port_write_resolved_jp:
+	 dec hl ; Move to preceding LD E,A (possibly the handler entry point)
+	 dec hl ; Move to possible preceding EX AF,AF'
+opgen_port_write_resolved_jr:
+	 ; Check whether the routine needs to pass the port LSB
+	 ld a,(hl)
+	 sub $08 ;EX AF,AF'
+	 jr z,_
+	 ; If not, emit the EX AF,AF' directly into the JIT code
+	 inc hl
+	 ld c,$08 ;EX AF,AF'
+	 ld a,$0E-1 ;LD C,
+_
+	 inc a ;LD BC,
+	 ex (sp),hl
+	 ex de,hl
+	 ; Emit first part of port read impl
+	 ld (hl),$6F ;LD L,A
+	 inc hl
+	 ld (hl),$D9 ;EXX
+	 inc hl
+	 ld (hl),a ;LD C, or LD BC,
+	 call opgen_emit_cycle_offset
+	 ld (hl),c ;EX AF,AF' or port LSB
+	 inc hl
+	 ld (hl),$CD ;CALL write_*_handler
+	 inc hl
+	 ; Check if a trampoline should be emitted
+	 bit 0,b
+	 ; Pop the handler address
+	pop bc
+	jr z,opgen_port_write_no_trampoline
 	push hl
-	 push bc
-	  push de
-	   ex de,hl
-	   ld hl,(z80codebase+memroutine_next)
-	   ; If Z is set, routine size is 7 bytes
-	   ; If C is set, routine size is 8 bytes, else 6 bytes
-	   ; Subtract the routine size minus 1, preserve the Z flag in bit 0 of C,
-	   ; and preserve the C flag in bit 1 of C
-	   ld bc,-6
-	   jr z,_
-	   dec c
-	   jr c,_
-	   inc c
-	   inc c
-_
-	   add hl,bc ; Sets carry
-	   ; Compare to current JIT output pointer to ensure no overflow
-	   ; can happen into the previous block
-	   ; Also subtracts one extra byte
-	   sbc hl,de
-	   jr c,emit_port_handler_trampoline_overflow
-	   add hl,de
-	   ld (z80codebase+memroutine_next),hl
-	   ; Temporarily save the byte count instead of the JP,
-	   ; so the cycles can be fixed up at the end of the block
-	   ld (hl),c
-	   inc hl
-	   ld (hl),(ERROR_CATCHER >> 8) & $FF
-	   inc hl
-	   ld (hl),ERROR_CATCHER >> 16
-	   inc hl
-	  pop de
-	  ; Emit the address following the instruction
-	  ld ixl,a
-	  inc de
-	  bit 1,c
-	  call z,opgen_emit_gb_address_noinc
-	  dec de
-	  ; Get the number of cycles from the start of the sub-block
-	  ld a,e
-	  sub iyl
-	  ; Restore the Z flag input
-	  bit 0,c
-	 pop bc
+	 ld a,5
+	 call.il allocate_high_trampoline
+	 ; If allocation failed, skip writing the trampoline
+	 ; Aggregated allocation failure is detected at the end of recompilation
+	 jr c,_
+	 ; Emit the GB address before the jump
+	 inc de
+	 call opgen_emit_gb_address_noinc
+	 dec de
+	 ; Emit the jump to the handler
 	 push hl
-	  ld (hl),$DD
+	  ld (hl),$C3 ;JP write_*_handler
 	  inc hl
-	  ld (hl),$2E ;LD IXL,
-	  jr nz,_
-	  ld (hl),$21 ;LD IX,
-	  inc hl
-	  ld (hl),a ; Cycles
-	  ld a,c ; addr
-_
-	  inc hl
-	  ld (hl),a ; Cycles or addr
-	  inc hl
-	  ; JP routine (preserve byte count to be overwritten with JP)
-	  inc hl
-	  ld a,ixl
-	  ld (hl),a
+	  ld (hl),c
 	  inc hl
 	  ld (hl),b
-	  ld hl,port_access_trampoline_count_smc
-	  inc (hl)
+	 ; Use the trampoline as the handler
 	 pop bc
-	pop hl
-	ld (hl),$CD ;CALL addr
-	jr _
-	
-opgenHRAMwrite:
-	ld (hl),$32 ;LD (addr),A
 _
-	inc hl
+	pop hl
+opgen_port_write_no_trampoline:
+	; Emit handler address
 	ld (hl),c
 	inc hl
 	ld (hl),b
 	jp opgen_next_swap_skip
 	
-emit_port_handler_trampoline_overflow:
-	  pop de
-	 pop bc
-	pop hl
-	; Make sure the overflow is detected because the code is invalid
-	ld (z80codebase+memroutine_next),hl
-	; Also disable fixups at block end
-	xor a
-	ld (port_access_trampoline_count_smc),a
-opgenHRAMignore:
-	xor a
-	ld (hl),a	;NOP
+opgenHMEMwrite_direct:
+	ex de,hl
+	ld (hl),$18 ;JR $+5 or JR $+8
 	inc hl
-	ld (hl),a
+	ld (hl),b
 	inc hl
-	ld (hl),a
+	inc hl
+	inc hl
+	inc hl
+	ld (hl),$32 ;LD ($FF00+n),A
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),$FF
 	jp opgen_next_swap_skip
 	
-opgencartread:
-	rlca
-	jr c,opgencartbankread
-	push hl
-	 ld hl,(rom_start)
-	 add hl,bc
-	 ex de,hl
-	 ld (hl),$5B ;LD.LIL A,(addr)
-	 inc hl
-	 ld (hl),$3A
-	 inc hl
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	pop de
-	jp opgen_next_swap_skip
 	
 opgenCONSTread:
 	dec iyl
@@ -3370,117 +3595,70 @@ opgenCONSTread:
 	inc hl
 	ld b,(hl)
 	ld a,b
-	add a,a
-	jr nc,opgencartread
-	
-	add a,a
-	jr nc,opgenVRAMread
-	
-	add a,2*4
-	jr c,opgenHMEMread
-	
-opgenWRAMread:
-	push hl
-	 ld hl,wram_base
-	 res 5,b ; Handle mirroring
-	 add hl,bc
-	 ex de,hl
-	 ld (hl),$5B ;LD.LIL A,(addr)
-	 inc hl
-	 ld (hl),$3A
-	 inc hl
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	pop de
-	jp opgen_next_swap_skip
-	
-opgencartbankread:
-	ex de,hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),read_rom_bank_handler & $FF
-	inc hl
-	ld (hl),read_rom_bank_handler >> 8
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip
-	
-opgenVRAMread:
-	rlca
-	jr c,opgenCRAMread
-	
-	push hl
-	 ld hl,vram_base
-	 add hl,bc
-	 ex de,hl
-	 ld (hl),$5B ;LD.LIL A,(addr)
-	 inc hl
-	 ld (hl),$3A
-	 inc hl
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	pop de
-	jp opgen_next_swap_skip
-	
-opgenCRAMread:
-	ld a,(cram_size)
-	or a
-	jr nz,_
-	ld a,(cram_size+1)
-	add a,a
-	jr c,_
-	; For now on 8KB carts, ignore RAM disable for reads to use a direct pointer
-	push hl
-	 ld hl,(z80codebase+cram_actual_bank_base)
-	 add hl,bc
-	 ex de,hl
-	 ld (hl),$5B ;LD.LIL A,(addr)
-	 inc hl
-	 ld (hl),$3A
-	 inc hl
-	 ld (hl),de
-	 inc hl
-	 inc hl
-	pop de
-	jp opgen_next_swap_skip
-_
-	ex de,hl
-	ld (hl),$CD
-	inc hl
-	ld (hl),read_cram_bank_handler & $FF
-	inc hl
-	ld (hl),read_cram_bank_handler >> 8
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip
-	
-opgenHMEMread:
-	xor a
-	ld (de),a
-	inc de
-	ld (de),a
-	inc de
-	ld a,b
 	inc a
-	jr z,_
-	jr ++_
+	jr z,opgenHMEMread
+	inc a
+	cp $E2
+	jr c,_
+	res 5,b ; Handle WRAM mirroring
+_
+	push hl
+	 ; Look up the memory reads
+	 ld hl,z80codebase+mem_read_lut
+	 ld l,b
+	 ld l,(hl)
+	 dec h ;mem_read_any_routines
+	 ; Check if there's a banked access routine
+	 dec l
+	 ld a,(hl)
+	 cp $08 ;EX AF,AF'
+	 jr z,opgen_banked_read
+	 ; Get the raw read address
+	 inc h \ inc h ;mem_get_ptr_routines
+	 inc l \ inc l \ inc l
+	 ld hl,(hl)
+	 add hl,bc
+	 ex de,hl
+	 ld (hl),$5B ;LD.LIL A,(addr)
+	 inc hl
+	 ld (hl),$3A
+	 inc hl
+	 ld (hl),de
+	 inc hl \ inc hl \ inc hl
+	 ld (hl),$21 ;LD HL,
+	 inc hl
+	 inc hl
+	pop de
+	jp opgen_next_swap_skip
+	
+opgen_banked_read:
+	 ex de,hl
+	 ld (hl),$D9 ;EXX
+	 inc hl
+	 ld (hl),$01 ;LD BC,addr
+	 inc hl
+	 ld (hl),c
+	 inc hl
+	 ld (hl),b
+	 inc hl
+	 ld (hl),$CD ;CALL *_banked_read_handler
+	 inc hl
+	 ld (hl),e
+	 inc hl
+	 ld (hl),d
+	 inc hl
+	 ld (hl),$D9 ;EXX
+	pop de
+	jp opgen_next_swap_skip
 	
 opgenFFread:
 	dec iyl
 	inc hl
 	ld c,(hl)
-	ld b,$FF
-_
-	ld a,c
-_
-	rlca
+opgenHMEMread:
 	ex de,hl
+	ld a,c
+	rlca
 	jr c,opgenHRAMread
 	cp DIV*2 & $FF
 	jr nz,_
@@ -3506,31 +3684,44 @@ _
 	jr nz,opgenHRAMread
 	ld bc,readSTAThandler
 opgenHMEMreadroutine:
-	or a ; Reset Z flag and C flag
-	ld a,c
-	jp emit_port_handler_trampoline
-	
-opgenHRAMread:
-	ld (hl),$3A ;LD A,(addr)
+	call opgen_emit_load_cycle_offset
+	ld (hl),$08 ;EX AF,AF'
+	inc hl
+	ld (hl),$5F ;LD E,A
+	inc hl
+	ld (hl),$CD ;CALL read_*_handler
 	inc hl
 	ld (hl),c
 	inc hl
 	ld (hl),b
 	jp opgen_next_swap_skip
 	
+opgenHRAMread:
+	ld (hl),$18 ;JR $+5
+	inc hl
+	ld (hl),$03
+	inc hl \ inc hl \ inc hl \ inc hl
+	ld (hl),$3A ;LD A,(addr)
+	inc hl
+	ld (hl),c
+	inc hl
+	ld (hl),$FF
+	jp opgen_next_swap_skip
+	
 #ifdef SCHEDULER_LOG
 scheduler_log:
 	push ix
-	 ld.sis hl,(sp_base_address_neg)
-	 lea de,iy
+	 ld.sis hl,(stack_window_base)
+	 ld e,iyl
+	 ld d,0
 	 add.s hl,de
 	 ex af,af'
 	 push af
 	  push hl
 	   exx
-	   push hl
-	    push de
-	     push bc
+	   push de
+	    push bc
+	     push ix
 	      push af
 	      pop de
 	      ld hl,z80codebase+flags_lut
@@ -3543,9 +3734,9 @@ scheduler_log:
 	        APRINTF(SchedulerLogMessage)
 	       pop hl
 	      pop de
-	     pop bc
-	    pop de
-	   pop hl
+	     pop ix
+	    pop bc
+	   pop de
 	   exx
 	  pop hl
 	 pop af

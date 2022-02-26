@@ -1210,7 +1210,7 @@ render_scanline_off:
 ;          AF' has been swapped
 ;          BCDEHL' have been swapped
 ; Outputs: Scanlines rendered if applicable
-; Destroys: AF, DE, HL
+; Destroys: AF, BC, HL
 render_catchup:
 	; Disable catch-up until at least one more scanline passes
 	ld hl,hram_base+STAT
@@ -1230,13 +1230,12 @@ render_scanlines:
 	jr nc,$
 #endif
 myLY = $+1
-	ld l,0
-	sub l
+	ld c,0
+	sub c
 	ret z
 	ASSERT_NC
-	push bc
+	push de
 	 ld b,a
-	 ld c,l
 	 push bc
 render_scanlines_wait_smc = $+1
 	  call sync_frame_flip
@@ -1345,7 +1344,7 @@ render_scanline_next:
 	  pop iy
 	 pop ix
 	 call sync_frame_flip
-	pop bc
+	pop de
 	ret
 	
 do_window_trigger:

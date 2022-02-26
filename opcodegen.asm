@@ -14,6 +14,29 @@ opgenF0:
 opgenFA:
 	jp opgenCONSTread
 	
+opgenHLread:
+	jp opgen_emit_hl_read
+opgenHLwrite:
+	jp opgen_emit_hl_write
+opgenHLreadwrite:
+	jp opgen_emit_hl_readwrite
+opgenHLread_post:
+	jp opgen_emit_hl_read_post
+opgenHLwrite_post:
+	jp opgen_emit_hl_write_post
+opgenHLread_bc:
+	jp opgen_emit_hl_read_bc
+opgenHLwrite_bc:
+	jp opgen_emit_hl_write_bc
+opgenDEread:
+	jp opgen_emit_de_read
+opgenDEwrite:
+	jp opgen_emit_de_write
+opgenBCread:
+	jp opgen_emit_bc_read
+opgenBCwrite:
+	jp opgen_emit_bc_write
+	
 opgenCALLcond:
 	jp _opgenCALLcond
 opgenCALL:
@@ -31,37 +54,21 @@ opgenRET:
 opgenRETI:
 	jp opgenblockend
 
-opgen34:
-	ld c,$30
-	jr opgenF1
-	
-opgen35:
-	ld c,$37
-	jr opgenF1
-	
 opgenE8:
 	dec iyl
 opgenF8:
-	dec iyl
-	call opgenroutinecall
-	djnz opgen1byte
+	call opgenroutinecall_displacement
+	djnz opgen_next_fast
 
 opgen31:
-	call opgenroutinecall
+	call _opgen31
 	djnz opgen2byte
 	
-opgenC5:
-opgenD5:
-opgenE5:
-opgenF5:
+opgenPUSH:
 	dec iyl
 opgenF1:
 	dec iyl
 opgen39:
-opgen33:
-opgen3B:
-opgenE2:
-opgenF2:
 opgenF9:
 	dec iyl
 opgen27:
@@ -70,12 +77,20 @@ opgenEI:
 	call opgenroutinecall
 	djnz opgen_next_fast
 	
+opgenPOP:
+	dec iyl
+opgen33:
+opgen3B:
+	call opgenroutinecall_2cc
+	ld a,$08 ;EX AF,AF'
+	ld (de),a
+	inc de
+	djnz opgen_next_fast
+	
 opgen01:
-#ifdef USE_IX
 	ld a,$DD
 	ld (de),a
 	inc de
-#endif
 	ld a,$21
 	ld (de),a
 	inc de
@@ -92,11 +107,10 @@ opgen3byte_remap:
 	djnz opgen2byte
 	
 opgen2byte_remap_ix:
-#ifdef USE_IX
 	ld a,$DD
 	ld (de),a
+opgen2byte_remap_inc:
 	inc de
-#endif
 opgen2byte_remap:
 	inc b
 	ld a,(bc)
@@ -106,11 +120,10 @@ opgen2byte_remap:
 	djnz opgen1byte
 	
 opgen1byte_remap_ix:
-#ifdef USE_IX
 	ld a,$DD
 	ld (de),a
+opgen1byte_remap_inc:
 	inc de
-#endif
 opgen1byte_remap:
 	inc b
 	ld a,(bc)
@@ -119,42 +132,17 @@ opgen1byte_remap:
 	inc hl
 	djnz opgen_next_fast
 	
-opgenPOP:
-	xor a
-	ld (de),a
-	inc de
-	ld a,RST_POP
-	ld (de),a
-	inc de
-	dec iyl
-	jr opgen1byte_2cc_remap
-	
 opgen1byte_2cc_remap_ix:
-#ifdef USE_IX
 	ld a,$DD
 	ld (de),a
+opgen1byte_2cc_remap_inc:
 	inc de
-#endif
 opgen1byte_2cc_remap:
 	inc b
 	ld a,(bc)
 	ld (de),a
 	inc de
 	inc hl
-	dec iyl
-	djnz opgen_next_fast
-	
-opgenMEM:
-	inc hl
-opgen36_finish:
-	ld a,RST_MEM
-	ld (de),a
-	inc de
-	inc b
-	ld a,(bc)
-	ld (de),a
-	inc de
-	inc de
 	dec iyl
 	djnz opgen_next_fast
 	
@@ -166,25 +154,7 @@ opgen76:
 	jp _opgen76
 	
 opgenCB:
-	ldi
-	ld a,(hl)
-	xor $36
-	ld c,a
-	and $F8
-	jr z,opgenCB_swap
-	xor c
-	jr z,opgenCB_mem
-	srl a
-	jr z,opgen1byte
-	add a,-2
-	adc a,a
-	inc a
-	and 6
-	xor (hl)
-	ld (de),a
-	inc hl
-	inc de
-	jr opgen_next_fast
+	jp _opgenCB
 	
 opgen2byte:
 	ldi
@@ -202,30 +172,25 @@ opgen_next_no_bound_check:
 	
 opgen09:
 	ex de,hl
-#ifdef USE_IX
 	ld (hl),$DD ;LEA HL,IX
 	inc hl
 	ld (hl),$22
 	inc hl
 	ld (hl),$00
-#endif
 	ld c,$19
 	jr _
 opgen19:
 opgen29:
 	res 4,c
 	ex de,hl
-#ifndef USE_IX
-_
-#endif
 	ld (hl),$EB ;EX DE,HL
 	inc hl
-#ifdef USE_IX
 _
-#endif
 	ld (hl),c
+opgen_next_ex_swap_skip_1cc:
 	inc hl
 	ld (hl),$EB ;EX DE,HL
+opgen_next_swap_skip_1cc:
 	dec iyl
 opgen_next_swap_skip:
 	ex de,hl
@@ -240,6 +205,9 @@ opgenINVALID:
 	jp opgenblockend_invalid
 opgen3F:
 	jr _opgen3F
+opgenE2:
+opgenF2:
+	jr _opgenLDH_C
 opgenJRcond:
 	jr _opgenJRcond
 opgenJPcond:
@@ -252,20 +220,17 @@ opgenROT:
 	
 	bit 4,c
 	jr z,opgenROT_rlca_rrca
-	ld (hl),$CC	;CALL Z,reset_z_flag
+	ld (hl),$2E ;LD L,
 	inc hl
-	ld (hl),reset_z_flag & $FF
+	ld (hl),c
 	inc hl
-	ld (hl),reset_z_flag >> 8
-	jr _
+	ld (hl),$2C ;INC L
+	jr opgenROTfinish
 opgenROT_rlca_rrca:
-	ld (hl),$37 ;SCF
+	ld (hl),$ED ;LD HL,I
 	inc hl
-	ld (hl),$8F ;ADC A,A
-opgen3F_finish:
-	inc hl
-	ld (hl),$1F ;RRA
-_
+	ld (hl),$D7
+opgenROTfinish:
 	inc hl
 	ld (hl),c
 	inc hl
@@ -273,18 +238,20 @@ _
 	ex de,hl
 	jr opgen_next_fast
 	
-opgenCB_mem:
-	jp _opgenCB_mem
-
-opgenCB_swap:
-	jp _opgenCB_swap
+_opgenLDH_C:
+	bit 4,c
+	jp z,_opgenE2
+	call _opgenF2
+	djnz opgen_next_fast
 	
 _opgen3F:
 	ex de,hl
 	ld (hl),c
+	inc hl
 	; Reset H and N flags, preserve Z and C flags
+	ld (hl),$1F ;RRA
 	ld c,$17	;RLA
-	jr opgen3F_finish
+	jr opgenROTfinish
 	
 _opgenJRcond:
 	ld a,$20 ^ $28

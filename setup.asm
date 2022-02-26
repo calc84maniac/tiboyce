@@ -563,18 +563,9 @@ _
 	push hl
 	pop de
 	inc de
-	ld bc,memroutineLUT - mini_frame_backup - 1
+	ld bc,160*144-1
 	ld (hl),BG_COLOR_0
 	ldir
-	
-	; Clear memroutineLUT to avoid corrupting z80 code when applying RTC SMC
-	xor a
-_
-	ld (de),a
-	inc de
-	ld (de),a
-	inc de
-	djnz -_
 	
 	ld a,vram_tiles_start >> 16
 	ld mb,a
@@ -662,8 +653,8 @@ _
 _
 
 	ld hl,(rom_start)
-	ld (rom_start_smc_1),hl
-	ld (z80codebase+rom_start_smc_2),hl
+	ld (rom_unbanked_base),hl
+	ld (rom_unbanked_base_for_read),hl
 	
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
@@ -675,6 +666,7 @@ _
 	add hl,bc
 	ld hl,(hl)
 	ld (rom_bank_base),hl
+	ld (rom_bank_base_for_read),hl
 	
 	ld a,(cram_size+1)
 	add a,a
@@ -684,71 +676,157 @@ _
 	
 	xor a
 	ld (exitReason),a
-	ld (memroutine_rtc_smc_1),a
-	ld a,$18	;JR
-	ld (memroutine_rtc_smc_2),a
 	
 	ld hl,(cram_start)
 	ld bc,$A000
 	sbc hl,bc
 	ld (z80codebase+cram_base_0),hl
 	ld (z80codebase+cram_base_1),hl
-	ld (z80codebase+cram_base_2),hl
+	ld b,a
 	
-	APTR(mbc_impl_code - MBC_IMPL_SIZE)
-	ld a,(mbc)
-	; For no-MBC, skip the copy (and C=0 as desired)
-	cp 1
-	jr c,setup_ram_bank_no_rtc_trampoline
-	ld e,a
-	ld d,MBC_IMPL_SIZE
-	; Fold MBC3+RTC into MBC3
-	cp 4
-	jr c,_
-	dec de ; Preserve Z
+	; Set up memory map for original GB
+	; Disable banked WRAM absolute reads/writes
+	ld hl,z80codebase+wram_banked_write_handler
+	ld (hl),a ;NOP
+	ld h,wram_banked_read_handler >> 8
+	ld (hl),a
+	; Disable banked VRAM absolute reads
+	ld l,vram_banked_read_handler & $FF
+	ld (hl),a
 _
-	; Copy the MBC implementation in
-	ld b,c
-	ld c,d
-	mlt de
-	add hl,de
-	ld de,z80codebase+mbc_impl
+	; Disable banked WRAM reads
+	inc h ;mem_read_lut/mem_write_lut
+	ld l,$C0 ;HL=xz80codebase+mem_*_lut+$C0
+	push hl
+	pop de
+	ld e,$D0 ;DE=z80codebase+mem_*_lut+$D0
+	ld c,$10
+	ldir
+	; Disable banked WRAM mirror reads
+	ex de,hl ;HL=z80codebase+mem_*_lut+$E0
+	ld e,$F0 ;DE=z80codebase+mem_*_lut+$F0
+	ld c,$0E
+	ldir
+	inc h ;mem_get_ptr_routines/mem_write_any_routines
+	ccf
+	jr c,-_
+	
+	; Ignore writes to ports after WX
+	inc h ;mem_write_port_lut
+	ld l,(WX+1) & $FF
+	push hl
+	pop de
+	inc de
+	ld c,$FF80 - (WX+2)
 	ldir
 	
-	ld c,a
-	ld a,(rom_bank_mask)
+	; Handle MBC-specific mapping
+	ld hl,z80codebase+mem_write_lut+$01
+	push hl
+	pop de
+	ld a,(mbc)
+	; Handle special MBC register mapping for MBC2
+	cp 2
+	jr nz,_
+	; Alternate mbc_cram_protect and mbc_rom_bank every byte
 	inc de
-	ld (de),a ;rom_bank_mask_smc
+	ld (hl),mbc_rom_bank_get_write_ptr & $FF
+	dec hl
+	ld c,$40-2
+	ldir
+_
+	; Handle special MBC register mapping for MBC5
+	cp 5
+	jr nz,_
+	; Ignore writes to the upper bit of the ROM bank
+	ld l,$60
+	ld e,$30
+	ld c,$10
+	ldir
+_
 	
+	; Look up MBC info
+	ld b,a
+	ld a,(rom_bank_mask)
+	ld c,a
+	push bc
+	 ld c,9
+	 mlt bc
+	 APTR(mbc_info)
+	 add hl,bc
+	 
+	 ; Set the MBC write jump destinations
+	 ld de,z80codebase+mbc_cram_protect_write_any
+	 ld b,4
+	 ld c,mbc_optimize_size + (4*2)
+_
+	 inc de
+	 ldi
+	 ldi
+	 inc de \ inc de \ inc de
+	 djnz -_
+	 
+	 ; Set the ROM bank mask
+	 ld de,z80codebase+rom_bank_mask_smc
+	 ld (de),a
+	 ; Check if it's greater than or equal to the bank zero mask
+	 cp (hl)
+	 jr c,_
+	 ; If so, optimize the zero page override implementation
+	 ld a,mbc_zero_page_override_fast - (mbc_zero_page_optimize_smc+1)
+	 ld (mbc_zero_page_optimize_smc),a
+_
+	 ; Get the bank zero mask
+	 ld a,(hl)
+	 ; If the zero mask is 0 (MBC5), remove the zero check
+	 or a
+	 cpl
+	 ld hl,z80codebase+mbc_optimize_start
+	 jr nz,++_
+	 ; Set RAM protect check to mask with $FF instead of $0F
+	 ld (z80codebase+mbc_cram_protect_mask_smc),a
+	 ld a,(de) ; Get back the ROM bank mask value
+	 inc de ;z80codebase+mbc5_rom_bank_optimize_dst
+	 ; If the ROM bank mask is $FF, remove the masking as well
+	 inc a
+	 jr nz,_
+	 dec de \ dec de ;z80codebase+mbc5_rom_bank_optimize_more_dst
+_
+	 ;C=mbc_optimize_size
+	 ldir
+_
+	 add hl,bc ;HL=z80codebase+mbc_optimize_start+mbc_optimize_size
+	 ; Set the bank zero mask (inverted)
+	 ld de,z80codebase+rom_bank_zero_mask_smc
+	 ld (de),a
+	
+	; Check for MBC3+RTC
+	pop bc
+	ld a,b
+	cp 4
 	jr nz,setup_ram_bank_no_rtc_trampoline
 	;MBC3+RTC
 	
-	; Skip over MBC5 impl to get to mbc3rtc_4000_impl
-	ld c,MBC_IMPL_SIZE
-	add hl,bc
-	ld de,z80codebase+mbc_4000_impl
-	ld c,mbc3rtc_4000_impl_size
-	ldir
-	
-	ld hl,mbc3rtc_6000
-	ld.sis (mbc_6000_smc),hl
-	
 	; Update rtc_last
-	call update_rtc_always
+	call.il update_rtc_helper
 	
 	ld ix,save_state_size_bytes - 44
 	ld bc,(ix+44)
 	add ix,bc
 	ld bc,(ix+46)
 	add ix,bc
-	ld b,10
 	ld de,z80codebase+rtc_latched
+_
+	ld b,5
 _
 	ld a,(ix)
 	ld (de),a
 	lea ix,ix+4
-	inc de
+	inc e
 	djnz -_
+	ld e,rtc_current & $FF
+	ccf
+	jr c,--_
 	
 	; Ignore timestamps in the future
 	push ix
@@ -780,38 +858,52 @@ setup_ram_bank_no_rtc_trampoline:
 	ld.sis (rtc_last+2),a
 	ld.sis (rtc_last+3),hl
 _
-	call update_rtc_always
+	call.il update_rtc_helper
 	ld a,(iy-state_size+STATE_RAM_BANK)
-	sub 8
-	jr c,setup_ram_bank
-	ld c,a
-	call mbc_rtc_toggle_smc
-	ld hl,z80codebase+rtc_latched
-	ld b,0
+	bit 3,a
+	jr z,setup_ram_bank
+	; Switch to RTC accesses
+	ld hl,$18 | ((cram_rtc_read_any - (cram_banked_read_any_rtc_smc+2)) << 8) | z80codebase
+	ld.sis (cram_banked_get_ptr_rtc_smc),hl
+	ld.sis (cram_banked_read_any_rtc_smc),hl
+	ld.sis (cram_banked_write_any_rtc_smc),hl
+	ld h,rtc_latched >> 8
+	and 7
+	ld l,a
 	jr setup_ram_bank_any
 	
 setup_ram_bank_no_rtc:
-	dec c
-	jr nz,setup_ram_normal
+	djnz setup_ram_bank
 	;MBC1
-	ld hl,mbc1_6000
-	ld.sis (mbc_6000_smc),hl
 	; Check for large ROM
+	ld a,c
 	and $60
-	jr z,setup_ram_normal
+	jr z,setup_ram_bank
 	ld (z80codebase+mbc1_rom_size_smc),a
 	and (iy-state_size+STATE_ROM_BANK)
-	ld (de),a ;rom_bank_mask_smc
-	dec de
-	ld a,$F6 ;OR imm8
-	ld (de),a ;mbc1_large_rom_smc
-	jr setup_ram_bank
-setup_ram_normal:
-	ld hl,((mbc_ram - (mbc_4000_impl+2)) << 8) | $18
-	ld.sis (mbc_4000_impl),hl
+	; Move MBC code forward to make room for OR instruction
+	; This overwrites the beginning of the zero page override implementation,
+	; but we've already optimized to use the fast version which is safe.
+	;HL=z80codebase+mbc_optimize_start+mbc_optimize_size
+	;DE=z80codebase+mbc1_upper_bits_dst+mbc_optimize_size
+	;B=0
+	ld c,mbc_optimize_size+1
+	lddr
+	ld (de),a ;z80codebase+mbc1_upper_bits_smc
+	inc hl ;z80codebase+mbc_optimize_start
+	ld (hl),$F6 ;OR imm8
+	ld hl,z80codebase+mbc1_write_large_rom_handler
+	ld.sis (mbc1_get_write_handler_large_rom_smc),hl
+	ld a,(cram_size+1)
+	add a,a
+	jr nc,_
+	; For large RAM, enable calls to RAM banking
+	inc hl \ inc hl ;z80codebase+mbc1_large_rom_ram_banking_smc
+	ld (hl),$CD ;CALL
 setup_ram_bank:
 	ld a,(cram_size+1)
 	add a,a
+_
 	sbc a,a
 	and (iy-state_size+STATE_RAM_BANK)
 	and 3
@@ -822,9 +914,8 @@ setup_ram_bank:
 	ld b,a
 	ld c,0
 	ld hl,(z80codebase+cram_base_0)
-setup_ram_bank_any:
 	add hl,bc
-	ld (z80codebase+cram_actual_bank_base),hl
+setup_ram_bank_any:
 	
 	ld b,(iy-state_size+STATE_MBC_MODE)
 	; Check for MBC1 mode 0
@@ -833,19 +924,34 @@ setup_ram_bank_any:
 	ld a,(mbc)
 	dec a
 	jr nz,_
-	ld a,$20 ;JR NZ (overriding JR)
-	ld (z80codebase+mbc1_ram_smc_1),a
-	ld a,$30 ;JR NC (overriding JR Z)
-	ld (z80codebase+mbc1_ram_smc_2),a
+	; Preserve the mode 1 bank base
+	ex de,hl
+	ld hl,mbc1_preserved_cram_bank_base
+	ld (z80codebase+mbc1_cram_smc_1),hl
+	ld (z80codebase+mbc1_cram_smc_2),hl
+	ld (hl),de
+	ld h,mem_read_any_routines >> 8
+	ld (z80codebase+mbc1_cram_smc_for_read),hl
+	ld (hl),de
+	ld h,mem_write_any_routines >> 8
+	ld (z80codebase+mbc1_cram_smc_for_write),hl
+	ld (hl),de
 	; Set RAM bank 0 always in this mode
 	ld hl,(z80codebase+cram_base_0)
 _
-	; Disable RAM
+	ld (cram_bank_base),hl
+	ld (cram_bank_base_for_read),hl
+	ld (cram_bank_base_for_write),hl
+	
+	; Protect CRAM
 	bit 1,b
 	jr z,_
-	ld hl,mpZeroPage
+	; Switch to open bus accesses
+	ld hl,$18 | ((cram_open_bus_read_any - (cram_banked_read_any_protect_smc+2)) << 8)
+	ld.sis (cram_banked_get_ptr_protect_smc),hl
+	ld.sis (cram_banked_read_any_protect_smc),hl
+	ld.sis (cram_banked_write_any_protect_smc),hl
 _
-	ld (cram_bank_base),hl
 	
 	ld de,z80codebase+intstate_smc_2
 	ld a,(iy-state_size+STATE_INTERRUPTS)
@@ -1017,12 +1123,12 @@ _
 	ld (z80codebase+audio_counter+1),a
 	
 	lea hl,iy-ioregs+NR10
-	ld ix,z80codebase + audio_port_values
-	ld b,audio_port_masks - audio_port_values
+	ld ix,z80codebase + audio_port_masks
+	ld b,NR52 - NR10
 _
 	ld a,(hl)
-	ld (ix),a
-	or (ix + audio_port_masks - audio_port_values)
+	ld (ix + audio_port_values - audio_port_masks),a
+	or (ix)
 	ld (hl),a
 	inc hl
 	inc ix
@@ -1030,8 +1136,9 @@ _
 	; Check if audio is disabled in NR52
 	bit 7,(hl)
 	jr nz,_
-	ld a,$C9 ;RET (overriding EXX)
-	ld (z80codebase+write_audio_disable_smc),a
+	;JR write_port_ignore (overriding EXX \ LD L,A)
+	ld hl,$18 | ((write_port_ignore - (write_audio_disable_smc+2)) << 8)
+	ld.sis (write_audio_disable_smc),hl
 _
 	
 	ld hl,(iy-ioregs+LCDC-2)
@@ -1132,18 +1239,16 @@ _
 	call lookup_code
 	; Push the target JIT address to the Z80 stack
 	push.s ix
+	; Save the block cycle offset of the current instruction to the Z80 stack
+	ld l,a
+	ld h,0
+	push.s hl
 	
 	; Get the GB registers in BCDEHL'
-#ifdef USE_IX
 	ld.s ix,(iy-state_size+STATE_REG_BC)
-#else
-	ld.s hl,(iy-state_size+STATE_REG_BC)
-#endif
 	ld.s bc,(iy-state_size+STATE_REG_DE)
 	ld.s de,(iy-state_size+STATE_REG_HL)
 	exx
-	; Save the block cycle offset of the current instruction to C
-	ld c,a
 	; Get and remap GB AF
 	ld de,(iy-state_size+STATE_REG_AF)
 	ld h,flags_lut >> 8
@@ -1151,8 +1256,8 @@ _
 	ld.s e,(hl)
 	push de
 	pop af
-	; Get GB SP before we destroy IY
-	ld.s iy,(iy-state_size+STATE_REG_SP)
+	; Get GB SP, which will be set in IY when starting emulation
+	ld.s bc,(iy-state_size+STATE_REG_SP)
 
 	; Set the cycle count for the current event,
 	; which will occur in 1 cycle to force a reschedule
@@ -1167,18 +1272,15 @@ ExitEmulation:
 	ld.sis hl,(event_gb_address)
 	push.s hl ;STATE_REG_PC
 	
-	ld.sis de,(sp_base_address_neg)
+	ld.sis de,(stack_window_base)
+	ld iyh,0
 	add iy,de
 	push.s iy ;STATE_REG_SP
 	
 	exx
 	push.s de ;STATE_REG_HL
 	push.s bc ;STATE_REG_DE
-#ifdef USE_IX
 	push.s ix ;STATE_REG_BC
-#else
-	push.s hl ;STATE_REG_BC
-#endif
 	
 	ex af,af'
 	push af
@@ -1258,40 +1360,41 @@ _
 	ld a,(z80codebase+curr_rom_bank)
 	ld (ix-state_size+STATE_ROM_BANK),a
 	
-	; Save the current MBC mode: bit 0 = MBC1 mode, bit 1 = RAM disable
-	ld a,(cram_bank_base+2)
-	add a,1
-	sbc hl,hl
-	ld a,(z80codebase+mbc1_ram_smc_1)
-	sub $20
-	ld l,a
-	add hl,hl
-	ld a,h
+	; Save the current MBC mode: bit 0 = MBC1 mode, bit 1 = CRAM protect
+	ld hl,(z80codebase+mbc1_cram_smc_1)
+	ld a,l
+	add a,a
+	ld a,(z80codebase+cram_banked_get_ptr_protect_smc)
+	cpl ;LD.LIL vs. JR
+	rla
 	and 3
 	ld (ix-state_size+STATE_MBC_MODE),a
 	
-	; Save the currently mapped RAM bank
-	ld a,(z80codebase+cram_actual_bank_base+2)
+	; Save the currently mapped CRAM bank
+	ld e,(hl)
+	inc hl
+	inc hl
+	ld a,(hl)
 	cp z80codebase >> 16
 	jr nz,_
-	ld a,(z80codebase+cram_actual_bank_base)
+	ld a,e
 	sub (rtc_latched-8)&$FF
 	jr ++_
 _
-	ld a,(z80codebase+cram_actual_bank_base+1)
-	ld hl,(z80codebase+cram_base_0)
-	sub h
+	dec hl
+	ld a,(hl)
+	ld hl,z80codebase+cram_base_0+1
+	sub (hl)
 	rlca
 	rlca
 	rlca
-	and 3
 _
 	ld (ix-state_size+STATE_RAM_BANK),a
 	
 	; Save the actual audio port values in the audio port space
 	ld hl,z80codebase + audio_port_values
 	lea de,ix-ioregs+NR10
-	ld bc,audio_port_masks - audio_port_values
+	ld bc,NR52 - NR10
 	ldir
 	
 	; Save the active interrupts in IF
@@ -1317,7 +1420,7 @@ ExitEmulationWithoutState:
 	ld a,(cram_size)
 	or a
 	jr z,++_
-	call update_rtc
+	call.il update_rtc_helper
 	ld ix,save_state_size_bytes - 44
 	ld bc,(ix+44)
 	add ix,bc
@@ -1325,7 +1428,8 @@ ExitEmulationWithoutState:
 	add ix,bc
 	sbc hl,hl
 	ld de,z80codebase+rtc_latched
-	ld b,10
+_
+	ld b,5
 _
 	ld a,(de)
 	ld (ix),a
@@ -1333,6 +1437,9 @@ _
 	inc de
 	lea ix,ix+4
 	djnz -_
+	ld e,rtc_current & $FF
+	ccf
+	jr c,--_
 	push ix
 	 ACALL(GetUnixTimeStamp)
 	 ex de,hl
@@ -2955,91 +3062,43 @@ sha_code_entry_offset = (15 - (160 % 15)) * 4
 convert_palette_row = mpShaData + sha_code_entry_offset
 convert_palette_row_loop_count = (160 / 15) + 1
 	
-MBC_IMPL_SIZE = 15
-mbc_impl_code:
-	.assume adl=0
-	
+mbc_info:
+	;No MBC
+	.dw mbc_write_denied_handler
+	.dw mbc_write_denied_handler
+	.dw mbc_write_denied_handler
+	.dw mbc_write_denied_handler
+	.db $FF
 	;MBC1
-	.org 0
-	add a,a
-	add a,a
-	jr c,mbc_4000 - mbc_impl
-	ex af,af'
-	ld e,a
-	ex af,af'
-	ld a,e
-	jp p,mbc_0000
-mbc1_large_rom_continue:
-	; Mask the new value and check if 0-page should be overridden
-	and $1F
-	jr z,mbc_zero_page_override - mbc_impl
-#if $ != MBC_IMPL_SIZE
-	.error "MBC1 impl size is incorrect"
-#endif
-
+	.dw mbc_write_cram_protect_handler
+	.dw mbc_write_rom_bank_handler
+	.dw mbc_write_cram_bank_handler
+	.dw mbc1_write_mode_handler
+	.db $1F
 	;MBC2
-	.org 0
-	bit 6,a
-	jr nz,mbc_denied - mbc_impl
-	rra
-	ex af,af'
-	ld e,a
-	ex af,af'
-	ld a,e
-	jr nc,mbc_0000 - mbc_impl
-	and $0F
-	jr z,mbc_zero_page_override - mbc_impl
-#if $ != MBC_IMPL_SIZE
-	.error "MBC2 impl size is incorrect"
-#endif
-	
+	.dw mbc_write_cram_protect_handler
+	.dw mbc_write_rom_bank_handler
+	.dw mbc_write_denied_handler
+	.dw mbc_write_denied_handler
+	.db $0F
 	;MBC3
-	.org 0
-	add a,a
-	add a,a
-	jr c,mbc_4000 - mbc_impl
-	ex af,af'
-	ld e,a
-	ex af,af'
-	ld a,e
-	jp p,mbc_0000
-	and $7F
-	jr z,mbc_zero_page_override - mbc_impl
-#if $ != MBC_IMPL_SIZE
-	.error "MBC3 impl size is incorrect"
-#endif
-	
+	.dw mbc_write_cram_protect_handler
+	.dw mbc_write_rom_bank_handler
+	.dw mbc_write_cram_bank_handler
+	.dw mbc_write_denied_handler
+	.db $7F
+	;MBC3+RTC
+	.dw mbc_write_cram_protect_handler
+	.dw mbc_write_rom_bank_handler
+	.dw mbc_write_rtc_cram_bank_handler
+	.dw mbc_write_rtc_latch_handler
+	.db $7F
 	;MBC5
-	.org 0
-	add a,a
-	add a,a
-	jr c,mbc_4000 - mbc_impl
-	add a,a
-	ex af,af'
-	ld e,a
-	ex af,af'
-	ld a,e
-	jr nc,mbc5_0000 - mbc_impl
-	jp m,mbc_denied
-	nop
-#if $ != MBC_IMPL_SIZE
-	.error "MBC5 impl size is incorrect"
-#endif
-	
-	.org mbc_impl_code + (MBC_IMPL_SIZE * 4)
-	
-mbc3rtc_4000_impl:
-	.org 0
-	ld a,(cram_actual_bank_base+2)
-	cp z80codebase>>16
-	jp.lil z,mbc_rtc_switch_from_rtc_helper
-	bit 3,e
-	jr z,mbc_ram - mbc_4000_impl
-	jp.lil mbc_rtc_switch_to_rtc_helper
-mbc3rtc_4000_impl_size = $
-	
-	.org mbc3rtc_4000_impl + mbc3rtc_4000_impl_size
-	.assume adl=1
+	.dw mbc_write_cram_protect_handler
+	.dw mbc_write_rom_bank_handler
+	.dw mbc_write_cram_bank_handler
+	.dw mbc_write_denied_handler
+	.db 0
 	
 customHardwareSettings:
 	;mpIntEnable

@@ -4,17 +4,22 @@
 
 #define ERROR_CATCHER (Z80Error << 8) | $C3
 
+#macro FIXME
+	jr $
+#endmacro
+
 ; Gets the 24-bit base pointer for a given Game Boy address.
-; The base plus the address can be used to directly access GB memory.
+; The base plus the address can be used to directly read GB memory.
 ;
 ; Inputs:  DE = GB address
 ; Outputs: HL = base pointer
 ; Destroys: F
 #macro GET_BASE_ADDR_NO_ASSERT
-	ld hl,mem_region_lut
+	ld hl,z80codebase+mem_read_lut
 	ld l,d
 	ld l,(hl)
-	dec h
+	inc h ;mem_get_ptr_routines
+	inc l \ inc l
 	ld hl,(hl)
 #endmacro
 
@@ -355,20 +360,42 @@ OBP0 = $ff48
 OBP1 = $ff49
 WY = $ff4a
 WX = $ff4b
+
+KEY1 = $ff4d
+VBK = $ff4f
+HDMA1 = $ff51
+HDMA2 = $ff52
+HDMA3 = $ff53
+HDMA4 = $ff54
+HDMA5 = $ff55
+RP = $ff56
+BGPI = $ff68
+BGPD = $ff69
+OBPI = $ff6a
+OBPD = $ff6b
+OPRI = $ff6c
+SVBK = $ff70
+
 IE = $ffff
 
 ; Memory areas used by the emulator
 
 ; The 16-bit Z80 address space starts here.
 z80codebase = vRam
+; The Z80-mode shadow stack. A sliding window of the game's "main" stack.
+; The "main" stack is set when a call/return is executed on a read/write stack.
+; The memory LUTs are updated to direct other reads/writes into this window.
+; When the stack pointer moves out of the window, it is shifted by 256 bytes.
+shadow_stack_end = $FE00
+shadow_stack_start = shadow_stack_end - 512
 ; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
-myz80stack = $FE00
+myz80stack = shadow_stack_start
 ; The lower bound of the call stack.
 call_stack_lower_bound = myz80stack - 4 - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80)
-; The flags translation LUT
-flags_lut = myz80stack - 512
-; The end of the memory routines.
-memroutine_end = flags_lut - 3
+; The flags translation LUT.
+flags_lut = myz80stack - 256
+; The end of the trampoline high allocation pool.
+trampoline_end = flags_lut - 3
 
 ; The bottom of the ADL stack. Grows down from the end of SafeRAM.
 myADLstack = usbArea - 3
@@ -390,18 +417,11 @@ vram_pixels_start = vram_tiles_start + $4000
 ; 160 * 144 = 22.5 KB in size.
 mini_frame_backup = vram_pixels_start
 
-; Start of Z80 memory routine lookup table. 512 bytes in size.
-; The first 256 bytes are the routine LSBs and the next 256 are the MSBs.
-; A null address means that the routine has not yet been generated.
-; The lookup table is indexed uniquely by (mem_region*32)+access_type.
-; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
-memroutineLUT = vram_pixels_start + $6000
-
 ; Start of recompiler struct index lookup table. 512 bytes in size.
 ; The first 256 bytes are the LSBs and the next 256 are the MSBs.
 ; The lookup table is indexed by the high byte of a JIT address,
 ; and each pointer gives the last struct entry touching that range.
-recompile_index_LUT = memroutineLUT + $0200
+recompile_index_LUT = vram_pixels_start + $6000
 
 ; Start of recompiler cached jump index lookup table. 512 bytes in size.
 ; The first 256 bytes are the LSBs and the next 256 are the MSBs.
@@ -471,8 +491,14 @@ overlapped_palette_index_lut = BGP_frequencies + 256
 overlapped_bg_palette_colors = overlapped_palette_index_lut + 256
 bg_palette_colors = overlapped_bg_palette_colors + ($0D*2)
 
+; Stack of cycle offset fixup locations during JIT block recompilation.
+; Up to one pointer may be allocated for each recompiled opcode, meaning
+; the stack size MAX_OPCODE_BYTES_PER_BLOCK * 2 = 124 bytes large.
+; Conveniently this fits in a 256-byte space along with the BG palette colors.
+recompile_cycle_offset_stack = overlapped_bg_palette_colors + 256
+
 ; A list of scanline start addresses. 144*2 pointers in size.
-scanlineLUT_1 = overlapped_bg_palette_colors + ((64 + 2) * 2)
+scanlineLUT_1 = recompile_cycle_offset_stack
 scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
 ; A list of VAT entries for found ROM files. 256 pointers in size.
@@ -1121,6 +1147,9 @@ saveSP:
 ; The pointer to the skin file data (or 0 if it doesn't exist)
 skin_file_ptr:
 	.dl 0
+; The start of the first bank of Game Boy cartridge ROM.
+rom_start:
+	.dl 0
 ; The size of Game Boy cartridge RAM (plus 48 for RTC carts)
 cram_size:
 	.dl 0
@@ -1227,6 +1256,7 @@ originalLcdSettings:
 	#include "jit.asm"
 	#include "decode.asm"
 	#include "ophandler.asm"
+	#include "trampoline.asm"
 	#include "vblank.asm"
 	#include "waitloop.asm"
 	#include "lzf.asm"
@@ -1329,17 +1359,27 @@ cart_ram_checksum = regs_saved + state_size - 3
 
 ; Start of Game Boy VRAM. 8KB in size. Must be 2-byte aligned.
 vram_start = hram_saved + $0200
+; Start of Game Boy Color VRAM. 16KB in size. Must be 2-byte aligned.
+vram_gbc_start = vram_start
+
 ; Start of Game Boy WRAM. 8KB in size.
 wram_start = vram_start + $2000
+; Start of Game Boy Color WRAM. 32KB in size.
+wram_gbc_start = vram_gbc_start + $4000
 
 ; Base address of VRAM, can be indexed directly by Game Boy address.
 vram_base = vram_start - $8000
+vram_gbc_base = vram_gbc_start - $8000
 ; Base address of WRAM, can be indexed directly by Game Boy address.
 wram_base = wram_start - $C000
+wram_gbc_base = wram_gbc_start - $C000
 
 ; The size of the inserted cartridge RAM is located at the end of the main save state.
 save_state_end = wram_start + $2000
+save_state_gbc_end = wram_gbc_start + $8000
+
 save_state_size = save_state_end - save_state_start
+save_state_gbc_size = save_state_gbc_end - save_state_start
 	
 ; These files remain in the archived appvar.
 	#include "setup.asm"

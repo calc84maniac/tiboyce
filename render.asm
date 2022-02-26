@@ -235,62 +235,63 @@ _
 	 call write_vram_check_sprite_catchup
 	 jr _
 write_vram_and_expand_catchup:
-	push de
-	 bit 4,d
+	push bc
+	 bit 4,b
 	 jr z,-_
 	 call render_catchup
 _
-	pop de
+	pop bc
+	ld a,e
+	; Input: BC=Game Boy VRAM address, A=E=value to write
+	; Output: Value written to VRAM, cache updated if needed
+	; Destroys: AF, BC, DE, HL
 write_vram_and_expand:
+vram_bank_base_for_write = $+1
 	ld hl,vram_base
-	add hl,de
-	ex af,af'
-	ld c,a
-	ex af,af'
-	ld a,(hl)
-	cp c
+	add hl,bc
+	xor (hl)
 	jr z,write_vram_no_change
-	ld (hl),c
-	ld a,d
+	ld (hl),e
+	ld a,b
 	add a,256-$98
 	jr nc,write_vram_pixels
 	ld h,a
-	ld a,e
+	ld a,c
 	and $E0
 	ld l,a
-	xor e
+	xor c
 	add a,a
 	add hl,hl
 	add hl,hl
 	add.s hl,hl
-	ld de,vram_tiles_start
-	ld e,a
-	add hl,de
-	ld de,64
-	ld b,e
-	mlt bc
-	ld (hl),c
+	ld bc,vram_tiles_start
+	ld c,a
+	add hl,bc
+	ld bc,64
+	ld d,c
+	mlt de
+	ld (hl),e
 	inc hl
-	ld (hl),b
-	add hl,de
-	ld (hl),b
+	ld (hl),d
+	add hl,bc
+	ld (hl),d
 	dec hl
-	ld (hl),c
-	add hl,de
-	ld a,b
+	ld (hl),e
+	add hl,bc
+	ld a,d
 	add a,a
 	cpl
-	and e
-	or b
-	ld (hl),c
+	and c
+	or d
+	ld (hl),e
 	inc hl
 	ld (hl),a
-	add hl,de
+	add hl,bc
 	ld (hl),a
 	dec hl
-	ld (hl),c
+	ld (hl),e
 write_vram_no_change:
-	jp.sis z80_pop_restore_swap_ret
+	jp.sis write_vram_and_expand_finish
 	
 write_vram_catchup:
 	; Disable the normal return to z80 mode by using a false jump condition
@@ -349,7 +350,7 @@ _
 	ldir
 write_vram_defer_pixels:
 write_vram_catchup_smc = $+1
-	jp.sis z80_pop_restore_swap_ret ;Replaced with JP PE when catching up
+	jp.sis write_vram_and_expand_finish ;Replaced with JP PE when catching up
 	ld a,$C3 ;JP
 	ld (write_vram_catchup_smc),a
 	ret

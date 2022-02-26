@@ -302,12 +302,6 @@ waitloop_length_smc = $+1
 	cpl
 	add a,2
 	ld.s (hl),a
-	; Store the target jump
-	dec hl
-	dec hl
-	ld.s (hl),ix
-	dec hl
-	ld.s (hl),$C3   ;JP target
 	dec hl
 	dec hl
 	; Choose handler based on variable accessed
@@ -323,6 +317,12 @@ _
 	ld.s (hl),bc
 	dec hl
 	ld.s (hl),$CD	;CALL handler
+	; Store the target jump address
+	dec hl
+	dec hl
+	ld.s (hl),ix
+	dec hl
+	ld.s (hl),$21   ;LD HL,target
 	jp.sis decode_jump_waitloop_return
 	
 waitloop_resolve_read_hram:
