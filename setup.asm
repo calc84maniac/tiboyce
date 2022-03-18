@@ -511,7 +511,6 @@ _
 	 and %10001000
 	 sub 1
 	 jr c,_
-	 ; The pixel data will be converted later to double scale if needed
 	 rlca
 	 rlca
 	 and 3
@@ -556,7 +555,7 @@ _
 	  sla h
 	  ccf
 	  sbc a,a
-	  or $01	; The VRAM will be converted later to double scale if needed
+	  or $01
 	  sla l
 	  jr nc,$+5 \ rlca \ adc a,0
 	  ld (de),a
@@ -608,6 +607,26 @@ _
 	
 	ld a,z80codebase >> 16
 	ld mb,a
+	
+	APTR(digits_encoded)
+	ex de,hl
+	ld hl,digits
+	ld b,3*11
+_
+	ld a,(de)
+	inc de
+	ld c,a
+_
+	sla c
+	sbc a,a
+	or BLACK-(1+WHITE)
+	add a,1+WHITE
+	ld (hl),a
+	inc hl
+	ld a,l
+	and 7
+	jr nz,-_
+	djnz --_
 	
 	ld hl,fake_tile
 	push hl
@@ -2579,6 +2598,8 @@ BackupHardwareSettings:
 	ld (ix+9),a
 	ld a,(mpRtcCtrl)
 	ld (ix+10),a
+	ld hl,(mpSpiDivider)
+	ld (ix+11),hl
 	ret
 	
 SetCustomHardwareSettings:
@@ -2611,6 +2632,8 @@ RestoreHardwareSettings:
 	ld (mpLcdImsc),a
 	ld a,(ix+10)
 	ld (mpRtcCtrl),a
+	ld hl,(ix+11)
+	ld (mpSpiDivider),hl
 	ret nc
 	ei
 	ret
@@ -2618,14 +2641,17 @@ RestoreHardwareSettings:
 RestoreOriginalLcdSettings:
 	ld hl,vRam
 	ld de,originalLcdSettings
+	jr SetLcdSettings
+	
+Set4BitWindow:
+	APTR(lcdSettings4Bit)
+	ex de,hl
+	ld hl,(current_buffer)
 	
 	; In: (DE) = timing (12 bytes)
 	;     (DE+12) = LCD control (3 bytes)
-	;     (DE+15) = left side of window (1 byte)
-	;     (DE+16) = right side of window (2 bytes)
-	;     (DE+18) = top side of window (1 byte)
-	;     (DE+19) = bottom side of window (1 byte)
-	;     (DE+20) = number of frames to wait (plus 1)
+	;     (DE+15) = offset to SPI settings
+	;     (DE+17) = number of frames to wait (plus 1)
 	;     HL = new LCD base address
 SetLcdSettings:
 	push hl
@@ -2634,10 +2660,10 @@ SetLcdSettings:
 	 ld hl,(currentLcdSettings)
 	 or a
 	 sbc hl,de
-	 jr z,SetLcdSettingsFastTrampoline
+	 jr z,SetLcdSettingsFast
 	 ld (currentLcdSettings),de
-	 ; Wait for the the number of specified frames
-	 ld b,(ix+20)
+	 ; Wait for the number of specified frames
+	 ld b,(ix+17)
 _
 	 ld hl,mpLcdIcr
 	 ld (hl),4
@@ -2648,60 +2674,18 @@ _
 	 djnz --_
 	 ; Turn off LCD
 	 ld l,mpLcdCtrl & $FF
-	 res 0,(hl)
+	 dec (hl)
+	 ld l,mpLcdImsc & $FF
+	 ld (hl),8
 	 
-	 ; Configure SPI hardware (necessary for Python Edition support)
-	 ld hl,$2000B
-	 ld (mpSpiUnknown0),hl
-	 ld hl,$182B
-	 ld (mpSpiConfig),hl
-	 ld hl,$C
-	 ld (mpSpiTransfer),hl
-	 nop
-	 ld hl,$40
-	 ld (mpSpiTransfer),hl
-	 jr _	; Equivalent of 3 NOPs
-SetLcdSettingsFastTrampoline:
-	 jr SetLcdSettingsFast
-_
-	 ld hl,$21
-	 ld (mpSpiUnknown1),hl
-	 ld hl,$100
-	 ld (mpSpiTransfer),hl
-	 ld a,(mpSpiUnknown2)
-	 
-	 ; Start SPI transfer
-	 ld hl,mpSpiTransfer
-	 ld (hl),1
-	 ld c,$2A
-	 ; Set left/right window bounds
-	 call spiCmd
-	 ; Left MSB=0
-	 call spiParam
-	 ld a,(ix+15) ; Left LSB
-	 call spiParam
-	 ld de,(ix+16)
-	 ld a,d ; Right MSB
-	 call spiParam
-	 ld a,e ; Right LSB
-	 call spiParam
-	 
-	 ; Set top/bottom window bounds
-	 call spiCmd
-	 ; Top MSB=0
-	 call spiParam
-	 ld de,(ix+18)
-	 ld a,e ; Top LSB
-	 call spiParam
-	 call spiParam
-	 ld a,d ; Bottom LSB
-	 call spiParam
-	 
-	 ; Set data mode
-	 call spiCmd
-	 ; End transfer
-	 ld l,mpSpiTransfer & $FF
-	 ld (hl),a
+	 ; Set SPI settings
+	 ld de,(ix+15)
+	 dec.s de
+	 ld hl,(ArcBase)
+	 add hl,de
+	 ex de,hl
+	 ld b,spiSetupSize
+	 call spiFastTransfer
 	
 	 ; Set timing parameters
 	 lea hl,ix+0
@@ -2720,19 +2704,6 @@ SetLcdSettingsFast:
 SetScalingMode:
 	ld a,(active_scaling_mode)
 	or a
-	ld a,$33
-	jr nz,_
-	ld a,$3
-_
-	ld (scaling_mode_smc_1),a
-	and $11
-	ld c,a
-	dec a
-	ld b,BG_COLOR_0
-	mlt bc
-	ld a,c
-	ld (scaling_mode_smc_3),a
-	
 	ld ix,scanlineLUT_1
 	ld hl,gb_frame_buffer_1
 	ld de,160
@@ -2751,39 +2722,17 @@ _
 	lea ix,ix+9
 	djnz -_
 	
-	ld hl,vram_pixels_start
-	ld c,$6000 >> 8
-_
-	ld a,(hl)
-	rld
-	inc hl
-	djnz -_
-	dec c
-	jr nz,-_
-
-	ld hl,overlapped_pixel_data
-_
-	ld a,(hl)
-	rld
-	inc l
-	jr nz,-_
-	
-	ld a,2
-	ACALL(generate_digits)
+	ld hl,inc_real_frame_count_or_flip_gram_display
+	ld (inc_real_frame_count_smc_1),hl
+	ld (inc_real_frame_count_smc_2),hl
 	
 	ld hl,-160*240
 	ld (frame_dma_size_smc),hl
-	ld hl,mpLcdPalette + (15*2)
-	ld (update_palettes_bgp0_smc),hl
 	call update_palettes
 	
-Set4BitWindow:
+	APTR(lcdSettings8BitStretched)
+	ex de,hl
 	ld hl,(current_display)
-Set4BitWindowAny:
-	push hl
-	 APTR(lcdSettings4Bit)
-	 ex de,hl
-	pop hl
 	AJUMP(SetLcdSettings)
 	
 SetNoScalingMode:
@@ -2799,36 +2748,12 @@ _
 	dec c
 	jr nz,--_
 	
-	ld hl,vram_pixels_start
-	ld c,$6000 >> 8
-_
-	ld a,(hl)
-	inc a
-	and $0F
-	dec a
-	ld (hl),a
-	inc hl
-	djnz -_
-	dec c
-	jr nz,-_
-	
-	ld hl,overlapped_pixel_data
-_
-	ld a,(hl)
-	inc a
-	and $0F
-	dec a
-	ld (hl),a
-	inc l
-	jr nz,-_
-	
-	ld a,4
-	ACALL(generate_digits)
+	ld hl,inc_real_frame_count
+	ld (inc_real_frame_count_smc_1),hl
+	ld (inc_real_frame_count_smc_2),hl
 	
 	ld hl,-160*144
 	ld (frame_dma_size_smc),hl
-	ld hl,mpLcdPalette + (255*2)
-	ld (update_palettes_bgp0_smc),hl
 	call update_palettes
 	
 	ld a,(GameSkinDisplay)
@@ -2885,8 +2810,7 @@ no_skin:
 	ld bc,160*240-1
 	ldir
 Set8BitWindow:
-	ld hl,(current_buffer)
-	ACALL(Set4BitWindowAny)
+	ACALL(Set4BitWindow)
 	APTR(lcdSettings8Bit)
 	ex de,hl
 	ld hl,(current_display)
@@ -3074,6 +2998,8 @@ customHardwareSettings:
 	.db 8
 	;mpRtcCtrl
 	.db $83
+	;mpSpiDivider
+	.dl $070000
 	
 lcdSettings4Bit:
 	; LcdTiming0
@@ -3084,36 +3010,108 @@ lcdSettings4Bit:
 	.db $00,$78,$EF,$00
 	; LcdCtrl
 	.dl $013C25
-	; Window left
-	.db 0
-	; Window right
-	.dw 319
-	; Window top
-	.db 0
-	; Window bottom
-	.db 239
+	; SPI settings
+	.dw spiSetupDefault+1
 	; Number of frames to wait
 	.db 1
 	
 lcdSettings8Bit:
 	; LcdTiming0
-	.db $44,$03,$04,$0D
+	.db $B0,$03,$6D,$1F ; PPL=720, HSW=4, HBP=32, HFP=110 (total=866)
 	; LcdTiming1
-	.db $4F,$00,$F2,$00
+	.db $1F,$00,$C7,$00 ; LPP=32, VSW=1, VBP=0, VFP=199 (total=232)
 	; LcdTiming2
-	.db $02,$78,$1F,$01
+	.db $00,$78,$CF,$02 ; PCD=2, CPL=720
 	; LcdCtrl
 	.dl $013C27
-	; Window left
-	.db 80
-	; Window right
-	.dw 239
-	; Window top
-	.db 48
-	; Window bottom
-	.db 191
+	; SPI settings
+	.dw spiSetupNoScale+1
 	; Number of frames to wait
 	.db 2
+	
+lcdSettings8BitStretched:
+	; LcdTiming0
+	.db $C4,$03,$1D,$1F ; PPL=800, HSW=4, HBP=32, HFP=30 (total=866)
+	; LcdTiming1
+	.db $2F,$00,$B7,$00 ; LPP=48, VSW=1, VBP=0, VFP=183 (total=232)
+	; LcdTiming2
+	.db $00,$78,$1F,$03 ; PCD=2, CPL=800
+	; LcdCtrl
+	.dl $013C27
+	; SPI settings
+	.dw spiSetupDoubleScale+1
+	; Number of frames to wait
+	.db 1
+	
+spiSetupDefault:
+	SPI_START
+	SPI_CMD($2A)     ; Column address set
+	SPI_PARAM16(0)   ;  Left bound
+	SPI_PARAM16(319) ;  Right bound
+	SPI_CMD($2B)     ; Row address set
+	SPI_PARAM16(0)   ;  Upper bound
+	SPI_PARAM16(239) ;  Lower bound
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(320) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(0)   ;  No scroll
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($11)   ;  RGB Interface
+	SPI_PARAM($F0)
+	SPI_CMD($E4)     ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
+	SPI_END
+spiSetupSize = $ - spiSetupDefault
+	
+spiSetupNoScale:
+	SPI_START
+	SPI_CMD($2A)     ; Column address set
+	SPI_PARAM16(80)  ;  Left bound
+	SPI_PARAM16(239) ;  Right bound
+	SPI_CMD($2B)     ; Row address set
+	SPI_PARAM16(48)  ;  Upper bound
+	SPI_PARAM16(191) ;  Lower bound
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(320) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(0)   ;  No scroll
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	SPI_PARAM($F0)
+	SPI_CMD($E4)     ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
+	SPI_END
+	
+spiSetupDoubleScale:
+	SPI_START
+	SPI_CMD($2A)     ; Column address set
+	SPI_PARAM16(0)   ;  Left bound
+	SPI_PARAM16(159) ;  Right bound
+	SPI_CMD($2B)     ; Row address set
+	SPI_PARAM16(0)   ;  Upper bound
+	SPI_PARAM16(239) ;  Lower bound
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(160) ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(0)   ;  Duplicate left side to right
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	SPI_PARAM($F0)
+	SPI_CMD($E4)     ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($14)   ;  Interlace
+	SPI_END
 	
 regs_init:
 	.db $00	; Hardware type

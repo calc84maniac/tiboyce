@@ -108,8 +108,7 @@ draw_sprite_clip_done:
 	 ld iyh,b
 	 
 	 bit 4,d
-scaling_mode_smc_1 = $+1
-	 ld c,$03	;$33 in double scaling mode
+	 ld c,$03
 	 jr z,_
 	 sla c
 _
@@ -457,8 +456,7 @@ render_scanline_off:
 	pop hl
 	inc de
 	ld bc,159
-scaling_mode_smc_3 = $+1
-	ld (hl),BG_COLOR_0	;*$11 in double scaling mode
+	ld (hl),BG_COLOR_0
 	ldir
 	jp render_scanline_next
 	

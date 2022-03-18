@@ -61,10 +61,6 @@ PutEmulatorMessage:
 	xor a
 	ld (cursorCol),a
 	ld (cursorRow),a
-	ld a,(active_scaling_mode)
-	or a
-	ld a,BLACK_BYTE
-	jr nz,_
 	; Modify PutChar to use 8-bit pixels
 	ld a,8
 	ld (PutChar_8BitSMC1),a
@@ -75,7 +71,6 @@ PutEmulatorMessage:
 	ld a,160-8
 	ld (PutChar_8BitSMC4),a
 	ld a,BLACK
-_
 	call SetStringBgColor
 	ld a,WHITE
 	ACALL(PutStringColor)
@@ -94,7 +89,6 @@ _
 	call SetStringBgColor
 
 	ld hl,(cursorCol)
-	add hl,hl
 	add hl,hl
 	ld h,10
 	jp PutEmulatorMessageRet
@@ -174,66 +168,6 @@ digits_encoded:
 	.db %11101010,%11101010,%11100000
 	.db %11101010,%11100010,%11000000
 	.db %10100010,%01001000,%10100000
-	
-generate_digits:
-	APTR(digits_encoded)
-	ex de,hl
-	ld hl,digits
-	ld (display_digit_smc_1),a
-	ld (display_digit_smc_2),a
-	cpl
-	add a,161
-	ld (display_digit_smc_3),a
-	cp 160-4
-	jr z,generate_digits_8bit
-	ld b,11
-_
-	push bc
-	 ld b,3
-_
-	 ld a,(de)
-	 inc de
-	 ld c,a
-_
-	 sla c
-	 sbc a,a
-	 or BLACK+(15-WHITE)
-	 sub 15-WHITE
-	 ld (hl),a
-	 sla c
-	 sbc a,a
-	 or BLACK+(15-WHITE)
-	 sub 15-WHITE
-	 rld
-	 inc hl
-	 ld a,l
-	 and 3
-	 jr nz,-_
-	 djnz --_
-	 ld c,12
-	 add hl,bc
-	pop bc
-	djnz ---_
-	ret
-	
-generate_digits_8bit:
-	ld b,3*11
-_
-	ld a,(de)
-	inc de
-	ld c,a
-_
-	sla c
-	sbc a,a
-	or BLACK-(1+WHITE)
-	add a,1+WHITE
-	ld (hl),a
-	inc hl
-	ld a,l
-	and 7
-	jr nz,-_
-	djnz --_
-	ret
 	
 #ifdef DEBUG
 StartText:

@@ -112,7 +112,6 @@ _
 	    inc c
 	    djnz -_
 	    ld l,c
-	    add hl,hl
 	    ld h,6
 PutEmulatorMessageRet:
 	    call set_preserved_area
@@ -146,8 +145,7 @@ frame_sync_loop:
 	    push hl
 	     call sync_frame_flip_wait
 	    pop hl
-	    xor a
-	    cp (hl)
+	    bit 7,(hl)
 	    jr nz,frame_sync_loop
 frame_sync_later:
 	    ; Set Z
@@ -535,19 +533,10 @@ convert_palette_obp_finish:
 	ld hl,obp01_palette_colors
 	ld (update_palettes_obp0_ptr),hl
 convert_palette_obp_restore:
-	ld hl,convert_palette_LUT + $88
-	ld de,-$11
-	ld a,(active_scaling_mode)
-	or a
-	ld a,6
-	jr nz,_
-	ld l,8
-	ld e,d
-_
-	ld (hl),l
-	add hl,de
-	dec a
-	jr nz,-_
+	ld hl,$050403
+	ld (convert_palette_LUT + 3),hl
+	ld hl,$080706
+	ld (convert_palette_LUT + 6),hl
 	ret
 	
 convert_palette_for_menu:
@@ -563,22 +552,12 @@ convert_palette_for_menu:
 	jr convert_palette_for_menu_continue
 _
 	; Translate OBP0 colors to OBP1 colors
-	ld hl,convert_palette_LUT + $44
-	ld de,-$11
-	ld b,4
-	ld a,(active_scaling_mode)
-	or a
-	jr nz,_
-	ld l,b
-	ld e,d
-_
-	ld a,l
-	add a,a
-_
-	ld (hl),a
-	add hl,de
-	add a,e
-	djnz -_
+	ld hl,convert_palette_LUT + 2
+	ld de,$080706
+	ld (hl),de
+	dec hl
+	ld (hl),5
+	dec hl
 	ex de,hl
 	
 convert_palette_for_menu_continue:
@@ -775,8 +754,7 @@ _
 ; Destroys AF,BC,DE,HL
 display_digit:
 	ld hl,(current_buffer)
-display_digit_smc_1 = $+1
-	ld d,2
+	ld d,4
 	ld e,c
 	mlt de
 	add hl,de
@@ -788,12 +766,10 @@ display_digit_smc_1 = $+1
 	ld b,0
 	ld a,6
 _
-display_digit_smc_2 = $+1
-	ld c,2
+	ld c,4
 	ldir
 	ex de,hl
-display_digit_smc_3 = $+1
-	ld c,160 - 2
+	ld c,160 - 4
 	add hl,bc
 	ex de,hl
 	dec a
@@ -803,6 +779,7 @@ display_digit_smc_3 = $+1
 sync_frame_flip_or_wait:
 	ld a,(mpLcdMis)
 	or a
+inc_real_frame_count_smc_1 = $+1
 	call nz,inc_real_frame_count
 	ld hl,(mpLcdCurr)
 	ld de,(frame_flip_end_check_smc)
@@ -810,17 +787,20 @@ sync_frame_flip_or_wait:
 	jr c,do_frame_flip_always
 sync_frame_flip_wait:
 	ld de,$000800
-	ld a,d
 	call wait_for_interrupt
-	jr sync_frame_flip_always
+	ld a,(mpLcdMis)
+	bit 3,a
+	jr nz,sync_frame_flip_always
+	call flip_gram_display
+	jr sync_frame_flip_wait
 	
 sync_frame_flip:
 	ld a,(mpLcdMis)
 	or a
 	ret z
 sync_frame_flip_always:
+inc_real_frame_count_smc_2 = $+1
 	call inc_real_frame_count
-
 do_frame_flip:
 	ld hl,(mpLcdCurr)
 frame_flip_end_check_smc = $+1
@@ -831,8 +811,13 @@ do_frame_flip_always:
 	ld (frame_flip_end_check_smc),hl
 	ld hl,(current_display)
 	ld (mpLcdBase),hl
+active_scaling_mode = $+1
+	ld a,0
+	or a
+	call nz,flip_gram_draw_buffer
 	ld hl,sync_frame_flip
 	ld (render_scanlines_wait_smc),hl
+	
 ; Update the host LCD palettes based on the currently set GB palettes.
 ;
 ; Uses the overlapped_palette_colors tables as the source colors for each type.
@@ -841,7 +826,6 @@ do_frame_flip_always:
 update_palettes:
 update_palettes_bgp0_index = $+1
 	ld hl,bg_palette_colors
-update_palettes_bgp0_smc = $+1
 	ld de,mpLcdPalette + (255*2)
 	ld bc,2
 	ldir
@@ -862,8 +846,62 @@ update_palettes_obp1_index = $+1
 	ldir
 	ret
 	
+	; Swap GRAM sub-buffers in stretched display mode to avoid tearing.
+	; Input: A=1
+	; Destroys AF,BC,DE,HL
+flip_gram_draw_buffer:
+gram_curr_draw_buffer = $+1
+	xor 0
+	ld (gram_curr_draw_buffer),a
+	ld de,spiDrawBufferLeft
+	jr z,_
+	ld de,spiDrawBufferRight
+_
+	ld b,spiDrawBufferSize
+	call spiFastTransfer
+	; Check if VSYNC was reached before this command completed
+	ld hl,mpLcdRis
+	bit 2,(hl)
+	ld (next_vertical_scroll),de
+	jr nz,_
+	
+	; Enable LCD base address update interrupt for display buffer flip
+	ld l,mpLcdImsc & $FF
+	ld (hl),$0C
+	ret
+	
+_
+	; Manually reset the window address because VSYNC may have set the old one
+	ld de,spiResetWindowAddress
+	ld b,spiResetWindowAddressSize
+	call spiFastTransfer
+	; Go ahead and issue the GRAM display flip command instead of scheduling it
+	ld a,4
+	
+flip_gram_display:
+	ld (mpLcdIcr),a
+	ld c,a
+	
+next_vertical_scroll = $+1
+	ld de,spiVerticalScrollLeft
+	ld b,spiVerticalScrollSize
+	call spiFastTransfer
+	
+	; Reset LCD interrupt mask
+	ld a,8
+	ld (mpLcdImsc),a
+	and c
+	ret z
+	jr inc_real_frame_count_always
+	
+inc_real_frame_count_or_flip_gram_display:
+	bit 2,a
+	jr nz,flip_gram_display
+	ld a,(mpLcdImsc)
+	xor 4
 inc_real_frame_count:
 	ld (mpLcdIcr),a
+inc_real_frame_count_always:
 frame_excess_count = $+1
 	ld a,0
 	inc a
@@ -871,11 +909,10 @@ frame_excess_count = $+1
 	ld (frame_excess_count),a
 _
 	ld hl,emulatorMessageDuration
-	ld a,(hl)
-	or a
+	xor a
+	cp (hl)
 	jr z,_
-	dec a
-	ld (hl),a
+	dec (hl)
 	jr nz,_
 	ld (emulatorMessageText),a
 	call reset_preserved_area
@@ -919,7 +956,7 @@ reset_preserved_area:
 	or a
 	sbc hl,hl
 	
-	; H = height, L = width / 2
+	; H = height, L = width / 4
 	; Height must be a multiple of 5 plus-or-minus 1, or fullscreen mode will mess up
 set_preserved_area:
 	ld a,h
@@ -934,12 +971,9 @@ _
 	jr nc,-_
 	ld a,h
 	ld (scale_offset_preserve_smc_1),a
-	ld a,(active_scaling_mode)
-	or a
 	ld a,l
-	jr nz,_
 	add a,a
-_
+	add a,a
 	ld (preservedAreaWidth),a
 	cpl
 	add a,161
@@ -1120,36 +1154,9 @@ convert_palette_loop_continue:
 	jp sync_frame_flip
 	
 convert_palette_setup_obp:
-	ld a,(active_scaling_mode)
-	or a
-	ld hl,convert_palette_LUT + $22
+	ld hl,convert_palette_LUT + 2
 	ld c,BG_COLOR_0 - 8
 	ld a,(hram_base+OBP0)
-	jr z,convert_palette_setup_obp_noscale
-	inc.s de
-	call _
-	ld c,BG_COLOR_0 - 4
-	ld a,(hram_base+OBP1)
-_
-	ld b,3
-_
-	rrca
-	rrca
-	ld e,a
-	and 3
-	add a,c
-	ld d,a
-	ld a,e
-	ld e,$11
-	add hl,de
-	mlt de
-	ld h,(convert_palette_LUT >> 8) & $FF
-	ld (hl),e
-	djnz -_
-	ret
-	
-convert_palette_setup_obp_noscale:
-	ld l,2
 	call _
 	ld c,BG_COLOR_0 - 4
 	ld a,(hram_base+OBP1)
@@ -1168,35 +1175,9 @@ _
 	ret
 	
 convert_palette_setup:
-active_scaling_mode = $+1
-	ld a,0
-	or a
-	ld hl,convert_palette_LUT + $23
+	ld hl,convert_palette_LUT + 3
 	ld b,4
 	ld a,e
-	jr z,convert_palette_setup_noscale
-_
-	rlca
-	rlca
-	ld d,a
-	and 3
-	add a,BG_COLOR_0
-	ld e,a
-	ld a,d
-	ld d,$11
-	mlt de
-	dec l
-	ld (hl),e
-	jr z,_
-	ld de,-$10
-	add hl,de
-_
-	djnz --_
-	ex de,hl
-	ret
-	
-convert_palette_setup_noscale:
-	ld l,3
 _
 	rlca
 	rlca
@@ -1223,8 +1204,7 @@ setup_menu_palette:
 	; GRAY | WH(ITE)
 	ld hl,($4210 << 8) | ($FFFF >> 8)
 	ld (mpLcdPalette+29),hl
-	ld hl,(current_buffer)
-	AJUMP(Set4BitWindowAny)
+	AJUMP(Set4BitWindow)
 	
 ; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.
 ;
@@ -1336,3 +1316,52 @@ _
 	; If so, clear the low bit of the blue component
 	res 2,h
 	ret
+
+spiDrawBufferLeft:
+	SPI_START
+	SPI_CMD($2A)     ; Column address set
+	SPI_PARAM16(0)   ;  Left bound
+	SPI_PARAM16(159) ;  Right bound
+	SPI_END
+spiDrawBufferSize = $ - spiDrawBufferLeft
+	
+spiVerticalScrollLeft:
+	SPI_START
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(160) ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(0)   ;  Duplicate left side to right
+	SPI_END
+spiVerticalScrollSize = $ - spiVerticalScrollLeft
+	
+spiDrawBufferRight:
+	SPI_START
+	SPI_CMD($2A)     ; Column address set
+	SPI_PARAM16(160) ;  Left bound
+	SPI_PARAM16(319) ;  Right bound
+	SPI_END
+	
+spiVerticalScrollRight:
+	SPI_START
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(160) ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(320) ;  Duplicate right side to left (somehow)
+	SPI_END
+	
+spiResetWindowAddress:
+	SPI_START
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($02)   ;  RAM access from SPI, VSYNC interface
+	SPI_PARAM($F0)
+	SPI_CMD($2C)     ; Reset to window start
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($12)   ;  RAM access from RGB, VSYNC interface
+	SPI_PARAM($F0)
+	SPI_END
+spiResetWindowAddressSize = $ - spiResetWindowAddress
+	

@@ -84,6 +84,46 @@
 	pop hl
 #endmacro
 
+#macro SPI_START
+	#define SPI_BIT $80
+	#define SPI_VALUE $00
+#endmacro
+	
+#macro SPI_CMD(cmd)
+	.db ((cmd * SPI_BIT) >> 8) | SPI_VALUE
+	#define SPI_VALUE eval((cmd * SPI_BIT) & $FF)
+	#if SPI_BIT == $01
+	SPI_END
+	SPI_START
+	#else
+	#define SPI_BIT eval(SPI_BIT >> 1)
+	#endif
+#endmacro
+
+#macro SPI_PARAM(param)
+	.db ((param * SPI_BIT) >> 8) | (SPI_VALUE | SPI_BIT)
+	#define SPI_VALUE eval((param * SPI_BIT) & $FF)
+	#if SPI_BIT == $01
+	SPI_END
+	SPI_START
+	#else
+	#define SPI_BIT eval(SPI_BIT >> 1)
+	#endif
+#endmacro
+
+#macro SPI_PARAM16(param)
+	SPI_PARAM(param >> 8)
+	SPI_PARAM(param & $FF)
+#endmacro
+
+#macro SPI_END
+	#if SPI_BIT != $80
+	.db SPI_VALUE
+	#endif
+	#undef SPI_VALUE
+	#undef SPI_BIT
+#endmacro
+
 ; State variable indices
 STATE_SYSTEM_TYPE = 0
 STATE_INTERRUPTS = 1
@@ -239,7 +279,7 @@ mpKeypadGrp7 = $F5001E
 mpBlLevel = $F60024
 
 mpSpiConfig = $F80000
-mpSpiUnknown0 = $F80004
+mpSpiDivider = $F80004
 mpSpiTransfer = $F80008
 mpSpiStatus = $F8000C
 mpSpiUnknown1 = $F80010
@@ -966,25 +1006,25 @@ MulHLIXBy24:
 	add ix,ix \ adc hl,hl
 	ret
 	
-spiCmd:
-	ld a,c
-	inc c
-	scf
-spiParam:
-	ccf
+spiFastTransfer:
+	; Start SPI transfer
+	ld hl,mpSpiTransfer
+	ld (hl),1
+	; Fill SPI FIFO and transfer at the same time
 	ld l,mpSpiFifo & $FF
-	ld b,3
 _
-	rla
-	rla
-	rla
+	ld a,(de)
 	ld (hl),a
+	inc de
 	djnz -_
+	; Wait for transfer to complete
 	ld l,mpSpiStatus & $FF
 _
 	bit 2,(hl)
 	jr nz,-_
-	xor a
+	; Disable transfer, discarding excess bits sent to LCD
+	ld l,mpSpiTransfer & $FF
+	ld (hl),b
 	ret
 	
 ; The calculator type, 0=84+CE, 1=83PCE
@@ -1136,20 +1176,16 @@ originalHardwareSettings:
 	.db 0
 	;mpRtcCtrl
 	.db 0
+	;mpSpiDivider
+	.dl 0
 	
 originalLcdSettings:
 	; LcdTiming0
 	.block 12
 	; LcdCtrl
 	.dl 0
-	; Window left
-	.db 0
-	; Window right
-	.dw 319
-	; Window top
-	.db 0
-	; Window bottom
-	.db 239
+	; SPI settings
+	.dw spiSetupDefault+1
 	; Number of frames to wait
 	.db 1
 	
