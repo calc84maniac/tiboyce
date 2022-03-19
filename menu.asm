@@ -235,12 +235,13 @@ _
 	ret
 	
 ClearMenuBuffer:
-	ld hl,(current_buffer)
+	ld hl,menu_frame_buffer
+	ld (current_buffer),hl
 	push hl
 	pop de
 	inc de
-	ld bc,160*240-1
-	ld (hl),BLUE_BYTE
+	ld bc,320*240-1
+	ld (hl),BLUE
 	ldir
 	ret
 	
@@ -829,14 +830,14 @@ draw_current_description:
 	
 draw_current_menu:
 	; Erase the help text
-	ld hl,(current_buffer)
-	ld de,160*205
+	ld hl,menu_frame_buffer
+	ld de,320*205
 	add hl,de
 	push hl
 	pop de
 	inc de
-	ld bc,160*30-1
-	ld (hl),BLUE_BYTE
+	ld bc,320*30-1
+	ld (hl),BLUE
 	ldir
 	
 	call get_current_menu_selection
@@ -1011,33 +1012,16 @@ _
 	ret
 	
 draw_mini_screen:
-	ld hl,160*(120-72) + 80 - 4
-	ld de,(current_buffer)
-	add hl,de
-	ld ix,scanlineLUT_1
-	ld a,d
-	cp (gb_frame_buffer_1 >> 8) & $FF
-	jr nz,_
-	ld ix,scanlineLUT_2
-_
-	ld bc,80*256 + 144
+	ld hl,mini_frame_backup
+	ld de,menu_frame_buffer + (320*(120-72) - 8)
+	ld a,144
 draw_mini_screen_row_loop:
-	ld de,(ix)
-	lea ix,ix+3
-	push bc
-draw_mini_screen_pixel_loop:
-	 ld a,(de)
-	 ld (hl),a
-	 inc de
-	 ld a,(de)
-	 rld
-	 inc de
-	 inc hl
-	 djnz draw_mini_screen_pixel_loop
-	 ld c,80
-	 add hl,bc
-	pop bc
-	dec c
+	ld bc,160
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	ldir
+	dec a
 	jr nz,draw_mini_screen_row_loop
 	ret
 	

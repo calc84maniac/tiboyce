@@ -442,13 +442,13 @@ prepare_next_frame:
 	ld hl,(scanlineLUT_ptr)
 	ld a,l
 	cp scanlineLUT_2 & $FF
-prepare_next_frame_for_setup:
 	jr z,_
 	ld hl,scanlineLUT_1
 _
 	ld (scanlineLUT_ptr),hl
 	ld (scanlineLUT_sprite_ptr),hl
 	ld (scanlineLUT_palette_ptr),hl
+prepare_initial_frame:
 	; Reset window state
 	ld a,(hram_base+LCDC)
 	rrca
@@ -815,6 +815,7 @@ active_scaling_mode = $+1
 	ld a,0
 	or a
 	call nz,flip_gram_draw_buffer
+do_frame_flip_always_no_gram_flip:
 	ld hl,sync_frame_flip
 	ld (render_scanlines_wait_smc),hl
 	
@@ -1204,7 +1205,7 @@ setup_menu_palette:
 	; GRAY | WH(ITE)
 	ld hl,($4210 << 8) | ($FFFF >> 8)
 	ld (mpLcdPalette+29),hl
-	AJUMP(Set4BitWindow)
+	AJUMP(SetMenuWindow)
 	
 ; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.
 ;
@@ -1358,10 +1359,11 @@ spiResetWindowAddress:
 	SPI_CMD($B0)     ; RAM Control
 	SPI_PARAM($02)   ;  RAM access from SPI, VSYNC interface
 	SPI_PARAM($F0)
+spiDisableRamAccessSize = $+1 - spiResetWindowAddress
 	SPI_CMD($2C)     ; Reset to window start
 	SPI_CMD($B0)     ; RAM Control
 	SPI_PARAM($12)   ;  RAM access from RGB, VSYNC interface
 	SPI_PARAM($F0)
 	SPI_END
 spiResetWindowAddressSize = $ - spiResetWindowAddress
-	
+

@@ -154,11 +154,6 @@ BLACK = 13
 WHITE = 14
 GRAY = 15
 
-; Paletted colors doubled into two pixels
-WHITE_BYTE = WHITE*$11
-BLACK_BYTE = BLACK*$11
-BLUE_BYTE = BLUE*$11
-
 ; System calls used
 _sprintf = $0000BC
 _GetFieldSizeFromType = $00030C
@@ -381,6 +376,9 @@ decompress_buffer = vram_tiles_start
 ; Each tile is converted into one byte per pixel, for 64 bytes per tile.
 ; Buffer must be 256-byte aligned.
 vram_pixels_start = vram_tiles_start + $4000
+; The mini frame backup in the menu is temporarily stored in this area.
+; 160 * 144 = 22.5 KB in size.
+mini_frame_backup = vram_pixels_start
 
 ; Start of Z80 memory routine lookup table. 512 bytes in size.
 ; The first 256 bytes are the routine LSBs and the next 256 are the MSBs.
@@ -492,9 +490,12 @@ state_size = $60
 ; Base address of HRAM, can be indexed directly by Game Boy address.
 hram_base = z80codebase
 
-; Start of first 4bpp frame buffer. 160*240 bytes in size.
+; Start of menu 8bpp frame buffer. 320*240 bytes in size.
+menu_frame_buffer = vRam + (320*240)
+
+; Start of first 8bpp frame buffer. 160*240 bytes in size.
 gb_frame_buffer_1 = vRam + (320*240)
-; Start of second 4bpp frame buffer. 160*240 bytes in size.
+; Start of second 8bpp frame buffer. 160*240 bytes in size.
 gb_frame_buffer_2 = gb_frame_buffer_1 + (160*240)
 
 ; Start of structure array keeping track of recompiled code blocks. 11KB max.
@@ -897,14 +898,8 @@ SetStringBgColor:
 ; Sets the current string color.
 SetStringColor:
 PutChar_BgColorSMC1 = $+1
-	xor BLUE_BYTE
-	and $0F
-	ld (PutChar_ColorSMC2),a
-	rlca
-	rlca
-	rlca
-	rlca
-	ld (PutChar_ColorSMC1),a
+	xor BLUE
+	ld (PutChar_ColorSMC),a
 	ret
 	
 ; Renders the character in A on the current buffer at (cursorRow), (cursorCol).
@@ -932,11 +927,12 @@ _
 	ret nc
 	ld l,160
 	mlt hl
+PutChar_SmallBufferSMC1 = $
+	add hl,hl
 	ld bc,(current_buffer)
 	add hl,bc
 	ld c,a
-PutChar_8BitSMC1 = $+1
-	ld b,4
+	ld b,8
 	mlt bc
 	add hl,bc
 	
@@ -947,30 +943,24 @@ PutCharRowLoop:
 	 ; Get the bitmap for the current row in C.
 	 ld a,(de)
 	 inc de
+	 cpl
 	 ld c,a
-PutChar_8BitSMC2 = $+1
-	 ld b,4
+	 ld b,8
 PutCharPixelLoop:
 	 ; Render 2 pixels to the framebuffer per iteration.
-PutChar_8BitSMC3 = $
 	 sla c
 	 sbc a,a
-	 cpl
-PutChar_ColorSMC1 = $+1
-	 and (WHITE ^ BLUE) << 4
-	 sla c
-	 jr c,_
-PutChar_ColorSMC2 = $+1
-	 or WHITE ^ BLUE
-_
+PutChar_ColorSMC = $+1
+	 and WHITE ^ BLUE
 PutChar_BgColorSMC2 = $+1
-	 xor BLUE_BYTE
+	 xor BLUE
 	 ld (hl),a
 	 inc hl
 	 djnz PutCharPixelLoop
 	 ; Advance output pointer to the next row.
-PutChar_8BitSMC4 = $+1
-	 ld c,160-4
+PutChar_SmallBufferSMC2 = $+1
+	 ld c,(320-8)/2
+	 add hl,bc
 	 add hl,bc
 	pop bc
 	djnz PutCharRowLoop
@@ -1157,9 +1147,6 @@ should_auto_save:
 ; A bitmap of existing save states for the currently loaded game.
 existing_state_map:
 	.dw 0
-; The currently set LCD settings
-currentLcdSettings:
-	.dl originalLcdSettings
 	
 originalHardwareSettings:
 	; IntEnable
@@ -1186,8 +1173,6 @@ originalLcdSettings:
 	.dl 0
 	; SPI settings
 	.dw spiSetupDefault+1
-	; Number of frames to wait
-	.db 1
 	
 ; These files are loaded into RAM.
 	#include "jit.asm"

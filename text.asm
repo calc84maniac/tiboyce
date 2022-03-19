@@ -61,33 +61,23 @@ PutEmulatorMessage:
 	xor a
 	ld (cursorCol),a
 	ld (cursorRow),a
-	; Modify PutChar to use 8-bit pixels
-	ld a,8
-	ld (PutChar_8BitSMC1),a
-	ld (PutChar_8BitSMC2),a
-	ld a,$37	;SCF
-	ld (PutChar_8BitSMC3),a
-	ld (PutChar_8BitSMC3+1),a
-	ld a,160-8
-	ld (PutChar_8BitSMC4),a
+	; Modify PutChar to use a 160-pixel wide buffer
+	ld (PutChar_SmallBufferSMC1),a
+	ld a,(160-8)/2
+	ld (PutChar_SmallBufferSMC2),a
 	ld a,BLACK
 	call SetStringBgColor
 	ld a,WHITE
 	ACALL(PutStringColor)
-	; Restore PutChar to 4-bit
-	ld a,4
-	ld (PutChar_8BitSMC1),a
-	ld (PutChar_8BitSMC2),a
-	ld a,$CB	;SLA C
-	ld (PutChar_8BitSMC3),a
-	ld a,$21	;SLA C
-	ld (PutChar_8BitSMC3+1),a
-	ld a,160-4
-	ld (PutChar_8BitSMC4),a
+	; Restore PutChar to use a 320-pixel wide buffer
+	ld a,$29	;ADD HL,HL
+	ld (PutChar_SmallBufferSMC1),a
+	ld a,(320-8)/2
+	ld (PutChar_SmallBufferSMC2),a
 	
-	ld a,BLUE_BYTE
+	ld a,BLUE
 	call SetStringBgColor
-
+	
 	ld hl,(cursorCol)
 	add hl,hl
 	ld h,10

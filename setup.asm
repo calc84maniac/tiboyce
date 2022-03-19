@@ -543,31 +543,14 @@ _
 	ld l,BGP_write_queue & $FF
 	ld (hl),$FF
 	
-	ld hl,vram_start
-	ld de,vram_pixels_start
-	ld c,$0C
-_
+	; Clear the mini frame backup for a clean initial frame
+	ld hl,mini_frame_backup
 	push hl
-	 ld hl,(hl)
-	 push bc
-	  ld b,8
-_
-	  sla h
-	  ccf
-	  sbc a,a
-	  or $01
-	  sla l
-	  jr nc,$+5 \ rlca \ adc a,0
-	  ld (de),a
-	  inc de
-	  djnz -_
-	 pop bc
-	pop hl
-	inc hl
-	inc hl
-	djnz --_
-	dec c
-	jr nz,--_
+	pop de
+	inc de
+	ld bc,memroutineLUT - mini_frame_backup - 1
+	ld (hl),BG_COLOR_0
+	ldir
 	
 	; Clear memroutineLUT to avoid corrupting z80 code when applying RTC SMC
 	xor a
@@ -581,6 +564,7 @@ _
 	ld a,vram_tiles_start >> 16
 	ld mb,a
 	ld ix,vram_tiles_start + 128
+	ld hl,vram_start + $1800
 	ld c,$40
 	ld a,c
 _
@@ -1117,12 +1101,9 @@ _
 	and $1F
 	ld (z80codebase+active_ints),a
 	
-	; Determine the scanline LUT pointer based on the initial framebuffer
-	ld de,(current_buffer)
-	ld a,d
-	cp (gb_frame_buffer_2 >> 8) & $FF
-	ld hl,scanlineLUT_2
-	call prepare_next_frame_for_setup
+	; Prepare initial frame, but skip setting frame and scanline pointers
+	; which are handled in SetScalingMode
+	call prepare_initial_frame
 	
 	ACALL(IdentifyDefaultPalette)
 	ACALL(ApplyConfiguration)
@@ -2149,7 +2130,6 @@ SaveAutoState:
 DisplayError:
 	APTR(error_text)
 DisplayErrorAny:
-	ld de,(current_buffer)
 	push af
 	 push hl
 	  ACALL(ClearMenuBuffer)
@@ -2189,8 +2169,8 @@ _
 	 ret po
 	 
 	 ; Otherwise, switch to the menu state and back
-	 call setup_menu_palette
 	 ACALL(SetCustomHardwareSettings)
+	 call setup_menu_palette
 	pop hl
 	call CallHL
 	push af
@@ -2613,6 +2593,11 @@ SetCustomHardwareSettings:
 	pop ix
 	jr RestoreHardwareSettings
 	
+RestoreOriginalLcdSettings:
+	ACALL(SetCustomHardwareSettings)
+	ld hl,originalLcdSettings
+	ld de,vRam
+	ACALL(SetLcdSettings)
 RestoreOriginalHardwareSettings:
 	ld iy,flags
 	ld ix,originalHardwareSettings
@@ -2638,89 +2623,144 @@ RestoreHardwareSettings:
 	ei
 	ret
 	
-RestoreOriginalLcdSettings:
-	ld hl,vRam
-	ld de,originalLcdSettings
-	jr SetLcdSettings
+SetMenuWindow:
+	ld ix,scanlineLUT_1
+	ld a,(current_buffer+1)
+	cp (gb_frame_buffer_1 >> 8) & $FF
+	jr nz,_
+	ld ix,scanlineLUT_2
+_
+	ld de,mini_frame_backup
+	ld a,144
+backup_mini_screen_row_loop:
+	ld hl,(ix)
+	ld bc,160
+	ldir
+	lea ix,ix+3
+	dec a
+	jr nz,backup_mini_screen_row_loop
 	
-Set4BitWindow:
-	APTR(lcdSettings4Bit)
-	ex de,hl
-	ld hl,(current_buffer)
+	APTR(lcdSettingsMenu)
+SetLcdSettingsFirstBuffer:
+	ld de,menu_frame_buffer
 	
-	; In: (DE) = timing (12 bytes)
-	;     (DE+12) = LCD control (3 bytes)
-	;     (DE+15) = offset to SPI settings
-	;     (DE+17) = number of frames to wait (plus 1)
-	;     HL = new LCD base address
+	; In: (HL) = timing (12 bytes)
+	;     (HL+12) = LCD control (3 bytes)
+	;     (HL+15) = offset to SPI settings
+	;     DE = new LCD base address
 SetLcdSettings:
 	push hl
-	 push de
-	 pop ix
-	 ld hl,(currentLcdSettings)
-	 or a
-	 sbc hl,de
-	 jr z,SetLcdSettingsFast
-	 ld (currentLcdSettings),de
-	 ; Wait for the number of specified frames
-	 ld b,(ix+17)
+	 ; Reset interrupt mask
+	 ld a,8
+	 ld hl,mpLcdImsc
+	 ld (hl),a
+	 ; Wait for DMA completion
+	 ld l,mpLcdIcr & $FF
+	 ld (hl),a
+	 ld l,mpLcdMis & $FF
 _
-	 ld hl,mpLcdIcr
-	 ld (hl),4
-	 ld l,mpLcdRis & $FF
-_
-	 bit 2,(hl)
+	 tst a,(hl)
 	 jr z,-_
-	 djnz --_
-	 ; Turn off LCD
-	 ld l,mpLcdCtrl & $FF
-	 dec (hl)
-	 ld l,mpLcdImsc & $FF
-	 ld (hl),8
-	 
-	 ; Set SPI settings
-	 ld de,(ix+15)
-	 dec.s de
-	 ld hl,(ArcBase)
-	 add hl,de
+	 ld l,mpLcdIcr & $FF
+	 ld (hl),a
+
+	 ; Set DMA base address
 	 ex de,hl
-	 ld b,spiSetupSize
-	 call spiFastTransfer
-	
-	 ; Set timing parameters
-	 lea hl,ix+0
-	 ld de,mpLcdTiming0
-	 ld bc,12
-	 ldir
-SetLcdSettingsFast:
+	 ld (mpLcdBase),hl
 	pop hl
-	; Set LCD base
-	ld (mpLcdBase),hl
-	; Set LCD control (turning LCD back on)
-	ld hl,(ix+12)
-	ld (mpLcdCtrl),hl
+	
+	; Set timing parameters
+	ld e,mpLcdTiming0 & $FF
+	ld bc,12
+	ldir
+	
+	; Set LCD control
+	ld e,mpLcdCtrl & $FF
+	ld c,3
+	ldir
+	
+	; Get SPI settings address
+	ld de,(hl)
+	dec.s de
+	ld hl,(ArcBase)
+	add hl,de
+	ex de,hl
+	ld b,spiSetupSize
+	jp spiFastTransfer
+	
+GeneratePixelCache:
+	ld hl,vram_start
+	ld de,vram_pixels_start
+	ld c,$0C
+_
+	push hl
+	 ld hl,(hl)
+	 push bc
+	  ld b,8
+_
+	  sla h
+	  ccf
+	  sbc a,a
+	  or $01
+	  sla l
+	  jr nc,$+5 \ rlca \ adc a,0
+	  ld (de),a
+	  inc de
+	  djnz -_
+	 pop bc
+	pop hl
+	inc hl
+	inc hl
+	djnz --_
+	dec c
+	jr nz,--_
 	ret
 	
 SetScalingMode:
+	; Disable GRAM access from DMA to allow a clean buffer rewrite
+	ld de,spiResetWindowAddress
+	ld b,spiDisableRamAccessSize
+	call spiFastTransfer
+	
+	ld hl,scanlineLUT_2
+	ld (scanlineLUT_ptr),hl
+	ld (scanlineLUT_sprite_ptr),hl
+	ld (scanlineLUT_palette_ptr),hl
+	ld hl,gb_frame_buffer_2
+	ld (current_buffer),hl
+	ld ix,scanlineLUT_1
+	ld hl,mini_frame_backup
+	ld de,gb_frame_buffer_1
+	ld (current_display),de
+	ld bc,0
+	ld (frame_flip_end_check_smc),bc
 	ld a,(active_scaling_mode)
 	or a
-	ld ix,scanlineLUT_1
-	ld hl,gb_frame_buffer_1
-	ld de,160
 	jr z,SetNoScalingMode
+	ld (gram_curr_draw_buffer),a
 	
-	ld b,144/3*2
+	; Restore the mini frame backup and initialize the scanline LUTs
+	ld a,144/3*2
 _
-	ld (ix),hl
-	add hl,de
-	add hl,de
-	ld (ix+3),hl
-	add hl,de
-	add hl,de
-	ld (ix+6),hl
-	add hl,de
+	ld c,160
+	ld (ix),de
+	ldir
+	ld c,160
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	ld (ix+3),de
+	ldir
+	ld c,160
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	ld (ix+6),de
+	ldir
 	lea ix,ix+9
-	djnz -_
+	dec a
+	jr nz,-_
+	ACALL(GeneratePixelCache)
 	
 	ld hl,inc_real_frame_count_or_flip_gram_display
 	ld (inc_real_frame_count_smc_1),hl
@@ -2728,25 +2768,29 @@ _
 	
 	ld hl,-160*240
 	ld (frame_dma_size_smc),hl
-	call update_palettes
+	
+	call do_scale_fill
 	
 	APTR(lcdSettings8BitStretched)
-	ex de,hl
-	ld hl,(current_display)
-	AJUMP(SetLcdSettings)
+	ACALL(SetLcdSettingsFirstBuffer)
+	jp do_frame_flip_always_no_gram_flip
 	
 SetNoScalingMode:
-	ld c,2
+	; Restore the mini frame backup and initialize the scanline LUTs
+	ld a,144
 _
-	ld b,144
+	push af
 _
-	ld (ix),hl
-	add hl,de
-	lea ix,ix+3
-	djnz -_
-	ld hl,gb_frame_buffer_2
-	dec c
-	jr nz,--_
+	 ld c,160
+	 ld (ix),de
+	 ldir
+	 lea ix,ix+3
+	 dec a
+	 jr nz,-_
+	 ld de,gb_frame_buffer_2
+	pop af
+	ccf
+	jr c,--_
 	
 	ld hl,inc_real_frame_count
 	ld (inc_real_frame_count_smc_1),hl
@@ -2754,7 +2798,8 @@ _
 	
 	ld hl,-160*144
 	ld (frame_dma_size_smc),hl
-	call update_palettes
+	
+	ACALL(GeneratePixelCache)
 	
 	ld a,(GameSkinDisplay)
 	cp $FF
@@ -2768,7 +2813,7 @@ _
 	sbc hl,hl
 	add hl,de
 _
-	ld hl,(current_buffer)
+	ld hl,gb_frame_buffer_2
 	push hl
 	 jr nc,no_skin
 	 push de
@@ -2791,13 +2836,14 @@ _
 	pop de
 	call lzf_decompress
 	
-	ACALL(Set8BitWindow)
+	ACALL(Set8BitWindowNoScale)
 	
 	xor a
 bad_skin_file:
-	ld hl,palette_backup
-	ld de,mpLcdPalette
-	ld bc,32
+	; Restore only the static palette entries, dynamic ones are generated
+	ld hl,palette_backup + (BG_COLOR_0 * 2)
+	ld de,mpLcdPalette + (BG_COLOR_0 * 2)
+	ld bc,32 - (BG_COLOR_0 * 2)
 	ldir
 	ret z
 	
@@ -2806,15 +2852,16 @@ bad_skin_file:
 no_skin:
 	pop de
 	inc de
-	ld (hl),BLACK_BYTE
+	ld (hl),BLACK*$11
 	ld bc,160*240-1
 	ldir
-Set8BitWindow:
-	ACALL(Set4BitWindow)
-	APTR(lcdSettings8Bit)
-	ex de,hl
-	ld hl,(current_display)
-	AJUMP(SetLcdSettings)
+Set8BitWindowNoScale:
+	APTR(lcdSettings4Bit)
+	ld de,gb_frame_buffer_2
+	ACALL(SetLcdSettings)
+	APTR(lcdSettings8BitNoScale)
+	ACALL(SetLcdSettingsFirstBuffer)
+	jp do_frame_flip_always_no_gram_flip
 	
 IdentifyDefaultPalette:
 	ld ix,(rom_start)
@@ -3012,10 +3059,20 @@ lcdSettings4Bit:
 	.dl $013C25
 	; SPI settings
 	.dw spiSetupDefault+1
-	; Number of frames to wait
-	.db 1
 	
-lcdSettings8Bit:
+lcdSettingsMenu:
+	; LcdTiming0
+	.db $FC,$00,$00,$00 ; PPL=1024, HSW=1, HBP=1, HFP=1 (total=1027)
+	; LcdTiming1
+	.db $4A,$00,$03,$C4 ; LPP=75, VSW=1, VBP=196, VFP=3 (total=275)
+	; LcdTiming2
+	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
+	; LcdCtrl
+	.dl $013C27
+	; SPI settings
+	.dw spiSetupVsyncInterface+1
+	
+lcdSettings8BitNoScale:
 	; LcdTiming0
 	.db $B0,$03,$6D,$1F ; PPL=720, HSW=4, HBP=32, HFP=110 (total=866)
 	; LcdTiming1
@@ -3026,8 +3083,6 @@ lcdSettings8Bit:
 	.dl $013C27
 	; SPI settings
 	.dw spiSetupNoScale+1
-	; Number of frames to wait
-	.db 2
 	
 lcdSettings8BitStretched:
 	; LcdTiming0
@@ -3040,8 +3095,6 @@ lcdSettings8BitStretched:
 	.dl $013C27
 	; SPI settings
 	.dw spiSetupDoubleScale+1
-	; Number of frames to wait
-	.db 1
 	
 spiSetupDefault:
 	SPI_START
@@ -3051,21 +3104,44 @@ spiSetupDefault:
 	SPI_CMD($2B)     ; Row address set
 	SPI_PARAM16(0)   ;  Upper bound
 	SPI_PARAM16(239) ;  Lower bound
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($11)   ;  RGB Interface
+	SPI_PARAM($F0)
 	SPI_CMD($33)     ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
 	SPI_PARAM16(0)   ;  Bottom fixed area
 	SPI_CMD($37)     ; Vertical scroll amount
 	SPI_PARAM16(0)   ;  No scroll
-	SPI_CMD($B0)     ; RAM Control
-	SPI_PARAM($11)   ;  RGB Interface
-	SPI_PARAM($F0)
 	SPI_CMD($E4)     ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($10)   ;  No interlace
 	SPI_END
 spiSetupSize = $ - spiSetupDefault
+	
+spiSetupVsyncInterface:
+	SPI_START
+	SPI_CMD($2A)     ; Column address set
+	SPI_PARAM16(0)   ;  Left bound
+	SPI_PARAM16(319) ;  Right bound
+	SPI_CMD($2B)     ; Row address set
+	SPI_PARAM16(0)   ;  Upper bound
+	SPI_PARAM16(239) ;  Lower bound
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	SPI_PARAM($F0)
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(320) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(0)   ;  No scroll
+	SPI_CMD($E4)     ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
+	SPI_END
 	
 spiSetupNoScale:
 	SPI_START
@@ -3075,15 +3151,15 @@ spiSetupNoScale:
 	SPI_CMD($2B)     ; Row address set
 	SPI_PARAM16(48)  ;  Upper bound
 	SPI_PARAM16(191) ;  Lower bound
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	SPI_PARAM($F0)
 	SPI_CMD($33)     ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
 	SPI_PARAM16(0)   ;  Bottom fixed area
 	SPI_CMD($37)     ; Vertical scroll amount
 	SPI_PARAM16(0)   ;  No scroll
-	SPI_CMD($B0)     ; RAM Control
-	SPI_PARAM($12)   ;  VSYNC Interface
-	SPI_PARAM($F0)
 	SPI_CMD($E4)     ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
@@ -3098,15 +3174,15 @@ spiSetupDoubleScale:
 	SPI_CMD($2B)     ; Row address set
 	SPI_PARAM16(0)   ;  Upper bound
 	SPI_PARAM16(239) ;  Lower bound
-	SPI_CMD($33)     ; Vertical scroll parameters
-	SPI_PARAM16(160) ;  Top fixed area
-	SPI_PARAM16(160) ;  Scrolling area
-	SPI_PARAM16(0)   ;  Bottom fixed area
-	SPI_CMD($37)     ; Vertical scroll amount
-	SPI_PARAM16(0)   ;  Duplicate left side to right
 	SPI_CMD($B0)     ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
 	SPI_PARAM($F0)
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(160) ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(320) ;  Duplicate right side to left
 	SPI_CMD($E4)     ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
