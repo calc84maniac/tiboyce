@@ -461,11 +461,6 @@ _
 	
 	ACALL(SetCustomHardwareSettings)
 	
-	APTR(palettecode)
-	ld de,mpLcdPalette + 32
-	ld bc,palettecodesize
-	ldir
-	
 #ifdef DEBUG
 	APRINTF(StartText)
 #endif
@@ -1023,30 +1018,31 @@ _
 	
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
+	ld a,$28 ;JR Z
 	jr c,_
-	ld a,$20 ;JR NZ (overriding JR Z)
-	ld (LCDC_7_smc),a
 	push hl
 	 call do_lcd_disable
 	pop hl
+	ld a,$20 ;JR NZ
 _
+	ld (LCDC_7_smc),a
 	add hl,hl
 	add hl,hl
-	jr nc,_
-	ld a,$38 ;JR C (overriding JR NC)
+	sbc a,a
+	and $38-$30 ;JR C or JR NC
+	add a,$30
 	ld (LCDC_5_smc),a
-_
 	add hl,hl
-	jr nc,_
-	xor a ;(overriding $80)
+	sbc a,a
+	inc a ;$00 or $80
+	rrca
 	ld (LCDC_4_smc),a
 	ld (window_tile_ptr),a
-_	
 	add hl,hl
-	jr nc,_
-	ld a,((vram_tiles_start + $2000) >> 8) & $FF
+	sbc a,a
+	and $20
+	add a,(vram_tiles_start >> 8) & $FF
 	ld (LCDC_3_smc),a
-_
 	add hl,hl
 	jr nc,_
 	ld a,$78 ;(overriding $38)
@@ -1065,10 +1061,10 @@ _
 	ld (LCDC_1_smc),a
 _
 	add hl,hl
-	jr c,_
-	ld a,$31 ;LD SP (overriding ADD HL,SP)
+	sbc a,a
+	and $39-$31 ;ADD HL,SP or LD SP,
+	add a,$31
 	ld (LCDC_0_smc),a
-_	
 	
 	ld hl,(iy-ioregs+SCY)
 	ld a,l
@@ -1092,10 +1088,10 @@ _
 	cp 167
 	inc a
 	ld (WX_smc_3),a
-	jr c,_
-	ld a,$18 ;JR (overriding default JR NZ)
+	sbc a,a
+	and $20-$18 ;JR NZ or JR
+	add a,$18
 	ld (WX_smc_1),a
-_
 	
 	ld a,(iy-ioregs+IF)
 	and $1F
