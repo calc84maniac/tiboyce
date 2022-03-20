@@ -478,89 +478,27 @@ frame_dma_size_smc = $+1
 	ld hl,0
 	sbc hl,de
 	ld (frame_flip_end_check_smc),hl
-convert_palette_obp_smc_finish = $ ; Replace with JR convert_palette_obp_finish
 	; Clear the frequency count for the native BGP value
 	ld a,(BGP_max_value)
 	ld hl,BGP_frequencies
 	ld l,a
-	ld de,$3F
-	ld (hl),d
+	ld (hl),0
 	; Get the indices for each palette type
 	and 3
 	add a,a
 	add a,bg_palette_colors & $FF
 	ld (update_palettes_bgp0_index),a
 	inc h
-	srl l
-	srl l
 	ld a,(hl)
-	add a,overlapped_bg_palette_colors & $FF
+	add a,a
 	ld (update_palettes_bgp123_index),a
-	ld a,(hram_base+OBP1)
-	rrca
-	rrca
-	and e
-	ld l,a
-	ld a,(hl)
-	add a,overlapped_obp1_palette_colors & $FF
-	ld (update_palettes_obp1_index),a
-	ld a,(hram_base+OBP0)
-	rrca
-	rrca
-	and e
-	ld l,a
-	ld e,(hl)
-	ld l,overlapped_obp0_palette_colors & $FF
-	add hl,de
-	ld (update_palettes_obp0_ptr),hl
-	ret
-	
-convert_palette_obp_finish:
-	ld hl,convert_palette_obp_do_smc
-	ld (convert_palette_obp_smc_enable),hl
-	ld hl,$DD0006 ;LD B,0 \ LD IX,
-	ld (convert_palette_obp_smc_setup),hl
-	ld a,$28 ;JR Z
-	ld (convert_palette_obp_smc_1),a
-	ld (convert_palette_obp_smc_2),a
-	ld hl,((BGP_max_value << 8) | $3A) & $FFFFFF ;LD A,(BGP_max_value)
-	ld (convert_palette_obp_smc_finish),hl
-	; Set pointers to raw mapped colors
-	ld a,(obp0_palette_colors - 2) & $FF
-	ld (update_palettes_bgp123_index),a
-	ld a,(obp1_palette_colors + 2) & $FF
-	ld (update_palettes_obp1_index),a
-	ld hl,obp01_palette_colors
-	ld (update_palettes_obp0_ptr),hl
-convert_palette_obp_restore:
-	ld hl,$050403
-	ld (convert_palette_LUT + 3),hl
-	ld hl,$080706
-	ld (convert_palette_LUT + 6),hl
 	ret
 	
 convert_palette_for_menu:
-	; Check if sprite palettes were manually mapped
-	ld hl,(update_palettes_obp0_ptr)
-	ld de,-obp01_palette_colors
-	add hl,de
-	jr c,_
 	; Get the current native BGP palette
 	ld a,(BGP_max_value)
 	ld e,a
 	call convert_palette_setup
-	jr convert_palette_for_menu_continue
-_
-	; Translate OBP0 colors to OBP1 colors
-	ld hl,convert_palette_LUT + 2
-	ld de,$080706
-	ld (hl),de
-	dec hl
-	ld (hl),5
-	dec hl
-	ex de,hl
-	
-convert_palette_for_menu_continue:
 	ld hl,(current_display)
 	ld c,240
 _
@@ -569,7 +507,7 @@ convert_palette_row_smc_3 = $+1
 	call convert_palette_row
 	dec c
 	jr nz,-_
-	jr convert_palette_obp_restore
+	ret
 	
 do_scale_fill:
 	ld hl,(current_display)
@@ -821,7 +759,7 @@ do_frame_flip_always_no_gram_flip:
 	
 ; Update the host LCD palettes based on the currently set GB palettes.
 ;
-; Uses the overlapped_palette_colors tables as the source colors for each type.
+; Uses the overlapped_bg_palette_colors table as the source BG colors.
 ;
 ; Destroys AF,BC,DE,HL
 update_palettes:
@@ -833,16 +771,6 @@ update_palettes_bgp0_index = $+1
 update_palettes_bgp123_index = $+1
 	ld l,overlapped_bg_palette_colors & $FF
 	ld d,mpLcdPalette >> 8 & $FF
-	ld e,c
-	ld c,3*2
-	ldir
-update_palettes_obp_only:
-update_palettes_obp0_ptr = $+1
-	ld hl,overlapped_obp0_palette_colors
-	ld c,e
-	ldir
-update_palettes_obp1_index = $+1
-	ld hl,overlapped_obp1_palette_colors
 	ld c,3*2
 	ldir
 	ret
@@ -988,50 +916,25 @@ _
 	ld (do_scale_fill_smc),hl
 	ret
 	
-convert_palette_obp_do_setup:
-	push af
-	 push hl
-	  call convert_palette_setup_obp
-	 pop hl
-	pop af
-	jr convert_palette_obp_setup_continue
-	
-convert_palette_obp_do_smc:
-	; If the entire frame has been rendered before the first OBP change, do nothing
-	ld a,(myLY)
-	cp 144
-	ret z
-	ld ix,convert_palette
-	ld (convert_palette_obp_smc_enable),ix
-	ld hl,((convert_palette_obp_do_setup - (convert_palette_obp_smc_setup + 2)) & $FF << 8) | $DD0018
-	ld (ix-convert_palette+convert_palette_obp_smc_setup),hl
-	ld a,$38 ;JR C
-	ld (ix-convert_palette+convert_palette_obp_smc_1),a
-	ld (convert_palette_obp_smc_2),a
-	ld hl,((convert_palette_obp_finish - (convert_palette_obp_smc_finish + 2)) << 8) | $18
-	ld (convert_palette_obp_smc_finish),hl
-	
 convert_palette:
 	; Do setup for the final stretch of scanlines,
 	; adding it to the queue but always run-length encoded
 	ld hl,(BGP_write_queue_next)
+	ld c,l
 	ld a,(BGP_max_frequency)
 	ld b,a
-	ld a,(mypaletteLY)
-	ld c,a
 	ld a,(hram_base+BGP)
 	ld d,a
-	; Get the number of lines in the final stretch
-	ld a,(myLY)
-	ld e,a
-	sub c
-	ld c,l
-	; If zero, don't add anything to the queue
-	jr z,++_
 	; If all 144 lines have the same palette take an early-out
 	; The queue is guaranteed empty at this point, so just set the palette
-	cp 144
-	jr nc,_
+	ld a,(mypaletteLY)
+	or a
+	jr z,_
+	; Get the number of lines in the final stretch
+	cpl
+	add a,145
+	; If zero, don't add anything to the queue
+	jr z,++_
 	; Add the line count (minus 1) and palette value to the queue
 	dec a
 	ld (hl),a
@@ -1048,11 +951,8 @@ convert_palette:
 	dec h
 	; If the frequency is greater than the previous max, set the new max
 	cp b
+	jr c,++_
 _
-	; Set the new palette LY value
-	ld a,e
-	ld (mypaletteLY),a
-	jr c,_
 	ld a,d
 	ld (BGP_max_value),a
 _
@@ -1061,9 +961,7 @@ _
 	ld a,c
 	cp l
 	ret z
-convert_palette_obp_smc_setup = $
-	ld b,0 ; Replaced with JR convert_palette_obp_do_setup
-convert_palette_obp_setup_continue:
+	ld b,0
 scanlineLUT_palette_ptr = $+2
 	ld ix,0
 convert_palette_loop:
@@ -1082,8 +980,7 @@ convert_palette_loop:
 	 ; If it's the native palette value, skip conversion
 	 ld a,(BGP_max_value)
 	 xor e
-convert_palette_obp_smc_1 = $
-	 jr z,_ ; Replaced with JR C when sprite conversion is active
+	 jr z,_
 	 push hl
 	  ; Clear the frequency for this value
 	  inc h
@@ -1121,8 +1018,7 @@ convert_multiple_palettes_row_loop:
 BGP_max_value = $+1
 	 ld a,0
 	 xor e
-convert_palette_obp_smc_2 = $
-	 jr z,_ ; Replaced with JR C when sprite conversion is active
+	 jr z,_
 	 push hl
 	  ; Clear the frequency for this value
 	  inc h
@@ -1145,7 +1041,6 @@ convert_palette_loop_continue:
 	pop af
 	cp l
 	jr nz,convert_palette_loop
-	ld (scanlineLUT_palette_ptr),ix
 	; Clear the queue
 	ld l,BGP_write_queue & $FF
 	ld (hl),$FF
@@ -1153,27 +1048,6 @@ convert_palette_loop_continue:
 	ld a,l
 	ld (BGP_write_queue_literal_start),a
 	jp sync_frame_flip
-	
-convert_palette_setup_obp:
-	ld hl,convert_palette_LUT + 2
-	ld c,BG_COLOR_0 - 8
-	ld a,(hram_base+OBP0)
-	call _
-	ld c,BG_COLOR_0 - 4
-	ld a,(hram_base+OBP1)
-_
-	ld b,3
-_
-	rrca
-	rrca
-	ld d,a
-	and 3
-	add a,c
-	inc l
-	ld (hl),a
-	ld a,d
-	djnz -_
-	ret
 	
 convert_palette_setup:
 	ld hl,convert_palette_LUT + 3
@@ -1195,16 +1069,16 @@ _
 setup_menu_palette:
 	; (MAG)ENTA | BLUE
 	ld hl,($EA56 << 16) | $1882
-	ld (mpLcdPalette),hl
+	ld (mpLcdPalette + (BLUE*2)),hl
 	; OLIVE | MAG(ENTA)
 	ld hl,($CA8B << 8) | ($EA56 >> 8)
-	ld (mpLcdPalette+3),hl
+	ld (mpLcdPalette + (MAGENTA*2+1)),hl
 	; (WH)ITE | BLACK
 	ld hl,($FFFF << 16) | $0000
-	ld (mpLcdPalette+26),hl
+	ld (mpLcdPalette + (BLACK*2)),hl
 	; GRAY | WH(ITE)
 	ld hl,($4210 << 8) | ($FFFF >> 8)
-	ld (mpLcdPalette+29),hl
+	ld (mpLcdPalette + (WHITE*2+1)),hl
 	AJUMP(SetMenuWindow)
 	
 ; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.

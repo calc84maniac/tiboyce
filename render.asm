@@ -108,9 +108,11 @@ draw_sprite_clip_done:
 	 ld iyh,b
 	 
 	 bit 4,d
-	 ld c,$03
+overlapped_obp0_palette_index = $+1
+	 ld c,OBP0_COLORS_START
 	 jr z,_
-	 sla c
+overlapped_obp1_palette_index = $+1
+	 ld c,OBP1_COLORS_START
 _
 	
 	 bit 6,d

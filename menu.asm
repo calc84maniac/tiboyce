@@ -140,8 +140,6 @@ _
 	; Load palettes only after setting adjust color SMC
 	ld a,(hl)
 	ACALL(LoadPalettes)
-	ld de,mpLcdPalette + (3*2)
-	call update_palettes_obp_only
 	; BC=0
 	
 	; Check for conflicting keys between configs
@@ -264,13 +262,11 @@ LoadPalettes:
 	ld de,overlapped_bg_palette_colors
 	ld c,(ix+2)
 	ACALL(LoadSinglePalette)
-	push de
-	 ex de,hl
-	 ld l,bg_palette_colors & $FF
-	 ld de,mpLcdPalette + (BG_COLOR_0 * 2)
-	 ld c,4*2
-	 ldir
-	pop de
+	ex de,hl
+	ld l,bg_palette_colors & $FF
+	ld de,mpLcdPalette + (BG_COLOR_0 * 2)
+	ld c,4*2
+	ldir
 	
 	; Load OBP0
 	ld c,(ix)
@@ -279,11 +275,6 @@ LoadPalettes:
 	ld c,(ix+2)
 _
 	ACALL(LoadSinglePalette)
-	
-	; Copy OBP0 colors 2 and 3 before OBP1 (which starts with color 0)
-	ld hl,obp0_palette_colors + (2*2)
-	ld c,2*2
-	ldir
 	
 	; Load OBP1
 	ld c,(ix+1)
@@ -312,30 +303,29 @@ load_single_palette_input_loop:
 	   pop de
 	   ld c,l
 	   ld b,h
-	   ld a,$3F
 load_single_palette_output_loop:
 	   sbc hl,hl
 	   ld l,(ix)
+	   add hl,hl
 	   add hl,de
 	   ld (hl),c
 	   inc hl
 	   ld (hl),b
-	   lea ix,ix+4
-	   cp ixl
+	   ld a,ixl
+	   add a,16
+	   ld ixl,a
 	   jr nc,load_single_palette_output_loop
 	  pop hl
 	  inc hl
 	  inc hl
-	  lea ix,ix-$40+1
-	  ld a,ixl
-	  and 4
-	  jr z,load_single_palette_input_loop
-	  ld hl,64 * 2
-	  push hl
-	  pop bc
+	  ld bc,4
+	  adc a,c
+	  ld ixl,a
+	  and 3
+	  jr nz,load_single_palette_input_loop
+	  ld hl,64*2
 	  add hl,de
 	  ex de,hl
-	  ld c,a
 	  ldir
 	 pop ix
 	pop af

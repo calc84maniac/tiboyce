@@ -143,16 +143,26 @@ STATE_CPU_MODE = 23
 STATE_END = 24
 
 ; Constant color palette entries
-BLUE = 0
-MAGENTA = 1
-OLIVE = 2
+BLUE = 3
+MAGENTA = 4
+OLIVE = 5
+BLACK = 6
+WHITE = 7
+GRAY = 8
+; Palette entries representing the raw BGP colors. Must precede OBP0 colors.
 BG_COLOR_0 = 9
 BG_COLOR_1 = 10
 BG_COLOR_2 = 11
 BG_COLOR_3 = 12
-BLACK = 13
-WHITE = 14
-GRAY = 15
+; Palette entries representing every possible combination of three OBJ colors.
+; The data is overlapped such that a unique sequence of three colors begins
+; at each entry. Note that this means each table is (64 + 2) entries large.
+; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
+; at the offset corresponding to palette %100100, which is $0D.
+OBP0_COLORS_START = 13
+OBP0_ORIG_COLORS = OBP0_COLORS_START+$0D
+OBP1_COLORS_START = OBP0_COLORS_START + (64 + 2)
+OBP1_ORIG_COLORS = OBP1_COLORS_START+$0D
 
 ; System calls used
 _sprintf = $0000BC
@@ -446,30 +456,23 @@ BGP_write_queue = (((palette_backup + 32) + 192) | 255) - 192
 ; Must be 256-byte aligned and directly follow the queue.
 BGP_frequencies = BGP_write_queue + 192 + 1
 
-; Specifies offsets into a buffer of color data corresponding to the
+; Specifies indices into an array of color data corresponding to the
 ; input 2bpp palette data. Note that the input is a BGP, OBP0, or OBJ1
-; value shifted right by 2, and identifies three 16-bit colors.
+; value, and identifies three colors corresponding to the upper 6 bits.
 ; Must be 256-byte aligned (and currently, follow BGP_frequencies).
 overlapped_palette_index_lut = BGP_frequencies + 256
 
-; Tables representing every possible combination of three 16-bit colors.
+; Table representing every possible combination of three BGP colors.
 ; The data is overlapped such that a unique sequence of three colors begins
-; at each word. Note that this means each table is (64 + 2) * 2 bytes large.
+; at each word. Note that this means the table is (64 + 2) * 2 bytes large.
 ; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
-; at the offset corresponding to palette %100100, which is $1A.
-; The tables must directly follow each other in the order BGP, OBP0, OBP1,
-; with the exception of a couple of slots inserted between OBP0 and OBP1.
-; Also, BGP and OBP1 tables must not cross a 256-byte boundary.
-overlapped_bg_palette_colors = overlapped_palette_index_lut + $40
-bg_palette_colors = overlapped_bg_palette_colors + $1A
-overlapped_obp0_palette_colors = overlapped_bg_palette_colors + ((64 + 2) * 2)
-obp0_palette_colors = overlapped_obp0_palette_colors + $1A
-obp01_palette_colors = overlapped_obp0_palette_colors + ((64 + 2) * 2)
-overlapped_obp1_palette_colors = obp01_palette_colors + (2 * 2)
-obp1_palette_colors = overlapped_obp1_palette_colors + $1A
+; at the index corresponding to palette %100100, which is $0D.
+; This table must be 256-byte aligned.
+overlapped_bg_palette_colors = overlapped_palette_index_lut + 256
+bg_palette_colors = overlapped_bg_palette_colors + ($0D*2)
 
 ; A list of scanline start addresses. 144*2 pointers in size.
-scanlineLUT_1 = overlapped_obp1_palette_colors + ((64 + 2) * 2)
+scanlineLUT_1 = overlapped_bg_palette_colors + ((64 + 2) * 2)
 scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
 ; A list of VAT entries for found ROM files. 256 pointers in size.

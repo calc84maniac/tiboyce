@@ -465,6 +465,7 @@ _
 	APRINTF(StartText)
 #endif
 	
+	ld iy,state_start+state_size
 	ld (saveSP),sp
 	
 	ld sp,myADLstack
@@ -515,9 +516,26 @@ _
 	 inc l
 	 jr nz,--_
 	pop hl
+	; Duplicate palette overlapped indices to fill the 256-byte table
 	ld de,overlapped_palette_index_lut
-	ld c,$40
-	ldir
+_
+	ld a,(hl) \ inc hl
+	ld (de),a \ inc e
+	ld (de),a \ inc e
+	ld (de),a \ inc e
+	ld (de),a \ inc e
+	jr nz,-_
+	; Get initial OBP palette indices
+	ld hl,(iy-ioregs+OBP0)
+	ld e,l
+	ld a,(de)
+	add a,OBP0_COLORS_START
+	ld (overlapped_obp0_palette_index),a
+	ld e,h
+	ld a,(de)
+	add a,OBP1_COLORS_START
+	ld (overlapped_obp1_palette_index),a
+	
 	; The trailing pixel data is always color 0
 	scf
 	sbc hl,hl
@@ -620,8 +638,6 @@ _
 	inc de
 	ld c,40
 	ldir
-	
-	ld iy,state_start+state_size
 	
 	ld.sis sp,myz80stack
 	ld hl,ophandlerRET  ; Return handler when no cached calls are available
@@ -2837,9 +2853,9 @@ _
 	xor a
 bad_skin_file:
 	; Restore only the static palette entries, dynamic ones are generated
-	ld hl,palette_backup + (BG_COLOR_0 * 2)
-	ld de,mpLcdPalette + (BG_COLOR_0 * 2)
-	ld bc,32 - (BG_COLOR_0 * 2)
+	ld hl,palette_backup + (BLUE*2)
+	ld de,mpLcdPalette + (BLUE*2)
+	ld bc,32 - (BLUE*2)
 	ldir
 	ret z
 	
@@ -3253,14 +3269,14 @@ overlapped_pixel_index_lut_init:
 	.db $28,$56,$C7,$6D,$2C,$5A,$CF,$F6,$38,$62,$DD,$74,$FD,$3C,$7D,$E5
 	.db $68,$69,$6A,$71,$6B,$79,$72,$7B,$67,$6C,$78,$7A,$66,$73,$FC,$7C
 	
-	; Specifies offsets into a buffer of palette data corresponding to the
-	; input 2bpp palette indices. Note that this is only used for colors 1-3,
-	; because BG color 0 is special-cased and this can be used for BG+sprites.
+	; Specifies palette indices corresponding to the input 2bpp palettes.
+	; Note that this is only used for colors 1-3, because BG color 0 is
+	; special-cased and this can be used for BG+sprites.
 overlapped_palette_index_lut_init:
-	.db $00,$06,$0C,$7E,$04,$16,$24,$36,$0A,$4A,$2A,$3C,$10,$30,$1E,$7C
-	.db $02,$18,$2C,$12,$14,$46,$56,$44,$22,$54,$66,$60,$34,$5A,$42,$50
-	.db $08,$26,$3E,$20,$1A,$48,$62,$52,$28,$64,$70,$6E,$3A,$5E,$74,$6C
-	.db $0E,$38,$4C,$32,$2E,$58,$68,$5C,$40,$1C,$72,$76,$4E,$6A,$78,$7A
+	.db $00,$03,$06,$3F,$02,$0B,$12,$1B,$05,$25,$15,$1E,$08,$18,$0F,$3E
+	.db $01,$0C,$16,$09,$0A,$23,$2B,$22,$11,$2A,$33,$30,$1A,$2D,$21,$28
+	.db $04,$13,$1F,$10,$0D,$24,$31,$29,$14,$32,$38,$37,$1D,$2F,$3A,$36
+	.db $07,$1C,$26,$19,$17,$2C,$34,$2E,$20,$0E,$39,$3B,$27,$35,$3C,$3D
 	
 DefaultPaletteChecksumTable:
 	.db $00,$88,$16,$36,$D1,$DB,$F2,$3C,$8C,$92,$3D,$5C,$58,$C9,$3E,$70

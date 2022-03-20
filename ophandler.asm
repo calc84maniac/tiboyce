@@ -394,19 +394,29 @@ scroll_write_SCY:
 	 jr scroll_write_done
 	
 scroll_write_OBP:
-	 ; Only do things if at least one scanline has been rendered
-	 ld a,(myLY)
-	 or a
-	 jr z,scroll_write_done_swap
 	 push bc
 	  push hl
-	   call sprite_catchup
-	   ; Set up OBP palette conversion if this is the first time,
-	   ; or do palette conversions if not
-convert_palette_obp_smc_enable = $+1
-	   call convert_palette_obp_do_smc
+	   ; Catchup sprites if at least one scanline has been rendered
+	   ld a,(myLY)
+	   or a
+	   call nz,sprite_catchup
+	   ; Get the palette index for this written value
+	   ld hl,overlapped_palette_index_lut + OBP0_COLORS_START
+	   ld a,l
+	   ex af,af'
+	   ld l,a
+	   ex af,af'
+	   add a,(hl)
 	  pop hl
 	 pop bc
+	 ; Check whether this is OBP0 or OBP1
+	 bit 0,l
+	 jr z,_
+	 add a,OBP1_COLORS_START - OBP0_COLORS_START
+	 ld (overlapped_obp1_palette_index),a
+	 jr scroll_write_done_swap
+_
+	 ld (overlapped_obp0_palette_index),a
 	 jr scroll_write_done_swap
 	 
 scroll_write_WX:
