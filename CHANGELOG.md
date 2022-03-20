@@ -1,7 +1,17 @@
 # TI-Boy CE Changelog
 All notable changes to this project will be documented in this file.
 
-## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.2.0b...HEAD)
+## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.2.1...HEAD)
+
+## [Alpha v0.2.1 — 2022-03-20](https://github.com/calc84maniac/tiboyce/releases/tag/v0.2.1)
+
+### Changed
+-   Now using 8 bits per pixel in all display modes, eliminating code for special-casing 4-bit pixels.
+-   Emulator overlays are horizontally stretched in fullscreen mode, as required by the tearing fix.
+
+### Fixed
+-   Fixed diagonal screen tearing in fullscreen display modes by using VSYNC interface and interlaced scan.
+-   Greatly improved performance of frame rendering when sprite palettes are changed mid-frame.
 
 ## [Alpha v0.2.0b — 2021-12-17](https://github.com/calc84maniac/tiboyce/releases/tag/v0.2.0b)
 

@@ -92,7 +92,7 @@ When editing the per-game configuration, options used from the global configurat
 ### Graphics Options
 *   Scaling mode: Choose the display mode.
     *   No scaling: Displays pixel-accurate and has slightly better performance, but appears small.
-    *   Fullscreen: Fills the screen, but has a squished aspect ratio and experiences diagonal screen tearing.
+    *   Fullscreen: Fills the screen, but has a squished aspect ratio and uses interlaced scan.
 *   Scaling type: Choose the scaling method to use for fullscreen mode.
     *   Static: The same horizontal lines on the screen are always doubled. This appears consistent but may cause shimmering effects when scrolling vertically.
     *   Scrolling: Attempts to double the same lines relative to the game's scrolling background. This reduces scrolling artifacts but may cause sudden shifts.
