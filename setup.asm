@@ -3058,7 +3058,11 @@ customHardwareSettings:
 	;mpRtcCtrl
 	.db $83
 	;mpSpiDivider
+#ifdef CEMU
+	.dl $020000
+#else
 	.dl $070000
+#endif
 	
 lcdSettings4Bit:
 	; LcdTiming0
@@ -3076,7 +3080,11 @@ lcdSettingsMenu:
 	; LcdTiming0
 	.db $FC,$00,$00,$00 ; PPL=1024, HSW=1, HBP=1, HFP=1 (total=1027)
 	; LcdTiming1
+#ifdef CEMU
+	.db $4A,$00,$03,$F2 ; LPP=75, VSW=1, VBP=242, VFP=3 (total=321)
+#else
 	.db $4A,$00,$03,$C4 ; LPP=75, VSW=1, VBP=196, VFP=3 (total=275)
+#endif
 	; LcdTiming2
 	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
 	; LcdCtrl
@@ -3085,24 +3093,42 @@ lcdSettingsMenu:
 	.dw spiSetupVsyncInterface+1
 	
 lcdSettings8BitNoScale:
+#ifdef CEMU
+	; LcdTiming0
+	.db $44,$03,$04,$0D ; PPL=288, HSW=4, HBP=14, HFP=5 (total=311)
+	; LcdTiming1
+	.db $4F,$00,$F2,$00 ; LPP=80, VSW=1, VBP=0, VFP=242 (total=323)
+	; LcdTiming2
+	.db $02,$78,$1F,$01 ; PCD=4, CPL=288
+#else
 	; LcdTiming0
 	.db $B0,$03,$6D,$1F ; PPL=720, HSW=4, HBP=32, HFP=110 (total=866)
 	; LcdTiming1
 	.db $1F,$00,$C7,$00 ; LPP=32, VSW=1, VBP=0, VFP=199 (total=232)
 	; LcdTiming2
 	.db $00,$78,$CF,$02 ; PCD=2, CPL=720
+#endif
 	; LcdCtrl
 	.dl $013C27
 	; SPI settings
 	.dw spiSetupNoScale+1
 	
 lcdSettings8BitStretched:
+#ifdef CEMU
+	; LcdTiming0
+	.db $60,$01,$0E,$0F ; PPL=400, HSW=2, HBP=16, HFP=15 (total=433)
+	; LcdTiming1
+	.db $5F,$00,$FF,$70 ; LPP=96, VSW=1, VBP=112, VFP=255 (total=464)
+	; LcdTiming2
+	.db $00,$78,$8F,$01 ; PCD=2, CPL=400
+#else
 	; LcdTiming0
 	.db $C4,$03,$1D,$1F ; PPL=800, HSW=4, HBP=32, HFP=30 (total=866)
 	; LcdTiming1
 	.db $2F,$00,$B7,$00 ; LPP=48, VSW=1, VBP=0, VFP=183 (total=232)
 	; LcdTiming2
 	.db $00,$78,$1F,$03 ; PCD=2, CPL=800
+#endif
 	; LcdCtrl
 	.dl $013C27
 	; SPI settings

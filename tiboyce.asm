@@ -999,7 +999,52 @@ MulHLIXBy24:
 	add ix,ix \ adc hl,hl
 	ret
 	
+	; Input: DE=byte stream to transfer, B=byte count
+	; Output: DE follows byte stream, B=0
+	; Destroys: AF, HL
 spiFastTransfer:
+#ifdef CEMU
+	push bc
+	 ; Start SPI transfer
+	 ld c,1
+	 ld hl,mpSpiTransfer
+	 ld (hl),c
+	 ex de,hl
+	 inc b
+_
+	 dec b
+	 jr z,+++_
+	 ; Always read 2 bytes when byte-aligned
+	 ld e,(hl) \ inc hl
+	 dec b
+	 jr z,$
+_
+	 ld a,e
+	 ; Read next byte and shift into position
+	 ld e,(hl) \ inc hl
+	 ld d,c
+	 mlt de
+	 ; Combine with last byte
+	 or d
+	 ; Shift up low byte and send top 9 bits
+	 sla e \ rla
+	 ld d,3
+_
+	 rla \ rla \ rla
+	 ld (mpSpiFifo),a
+	 dec d
+	 jr nz,-_
+	 ; Update shift amount, and read two bytes if byte-aligned
+	 rlc c
+	 jr c,---_
+	 ; Check for end of byte stream
+	 djnz --_
+_
+	 ex de,hl
+	pop hl
+	ld c,l
+	ld hl,mpSpiStatus
+#else
 	; Start SPI transfer
 	ld hl,mpSpiTransfer
 	ld (hl),1
@@ -1012,6 +1057,7 @@ _
 	djnz -_
 	; Wait for transfer to complete
 	ld l,mpSpiStatus & $FF
+#endif
 _
 	bit 2,(hl)
 	jr nz,-_
