@@ -463,8 +463,9 @@ _
 	
 start_emulation:
 	call set_gb_stack
-	ex af,af'
+	pop hl
 	exx
+	ex af,af'
 	jr event_not_expired_start_emulation
 	
 do_event:
@@ -504,6 +505,7 @@ do_event_pushed:
 #ifdef SCHEDULER_LOG
 	 call.il scheduler_log
 #endif
+event_expired_interrupt_loop:
 	 ; Check scheduled events
 	 ld (event_save_sp),sp
 event_expired_halt_loop:
@@ -575,7 +577,7 @@ event_counter_checkers_done:
 	 sbc hl,de
 	 ld i,hl
 event_save_sp = $+1
-	 ; Use this initial value in case an interrupt happens when loading a save state
+	 ; Use this initial value in case the CPU is halted when loading a save state
 	 ld sp,myz80stack-4-4
 event_not_expired_start_emulation:
 	pop de
@@ -599,7 +601,7 @@ event_no_reschedule:
 cpu_exit_halt_no_interrupt:
 	xor a
 	ld (intstate_smc_2),a
-	ld hl,$7DDD ; LD A,IXL
+	ld hl,$19DD ; ADD IX,DE
 	ld (cpu_halted_smc),hl
 	jr cpu_halted_smc
 	
@@ -622,9 +624,6 @@ event_reschedule:
 	
 trigger_int_callstack_overflow:
 	call callstack_overflow_helper
-	; Just in case the dispatch is retried, save the adjusted event SP
-	ld hl,myz80stack - 4 - 4
-	ld (event_save_sp),hl
 	jr trigger_int_callstack_overflow_continue
 	
 trigger_interrupt_retry_dispatch:
@@ -652,7 +651,7 @@ do_push_for_interrupt_set_shadow_stack:
 	jr do_push_for_interrupt_continue
 	
 cpu_exit_halt_trigger_interrupt:
-	ld bc,$7DDD ; LD A,IXL
+	ld bc,$19DD ; ADD IX,DE
 	ld (cpu_halted_smc),bc
 trigger_interrupt:
 	ld l,a
@@ -782,8 +781,10 @@ dispatch_int_handle_events:
 	 exx
 	 ld a,l
 	 exx
+	 dec a
 	 rrca
 	 rrca
+	 dec c
 	 xor c
 	 ld (active_ints),a
 	 ; Set the restoring interrupt trigger
@@ -791,7 +792,7 @@ dispatch_int_handle_events:
 	 ld (intstate_smc_2),a
 	 ; The correct SP restore value is already saved, so enter the loop directly
 	 push de
-	  jp event_expired_halt_loop
+	  jp event_expired_interrupt_loop
 	
 	; This is called when a CALL, RST, or interrupt occurs
 	; which exceeds the defined callstack limit.
@@ -1303,8 +1304,9 @@ decode_jump:
 	or a
 	exx
 	pop hl
-	push af
-	 push bc
+	ld e,a
+	push de
+	 push ix
 	  inc hl
 	  inc hl
 	  inc hl
@@ -1331,8 +1333,9 @@ decode_block_bridge_finish:
 	  dec hl
 	  ld (hl),$08	;EX AF,AF'
 decode_jump_waitloop_return:
-	 pop bc
-	pop af
+	 pop ix
+	pop de
+	ld a,e
 	push hl
 	exx
 	ex af,af'
@@ -1672,9 +1675,6 @@ _
 	dec hl
 	jp (hl)
 	
-do_swap_hl_slow:
-	FIXME
-	
 ophandler27:
 	; Save input A value
 	ld l,a
@@ -1772,6 +1772,7 @@ handle_waitloop_common:
 	; Get the current number of cycles until the next register update
 	ld hl,i
 	add hl,bc
+	add hl,de
 	; Offset to the read time to allow extra skips as needed
 	ld a,l
 	add a,(ix)
@@ -1795,7 +1796,7 @@ _
 _
 	add a,c
 	jr nc,-_
-	sub c
+	sub l
 	; Add in the cycles, which may overflow if the update time and
 	; cycle expiration time are in the same block
 	add a,e
@@ -2239,6 +2240,7 @@ ophandlerF3:
 	ret
 	
 ophandlerRETI:
+	ex af,af'
 	exx
 	ld e,a
 	; Enable interrupts
@@ -2264,13 +2266,13 @@ ophandlerRETI:
 	ld i,hl
 	ld d,-1
 	ld a,-4
-	exx
+	.db $21 ;LD HL,
 	
 	; (SPS) = cached RET cycles, cached stack offset
 	; (SPS+2) = cached JIT address
 	; (SPL) = cached bank delta, cached GB address
-	; AF' is swapped
 ophandlerRET:
+	ex af,af'
 	exx
 ophandlerRET_swapped:
 	or a
@@ -2579,15 +2581,11 @@ wait_for_interrupt_stub:
 	
 flush_handler:
 	exx
+	ld b,d
 flush_address = $+1
 	ld de,0
 	ex af,af'
 	jp.lil flush_normal
-	
-flush_mem_handler:
-	exx
-	pop hl
-	jp.lil flush_mem
 	
 coherency_handler:
 	ex (sp),ix

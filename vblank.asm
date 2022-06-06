@@ -33,6 +33,7 @@ frame_emulated_count = $+1
 	    
 	    ; Finish rendering the frame
 	    ld a,144
+	    inc.s bc ;BCU=0
 	    call render_scanlines
 	    
 	    ; Draw sprites and do palette conversion, if the LCD is enabled
@@ -1223,7 +1224,7 @@ render_catchup:
 	; Get value of LY, plus 1 if in hblank
 	ld l,LY & $FF
 	add a,(hl)
-	; Input: A=LY, should always be <=144
+	; Input: A=LY, should always be <=144; BCU=0
 render_scanlines:
 #ifdef DEBUG
 	cp 145

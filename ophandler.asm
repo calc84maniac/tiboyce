@@ -55,6 +55,8 @@ set_shadow_stack_no_flush:
 	ld de,z80codebase+shadow_stack_start
 	ld b,512>>8
 	ldir
+	; Get the original stack pointer back
+	lea bc,iy
 	jp.sis set_shadow_stack_finish
 
 	; Propagate the bank mismatch value to the next callstack entry
@@ -85,89 +87,6 @@ _
 	pop.s bc
 	pop.s hl
 	jp.s (hl)
-	
-	
-; Flushes the JIT code and recompiles anew.
-; Does not use a traditional call/return, must be jumped to directly.
-;
-; When the memory routine generator overflows, it returns a pointer to
-; flush_mem_handler, which provides this routine with the JIT address.
-; The JIT address is reversed into the GB address before flushing normally.
-; Recompilation starts at the offending memory instruction.
-;
-; Inputs:  HL = address directly following recompiled memory instruction
-;          Z' if instruction is LD (HL),n
-;          BCDEHL' have been swapped
-; Outputs: JIT is flushed and execution begins at the new recompiled block
-;          BCDEHL' have been unswapped
-flush_mem:
-	ex af,af'
-	push bc
-	 push af
-	  ld b,h
-	  ld c,l
-	  call lookup_gb_code_address
-	  ; Most memory routines are for 1-byte, 2-cycle instructions
-	  dec de
-	  cpl
-	  ld b,a
-	  dec b
-	 pop af
-	 jr nz,_
-	 ; Special handling for 2-byte, 3-cycle instructions
-	 dec de
-	 dec b
-_
-	 add a,b
-	pop bc
-	jr c,flush_normal
-	dec c
-
-; Flushes the JIT code and recompiles anew.
-; Does not use a traditional call/return, must be jumped to directly.
-;
-; When the recompiler overflows, it returns a pointer to flush_handler,
-; which provides this routine with the GB address.
-;
-; Inputs:  DE = GB address to recompile
-;          BCDEHL' have been swapped
-; Outputs: JIT is flushed and execution begins at the new recompiled block
-;          BCDEHL' have been unswapped
-flush_normal:
-	push af
-	 push bc
-	  ld hl,$C3 | (do_event_pushed << 8)	;JP do_event_pushed
-	  ld (flush_event_smc_1),hl
-	  ld (flush_event_smc_2),hl
-	  call flush_code
-	  push de
-	   call lookup_code
-	  pop de
-	 pop bc
-	 ld l,a
-	pop af
-	; Flush entire call stack, including interrupt returns
-	ld sp,myADLstack
-	ld.sis sp,myz80stack-4
-	add a,l
-	jr c,_
-	dec c
-_
-	inc c
-	jr z,_
-	exx
-	ex af,af'
-	jp.s (ix)
-_
-	push.s ix
-	ld c,l
-	push.s bc
-	ld b,a
-#ifdef VALIDATE_SCHEDULE
-	call schedule_event_helper_a
-#else
-	jp schedule_event_helper_a
-#endif
 	
 write_vram_check_sprite_catchup:
 	ld h,b
@@ -943,7 +862,7 @@ lcd_enable_disable_continue:
 	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
 	
 	; Enable cache updates for STAT and LY registers
-	ld a,$5F ;LD E,A
+	ld a,$ED ;LD HL,I
 	ld (z80codebase+updateSTAT_disable_smc),a
 	ld (z80codebase+updateLY_disable_smc),a
 	

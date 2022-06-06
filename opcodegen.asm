@@ -62,7 +62,7 @@ opgenF8:
 
 opgen31:
 	call _opgen31
-	djnz opgen2byte
+	djnz opgen_next_fast
 	
 opgenPUSH:
 	dec iyl
@@ -172,7 +172,7 @@ opgen_next_no_bound_check:
 	
 opgen09:
 	ex de,hl
-	ld (hl),$DD ;LEA HL,IX
+	ld (hl),$ED ;LEA HL,IX
 	inc hl
 	ld (hl),$22
 	inc hl

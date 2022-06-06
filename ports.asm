@@ -104,7 +104,7 @@ mem_write_port_lut:
 	.db write_port_ignore - mem_write_port_routines
 ;58
 ;60
-	.fill $FF68 - $FF58, write_port_ignore - mem_write_port_routines
+	.safe_fill $FF68 - $FF58, write_port_ignore - mem_write_port_routines
 ;68
 	.db write_palette_index - mem_write_port_routines
 	.db write_palette_data - mem_write_port_routines
@@ -122,9 +122,9 @@ mem_write_port_lut:
 	.db write_port_direct - mem_write_port_routines
 	.db writeFF75 - mem_write_port_routines
 	
-	.fill $FF80 - ($FF75+1), write_port_ignore - mem_write_port_routines
+	.safe_fill $FF80 - ($FF75+1), write_port_ignore - mem_write_port_routines
 ;80
-	.fill IE - $FF80, write_hram_direct - mem_write_port_routines
+	.safe_fill IE - $FF80, write_hram_direct - mem_write_port_routines
 ;FF
 	.db writeIE - mem_write_port_routines
 	
@@ -310,8 +310,8 @@ writeSVBK:
 	dec h \ dec h
 	jr writeSVBK_finish
 
-writeP1:
-	jr _writeP1
+;writeP1:
+;	jr _writeP1
 	
 writeRP:
 	jr _writeRP
@@ -354,7 +354,7 @@ writeSVBK_finish:
 	
 writeP1handler:
 	ld e,a
-_writeP1:
+writeP1:
 	exx
 	ld a,l
 	exx

@@ -181,16 +181,16 @@ gbc_bg_palette_data:
 	; by adding 2 to the index and accessing from the get_ptr routine range.
 	.block (mem_read_any_routines+256)-$
 mem_read_lut:
-	.fill $40, rom_unbanked_get_ptr & $FF
-	.fill $40, rom_banked_get_ptr & $FF
-	.fill $20, vram_banked_get_read_ptr & $FF
-	.fill $20, cram_banked_get_ptr & $FF
-	.fill $10, wram_unbanked_get_ptr & $FF
-	.fill $10, wram_banked_get_ptr & $FF
-	.fill $10, wram_unbanked_mirror_get_ptr & $FF
-	.fill $0E, wram_banked_mirror_get_ptr & $FF
-	.fill $01, oam_get_ptr & $FF
-	.fill $01, hmem_get_ptr & $FF
+	.fill $40, rom_unbanked_read_any & $FF
+	.fill $40, rom_banked_read_any & $FF
+	.fill $20, vram_banked_read_any & $FF
+	.fill $20, cram_banked_read_any & $FF
+	.fill $10, wram_unbanked_read_any & $FF
+	.fill $10, wram_banked_read_any & $FF
+	.fill $10, wram_unbanked_mirror_read_any & $FF
+	.fill $0E, wram_banked_mirror_read_any & $FF
+	.fill $01, oam_read_any & $FF
+	.fill $01, hmem_read_any & $FF
 	
 mem_get_ptr_routines:
 	; This set of routines is for direct pointer retrieval.
@@ -811,19 +811,130 @@ _
 	jp do_swap_hl_hram_finish
 	
 patch_hl_port_access:
-	FIXME
-	
-patch_bc_de_port_read:
-	FIXME
-	
-patch_bc_de_port_write:
-	FIXME
+	exx
+	ld e,a
+	ex (sp),ix
+	ld a,(ix-1)
+	cp RST_GET_HL_READ_PTR
+	; Check for (get_hl_readwrite_ptr_swapped >> 8) == 0
+	jr c,patch_hl_port_readwrite_swap
+	push de
+	 ld hl,(ix)
+	 ; Check for read
+	 jp.lil z,patch_hl_port_read_helper
+	 dec l ; Reset bit 0 to request a GB address
+	 ld de,op_write_hl_port
+	 jp.lil patch_hl_write_helper
 	
 patch_hl_vram_access:
-	FIXME
+	exx
+	ld e,a
+	ex (sp),ix
+	ld a,(ix-1)
+	; Check for (get_hl_readwrite_ptr_swapped >> 8) == 0
+	or a
+	jr z,patch_hl_vram_readwrite_swap
+	push de
+	 ld hl,(ix)
+	 ld de,op_write_hl_vram
+	 jp.lil patch_hl_write_helper
+	
+patch_hl_port_readwrite_swap:
+	ld hl,op_readwrite_hl_port_swap
+	ex af,af'
+	or a ; Request GB address
+	jr _
+	
+patch_hl_vram_readwrite_swap:
+	ld hl,op_readwrite_hl_vram_swap
+	ex af,af'
+	scf ; Request no GB address
+_
+	pop ix
+	ex (sp),ix
+	ld e,a
+	push de
+	 jp.lil patch_hl_readwrite_swap_helper
+	
+patch_bc_de_port_read:
+	; Get the address of the routine being called
+	ex (sp),ix
+	ld hl,(ix-2)
+	; Check EXX vs. EX AF,AF'
+	bit 7,(hl)
+	; Swap or unswap shadow registers
+	exx
+	ld hl,op_write_de_port
+	jr z,_
+	; For a BC write, shadow registers are now unswapped, so reswap
+	exx
+	ld hl,op_write_bc_port
+	; Remove the EXX following the call
+	ld (ix),0 ;NOP
+	; Indicate a following byte
+	scf
+_
+	ld e,a
+	push de
+	 jp.lil patch_bc_de_port_read_helper
+	
+patch_bc_de_port_write:
+	; Get the address of the routine being called
+	ex (sp),ix
+	ld hl,(ix-2)
+	; Check EXX vs. EX AF,AF'
+	bit 7,(hl)
+	; Swap or unswap shadow registers
+	exx
+	ld hl,op_write_de_port
+	jr z,_
+	; For a BC write, shadow registers are now unswapped, so reswap
+	exx
+	ld hl,op_write_bc_port
+	; Remove the EXX following the call
+	ld (ix),0 ;NOP
+	; Indicate a following byte
+	scf
+_
+	ld e,a
+	push de
+	 ; Indicate a one-byte, two-cycle instruction and request GB address
+	 ld a,$02
+	 jp.lil patch_bc_de_write_helper
 	
 patch_bc_de_vram_write:
-	FIXME
+	; Get the address of the routine being called
+	ex (sp),ix
+	ld hl,(ix-2)
+	; Clear carry
+	or a
+	; Check EXX vs. EX AF,AF'
+	bit 7,(hl)
+	; Swap or unswap shadow registers
+	exx
+	ld hl,op_write_de_vram
+	jr z,_
+	; For a BC write, shadow registers are now unswapped, so reswap
+	exx
+	ld hl,op_write_bc_vram
+	; Remove the EXX following the call
+	ld (ix),0 ;NOP
+	; Indicate a following byte
+	scf
+_
+	ld e,a
+	push de
+	 ; Indicate a one-byte, two-cycle instruction and request no GB address
+	 ld a,$42
+	 jp.lil patch_bc_de_write_helper
+	
+patch_memory_access_finish:
+	pop de
+	ex (sp),ix
+	ld a,e
+	exx
+	ex af,af'
+	ret
 	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Read-only routines
@@ -1198,6 +1309,7 @@ op_readwrite_hl_vram_smc = $
 	; Input: DE=Game Boy HL, L=write value, C'=cycle offset, BCDEHL' are swapped
 	; Output: Value written, or write instruction is unpatched
 	; Destroys: HL, BC', E', HL', F'
+	.dw op_readwrite_hl_vram_incdec
 op_write_hl_vram:
 	ex af,af'
 	ld e,a
@@ -1288,6 +1400,7 @@ unpatch_op_write_de_port:
 	; Output: Value is written to the port at Game Boy HL
 	;         If not possible, JIT instruction is patched
 	; Destroys: HL, BC', E', HL', F'
+	.dw op_readwrite_hl_port_incdec
 op_write_hl_port:
 	ex af,af'
 	ld e,a

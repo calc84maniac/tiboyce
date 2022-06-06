@@ -90,7 +90,7 @@ waitloop_found_read_1:
 	; Consume immediate value
 	inc hl
 	; Z flag is set from earlier comparison
-	jr waitloop_resolve_read
+	jr _
 	
 waitloop_found_read_2:
 	; Use 16-bit immediate as read address
@@ -102,12 +102,18 @@ waitloop_found_read_2:
 	inc hl
 	; Set -2 for read in fourth cycle, and preserve Z flag
 	rla
-	; Consume 2 more bytes of recompiled code
+_
+	; Consume 5 more bytes of recompiled code
+	inc de
+	inc de
+	inc de
 	inc de
 	inc de
 	jr waitloop_resolve_read
 	
 waitloop_found_read_bc:
+	; Consume one extra byte of recompiled code
+	inc de
 	exx
 	; Use BC as read address
 	push hl
@@ -127,6 +133,9 @@ waitloop_found_read_c:
 	ld c,a
 	; Set 0 for read in 2nd cycle, and set Z flag to indicate HRAM
 	xor a
+	; Consume 2 more bytes of recompiled code
+	inc de
+	inc de
 	jr waitloop_resolve_read
 	
 waitloop_found_read_bitwise:

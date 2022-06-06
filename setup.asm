@@ -1237,17 +1237,19 @@ _
 	ld.sis (event_gb_address),hl
 	ex de,hl
 	call lookup_code
-	; Push the target JIT address to the Z80 stack
-	push.s ix
-	; Save the block cycle offset of the current instruction to the Z80 stack
+	
+	; Get the GB registers in BCDEHL'
+	ld.s hl,(iy-state_size+STATE_REG_BC)
+	ld.s bc,(iy-state_size+STATE_REG_DE)
+	ld.s de,(iy-state_size+STATE_REG_HL)
+	; Push Game Boy BC to the Z80 stack
+	push.s hl
+	; Push the block cycle offset of the current instruction to the Z80 stack
 	ld l,a
 	ld h,0
 	push.s hl
-	
-	; Get the GB registers in BCDEHL'
-	ld.s ix,(iy-state_size+STATE_REG_BC)
-	ld.s bc,(iy-state_size+STATE_REG_DE)
-	ld.s de,(iy-state_size+STATE_REG_HL)
+	; Push the target JIT address to the Z80 stack
+	push.s ix
 	exx
 	; Get and remap GB AF
 	ld de,(iy-state_size+STATE_REG_AF)

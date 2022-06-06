@@ -8,6 +8,16 @@
 	jr $
 #endmacro
 
+; Bypass a SPASM bug where forward-referenced values are not allowed in .fill
+#macro SAFE_FILL(count, value)
+	#if count > 0
+	.db value
+	SAFE_FILL(count - 1, value)
+	#endif
+#endmacro
+
+#define .safe_fill SAFE_FILL(
+
 ; Gets the 24-bit base pointer for a given Game Boy address.
 ; The base plus the address can be used to directly read GB memory.
 ;

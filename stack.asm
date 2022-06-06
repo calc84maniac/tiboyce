@@ -426,7 +426,7 @@ ophandler31:
 ; Outputs: IY = 24-bit literal SP
 ;          BCDEHL' have been unswapped
 ;          SMC applied to stack operations
-; Destroys: BC', E', HL'
+; Destroys: HL, BC', E', HL'
 set_gb_stack:
 	push af
 	 ; Determine the new stack window start address.
@@ -466,7 +466,7 @@ set_gb_stack:
 	 and l
 _
 curr_gb_stack_region = $+1
-	 cp 0
+	 cp $FF
 	 jr nz,set_gb_stack_region
 set_gb_stack_region_finish:
 	 ; Get the new offset from the window base
@@ -512,7 +512,7 @@ set_gb_stack_region:
 	  pop.l hl
 	 ld (callstack_ret_shadow_stack_smc),hl
 	 ld (callstack_ret_cond_shadow_stack_smc),hl
-	 ld a,apply_stack_offset_smc_short_ptr - (apply_stack_offset_smc_offset_smc+2)
+	 ld a,apply_stack_offset_smc_short_ptr - (apply_stack_offset_smc_offset_smc+1)
 	 ld l,pop_short_ptr_src - pop_routines_start
 	 jr set_gb_stack_region_apply_pop_smc
 	 
@@ -539,7 +539,7 @@ set_gb_stack_region_io:
 	 ld (callstack_ret_shadow_stack_smc),hl
 	 ld h,callstack_ret_cond_no_shadow_stack - (callstack_ret_cond_shadow_stack_smc+2)
 	 ld (callstack_ret_cond_shadow_stack_smc),hl
-	 ld a,apply_stack_offset_smc_read_only - (apply_stack_offset_smc_offset_smc+2)
+	 ld a,apply_stack_offset_smc_read_only - (apply_stack_offset_smc_offset_smc+1)
 	 jr nz,set_gb_stack_long_ptr_finish
 	 ld l,pop_slow_src - pop_routines_start
 	 jr set_gb_stack_region_apply_pop_smc
@@ -574,7 +574,7 @@ set_gb_stack_region_long_ptr:
 	 ld (callstack_ret_shadow_stack_smc),hl
 	 ld h,callstack_ret_cond_set_shadow_stack - (callstack_ret_cond_shadow_stack_smc+2)
 	 ld (callstack_ret_cond_shadow_stack_smc),hl
-	 ld a,apply_stack_offset_smc_long_ptr - (apply_stack_offset_smc_offset_smc+2)
+	 ld a,apply_stack_offset_smc_long_ptr - (apply_stack_offset_smc_offset_smc+1)
 set_gb_stack_long_ptr_finish:
 	 ld l,pop_long_ptr_src - pop_routines_start
 set_gb_stack_region_apply_pop_smc:
@@ -587,16 +587,18 @@ set_gb_stack_region_apply_pop_smc:
 	 ; Set the low byte of the stack index
 	 ld iyl,e
 	 ; Apply pop SMC
-	 ld de,ophandlerC1_smc
-	 ld h,d
-	 ld bc,8
-	 ldir
-	 ld e,ophandlerD1_smc & $FF
-	 ld c,9
-	 ldir
-	 ld e,ophandlerE1_smc & $FF
-	 ld c,9
-	 ldir
+	 push de
+	  ld de,ophandlerC1_smc
+	  ld h,d
+	  ld bc,ophandlerC1_smc_size
+	  ldir
+	  ld e,ophandlerD1_smc & $FF
+	  ld c,ophandlerD1_smc_size
+	  ldir
+	  ld e,ophandlerE1_smc & $FF
+	  ld c,ophandlerE1_smc_size
+	  ldir
+	 pop de
 	 ld hl,(hl)
 	 ld (ophandlerF1_smc),hl
 pop_apply_stack_offset_smc:
@@ -643,42 +645,51 @@ set_shadow_stack_rollback:
 	dec iyl
 	dec iyl
 set_shadow_stack:
-	push af
-	 push bc
-	  push de
-	   push hl
-	    ; Get the current shadow stack region and base
+	push hl
+	 exx
+	 push af
+	  push bc
+	   push de
+	    push hl
+	     ; Get the current shadow stack region and base
 curr_shadow_stack_region = $+1
-	    ld de,$FF00 | (hmem_get_ptr & $FF)
-	    ; Get the MSB preceding the end of the stack window
-	    ld bc,(stack_window_base)
-	    dec bc
-	    dec bc
-	    ld a,(curr_gb_stack_region)
-	    ld.lil hl,z80codebase+mem_read_lut+2
-	    sub l ;2
-	    ld c,a
+	     ld de,$FF00 | (hmem_get_ptr & $FF)
+	     ; Get the stack pointer in IY
+	     ld bc,(stack_window_base)
+	     ld iyh,0
+	     add iy,bc
+	     ; Get the MSB preceding the end of the stack window
+	     dec bc
+	     dec bc
+	     ld a,(curr_gb_stack_region)
+	     ld.lil hl,z80codebase+mem_read_lut+2
+	     sub l ;2
+	     ld c,a
 _
-	    ld (curr_shadow_stack_region),bc
-	    ; Check if the first 256 bytes are in the current stack region.
-	    ; The second 256 bytes are already guaranteed to be in that region.
-	    ld l,b
-	    sub (hl)
-	    jp.lil z,set_shadow_stack_contiguous_helper
-	    ; Start the shadow stack 256 bytes higher.
-	    ; All eligible regions are at least 512 bytes large so this will
-	    ; force the shadow stack into a contiguous region.
-	    ; In the case the following 256 bytes are already in the shadow
-	    ; stack, for now don't bother optimizing the stack move.
-	    inc b
-	    ld a,c
-	    jr -_
+	     ld (curr_shadow_stack_region),bc
+	     ; Check if the first 256 bytes are in the current stack region.
+	     ; The second 256 bytes are already guaranteed to be in that region.
+	     ld l,b
+	     sub (hl)
+	     jp.lil z,set_shadow_stack_contiguous_helper
+	     ; Start the shadow stack 256 bytes higher.
+	     ; All eligible regions are at least 512 bytes large so this will
+	     ; force the shadow stack into a contiguous region.
+	     ; In the case the following 256 bytes are already in the shadow
+	     ; stack, for now don't bother optimizing the stack move.
+	     inc b
+	     ld a,c
+	     jr -_
 	
 set_shadow_stack_finish:
-	   pop hl
-	  pop de
-	 pop bc
-	pop af
+	     call set_gb_stack
+	     exx
+	    pop hl
+	   pop de
+	  pop bc
+	 pop af
+	 exx
+	pop hl
 	ret
 	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -732,6 +743,7 @@ do_pop_de_slow:
 	
 	; POP HL
 ophandlerE1:
+	ex af,af'
 ophandlerE1_smc = $
 do_pop_short_ptr_offset_smc_3 = $+2
 	;ld de,(iy)
@@ -970,7 +982,7 @@ ophandlerF5:
 ophandlerF5_retry:
 	dec iyl
 ophandlerF5_smc = $+1
-	jp p,do_push_any_long_ptr
+	jp m,do_push_any_long_ptr
 	call shift_stack_window_lower
 	ex af,af'
 	ld h,a
@@ -986,7 +998,7 @@ ophandlerE5:
 ophandlerE5_retry:
 	dec iyl
 ophandlerE5_smc = $+1
-	jp p,do_push_hl_long_ptr
+	jp m,do_push_hl_long_ptr
 	call shift_stack_window_lower
 do_push_hl_slow:
 	; If possible after the window shift, do a direct write
@@ -1016,7 +1028,7 @@ ophandlerD5:
 ophandlerD5_retry:
 	dec iyl
 ophandlerD5_smc = $+1
-	jp p,do_push_de_long_ptr
+	jp m,do_push_de_long_ptr
 	call shift_stack_window_lower
 do_push_de_slow:
 	; If possible after the window shift, do a direct write
@@ -1032,7 +1044,7 @@ ophandlerC5:
 ophandlerC5_retry:
 	dec iyl
 ophandlerC5_smc = $+1
-	jp p,do_push_bc_long_ptr
+	jp m,do_push_bc_long_ptr
 	call shift_stack_window_lower
 do_push_bc_slow:
 	; If possible after the window shift, do a direct write

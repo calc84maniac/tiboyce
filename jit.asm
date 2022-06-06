@@ -98,8 +98,8 @@ _
 	 ld.s (hl),ix
 	 dec hl
 	 dec hl
-	 ; Add 4 cycles to mimic RST target caches
-	 add a,4
+	 ; Add 5 cycles for taken interrupt
+	 add a,5
 	 ld (hl),a
 	 inc hl
 	 ld a,e
@@ -787,7 +787,7 @@ lookup_found_new_subblock:
 	   ASSERT_C
 	   inc e
 	   bit 2,e
-	   jr nz,_ ; For RET/JR/JP/RST, offsets are normal
+	   jr z,_  ; For RET/JR/JP/RST, offsets are normal
 	   inc ix  ; For CALL, offsets are stored -1
 _
 	   add hl,bc
@@ -2286,13 +2286,13 @@ opgentable:
 	.db 0,$01,0,$03,$04,$05,$06,0
 	.db 0,  0,0,$0B,$0C,$0D,$0E,0
 	.db ophandler31 >> 8
-	.db   $11,$23,$13,$14,$15,$16,ophandler27 & $FF
+	.db   $11,$13,$13,$14,$15,$16,ophandler27 & $FF
 	.db ophandler27 >> 8
-	.db     0,$23,$1B,$1C,$1D,$1E,ophandler31 & $FF
+	.db     0,$13,$1B,$1C,$1D,$1E,ophandler31 & $FF
 	;30
 	.db 0
 	.db 0
-	.db $2B
+	.db $1B
 	.db ophandler33 & $FF
 	.db ophandler3B >> 8
 	.db 0
@@ -2301,7 +2301,7 @@ opgentable:
 	;38
 	.db 0
 	.db ophandler39 & $FF
-	.db $2B
+	.db $1B
 	.db ophandler3B & $FF
 	.db ophandler33 >> 8
 	.db 0
@@ -2817,12 +2817,6 @@ opgenblockend:
 	ld c,a
 	ld a,(bc)
 	ld d,a
-	; No JIT opcode can begin with an absolute jump;
-	; this is to prevent the memory cycle offset resolver from
-	; confusing the end of the preceding instruction with a
-	; dispatch for a CALL/RST/interrupt
-	ld (hl),$08 ;EX AF,AF'
-	inc hl
 	ld (hl),$C3	;JP
 	djnz opgenblockend_finish
 	
@@ -2964,6 +2958,7 @@ opgenroutinecall_2cc:
 	dec iyl
 opgenroutinecall:
 	inc hl
+opgenroutinecall_noinc:
 	ld a,$CD
 	ld (de),a
 	inc de
@@ -2987,15 +2982,16 @@ opgenroutinecall:
 _opgenE2:
 	ld bc,op_write_c_hmem
 	ex de,hl
-	inc de
 	push hl
 	 ld a,5
-	 call.il allocate_high_trampoline
+	 call allocate_high_trampoline
 	 ; If allocation failed, skip writing the trampoline
 	 ; Aggregated allocation failure is detected at the end of recompilation
 	 jr c,_
 	 ; Emit the GB address before the jump
+	 inc de
 	 call opgen_emit_gb_address_noinc
+	 dec de
 	 ; Emit the jump to the handler
 	 push hl
 	  ld (hl),$C3 ;JP op_write_c_hmem
@@ -3023,12 +3019,11 @@ opgen_emit_load_cycle_offset:
 	ld (hl),$0E ;LD C,cycle_offset
 opgen_emit_cycle_offset:
 	inc hl
-	ld a,iyl
-	sub e
+	ld a,e
+	sub iyl
 	ld (hl),a
 	ex de,hl
 	push hl
-	 ex de,hl
 recompile_cycle_offset_sp = $+1
 	 ld hl,recompile_cycle_offset_stack - 1
 	 ld (hl),d
@@ -3051,7 +3046,7 @@ _opgen31:
 	inc hl
 	ldi
 	ldi
-	jr opgenroutinecall
+	jr opgenroutinecall_noinc
 	
 _opgen08:
 	inc hl
@@ -3136,10 +3131,12 @@ _
 	ld a,c
 	add a,$62-$54
 	ld (hl),a
+	inc hl
+	ld (hl),$EB ;EX DE,HL
 	jp opgen_next_swap_skip
 	
 opgenCB_bc_bit:
-	ld (hl),$DD ;LEA HL,IX
+	ld (hl),$ED ;LEA HL,IX
 	inc hl
 	ld (hl),$22
 	inc hl
@@ -3398,9 +3395,10 @@ opgenCONSTwrite:
 _
 	
 	push hl
-	 ld hl,mem_write_lut
+	 ld hl,z80codebase+mem_write_lut
 	 ld l,b
 	 ld l,(hl)
+	 inc h ;mem_write_any_routines
 	 
 	 ld a,b
 	 cp $A0
@@ -3515,7 +3513,7 @@ opgen_port_write_resolved_jp:
 	 dec hl ; Move to possible preceding EX AF,AF'
 opgen_port_write_resolved_jr:
 	 ; Check whether the routine needs to pass the port LSB
-	 ld a,(hl)
+	 ld.s a,(hl)
 	 sub $08 ;EX AF,AF'
 	 jr z,_
 	 ; If not, emit the EX AF,AF' directly into the JIT code
@@ -3544,7 +3542,7 @@ _
 	jr z,opgen_port_write_no_trampoline
 	push hl
 	 ld a,5
-	 call.il allocate_high_trampoline
+	 call allocate_high_trampoline
 	 ; If allocation failed, skip writing the trampoline
 	 ; Aggregated allocation failure is detected at the end of recompilation
 	 jr c,_
