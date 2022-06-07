@@ -350,7 +350,7 @@ hmem_get_pointer_impl:
 cram_open_bus_get_ptr:
 	jp do_cram_open_bus_get_ptr
 	; This is treated as a union because MBC1 and RTC cannot coexist
-mbc1_preserved_cram_bank_base:
+mbc1_preserved_cram_bank_base = $+z80codebase
 cram_rtc_get_ptr:
 	; Check whether this is a read or write
 	exx
@@ -719,6 +719,7 @@ get_mem_write_info_finish_no_inc:
 	
 get_mem_write_info_absolute:
 	 ; Grab the cycle offset from before the call
+	 dec hl
 	 dec hl
 	 dec hl
 	 ld a,(hl)

@@ -764,8 +764,9 @@ lcdc_write_helper:
 	exx
 	ld a,l
 	exx
+	ld b,(hl)
 	ld (hl),a
-	xor (hl)
+	xor b
 	ld b,a
 	and $06
 	jr z,_
@@ -1520,8 +1521,8 @@ validate_schedule_resolved:
 	   push de
 	    or a
 	    sbc hl,de
-		push hl
-		jr _
+	    push hl
+	    jr _
 
 validate_schedule:
 	push af

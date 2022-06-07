@@ -366,7 +366,7 @@ lookup_gb_found_overlapped:
 	
 lookup_gb_prefix:
 	  ; Count CB-prefixed opcode cycles
-	  sbc a,c
+	  sub 1+2
 	  ; If the cycle count overflowed from a CB-prefix instruction,
 	  ; this means it must have been an overlapped instruction
 	  ; This path is also taken if we reached a HALT
@@ -2979,38 +2979,6 @@ opgenroutinecall_noinc:
 	dec b ; Sets sign flag
 	ret
 	
-_opgenE2:
-	ld bc,op_write_c_hmem
-	ex de,hl
-	push hl
-	 ld a,5
-	 call allocate_high_trampoline
-	 ; If allocation failed, skip writing the trampoline
-	 ; Aggregated allocation failure is detected at the end of recompilation
-	 jr c,_
-	 ; Emit the GB address before the jump
-	 inc de
-	 call opgen_emit_gb_address_noinc
-	 dec de
-	 ; Emit the jump to the handler
-	 push hl
-	  ld (hl),$C3 ;JP op_write_c_hmem
-	  inc hl
-	  ld (hl),c
-	  inc hl
-	  ld (hl),b
-	 ; Use the trampoline as the handler
-	 pop bc
-_
-	pop hl
-	call opgen_emit_load_cycle_offset
-	ld (hl),$CD
-	inc hl
-	ld (hl),c
-	inc hl
-	ld (hl),b
-	jp opgen_next_swap_skip_1cc
-	
 opgen_emit_load_cycle_offset_swap:
 	ex de,hl
 opgen_emit_load_cycle_offset:
@@ -3533,19 +3501,16 @@ _
 	 call opgen_emit_cycle_offset
 	 ld (hl),c ;EX AF,AF' or port LSB
 	 inc hl
-	 ld (hl),$CD ;CALL write_*_handler
-	 inc hl
 	 ; Check if a trampoline should be emitted
 	 bit 0,b
 	 ; Pop the handler address
 	pop bc
 	jr z,opgen_port_write_no_trampoline
+opgenE2_finish:
 	push hl
 	 ld a,5
-	 call allocate_high_trampoline
-	 ; If allocation failed, skip writing the trampoline
-	 ; Aggregated allocation failure is detected at the end of recompilation
-	 jr c,_
+	 call allocate_high_trampoline_for_jit
+	 ASSERT_NC
 	 ; Emit the GB address before the jump
 	 inc de
 	 call opgen_emit_gb_address_noinc
@@ -3559,10 +3524,11 @@ _
 	  ld (hl),b
 	 ; Use the trampoline as the handler
 	 pop bc
-_
 	pop hl
 opgen_port_write_no_trampoline:
-	; Emit handler address
+	; Emit handler call
+	ld (hl),$CD ;CALL write_*_handler
+	inc hl
 	ld (hl),c
 	inc hl
 	ld (hl),b
@@ -3584,6 +3550,11 @@ opgenHMEMwrite_direct:
 	ld (hl),$FF
 	jp opgen_next_swap_skip
 	
+_opgenE2:
+	call opgen_emit_load_cycle_offset_swap
+	dec iyl
+	ld bc,op_write_c_hmem
+	jr opgenE2_finish
 	
 opgenCONSTread:
 	dec iyl

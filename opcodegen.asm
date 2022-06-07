@@ -184,8 +184,8 @@ opgen29:
 	res 4,c
 	ex de,hl
 	ld (hl),$EB ;EX DE,HL
-	inc hl
 _
+	inc hl
 	ld (hl),c
 opgen_next_ex_swap_skip_1cc:
 	inc hl

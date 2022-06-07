@@ -1089,8 +1089,7 @@ updateSTAT_push:
 	ld b,a
 	push bc
 	push hl ; Push return address
-updateSTAT_unswap:
-	exx
+	
 	; Input: BCDEHL' is swapped, DE=cycle count, C=cycle offset
 	; Output: (STAT) is updated if needed
 	;         Bit 7 of R set if render catchup is available
@@ -1121,7 +1120,7 @@ nextupdatecycle_STAT = $+1
 	and 3
 	srl a
 lcd_on_updateSTAT_smc = $+1
-	jr z,updateSTAT_mode0_mode1
+	jr z,updateSTAT_mode0_mode1 ; Note: A already equals L-H (which is 0)
 	ld a,l
 	jr c,updateSTAT_mode3
 updateSTAT_mode2:

@@ -59,20 +59,25 @@
 ;     LD (HL),n:
 ;       LD HL,n | (addr&$FF00) \ JP mbc_write_*_handler - 4
 
-allocate_high_trampoline:
-	cp a
+allocate_high_trampoline_for_jit:
+	; Set Z flag and always allow allocation
+	or a
+	sbc hl,hl
+	jr _
 	; Input: A=trampoline size, Z set to allocate in high pool
 	; Output: Carry set on failure, or HL=trampoline start
 	; Destroys: F
 allocate_trampoline:
+	; Get the low pool pointer
+	ld hl,(recompile_struct_end)
+	ld hl,(hl)
+_
 	push bc
 	 push de
 	  ; Zero-extend the allocation size
 	  ld bc,0
 	  ld c,a
 	  ; Advance the low pool pointer by the allocation size
-	  ld hl,(recompile_struct_end)
-	  ld hl,(hl)
 	  add hl,bc
 	  ex de,hl
 	  ld hl,(z80codebase+trampoline_next)

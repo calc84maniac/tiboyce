@@ -127,7 +127,8 @@ do_call_no_shadow_stack:
 	jr nc,do_call_dispatch
 	inc d
 	jr nz,do_call_dispatch
-	ld e,a
+	ex de,hl
+	ld l,a
 	ld a,c
 	jr cycle_overflow_for_call_pushed
 	
@@ -211,12 +212,13 @@ do_call_maybe_cycle_overflow:
 	inc d
 	jr nz,do_call_no_cycle_overflow
 cycle_overflow_for_call:
-	ld e,a
-	ld a,c
+	ex de,hl
 	; Check for callstack overflow
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	call nc,callstack_overflow_helper
+	ld l,a
+	ld a,c
 	; Push RET cycle count and stack offset
 	ld c,iyl
 	push bc
@@ -226,10 +228,9 @@ cycle_overflow_for_call_pushed:
 	 exx
 	 ex (sp),ix
 	 inc bc ;BCU=0
-	 ld c,e
+	 ld c,l
 	 sub 6
 	 ld b,a
-	 ex de,hl
 	 dec de
 	 dec de
 #ifdef VALIDATE_SCHEDULE
@@ -1412,9 +1413,9 @@ decode_call_finish:
 	pop hl
 	ld b,0
 	add hl,bc
-	ex de,hl
 	ld a,c
 	jp c,cycle_overflow_for_call_pushed
+	ex de,hl
 	ld a,e
 	ex af,af'
 	exx
@@ -1545,7 +1546,7 @@ cycle_overflow_for_rst_pushed:
 	 lea hl,ix+10*4
 	 srl l
 	 ld de,(hl)
-	 ld ix,(ix+1)
+	 ld ix,(ix+2)
 	 exx
 	 lea hl,ix
 	 exx
@@ -2351,7 +2352,11 @@ callstack_ret_cond_maybe_overflow:
 	jr z,callstack_ret_preserve_entry
 callstack_ret_overflow:
 	; Subtract taken RET cycles to get the block cycle offset
-	dec h \ dec h \ dec h \ dec h
+	ld de,$FC00 ;DEU=0
+	add hl,de
+	; Put return address in DE
+	ld d,b
+	ld e,c
 	ld b,h
 	ld c,a
 	; Get the cached JIT target address
