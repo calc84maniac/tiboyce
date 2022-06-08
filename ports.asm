@@ -1058,8 +1058,8 @@ updateSTAT_no_change_scroll:
 	; Handle transition from fake mode 0 on LCD startup
 lcd_on_STAT_handler:
 	call lcd_on_STAT_restore
-	inc h
-	inc h
+	inc b
+	inc b
 	ld a,l
 	jr updateSTAT_mode2
 	
@@ -1454,9 +1454,9 @@ updateTIMA:
 	ld a,d
 	adc a,$FF
 	ld b,a
-enableTIMA_smc = $ ; Replaced with RET when disabled
+enableTIMA_smc = $ ; Replaced with XOR A when enabled
+	ret
 	; Handle special case if cycle offset is non-negative
-	xor a
 	add hl,bc
 	cp h
 	jr z,updateTIMAoverflow

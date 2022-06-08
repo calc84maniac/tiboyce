@@ -1063,7 +1063,7 @@ tac_write_helper:
 	jr c,tac_write_enable
 	ld hl,disabled_counter_checker
 	ld.sis (event_counter_checker_slot_timer),hl
-	ld a,$C3
+	ld a,$C9 ;RET
 	ld (z80codebase+enableTIMA_smc),a
 	; If the corresponding bit of DIV is 1, increment TIMA
 	ld hl,i
@@ -1108,7 +1108,7 @@ tac_write_enable:
 _
 	 ld.sis (timer_period),hl
 	
-	 ld a,$CD
+	 ld a,$AF ;XOR A
 	 ld (z80codebase+enableTIMA_smc),a
 	 ld a,c
 	pop bc

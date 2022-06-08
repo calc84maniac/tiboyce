@@ -1044,6 +1044,7 @@ check_coherency_cycles:
 _
 	pop.s ix
 	exx
+	ex af,af'
 	jp.s (hl)	
 _
 	inc d
@@ -2663,19 +2664,15 @@ _opgenRST:
 	;  .DB target_bank (if applicable)
 	; For non-decoded calls, jit_target=decode_call and call_cycles=0
 _opgenCALLcond:
+	; Use a difference of (8*$C0) == (6<<8) between each CALL opcode type
+	ld b,$C0
+	mlt bc
+	push hl
+	 ld hl,((do_call_nz << 8) | $CD) - ($C4*$C0) ;CALL do_call_*
+	 add hl,bc
+	 ex (sp),hl
+	pop bc
 	xor a ;call_cycles=0
-	bit 4,c
-	jr nz,_
-	bit 3,c
-	ld bc,(do_call_nz << 8) | $CD ;CALL do_call_nz
-	jr nz,opgen_finish_cond_call
-	ld bc,(do_call_z << 8) | $CD ;CALL do_call_z
-	jr opgen_finish_cond_call
-_
-	bit 3,c
-	ld bc,(do_call_nc << 8) | $CD ;CALL do_call_nc
-	jr nz,opgen_finish_cond_call
-	ld bc,(do_call_c << 8) | $CD ;CALL do_call_c
 	jr opgen_finish_cond_call
 
 	; CALL instruction format:

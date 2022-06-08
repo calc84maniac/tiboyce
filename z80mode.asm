@@ -136,10 +136,12 @@ do_call_set_shadow_stack:
 	call set_shadow_stack
 do_call:
 do_call_shadow_stack_smc = $
-	; Push Game Boy return address to the shadow stack
+	; Push Game Boy return address to the stack
+do_call_push_offset_smc_1 = $+3
+	ld.l (iy),h
 	dec iyl
-do_call_push_offset_smc = $+2
-	ld (iy),hl
+do_call_push_offset_smc_2 = $+3
+	ld.l (iy),l
 	push.l hl  ; Cache Game Boy return address on callstack
 	; Count cycles for taken CALL
 	add a,c
@@ -278,10 +280,10 @@ _
 	 exx
 	 ex (sp),ix
 	 inc bc ;BCU=0
-	 ld b,a
+	 ld c,a
 	 ld a,(ix-5)
 	 sub 4
-	 ld c,a
+	 ld b,a
 	 ld de,(ix-3)
 #ifdef VALIDATE_SCHEDULE
 	 call.il schedule_event_helper
@@ -314,21 +316,11 @@ do_overlapped_jump:
 	pop hl
 	inc hl
 	add a,(hl)
-	jr nc,_
-	exx
-	inc d
-	jr z,++_
-	exx
-_
+	inc hl
+	inc hl
+	jr c,do_overlapped_jump_maybe_overflow
 	ex af,af'
-	inc hl
 	jp (hl)
-_
-	inc bc ;BCU=0
-	ld c,a
-	ld a,(hl)
-	inc hl
-	jr do_slow_jump_overflow_common
 	
 do_rom_bank_jump:
 	ex af,af'
@@ -343,6 +335,7 @@ rom_bank_check_smc_1 = $+1
 	inc hl
 	ld a,(hl)
 	inc hl
+	inc hl
 	exx
 banked_jump_mismatch_continue:
 	add a,e
@@ -351,24 +344,24 @@ _
 	exx
 	ex af,af'
 	jp (hl)
+do_overlapped_jump_maybe_overflow:
+	exx
 _
 	inc d
 	jr nz,--_
-	inc bc ;BCU=0
-	ld c,a
-	sub e
 do_slow_jump_overflow_common:
-	ld e,a
 	exx
 	inc hl
 	push hl
 	 ld hl,(hl)
 	 exx
 	 ex (sp),ix
-	 add a,(ix+2)
+	 ld bc,(ix-3) ;BCU=0
+	 ld a,c
+	 add a,b
 	 ld b,a
-	 sub e
-	 ld de,(ix+3)
+	 sub c
+	 ld de,(ix+2)
 	 ld ix,(ix)
 #ifdef VALIDATE_SCHEDULE
 	 call.il c,schedule_slow_jump_event_helper
@@ -662,13 +655,15 @@ trigger_interrupt:
 	dec iyl
 	jp p,do_push_overflow_for_interrupt
 	rrca	;ld a,4
-do_push_for_interrupt_continue:
-do_push_for_interrupt_shadow_stack_smc = $
-	dec iyl
 event_gb_address = $+1
 	ld bc,event_gb_address
-trigger_interrupt_push_offset_smc = $+2
-	ld (iy),bc
+do_push_for_interrupt_continue:
+do_push_for_interrupt_shadow_stack_smc = $
+trigger_interrupt_push_offset_smc_1 = $+3
+	ld.l (iy),b
+	dec iyl
+trigger_interrupt_push_offset_smc_2 = $+3
+	ld.l (iy),c
 	push.l bc  ; Cache Game Boy return address on callstack
 	; Get the number of cycles to be taken by RET
 	add a,e
@@ -1356,17 +1351,15 @@ decode_block_bridge_return:
 	
 decode_bank_switch_return:
 	  pop hl
-	  inc hl
+	  ld (hl),ix
+	  dec hl
+	  ld (hl),$C3	;JP target
+	  dec hl
 	  ld (hl),b	;negative jump cycles
 	  dec hl
 	  ld (hl),a  ;taken cycle count
 	  dec hl
 	  ld (hl),c	;bank id
-	  dec hl
-	  dec hl
-	  ld (hl),ix
-	  dec hl
-	  ld (hl),$C3	;JP target
 	  dec hl
 	  dec hl
 	  ld (hl),de
@@ -1516,10 +1509,12 @@ do_rst:
 	inc hl
 	exx
 do_rst_shadow_stack_smc = $
-	; Push Game Boy return address to the shadow stack
+	; Push Game Boy return address to the stack
+do_rst_push_offset_smc_1 = $+3
+	ld.l (iy),h
 	dec iyl
-do_rst_push_offset_smc = $+2
-	ld (iy),hl
+do_rst_push_offset_smc_2 = $+3
+	ld.l (iy),l
 	push.l hl  ; Cache Game Boy return address on callstack
 do_rst_no_shadow_stack_continue:
 	jp nc,do_call_no_cycle_overflow
@@ -2280,8 +2275,9 @@ ophandlerRET_swapped:
 ophandlerRET_swapped_nc:
 callstack_ret_retry_pop:
 	; Pop the return address into BC
-callstack_ret_pop_offset_smc = $+2
-	ld bc,(iy)
+callstack_ret_pop_offset_smc = $+3
+	ld.l bc,(iy)
+	inc bc \ dec bc
 	; Check if the stack may be overflowing its bounds
 	inc iyl
 	inc iyl
@@ -2424,8 +2420,9 @@ ophandlerRETcond:
 	exx
 callstack_ret_cond_retry_pop:
 	; Pop the return address into BC
-callstack_ret_cond_pop_offset_smc = $+2
-	ld bc,(iy)
+callstack_ret_cond_pop_offset_smc = $+3
+	ld.l bc,(iy)
+	inc bc \ dec bc
 	; Check if the stack may be overflowing its bounds
 	inc iyl
 	inc iyl

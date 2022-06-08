@@ -1097,7 +1097,7 @@ _
 	ld.sis (timer_counter),hl
 	ld hl,timer_counter_checker
 	ld.sis (event_counter_checker_slot_timer),hl
-	ld a,$CD
+	ld a,$AF ;XOR A
 	ld (z80codebase+enableTIMA_smc),a
 _
 	
@@ -1421,7 +1421,7 @@ ExitEmulationWithoutState:
 	; Handle RTC saving
 	ld a,(cram_size)
 	or a
-	jr z,++_
+	jr z,ExitEmulationNoRTC
 	call.il update_rtc_helper
 	ld ix,save_state_size_bytes - 44
 	ld bc,(ix+44)
@@ -1458,7 +1458,7 @@ _
 	ld (hl),a
 	inc hl
 	ld (hl),a
-_
+ExitEmulationNoRTC:
 	ld sp,(saveSP)
 	ACALL(RestoreOriginalHardwareSettings)
 	ld a,(exitReason)

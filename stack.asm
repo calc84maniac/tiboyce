@@ -503,8 +503,7 @@ set_gb_stack_region:
 	 ld (ophandlerE5_smc),a
 	 ld a,do_push_any_short_ptr - push_routines_start
 	 ld (ophandlerF5_smc),a
-	 .db $21 ;LD HL,
-	  dec iyl
+	 ld hl,$FD49 ;LD.LIS (IY),...
 	 ld (do_call_shadow_stack_smc),hl
 	 ld (do_rst_shadow_stack_smc),hl
 	 ld (do_push_for_interrupt_shadow_stack_smc),hl
@@ -564,6 +563,7 @@ set_gb_stack_region_long_ptr:
 	 ld (ophandlerE5_smc),a
 	 ld a,do_push_any_long_ptr - push_routines_start
 	 ld (ophandlerF5_smc),a
+#ifdef SHADOW_STACK
 	 ld hl,$18 | ((do_call_set_shadow_stack - (do_call_shadow_stack_smc+2)) << 8)
 	 ld (do_call_shadow_stack_smc),hl
 	 ld h,do_rst_set_shadow_stack - (do_rst_shadow_stack_smc+2)
@@ -574,6 +574,16 @@ set_gb_stack_region_long_ptr:
 	 ld (callstack_ret_shadow_stack_smc),hl
 	 ld h,callstack_ret_cond_set_shadow_stack - (callstack_ret_cond_shadow_stack_smc+2)
 	 ld (callstack_ret_cond_shadow_stack_smc),hl
+#else
+	 ld hl,$FD49 ;LD.LIS (IY),...
+	 ld (do_call_shadow_stack_smc),hl
+	 ld (do_rst_shadow_stack_smc),hl
+	 ld (do_push_for_interrupt_shadow_stack_smc),hl
+	 .db $21
+	  pop.l hl
+	 ld (callstack_ret_shadow_stack_smc),hl
+	 ld (callstack_ret_cond_shadow_stack_smc),hl
+#endif
 	 ld a,apply_stack_offset_smc_long_ptr - (apply_stack_offset_smc_offset_smc+1)
 set_gb_stack_long_ptr_finish:
 	 ld l,pop_long_ptr_src - pop_routines_start
@@ -621,9 +631,12 @@ apply_stack_offset_smc_short_ptr:
 	ld (do_pop_short_ptr_offset_smc_3),a
 	ld (callstack_ret_pop_offset_smc),a
 	ld (callstack_ret_cond_pop_offset_smc),a
-	ld (do_call_push_offset_smc),a
-	ld (do_rst_push_offset_smc),a
-	ld (trigger_interrupt_push_offset_smc),a
+	ld (do_call_push_offset_smc_1),a
+	ld (do_call_push_offset_smc_2),a
+	ld (do_rst_push_offset_smc_1),a
+	ld (do_rst_push_offset_smc_2),a
+	ld (trigger_interrupt_push_offset_smc_1),a
+	ld (trigger_interrupt_push_offset_smc_2),a
 	ld a,h
 	ret
 
@@ -634,6 +647,14 @@ apply_stack_offset_smc_long_ptr:
 	ld (do_push_long_ptr_offset_smc_4),a
 	ld (do_push_long_ptr_offset_smc_5),a
 	ld (do_push_long_ptr_offset_smc_6),a
+	ld (callstack_ret_pop_offset_smc),a
+	ld (callstack_ret_cond_pop_offset_smc),a
+	ld (do_call_push_offset_smc_1),a
+	ld (do_call_push_offset_smc_2),a
+	ld (do_rst_push_offset_smc_1),a
+	ld (do_rst_push_offset_smc_2),a
+	ld (trigger_interrupt_push_offset_smc_1),a
+	ld (trigger_interrupt_push_offset_smc_2),a
 apply_stack_offset_smc_read_only:
 	ld (do_pop_long_ptr_offset_smc_1),a
 	ld (do_pop_long_ptr_offset_smc_2),a
