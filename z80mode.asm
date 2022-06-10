@@ -110,9 +110,7 @@ do_push_overflow_for_call:
 	FIXME
 	
 do_call_callstack_overflow:
-	pop.l bc
 	call callstack_overflow_helper
-	push.l bc
 	scf
 	jr do_call_dispatch
 	
@@ -132,8 +130,10 @@ do_call_no_shadow_stack:
 	ld a,c
 	jr cycle_overflow_for_call_pushed
 	
+#ifdef SHADOW_STACK
 do_call_set_shadow_stack:
 	call set_shadow_stack
+#endif
 do_call:
 do_call_shadow_stack_smc = $
 	; Push Game Boy return address to the stack
@@ -147,13 +147,13 @@ do_call_push_offset_smc_2 = $+3
 	add a,c
 	jr c,do_call_maybe_cycle_overflow
 do_call_no_cycle_overflow:
-	; Push RET cycle count and stack offset
-	ld c,iyl
-	push bc
 	; Check for callstack overflow
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	jr nc,do_call_callstack_overflow
+	; Push RET cycle count and stack offset
+	ld c,iyl
+	push bc
 do_call_dispatch:
 	; Dispatch to JIT target
 	; Carry is set to indicate to the decoder that the callstack cache was used,
@@ -195,9 +195,9 @@ do_unbanked_call:
 	exx
 	ex af,af'
 	pop hl
-	ld d,(hl)  ; Cycles for taken RET
+	ld b,(hl)  ; Cycles for taken RET
 	inc hl
-	ld e,(hl)  ; Cycles for taken CALL
+	ld c,(hl)  ; Cycles for taken CALL
 	inc hl
 	push de
 	ld de,(hl)  ; Game Boy return address
@@ -640,9 +640,11 @@ do_push_for_interrupt_no_shadow_stack:
 	call do_push_any_slow_swapped
 	jr trigger_interrupt_pushed
 	
+#ifdef SHADOW_STACK
 do_push_for_interrupt_set_shadow_stack:
 	call set_shadow_stack
 	jr do_push_for_interrupt_continue
+#endif
 	
 cpu_exit_halt_trigger_interrupt:
 	ld bc,$19DD ; ADD IX,DE
@@ -792,7 +794,8 @@ dispatch_int_handle_events:
 	
 	; This is called when a CALL, RST, or interrupt occurs
 	; which exceeds the defined callstack limit.
-	; Inputs: SPL = myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL)
+	; Inputs: SPL = myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL) - 3
+	;         (SPL) = value to preserve on ADL callstack
 	;         SPS = myz80stack - 4 - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80) - 4
 	;         (SPS) = return value
 	;         (SPS+2) = value to preserve on Z80 callstack
@@ -801,14 +804,16 @@ dispatch_int_handle_events:
 	;          (SPS) = preserved Z80 callstack value
 	; Destroys: HL
 callstack_overflow_helper:
+	pop.l hl
 	ld.lil sp,myADLstack
-	pop hl
 	push.l hl
+	pop hl
+	ld (callstack_overflow_helper_smc),hl
 	pop hl
 	ld sp,myz80stack - 4
 	push hl
-	pop.l hl
-	jp (hl)
+callstack_overflow_helper_smc = $+1
+	jp 0
 	
 ppu_mode2_line_0_lyc_match:
 	; The LYC match bit was already set by the scheduled LYC event
@@ -1499,9 +1504,11 @@ _
 	ex af,af'
 	jp (hl)
 	
+#ifdef SHADOW_STACK
 do_rst_set_shadow_stack:
 	call set_shadow_stack
 	jr do_rst_shadow_stack_smc
+#endif
 	
 do_rst:
 	; Count cycles and advance to JP
@@ -2300,9 +2307,11 @@ callstack_ret_no_overflow:
 	ex af,af'
 	ret
 	
+#ifdef SHADOW_STACK
 callstack_ret_set_shadow_stack:
 	call set_shadow_stack_rollback
 	jr callstack_ret_retry_pop
+#endif
 	
 callstack_ret_bound:
 	push bc
@@ -2513,9 +2522,11 @@ callstack_ret_cond_maybe_bank_mismatch:
 	ld a,e
 	jr callstack_ret_cond_do_compare
 	
+#ifdef SHADOW_STACK
 callstack_ret_cond_set_shadow_stack:
 	call set_shadow_stack_rollback
 	jr callstack_ret_cond_retry_pop
+#endif
 	
 callstack_ret_cond_bound:
 	push bc

@@ -1038,6 +1038,7 @@ _
 	
 check_coherency_cycles:
 	pop.s de
+check_coherency_cycles_popped:
 	ld a,e
 	add a,(ix+7)
 	jr c,++_
@@ -1140,7 +1141,51 @@ rerecompile:
 	ld a,(de)
 	cpl
 	ld (de),a
-	jr check_coherency_cycles
+	
+	; Check for entries on the callstack containing this region
+	sbc hl,hl
+	add.s hl,sp
+	; Get the number of used callstack entries
+	ld a,(myz80stack - 4 - 4) & $FF
+	sub l
+	jr z,check_coherency_cycles
+	rrca
+	rrca
+	push hl
+	 ld hl,(ix)
+	 ex.s de,hl
+	 sbc hl,de
+	 ld b,h
+	 ld c,l
+	 add hl,de
+	 ex de,hl
+	 sbc hl,hl
+	 sbc hl,de
+	 ex de,hl
+	 pop.s hl
+	 pop.s hl
+_
+	 pop.s hl
+	 pop.s hl
+	 add hl,de
+	 add hl,bc
+	 jr c,rerecompile_found_callstack_entry
+	 dec a
+	 jr nz,-_
+	pop hl
+	ld.s sp,hl
+	jp check_coherency_cycles
+	
+rerecompile_found_callstack_entry:
+	; For now, just flush the whole callstack
+	pop hl
+	ld.s sp,hl
+	pop.s de
+	pop.s hl
+	ld.sis sp,myz80stack - 4
+	push.s hl
+	ld sp,myADLstack
+	jp check_coherency_cycles_popped
 	
 coherency_flush_no_padding:
 	sbc hl,hl
@@ -2918,7 +2963,8 @@ _
 	
 opgenroutinecall_displacement:
 	dec iyl
-	ld a,$2E ;LD L,displacement
+	ld a,($2E+$E8) & $FF ;LD L/E,displacement
+	sub c
 	ld (de),a
 	inc de
 	inc hl
@@ -3020,7 +3066,7 @@ _opgen08:
 	ld a,(hl)
 	ex de,hl
 	ld (hl),$D9 ;EXX
-	inc de
+	inc hl
 	; Check for $FFxx
 	inc a
 	jr nz,_
@@ -3173,7 +3219,7 @@ _
 	ld (hl),$CD
 	inc hl
 	ld c,a
-	ld b,do_swap_b - do_swap_c
+	ld b,do_swap_c - do_swap_b
 	mlt bc
 	ld a,do_swap_hl_normal & $FF
 	sub c

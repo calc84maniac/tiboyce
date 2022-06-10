@@ -187,8 +187,8 @@ mem_read_lut:
 	.fill $20, cram_banked_read_any & $FF
 	.fill $10, wram_unbanked_read_any & $FF
 	.fill $10, wram_banked_read_any & $FF
-	.fill $10, wram_unbanked_mirror_read_any & $FF
-	.fill $0E, wram_banked_mirror_read_any & $FF
+	.fill $10, wram_mirror_unbanked_read_any & $FF
+	.fill $0E, wram_mirror_banked_read_any & $FF
 	.fill $01, oam_read_any & $FF
 	.fill $01, hmem_read_any & $FF
 	
@@ -393,8 +393,8 @@ mem_write_lut:
 	.fill $20, cram_banked_get_ptr & $FF
 	.fill $10, wram_unbanked_get_ptr & $FF
 	.fill $10, wram_banked_get_ptr & $FF
-	.fill $10, wram_unbanked_mirror_get_ptr & $FF
-	.fill $0E, wram_banked_mirror_get_ptr & $FF
+	.fill $10, wram_mirror_unbanked_get_ptr & $FF
+	.fill $0E, wram_mirror_banked_get_ptr & $FF
 	.fill $01, oam_get_ptr & $FF
 	.fill $01, hmem_get_ptr & $FF
 	

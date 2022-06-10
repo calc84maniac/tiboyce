@@ -23,8 +23,8 @@ stack_window_base = $+1
 ophandlerF8_zero:
 	; Get the value of SP in DE
 	ld hl,(stack_window_base)
+	ld d,e
 	ld e,iyl
-	ld d,0
 	add hl,de
 	ex de,hl
 	; Reset all flags
@@ -182,7 +182,6 @@ shift_stack_window_higher_finish:
 shift_stack_window_higher_any_finish:
 	ld (hl),a
 	ld iyl,e
-	exx
 	jp apply_stack_offset_smc
 	
 shift_stack_window_higher_2:
@@ -211,6 +210,8 @@ shift_stack_window_higher_2_finish:
 	jr shift_stack_window_higher_any_finish
 	
 shift_stack_window_higher_check_overlap:
+	ld (hl),$41
+	inc hl
 	; Compare the current and next stack regions
 	ld l,(hl)
 	ld h,mem_read_lut >> 8
@@ -218,9 +219,11 @@ shift_stack_window_higher_check_overlap:
 	inc l
 	cp (hl)
 	jr z,shift_stack_window_higher_finish
+#ifdef SHADOW_STACK
 	; Check and see if we want to try shifting the shadow stack
 	cp shadow_stack_get_ptr & $FF
 	jr z,shift_shadow_stack_higher
+#endif
 shift_stack_window_higher_overlap:
 	ld b,l
 	ld a,(stack_window_base)
@@ -229,7 +232,6 @@ shift_stack_window_higher_overlap:
 	exx
 	ld a,h
 	exx
-	scf
 	jp set_gb_stack
 	
 shift_stack_window_higher_2_check_overlap:
@@ -242,12 +244,15 @@ shift_stack_window_higher_2_check_overlap:
 	inc l
 	cp (hl)
 	jr z,shift_stack_window_higher_2_finish
+#ifdef SHADOW_STACK
 	; Check and see if we want to try shifting the shadow stack
 	cp shadow_stack_get_ptr & $FF
 	jr nz,shift_stack_window_higher_overlap
 shift_shadow_stack_higher:
 	FIXME
-	
+#else
+	jr shift_stack_window_higher_overlap
+#endif
 	
 	; DEC SP
 ophandler3B:
@@ -295,7 +300,6 @@ shift_stack_window_lower_finish:
 shift_stack_window_lower_any_finish:
 	ld (hl),a
 	ld iyl,e
-	exx
 	jp apply_stack_offset_smc
 
 shift_stack_window_lower_2:
@@ -333,10 +337,12 @@ shift_stack_window_lower_check_overlap:
 	ld a,(bc)
 	cp l
 	jr z,shift_stack_window_lower_finish
+#ifdef SHADOW_STACK
 	; Check and see if we want to try shifting the shadow stack
 	ld a,l
 	cp shadow_stack_get_ptr & $FF
 	jr z,shift_shadow_stack_lower
+#endif
 shift_stack_window_lower_overlap:
 	dec c
 	ld b,c
@@ -346,7 +352,6 @@ shift_stack_window_lower_overlap:
 	exx
 	ld a,h
 	exx
-	scf
 	jp set_gb_stack
 
 shift_stack_window_lower_2_check_overlap:
@@ -360,12 +365,16 @@ shift_stack_window_lower_2_check_overlap:
 	ld a,(bc)
 	cp l
 	jr z,shift_stack_window_lower_finish
+#ifdef SHADOW_STACK
 	; Check and see if we want to try shifting the shadow stack
 	ld a,l
 	cp shadow_stack_get_ptr & $FF
 	jr nz,shift_stack_window_lower_overlap
 shift_shadow_stack_lower:
 	FIXME
+#else
+	jr shift_stack_window_lower_overlap
+#endif
 
 	; ADD SP,+nn
 ophandlerE8_non_negative:
@@ -392,7 +401,7 @@ ophandlerE8_finish:
 	ld a,h
 	ret
 _
-	call shift_stack_window_higher
+	call shift_stack_window_higher_preserved_a
 	jr ophandlerE8_finish
 
 	; ADD SP,-nn
@@ -405,7 +414,7 @@ ophandlerE8_negative:
 	; Results between $7F and $FE are valid
 	inc a
 	jp m,ophandlerE8_finish
-	call shift_stack_window_lower
+	call shift_stack_window_lower_preserved_a
 	jr ophandlerE8_finish
 
 	; LD SP,HL
@@ -612,12 +621,14 @@ set_gb_stack_region_apply_pop_smc:
 	 ld hl,(hl)
 	 ld (ophandlerF1_smc),hl
 pop_apply_stack_offset_smc:
-	 exx
 	 ld l,a
 	pop af
+	exx
 	ld h,a
+	exx
 	ld a,l
 apply_stack_offset_smc:
+	exx
 apply_stack_offset_smc_offset_smc = $+1
 	jr apply_stack_offset_smc_short_ptr
 
@@ -662,6 +673,7 @@ apply_stack_offset_smc_read_only:
 	ld a,h
 	ret
 
+#ifdef SHADOW_STACK
 set_shadow_stack_rollback:
 	dec iyl
 	dec iyl
@@ -712,6 +724,7 @@ set_shadow_stack_finish:
 	 exx
 	pop hl
 	ret
+#endif
 	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Pop routines

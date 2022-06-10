@@ -1,3 +1,4 @@
+#ifdef SHADOW_STACK
 set_shadow_stack_contiguous_helper:
 	ld c,a ;0
 	ld a,b
@@ -58,6 +59,7 @@ set_shadow_stack_no_flush:
 	; Get the original stack pointer back
 	lea bc,iy
 	jp.sis set_shadow_stack_finish
+#endif
 
 	; Propagate the bank mismatch value to the next callstack entry
 	; in the same region as the return address

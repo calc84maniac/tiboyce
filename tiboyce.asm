@@ -403,7 +403,7 @@ myz80stack = shadow_stack_start
 ; The lower bound of the call stack.
 call_stack_lower_bound = myz80stack - 4 - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80)
 ; The flags translation LUT.
-flags_lut = myz80stack - 256
+flags_lut = myz80stack - 512
 ; The end of the trampoline high allocation pool.
 trampoline_end = flags_lut - 3
 
