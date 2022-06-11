@@ -241,7 +241,9 @@ opgenROTfinish:
 _opgenLDH_C:
 	bit 4,c
 	jp z,_opgenE2
-	call _opgenF2
+	call opgen_emit_load_cycle_offset_swap_1cc
+	ex de,hl
+	call opgenroutinecall
 	djnz opgen_next_fast
 	
 _opgen3F:

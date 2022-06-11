@@ -1065,8 +1065,8 @@ tac_write_helper:
 	jr c,tac_write_enable
 	ld hl,disabled_counter_checker
 	ld.sis (event_counter_checker_slot_timer),hl
-	ld a,$C9 ;RET
-	ld (z80codebase+enableTIMA_smc),a
+	ld hl,$C93D ;DEC A \ RET
+	ld.sis (enableTIMA_smc),hl
 	; If the corresponding bit of DIV is 1, increment TIMA
 	ld hl,i
 	add hl,bc
@@ -1110,8 +1110,8 @@ tac_write_enable:
 _
 	 ld.sis (timer_period),hl
 	
-	 ld a,$AF ;XOR A
-	 ld (z80codebase+enableTIMA_smc),a
+	 ld hl,$09AF ;XOR A \ ADD HL,BC
+	 ld.sis (enableTIMA_smc),hl
 	 ld a,c
 	pop bc
 	jp.sis tima_reschedule_helper
@@ -1343,7 +1343,7 @@ schedule_jump_event_absolute:
 	call validate_schedule
 	ex de,hl
 #endif
-	ld c,a
+	ld a,c
 	sub b
 	jr nc,schedule_event_now_unresolved
 	inc hl

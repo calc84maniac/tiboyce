@@ -2994,12 +2994,6 @@ opgenroutinecall_displacement:
 	inc b
 	ret
 	
-_opgenF2:
-	dec iyl
-	call opgen_emit_load_cycle_offset_swap
-	ex de,hl
-	jr opgenroutinecall
-	
 opgenroutinecall_2cc:
 	dec iyl
 opgenroutinecall:
@@ -3025,6 +3019,8 @@ opgenroutinecall_noinc:
 	dec b ; Sets sign flag
 	ret
 	
+opgen_emit_load_cycle_offset_swap_1cc:
+	dec iyl
 opgen_emit_load_cycle_offset_swap:
 	ex de,hl
 opgen_emit_load_cycle_offset:
@@ -3599,8 +3595,7 @@ opgenHMEMwrite_direct:
 	jp opgen_next_swap_skip
 	
 _opgenE2:
-	call opgen_emit_load_cycle_offset_swap
-	dec iyl
+	call opgen_emit_load_cycle_offset_swap_1cc
 	ld bc,op_write_c_hmem
 	jr opgenE2_finish
 	

@@ -350,6 +350,7 @@ _
 	inc d
 	jr nz,--_
 do_slow_jump_overflow_common:
+	ld e,a
 	exx
 	inc hl
 	push hl
@@ -361,6 +362,7 @@ do_slow_jump_overflow_common:
 	 add a,b
 	 ld b,a
 	 sub c
+	 ld c,e
 	 ld de,(ix+2)
 	 ld ix,(ix)
 #ifdef VALIDATE_SCHEDULE
@@ -387,72 +389,63 @@ schedule_event_finish:
 	 ld a,(hl)
 	 ld (event_value),a
 	 ld (hl),RST_EVENT
-schedule_event_finish_no_schedule:
 	 ld a,e
+_
 	pop ix
 	ex af,af'
 	exx
 	jp (hl)
 	
-	; Check if an event was scheduled at or before the current memory cycle
-	; Inputs: C,H' = cycle count at end of block (only call when C=0)
-	;         L' = block-relative cycle offset (negative)
-	;         A = C = 0
-	; Destroys: AF, DE, HL
-handle_events_for_mem_access:
-	exx
-	ld a,l
-	add a,h
-	exx
-	ret nc
-	; Advance the cycle offsets to after the current cycle
-	cpl
-	ld c,a
-	ld hl,event_cycle_count
-	add a,(hl)
-	ld (hl),a
-	ASSERT_C
+schedule_event_finish_no_schedule:
+	 ld a,c
+	 jr -_
 	
+	; Check if an event was scheduled at or before the current memory cycle
+	; Inputs: DE = cycle count at end of block (only call when D=0)
+	;         C = block-relative cycle offset (negative)
+	;         A = D = 0
+	; Destroys: AF, BC, HL
+handle_events_for_mem_access:
+	ld a,e
+	add a,c
+	ret nc
 	; Save and override the terminating event counter checker, preventing interrupt dispatch
-	ld hl,event_counter_checkers_ei_delay
-	ld de,(hl)
-	push de
-	 ld de,event_expired_for_mem_access_loop
-	 ld (hl),de
-	 ld l,c
-	 ld h,0
-	 jr do_event_any_noassert
+	ld hl,(event_counter_checkers_ei_delay)
+	push hl
+	 ld hl,event_expired_for_mem_access_loop
+	 ld (event_counter_checkers_ei_delay),hl
+	 push ix
+	  ; Save the cycle remainder in IX
+	  ld ixl,a
+	  ld ixh,d
+	  ; Advance the cycle offsets to after the current cycle
+	  cpl
+	  ld hl,event_cycle_count
+	  add a,(hl)
+	  ld (hl),a
+	  ASSERT_C
+	  ld a,c
+	  cpl
+	  ld e,a
+	  jr do_event_pushed
 	
 event_expired_for_mem_access_loop:
 	   ld sp,(event_save_sp)
 	   ld h,b
 	   ld l,c
 	   ; Check if there are more events before the memory access
-	   inc d
-	   jr nz,_
-	   ld a,ixh
-	   sub e
-	   jr nc,event_expired_for_mem_access_more_events
-_
+	   add ix,de
+	   jr c,event_expired_more_events
 	   ; Advance the next event time to after the current cycle
-	   xor a
-	   ld d,a
-	   sub ixh
-	   ld e,a
+	   sbc hl,de
+	   lea de,ix+1
 	   add hl,de
 	   ld i,hl
-	  pop bc
-	  ld c,ixh
+	  pop de
 	 pop ix
 	pop hl
 	; Restore the terminating event counter checker
 	ld (event_counter_checkers_ei_delay),hl
-	; Advance the cycle count to after the current cycle
-	ld a,ixl
-	cpl
-	exx
-	ld h,a
-	exx
 	ret
 	
 start_emulation:
@@ -530,9 +523,6 @@ audio_counter = $+1
 	 ex de,hl
 	 ret
 
-event_expired_for_mem_access_more_events:
-	 ld ixh,a
-	 dec d
 event_expired_more_events:
 	 or a
 	 sbc hl,de
@@ -1536,6 +1526,7 @@ cycle_overflow_for_rst:
 	ld c,iyl
 	push bc
 cycle_overflow_for_rst_pushed:
+	inc bc ;BCU=0
 	ld c,a
 	exx
 	dec hl

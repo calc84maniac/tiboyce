@@ -1097,8 +1097,8 @@ _
 	ld.sis (timer_counter),hl
 	ld hl,timer_counter_checker
 	ld.sis (event_counter_checker_slot_timer),hl
-	ld a,$AF ;XOR A
-	ld (z80codebase+enableTIMA_smc),a
+	ld hl,$09AF ;XOR A \ ADD HL,BC
+	ld.sis (enableTIMA_smc),hl
 _
 	
 	; Always set the serial counter, which contains an offset from boot time

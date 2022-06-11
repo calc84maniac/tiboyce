@@ -1454,10 +1454,10 @@ updateTIMA:
 	ld a,d
 	adc a,$FF
 	ld b,a
-enableTIMA_smc = $ ; Replaced with XOR A when enabled
+enableTIMA_smc = $ ; Replaced with XOR A \ ADD HL,BC when enabled
+	dec a ; Resets Z flag
 	ret
 	; Handle special case if cycle offset is non-negative
-	add hl,bc
 	cp h
 	jr z,updateTIMAoverflow
 updateTIMAcontinue:
