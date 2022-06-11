@@ -2995,8 +2995,11 @@ opgenroutinecall_displacement:
 	ret
 	
 _opgenF2:
+	dec iyl
 	call opgen_emit_load_cycle_offset_swap
 	ex de,hl
+	jr opgenroutinecall
+	
 opgenroutinecall_2cc:
 	dec iyl
 opgenroutinecall:
@@ -3377,6 +3380,8 @@ opgenMBCorVRAMwrite:
 	jp opgen_next_swap_skip
 	
 opgenVRAMwrite:
+	pop hl
+	push hl
 	 call opgen_emit_load_cycle_offset_swap
 	 ld (hl),$CD ;CALL vram_banked_write_handler
 	 inc hl

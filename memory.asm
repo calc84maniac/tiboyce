@@ -865,11 +865,11 @@ patch_bc_de_port_read:
 	bit 7,(hl)
 	; Swap or unswap shadow registers
 	exx
-	ld hl,op_write_de_port
+	ld hl,op_read_de_port
 	jr z,_
 	; For a BC write, shadow registers are now unswapped, so reswap
 	exx
-	ld hl,op_write_bc_port
+	ld hl,op_read_bc_port
 	; Remove the EXX following the call
 	ld (ix),0 ;NOP
 	; Indicate a following byte
@@ -1339,7 +1339,7 @@ op_write_bc_port:
 	ld e,a
 	ld a,ixh
 	inc a
-	jr z,unpatch_op_write_bc_port
+	jr nz,unpatch_op_write_bc_port
 	ld b,ixl
 	ld h,mem_write_port_lut >> 8
 	ld l,b
