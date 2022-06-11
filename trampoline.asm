@@ -341,6 +341,8 @@ patch_hl_readwrite_helper:
 	; Move second byte of opcode to trampoline and replace with NOP
 	ld.s h,(ix+3)
 	ld.s (ix+3),0
+	; Switch from (HL) access to L access
+	dec h
 	; Indicate two opcode bytes
 	set 2,l
 _
@@ -348,6 +350,8 @@ _
 	res 3,l
 	ld a,7
 	call lookup_gb_code_and_allocate_trampoline
+	ld (hl),$D9 ;EXX
+	inc hl
 	ld (hl),$01 ;LD BC,cycle_offset | (opcode << 8)
 	inc hl
 	ld (hl),a
@@ -358,13 +362,15 @@ _
 	;        HL=memory access routine for write
 	;        Carry=bit 0 of flags
 patch_hl_readwrite_swap_helper:
+	ex de,hl
+	lea ix,ix-3
 	; Indicate a two-byte, four-cycle instruction
 	ld a,$04>>1
 	rla
 	ld l,a
 	ld a,6
 	call lookup_gb_code_and_allocate_trampoline
-	jr patch_hl_write_helper_finish
+	jr patch_port_direct_read_helper_finish
 	
 	; Input: IX=pointer after CALL of the old JIT implementation
 	;        HL=memory access routine for write

@@ -1585,7 +1585,7 @@ op_readwrite_hl_port_2:
 	inc a
 	ld a,e
 	exx
-	jr z,unpatch_op_readwrite_hl_port
+	jr nz,unpatch_op_readwrite_hl_port
 	ld b,a
 	push bc
 	 dec c ; Read happens one cycle before write
