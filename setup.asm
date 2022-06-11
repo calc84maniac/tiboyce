@@ -893,7 +893,7 @@ setup_ram_bank_no_rtc:
 	inc hl ;z80codebase+mbc_optimize_start
 	ld (hl),$F6 ;OR imm8
 	ld hl,z80codebase+mbc1_write_large_rom_handler
-	ld.sis (mbc1_get_write_handler_large_rom_smc),hl
+	ld.sis (mbc1_write_large_rom_handler_smc),hl
 	ld a,(cram_size+1)
 	add a,a
 	jr nc,_

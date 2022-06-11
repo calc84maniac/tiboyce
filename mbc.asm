@@ -1,68 +1,6 @@
 	.assume adl=0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; MBC write handler getters
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-; For each of the following routines:
-;  Input: A = high byte of write address, rotated left by 1
-;  Output: HL = MBC write routine
-;  Destroys: AF
-
-mbc1_get_write_handler:
-	rlca
-	jr nc,mbc_get_write_handler_low
-	rlca
-mbc1_get_write_handler_large_rom_smc = $+1
-	ld hl,mbc_write_cram_bank_handler
-	ret nc
-	ld hl,mbc1_write_mode_handler
-	ret
-	
-mbc2_get_write_handler:
-	rrca
-	rrca
-mbc_get_write_handler_low:
-	rlca
-	ld hl,mbc_write_rom_bank_handler
-	ret c
-	ld hl,mbc_write_cram_protect_handler
-	ret
-	
-mbc3_get_write_handler:
-	rlca
-	jr nc,mbc_get_write_handler_low
-mbc_get_write_handler_high:
-	rlca
-	ld hl,mbc_write_cram_bank_handler
-	ret nc
-no_mbc_get_write_handler:
-	ld hl,mbc_write_denied_handler
-	ret
-	
-mbc3rtc_get_write_handler:
-	rlca
-	jr nc,mbc_get_write_handler_low
-	rlca
-	ld hl,mbc_write_rtc_cram_bank_handler
-	ret nc
-	ld hl,mbc_write_rtc_latch_handler
-	ret
-	
-mbc5_get_write_handler:
-	rlca
-	jr c,mbc_get_write_handler_high
-	rlca
-	ld hl,mbc_write_cram_protect_handler
-	ret nc
-	rlca
-	ld hl,mbc_write_rom_bank_handler
-	ret nc
-	; 9th bit of ROM bank, would only mirror on storable ROMs
-	ld hl,mbc_write_denied_handler
-	ret
-	
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MBC write handlers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	
