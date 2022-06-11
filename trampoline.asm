@@ -263,12 +263,54 @@ _
 	jp schedule_event_helper
 #endif
 	
+	; Input: HL=pointer to opcode of the old JIT implementation
+	;        HL'=memory access routine for write
+	;        DE'=Game Boy HL
+	;        A=opcode byte minus $36
+	;        C=flags
+	;          Bit 0: Always 1 (no GB address should prefix the trampoline)
+	;          Bit 1: Set if IX+3 is not at the end of the JIT implementation
+	;          Bit 2: Always 0 (for one opcode byte)
+	;          Bit 3: Always 1 (for one memory cycle)
+	;        Z flag set for LD (HL),n
+patch_hl_mbc_write_helper:
+	; We now have a LD (HL),r or LD (HL),n instruction
+	dec hl
+	dec hl
+	push.s hl
+	ex.s (sp),ix
+	push.s de
+	ld l,c
+	ld d,$26 ;LD H,
+	jr nz,patch_hl_mbc_write_reg_helper
+	; Move second byte of opcode to trampoline and replace with NOP
+	ld.s d,(ix+3)
+	ld.s (ix+3),a ;0
+	ld a,$21+($70-$68-$36) ;LD HL,nn
+patch_hl_mbc_write_reg_helper:
+	; Convert LD (HL),r to LD L,r
+	sub $70-$68-$36
+	ld e,a
+	ld a,6
+	call lookup_gb_code_and_allocate_trampoline
+	ld (hl),e ;LD L,r or LD HL,nn
+	inc hl
+	ld (hl),d ;LD H,n or n
+	exx
+	; Get MBC routine address
+	push hl
+	 ld a,d ; Get MSB of write address
+	 exx
+	pop de
+	; Move to the HL access entry point
+	dec de \ dec de \ dec de \ dec de
+	jr patch_hl_readwrite_helper_finish	
 	
 	; Input: IX=pointer after the RST of the old JIT implementation
 	;        DE=memory access routine for write
 	;        H=non-prefixed opcode byte from the old JIT implementation
 	;        L=flags
-	;          Bit 0: Set if GB address should prefix the trampoline
+	;          Bit 0: Reset if GB address should prefix the trampoline
 	;          Bit 1: Set if IX+3 is not at the end of the JIT implementation
 	;          Bit 2: Always 0 (for one opcode byte)
 	;          Bit 3: Always 1 (for one memory cycle)
@@ -396,7 +438,7 @@ patch_port_direct_read_helper:
 	;        DE=memory access routine for write
 	;        H=non-prefixed opcode byte from the old JIT implementation
 	;        L=flags
-	;          Bit 0: Set if GB address should prefix the trampoline
+	;          Bit 0: Reset if GB address should prefix the trampoline
 	;          Bit 1: Set if IX+3 is not at the end of the JIT implementation
 	;          Bit 2: Always 0 (for one opcode byte)
 	;          Bit 3: Always 1 (for one memory cycle)
@@ -451,3 +493,4 @@ patch_hl_port_indirect_read_common:
 	ld (hl),d
 	inc hl
 	ret
+	

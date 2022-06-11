@@ -179,6 +179,7 @@ shift_stack_window_higher_finish:
 	ld iyl,a
 	sub $40
 	lea.l iy,iy+$40
+	or a
 shift_stack_window_higher_any_finish:
 	ld (hl),a
 	ld iyl,e
@@ -232,6 +233,7 @@ shift_stack_window_higher_overlap:
 	exx
 	ld a,h
 	exx
+	scf
 	jp set_gb_stack
 	
 shift_stack_window_higher_2_check_overlap:
@@ -297,6 +299,7 @@ shift_stack_window_lower_finish:
 	ld iyl,a
 	add a,$40
 	lea.l iy,iy-$40
+	or a
 shift_stack_window_lower_any_finish:
 	ld (hl),a
 	ld iyl,e
@@ -352,6 +355,7 @@ shift_stack_window_lower_overlap:
 	exx
 	ld a,h
 	exx
+	scf
 	jp set_gb_stack
 
 shift_stack_window_lower_2_check_overlap:
@@ -1094,6 +1098,7 @@ do_push_any_slow_swapped:
 	 push hl
 	  ld a,h
 	  exx
+do_push_any_slow_for_call_finish:
 	  ld hl,(stack_window_base)
 	  ld c,iyl
 	  ld b,0
@@ -1110,3 +1115,8 @@ do_push_any_slow_swapped:
 	pop af
 	ret
 	
+do_push_any_slow_for_call:
+	push af
+	 push hl
+	  ld a,h
+	  jr do_push_any_slow_for_call_finish

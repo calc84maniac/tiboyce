@@ -106,16 +106,14 @@ cycle_overflow_for_jump:
 	jp.lil schedule_jump_event_helper_adjusted
 #endif
 	
-do_push_overflow_for_call:
-	FIXME
-	
-do_call_callstack_overflow:
-	call callstack_overflow_helper
-	scf
-	jr do_call_dispatch
-	
 do_call_no_shadow_stack:
-	call do_push_any_slow_swapped
+	push bc
+do_push_overflow_for_call_slow:
+	 push hl
+	  call do_push_any_slow_for_call
+	  exx
+	 pop hl
+	pop bc
 	; Remove JIT return address from callstack cache, while preserving
 	; the Game Boy return address in HL
 	inc sp
@@ -130,10 +128,28 @@ do_call_no_shadow_stack:
 	ld a,c
 	jr cycle_overflow_for_call_pushed
 	
+do_call_callstack_overflow:
+	call callstack_overflow_helper
+	scf
+	jr do_call_dispatch
+	
 #ifdef SHADOW_STACK
 do_call_set_shadow_stack:
 	call set_shadow_stack
+	jr do_call_shadow_stack_smc
 #endif
+
+do_push_overflow_for_call:
+	push bc
+	 push hl
+	  exx
+	  push hl
+	   call shift_stack_window_lower
+	  pop hl
+	  exx
+	 pop hl
+	 jr c,do_push_overflow_for_call_slow
+	pop bc
 do_call:
 do_call_shadow_stack_smc = $
 	; Push Game Boy return address to the stack
@@ -627,7 +643,8 @@ do_push_for_interrupt_no_shadow_stack:
 	pop de
 	ld h,b
 	ld l,c
-	call do_push_any_slow_swapped
+	call do_push_any_slow_for_call
+	exx
 	jr trigger_interrupt_pushed
 	
 #ifdef SHADOW_STACK
@@ -1481,10 +1498,23 @@ do_rst_38:
 	dec iyl
 	jp m,do_rst
 do_push_overflow_for_rst:
-	FIXME
-	
+	push hl
+	 ld h,a
+	 exx
+	 push bc
+	  push hl
+	   call shift_stack_window_lower_preserved_a_swapped
+	   exx
+	  pop hl
+	 pop bc
+	 exx
+	pop hl
+	jr nc,do_rst
+	add a,(hl)
+	inc hl
+	exx
 do_rst_no_shadow_stack:
-	call do_push_any_slow_swapped
+	call do_push_any_slow_for_call
 decode_rst_return:
 	jr nc,_
 	inc d

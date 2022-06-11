@@ -2680,6 +2680,7 @@ _opgenRST:
 	call opgen_reset_cycle_count
 	inc de
 	call opgen_emit_gb_address
+	dec de
 	ld (hl),$06 ;LD B,ret_cycles
 	inc hl
 	ld (opgen_last_cycle_count_smc),hl

@@ -1162,18 +1162,16 @@ patch_hl_mbc_access:
 	exx
 	ld e,a
 	pop hl
+	ld c,(hl)
 	inc hl
 	ld a,(hl)
-	cp $36 ;LD (HL),n
-	jp m,do_hl_mbc_read_modify_write
-	; We now have a LD (HL),r or LD (HL),n instruction
-	FIXME
-	
-do_hl_mbc_read_modify_write:
+	sub $36 ;LD (HL),n
+	jp.lil p,patch_hl_mbc_write_helper
+	; We now have a read-modify-write instruction
 	ld bc,$0118 ;JR $+1 (skip over the RET)
 	jr c,do_hl_mbc_access_incdec
 	; Check for SWAP (HL), which has PUSH AF as the following instruction
-	cp $CB
+	cp $CB-$36
 	jr nz,do_hl_mbc_swap
 	; Get the second byte of the CB prefix instruction
 	inc hl
@@ -1181,7 +1179,7 @@ do_hl_mbc_read_modify_write:
 	.db $C2 ;JP NZ,
 do_hl_mbc_access_incdec:
 	; Switch from INC/DEC (HL) to INC/DEC L
-	sub $34-$2C
+	sub $34-$2C-$36
 	; Push the advanced return address
 	inc hl
 	push hl

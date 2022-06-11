@@ -774,7 +774,7 @@ _
 	 jr c,_
 	 ; If so, optimize the zero page override implementation
 	 ld a,mbc_zero_page_override_fast - (mbc_zero_page_optimize_smc+1)
-	 ld (mbc_zero_page_optimize_smc),a
+	 ld (z80codebase+mbc_zero_page_optimize_smc),a
 _
 	 ; Get the bank zero mask
 	 ld a,(hl)

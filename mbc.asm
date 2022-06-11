@@ -185,6 +185,7 @@ cram_size_smc = $+1
 cram_base_0 = $+2
 	 ld.lil bc,0
 	 add.l hl,bc
+mbc_write_cram_any_check_stack:
 	 ; See if SP is pointing into the swapped bank
 	 ld a,(curr_gb_stack_region)
 	 sub cram_bank_base & $FF
@@ -257,7 +258,7 @@ _
 	 ld (mbc1_cram_smc_2),a
 	 ld (mbc1_cram_smc_for_read),a
 	 ld (mbc1_cram_smc_for_write),a
-	 jr mbc_write_cram_any
+	 jr mbc_write_cram_any_check_stack
 	
 	
 	OP_WRITE_HL_MBC
