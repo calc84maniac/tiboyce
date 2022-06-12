@@ -725,6 +725,15 @@ _
 	push hl
 	pop de
 	ld a,(mbc)
+	; Handle special MBC register mapping for MBC5
+	cp 5
+	jr nz,_
+	; Ignore writes to the upper bit of the ROM bank
+	ld l,$60
+	ld e,$30
+	ld c,$10
+	ldir
+_
 	; Handle special MBC register mapping for MBC2
 	cp 2
 	jr nz,_
@@ -734,15 +743,19 @@ _
 	dec hl
 	ld c,$40-2
 	ldir
-_
-	; Handle special MBC register mapping for MBC5
-	cp 5
-	jr nz,_
-	; Ignore writes to the upper bit of the ROM bank
-	ld l,$60
-	ld e,$30
-	ld c,$10
+	; Set MBC2 access implementations
+	APTR(mbc2_cram_access_impls)
+	ld de,z80codebase+cram_mbc2_get_ptr
+	ld c,cram_mbc2_get_ptr_size
 	ldir
+	ld de,z80codebase+cram_mbc2_write_any
+	ld c,cram_mbc2_write_any_size
+	ldir
+	; Add jumps to these locations
+	ld hl,$18 | ((cram_mbc2_read_any - (cram_banked_read_any_mbc2_smc+2)) << 8)
+	ld.sis (cram_banked_read_any_mbc2_smc),hl
+	ld.sis (cram_banked_get_ptr_mbc2_smc),hl
+	ld.sis (cram_banked_write_any_mbc2_smc),hl
 _
 	
 	; Look up MBC info
@@ -804,6 +817,13 @@ _
 	cp 4
 	jr nz,setup_ram_bank_no_rtc_trampoline
 	;MBC3+RTC
+	
+	; Set RTC read implementation
+	.db $21 ;LD HL,
+	 ex af,af'
+	 ld a,(hl)
+	 ret
+	ld (z80codebase+cram_rtc_read_any),hl
 	
 	; Update rtc_last
 	call.il update_rtc_helper
@@ -944,9 +964,19 @@ _
 	ld (cram_bank_base_for_read),hl
 	ld (cram_bank_base_for_write),hl
 	
+	; If RAM size is 0, disable writes to the protection register
+	ld hl,(cram_size)
+	ld a,h
+	or l
+	jr nz,_
+	ld hl,mbc_write_denied_handler
+	ld.sis (mbc_cram_protect_handler_smc),hl
+	jr setup_cram_protect
+_
 	; Protect CRAM
 	bit 1,b
 	jr z,_
+setup_cram_protect:
 	; Switch to open bus accesses
 	ld hl,$18 | ((cram_open_bus_read_any - (cram_banked_read_any_protect_smc+2)) << 8)
 	ld.sis (cram_banked_get_ptr_protect_smc),hl
@@ -3108,6 +3138,53 @@ mbc_info:
 	.dw mbc_write_denied_handler
 	.db $00
 	.db 0
+	
+mbc2_cram_access_impls:
+	.assume adl=0
+cram_mbc2_get_ptr_impl = $
+	exx
+	pop hl
+	push hl
+	exx
+	ex af,af'
+	push af
+	 ; Get the mirrored pointer
+	 ld a,d
+	 srl d
+	 ld d,$A0>>1
+	 rl d
+	 add.l hl,de
+	 ld d,a
+	 ; Shift the lower nibble of CRAM into the upper nibble
+	 rld.l
+	 exx
+	 ; Get the open bus read/write pointer for this access
+	 ex af,af' ; Restores input Z flag
+	 call do_cram_open_bus_get_ptr_with_return
+	 ; Grab the upper nibble of the open bus value
+	 rld
+	 exx
+	 ; Shift it into the upper nibble of CRAM
+	 rrd.l
+	pop af
+	ret
+cram_mbc2_get_ptr_size = $ - cram_mbc2_get_ptr_impl
+	
+cram_mbc2_write_any_impl = $
+	ex af,af'
+	push af
+	 ; Get the mirrored pointer
+	 ld a,b
+	 srl b
+	 ld b,$A0>>1
+	 rl b
+	 add.l hl,bc
+	 ld b,a
+	pop af
+	ld.l (hl),a
+	ret
+cram_mbc2_write_any_size = $ - cram_mbc2_write_any_impl
+	.assume adl=1
 	
 customHardwareSettings:
 	;mpIntEnable

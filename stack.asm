@@ -558,7 +558,7 @@ set_gb_stack_region_io:
 	 jr set_gb_stack_region_apply_pop_smc
 	 
 set_gb_stack_region_cram_rtc:
-	 ; Check if an RTC register is mapped
+	 ; Check if an RTC register is mapped (or MBC2 RAM is present)
 	 ld a,(cram_banked_get_ptr_rtc_smc)
 	 rra ;JR vs. ADD.L
 	 jr nc,set_gb_stack_region_io ; Note: Z is already set

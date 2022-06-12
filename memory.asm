@@ -89,6 +89,7 @@ cram_banked_read_any_protect_smc = $
 cram_bank_base_for_read = $+2+z80codebase
 	ld.lil hl,0
 cram_banked_read_any_rtc_smc = $
+cram_banked_read_any_mbc2_smc = $
 	add.l hl,bc
 	ex af,af'
 	ld.l a,(hl)
@@ -167,8 +168,33 @@ _
 cram_open_bus_read_any:
 	jp do_cram_open_bus_read_any
 cram_rtc_read_any:
-	ex af,af'
-	ld a,(hl)
+	; Patched in during setup if needed
+	;ex af,af'
+	;ld a,(hl)
+	;ret
+cram_mbc2_read_any:
+	exx
+	pop hl
+	push hl
+	call do_cram_open_bus_read_any_with_return
+	ld l,a
+	push af
+	 exx
+	 ld a,b
+	 srl b
+	 ld b,$A0>>1
+	 rl b
+	 add.l hl,bc
+	 ld b,a
+	 ld.l a,(hl)
+	 exx
+	 xor l
+	 and $0F
+	 xor l
+	 exx
+	 ld l,a
+	pop af
+	ld a,l
 	ret
 	
 	; GBC BG palette data
@@ -270,6 +296,7 @@ cram_banked_get_ptr_protect_smc = $
 cram_bank_base = $+2+z80codebase
 	ld.lil hl,0
 cram_banked_get_ptr_rtc_smc = $
+cram_banked_get_ptr_mbc2_smc = $
 	add.l hl,de
 	ex af,af'
 	ret
@@ -352,6 +379,7 @@ cram_open_bus_get_ptr:
 	; This is treated as a union because MBC1 and RTC cannot coexist
 mbc1_preserved_cram_bank_base = $+z80codebase
 cram_rtc_get_ptr:
+cram_mbc2_get_ptr:
 	; Check whether this is a read or write
 	exx
 	pop hl
@@ -376,6 +404,7 @@ cram_rtc_get_ptr:
 	pop af
 	ex af,af'
 	ret
+	nop
 	
 	; GBC OBJ palette data
 	.block (mem_get_ptr_routines+256-64)-$
@@ -416,6 +445,7 @@ mem_write_any_routines:
 	
 	; MBC write handlers come first for easy detection by absolute writes
 mbc_cram_protect_write_any:
+mbc_cram_protect_handler_smc = $+1
 	ld hl,mbc_write_cram_protect_handler
 	ex af,af'
 	jr handle_mbc_write_any
@@ -460,6 +490,7 @@ cram_banked_write_any_protect_smc = $
 cram_bank_base_for_write = $+2+z80codebase
 	ld.lil hl,0
 cram_banked_write_any_rtc_smc = $
+cram_banked_write_any_mbc2_smc = $
 	add.l hl,bc
 	ex af,af'
 	ld.l (hl),a
@@ -537,6 +568,7 @@ cram_open_bus_write_any:
 	ret
 	nop
 cram_rtc_write_any:
+cram_mbc2_write_any:
 	exx
 	; Check if the RTC has changed since the last update
 	ld.lil hl,mpRtcIntStatus
@@ -1005,16 +1037,19 @@ do_cram_open_bus_read_any:
 	; Get the return address
 	pop hl
 	push hl
-	; If the Z flag is reset, it may be a BC/DE read
-	; If the Z flag is set, it may be a generic read
-	; For LD A,(nnnn) the Z flag input is arbitrary
-	jr z,do_cram_open_bus_read_not_bcde
-	call.il lookup_code_bus
-	jr c,do_cram_open_bus_stale_read
+do_cram_open_bus_read_any_with_return:
+	push af
+	 call.il lookup_code_bus
+	 jr c,do_cram_open_bus_stale_read
+	pop af
 	; Get the address of the routine call
 	dec hl
 	dec hl
 	ld hl,(hl)
+	; If the Z flag is reset, it may be a BC/DE read
+	; If the Z flag is set, it may be a generic read
+	; For LD A,(nnnn) the Z flag input is arbitrary
+	jr z,do_cram_open_bus_read_not_bcde
 	bit 7,(hl) ; Check for EXX
 	jr nz,do_cram_open_bus_read_bc
 	inc hl
@@ -1027,12 +1062,6 @@ do_cram_open_bus_read_absolute:
 	ret
 	
 do_cram_open_bus_read_not_bcde:
-	call.il lookup_code_bus
-	jr c,do_cram_open_bus_stale_read
-	; Get the address of the routine call
-	dec hl
-	dec hl
-	ld hl,(hl)
 	inc hl
 	bit 1,(hl) ; Check for LD H,n or JR
 	jr z,do_cram_open_bus_read_absolute
@@ -1041,6 +1070,7 @@ do_cram_open_bus_read_not_bcde:
 	ret
 	
 do_cram_open_bus_stale_read:
+	pop af
 	ex af,af'
 	ld a,$FF
 	ret
@@ -1058,6 +1088,7 @@ do_cram_open_bus_read_de:
 do_cram_open_bus_get_ptr:
 	pop hl
 	push hl
+do_cram_open_bus_get_ptr_with_return:
 	push af
 	 ; Currently, try_get_mem_readwrite_ptr is used only by LD (nnnn),SP
 	 ; This is write-only, so just return a pointer to two bytes of scratch space

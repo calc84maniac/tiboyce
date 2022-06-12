@@ -271,7 +271,7 @@ mbc_write_rtc_latch_handler:
 	 rra
 mbc_rtc_latch_smc = $+1
 	 jr nc,$+2 ;mbc_rtc_latch_finish
-     call c,update_rtc
+	 call c,update_rtc
 	 ld hl,(rtc_current)
 	 ld a,l
 	 and $3F
