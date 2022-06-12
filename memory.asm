@@ -722,7 +722,13 @@ get_mem_write_info_absolute:
 	 ; Grab the cycle offset from before the call
 	 dec hl
 	 dec hl
+	 ; For LD ($FF00+C),A the offset is here
+	 ; For LD (nnnn),A this is either EX AF,AF' or a byte in I/O range
+	 bit 7,(hl)
+	 jr nz,_
+	 ; For LD (nnnn),A the cycle offset is one byte earlier
 	 dec hl
+_
 	 ld a,(hl)
 	pop hl
 	; There's never a JIT byte following the call
