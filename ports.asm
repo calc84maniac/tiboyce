@@ -472,31 +472,41 @@ _writeSC:
 	jr nz,writeSC_disable
 	ld hl,serial_counter_checker
 	ld (event_counter_checker_slot_serial),hl
-	; Get the DIV counter for the current cycle
-	ld hl,i
-	add hl,de
-	ld b,$FF
-	add hl,bc
-	; To make things simpler, since bits tick every 128 cycles,
-	; shift left once before overriding the low byte
-	add hl,hl
-	ld a,(serial_counter)
-	; Preserve the top bit of DIV in bit 0 while shifting left
-	rla
-	; Check whether the tick has already occurred
-	cp l
-	ld l,a
-	; Adjust the upper byte by 8 if the tick already occurred,
-	; otherwise by 7
-	ld a,h
-	adc a,7
-	ld h,a
-	; Rotate the counter back and save it
-	rra
-	rr l
-	rr h
-	ld (serial_counter),hl
-	jp reschedule_event_serial
+	push de
+	 ; Get the current cycle offset in BC
+	 ex de,hl
+	 ld b,$FF
+	 add hl,bc
+	 ld b,h
+	 ld c,l
+	 ; Get the DIV counter for the current cycle
+	 ld hl,i
+	 add hl,bc
+	 ; To make things simpler, since bits tick every 128 cycles,
+	 ; shift left once before overriding the low byte
+	 add hl,hl
+	 ld a,(serial_counter)
+	 ; Preserve the top bit of DIV in bit 0 while shifting left
+	 rla
+	 ; Check whether the tick has already occurred
+	 cp l
+	 ld l,a
+	 ; Adjust the upper byte by 8 if the tick already occurred,
+	 ; otherwise by 7
+	 ld a,h
+	 adc a,7
+	 ld h,a
+	 ; Rotate the counter back and save it
+	 rra
+	 rr l
+	 rr h
+	 ld (serial_counter),hl
+	 ; Get the relative time of the event from the currently scheduled event
+	 ex de,hl
+	 ld hl,i ; Resets carry
+	 sbc hl,de
+	pop de
+	jp reschedule_event_any
 	
 writeSC_disable:
 	ld hl,disabled_counter_checker

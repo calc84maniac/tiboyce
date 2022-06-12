@@ -2080,7 +2080,7 @@ tima_reschedule_helper:
 	 ld hl,i ; Resets carry
 	 sbc hl,bc
 	pop bc ; Restore current cycle count
-	jr _
+	jr reschedule_event_any
 	
 reschedule_event_PPU:
 	 pop bc
@@ -2089,15 +2089,14 @@ reschedule_event_PPU:
 	 ld hl,i
 	 add hl,de
 	pop de
-reschedule_event_serial:
 	; Calculate current cycle count from block offset
 	ld a,e
 	add a,c
 	ld c,a
 	ld b,d
-	jr c,_
+	jr c,reschedule_event_any
 	dec b
-_
+reschedule_event_any:
 	; If the current event is scheduled before or at the current cycle, do nothing
 	xor a
 	cp b
