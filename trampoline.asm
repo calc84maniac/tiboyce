@@ -224,6 +224,7 @@ _
 ;          BCDEHL' have been unswapped
 flush_normal:
 	ld c,a
+flush_for_halt:
 	push ix
 	 push de
 	  push bc

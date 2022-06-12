@@ -329,11 +329,15 @@ _
 	
 	
 decode_halt_helper:
+	exx
 	ex af,af'
-	push af
-	 push bc
+	ld e,a
+	push de
+	 push ix
+	  ld.s de,(ix+3)
 	  call lookup_code
-	 pop bc
+	  ex (sp),ix
+	 pop hl
 	pop de
 	jp.sis decode_halt_continue
 	

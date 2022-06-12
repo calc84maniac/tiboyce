@@ -702,14 +702,14 @@ trigger_interrupt_pushed:
 	and l
 	; Clear the IF bit
 	xor h
-	ld c,a
+	ld b,a
 	; Index the dispatch routines by the interrupt bit times 4
 	xor h
 	add a,a
 	add a,a
 	; Save the new IF value
 	sbc hl,hl ;active_ints
-	ld (hl),c
+	ld (hl),b
 	exx
 	ld l,a
 	ld h,dispatch_vblank >> 8
@@ -751,14 +751,15 @@ do_push_overflow_for_interrupt:
 dispatch_int_maybe_overflow:
 	inc d
 	jr nz,dispatch_int_no_overflow
-	inc bc ;BCU=0
+	ld c,a
 	; Check if an event was scheduled during the first 4 cycles of dispatch
-	ld b,a
 	ld a,e
 	sub -4
 	jr nc,dispatch_int_handle_events
-cycle_overflow_for_int:
-	ld c,e
+	cpl
+	add a,c
+	ld b,a
+	inc bc \ dec bc ;BCU=0
 	exx
 	ld a,l
 	inc hl
@@ -789,8 +790,7 @@ dispatch_int_handle_events:
 	 dec a
 	 rrca
 	 rrca
-	 dec c
-	 xor c
+	 xor b
 	 ld (active_ints),a
 	 ; Set the restoring interrupt trigger
 	 ld a,trigger_interrupt_retry_dispatch - (intstate_smc_2 + 1)
@@ -1930,39 +1930,26 @@ intstate_smc_1 = $
 	ret
 	
 decode_halt:
-	exx
-	pop hl
-	inc hl
-	push ix
-	push hl
-	inc hl
-	inc hl
-	ld de,(hl)
+	ex (sp),ix
 	jp.lil decode_halt_helper
 decode_halt_continue:
-	pop hl
-	ld (hl),ix
-	dec hl
-	ld (hl),a
-	ld a,ixh
+	ld (ix),a
+	ld (ix+1),hl
+	ld hl,ophandler_halt
+	ld (ix-2),hl
+	ex (sp),ix
+	ld a,h
 	cp flush_handler >> 8
 	jr nz,_
-	ld a,ixl
+	ld a,l
 	cp flush_handler & $FF
-_
-	pop ix
-	push hl
-	dec hl
-	ld (hl),ophandler_halt >> 8
-	dec hl
-	ld (hl),ophandler_halt & $FF
 	jr nz,_
 	; If the JIT needs to be flushed, flush at the HALT address itself
-	pop hl
-	ld a,d
+	ld b,d
+	ld c,e
 	ld de,(flush_address)
 	dec de
-	jp.lil flush_normal
+	jp.lil flush_for_halt
 ophandler_halt:
 	ex af,af'
 	exx
@@ -2038,6 +2025,7 @@ ophandler_halt_maybe_overflow:
 	ld b,a
 	exx
 	push hl
+	 exx
 	 ex (sp),ix
 	 ld de,(ix-3)
 	 dec de
