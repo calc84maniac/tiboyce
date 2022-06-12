@@ -894,6 +894,9 @@ setup_ram_bank_no_rtc:
 	ld (hl),$F6 ;OR imm8
 	ld hl,z80codebase+mbc1_write_large_rom_handler
 	ld.sis (mbc1_write_large_rom_handler_smc),hl
+	; Use an effective mask of $1F for the lower bank bits
+	ld a,$1F
+	ld (z80codebase+rom_bank_mask_smc),a
 	ld a,(cram_size+1)
 	add a,a
 	jr nc,_

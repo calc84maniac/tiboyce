@@ -421,12 +421,12 @@ mbc_cram_protect_write_any:
 	jr handle_mbc_write_any
 	
 mbc_rom_bank_write_any:
-mbc1_write_large_rom_handler_smc = $+1
 	ld hl,mbc_write_rom_bank_handler
 	ex af,af'
 	jr handle_mbc_write_any
 	
 mbc_cram_bank_write_any:
+mbc1_write_large_rom_handler_smc = $+1
 	ld hl,mbc_write_cram_bank_handler
 	ex af,af'
 	jr handle_mbc_write_any
