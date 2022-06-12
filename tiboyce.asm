@@ -392,14 +392,19 @@ IE = $ffff
 
 ; The 16-bit Z80 address space starts here.
 z80codebase = vRam
+#ifdef SHADOW_STACK
 ; The Z80-mode shadow stack. A sliding window of the game's "main" stack.
 ; The "main" stack is set when a call/return is executed on a read/write stack.
 ; The memory LUTs are updated to direct other reads/writes into this window.
 ; When the stack pointer moves out of the window, it is shifted by 256 bytes.
 shadow_stack_end = $FE00
 shadow_stack_start = shadow_stack_end - 512
-; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
+; The bottom of the Z80 stack. Grows down from the shadow stack start.
 myz80stack = shadow_stack_start
+#else
+; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
+myz80stack = $FE00
+#endif
 ; The lower bound of the call stack.
 call_stack_lower_bound = myz80stack - 4 - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80)
 ; The flags translation LUT.
