@@ -553,6 +553,7 @@ set_gb_stack_region_io:
 	 ld (callstack_ret_cond_shadow_stack_smc),hl
 	 ld a,apply_stack_offset_smc_read_only - (apply_stack_offset_smc_offset_smc+1)
 	 jr nz,set_gb_stack_long_ptr_finish
+	 ld a,apply_stack_offset_smc_slow - (apply_stack_offset_smc_offset_smc+1)
 	 ld l,pop_slow_src - pop_routines_start
 	 jr set_gb_stack_region_apply_pop_smc
 	 
@@ -652,6 +653,7 @@ apply_stack_offset_smc_short_ptr:
 	ld (do_rst_push_offset_smc_2),a
 	ld (trigger_interrupt_push_offset_smc_1),a
 	ld (trigger_interrupt_push_offset_smc_2),a
+apply_stack_offset_smc_slow:
 	ld a,h
 	ret
 
@@ -925,17 +927,17 @@ pop_slow_src:
 	;ophandlerC1_smc
 	inc iyl
 	inc iyl
-	jp p,do_pop_bc_slow
+	jp m,do_pop_bc_slow
 	.db $2E ;LD L,
 	;ophandlerD1_smc
 	inc iyl
 	inc iyl
-	jp p,do_pop_de_slow
+	jp m,do_pop_de_slow
 	jr $+4
 	;ophandlerE1_smc
 	inc iyl
 	inc iyl
-	jp p,do_pop_hl_slow
+	jp m,do_pop_hl_slow
 	jr $+3
 	;ophandlerF1_smc
 	.db $18, ophandlerF1_slow - (ophandlerF1_smc+2) ;JR ophandlerF1_slow
