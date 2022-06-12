@@ -1002,16 +1002,19 @@ _
 	jr op_read_de_normal_swapped
 	
 do_cram_open_bus_read_any:
-	; Get the address of the routine call
+	; Get the return address
 	pop hl
 	push hl
-	dec hl
-	dec hl
-	ld hl,(hl)
 	; If the Z flag is reset, it may be a BC/DE read
 	; If the Z flag is set, it may be a generic read
 	; For LD A,(nnnn) the Z flag input is arbitrary
 	jr z,do_cram_open_bus_read_not_bcde
+	call.il lookup_code_bus
+	jr c,do_cram_open_bus_stale_read
+	; Get the address of the routine call
+	dec hl
+	dec hl
+	ld hl,(hl)
 	bit 7,(hl) ; Check for EXX
 	jr nz,do_cram_open_bus_read_bc
 	inc hl
@@ -1024,11 +1027,22 @@ do_cram_open_bus_read_absolute:
 	ret
 	
 do_cram_open_bus_read_not_bcde:
+	call.il lookup_code_bus
+	jr c,do_cram_open_bus_stale_read
+	; Get the address of the routine call
+	dec hl
+	dec hl
+	ld hl,(hl)
 	inc hl
 	bit 1,(hl) ; Check for LD H,n or JR
 	jr z,do_cram_open_bus_read_absolute
 	; For generic reads, preserve the input open bus value
 	ex af,af'
+	ret
+	
+do_cram_open_bus_stale_read:
+	ex af,af'
+	ld a,$FF
 	ret
 	
 do_cram_open_bus_read_bc:
@@ -1048,6 +1062,8 @@ do_cram_open_bus_get_ptr:
 	 ; Currently, try_get_mem_readwrite_ptr is used only by LD (nnnn),SP
 	 ; This is write-only, so just return a pointer to two bytes of scratch space
 	 jr z,do_cram_open_bus_get_ptr_finish
+	 call.il lookup_code_bus
+	 jr c,do_cram_open_bus_get_ptr_finish
 	 ; Check for RST vs. (get_hl_readwrite_ptr_swapped >> 8) == 0
 	 dec hl
 	 ld a,(hl)
@@ -1523,13 +1539,11 @@ unpatch_op_write_hl_mbc:
 	  ; Update the routine address
 	  ld l,h
 	  ld h,mem_write_lut >> 8
+	  ld l,(hl)
 	  inc h ;mem_write_any_routines
 	  inc hl
 	  ld hl,(hl)
-	  dec hl
-	  dec hl
-	  dec hl
-	  dec hl
+	  dec hl \ dec hl \ dec hl \ dec hl
 	  ex de,hl
 	  ld (hl),de
 	 pop de

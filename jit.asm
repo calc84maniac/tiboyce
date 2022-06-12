@@ -148,6 +148,42 @@ get_banked_address:
 	ex de,hl
 	ret
 	
+; Looks up the containing code block for a given code pointer and determines
+; whether it is executing on external or internal bus. This is used for
+; emulating open bus reads.
+;
+; Inputs: HL = 16-bit Z80 code pointer
+; Outputs: C flag set if on internal bus
+;          A = $FF if C flag is set, for convenience
+; Destroys: A
+lookup_code_bus:
+	push ix
+	 push de
+	  push hl
+	   ld ix,recompile_struct
+	   ld de,recompile_index_LUT
+	   ld e,h
+	   ld a,(de)
+	   ld ixl,a
+	   inc d
+	   ld a,(de)
+	   ld ixh,a
+	   ld a,l
+	   cpl
+	   ld e,a
+	   ld a,h
+	   cpl
+	   ld d,a
+	   call lookup_code_block_loop
+	  pop hl
+	 pop de
+	 ; For now, just treat OAM/HRAM as internal
+	 ld a,(ix+3)
+	 add a,2
+	 sbc a,a
+	pop ix
+	ret.l
+	
 ; Gets the recompile struct entry for a given code pointer.
 ;
 ; Inputs: BC = 16-bit Z80 code pointer

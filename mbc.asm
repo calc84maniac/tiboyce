@@ -73,7 +73,7 @@ mbc_optimize_start = $ ; Copy this sequence of code forward or backward
 mbc_optimize_size = $ - mbc_optimize_start
 	
 mbc_zero_page_override:
-	; Switch to page 0 or 1 depending on the written value
+	 ; Switch to page 0 or 1 depending on the written value
 	 ld a,l
 rom_bank_zero_mask_smc = $+1
 	 and ~$1F
@@ -230,6 +230,27 @@ mbc_fix_sp:
 	 ld (hl),a
 	 jp pop_apply_stack_offset_smc
 	
+	OP_WRITE_HL_MBC
+mbc1_write_mode_handler:
+	push af
+	 bit 0,l
+	 exx
+mbc1_cram_smc_2 = $+2
+	 ld.lil hl,(cram_bank_base)
+	 ld a,cram_bank_base & $FF
+	 jr nz,_
+cram_base_1 = $+2
+	 ld.lil bc,0
+	 ld.lil (cram_bank_base),bc
+	 ld.lil (cram_bank_base_for_read),bc
+	 ld.lil (cram_bank_base_for_write),bc
+	 ld a,mbc1_preserved_cram_bank_base & $FF
+_
+	 ld (mbc1_cram_smc_1),a
+	 ld (mbc1_cram_smc_2),a
+	 ld (mbc1_cram_smc_for_read),a
+	 ld (mbc1_cram_smc_for_write),a
+	 jr mbc_write_cram_any_check_stack
 	
 	; Size-optimized HL write op
 	push af
@@ -240,27 +261,6 @@ mbc_write_denied_handler:
 	ret
 	 jr z,mbc_finish_unswapped
 	 ; Fallthrough to operator patching call
-	OP_WRITE_HL_MBC
-mbc1_write_mode_handler:
-	push af
-	 exx
-mbc1_cram_smc_2 = $+2
-	 ld.lil hl,(cram_bank_base)
-	 rra
-	 ld a,cram_bank_base & $FF
-	 jr c,_
-cram_base_1 = $+2
-	 ld.lil bc,0
-	 ld.lil (cram_bank_base),bc
-	 ld a,mbc1_preserved_cram_bank_base & $FF
-_
-	 ld (mbc1_cram_smc_1),a
-	 ld (mbc1_cram_smc_2),a
-	 ld (mbc1_cram_smc_for_read),a
-	 ld (mbc1_cram_smc_for_write),a
-	 jr mbc_write_cram_any_check_stack
-	
-	
 	OP_WRITE_HL_MBC
 mbc_write_rtc_latch_handler:
 	push af
