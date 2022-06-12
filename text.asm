@@ -179,7 +179,7 @@ LookupGBFoundMessage:
 	.db "Found GB %04X @ %04X\n",0
 	
 FlushMessage:
-	.db "Flushing recompiled code!\n",0
+	.db "Flushing recompiled code, %u bytes wasted\n",0
 	
 CacheMissMessage:
 	.db "Cache miss at %06X\n",0

@@ -232,7 +232,9 @@ draw_sprite_priority_hdir_2:
 	jp draw_next_sprite_2
 	
 _
-	 call write_vram_check_sprite_catchup
+	 push de
+	  call write_vram_check_sprite_catchup
+	 pop de
 	 jr _
 write_vram_and_expand_catchup:
 	push bc

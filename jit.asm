@@ -28,6 +28,21 @@
 cache_flushes_allowed:
 	.db 0
 
+#ifdef DEBUG
+record_wasted_bytes:
+	push hl
+	 push bc
+wasted_jit_bytes = $+1
+	  ld hl,0
+	  ld bc,0
+	  ld c,a
+	  add hl,bc
+	  ld (wasted_jit_bytes),hl
+	 pop bc
+	pop hl
+	ret
+#endif
+
 ; Do as in flush_code, but also reset RAM block padding amount.
 ; This is called only at startup, because block padding should 
 ; persist between flushes to reduce flush rates overall.
@@ -43,7 +58,13 @@ flush_code_reset_padding:
 flush_code:
 	push de
 #ifdef DEBUG
-	 APRINTF(FlushMessage)
+	 ld hl,(wasted_jit_bytes)
+	 push hl
+	  or a
+	  sbc hl,hl
+	  ld (wasted_jit_bytes),hl
+	  APRINTF(FlushMessage)
+	 pop hl
 #endif
 	 ; Empty recompiled code information struct
 	 ld hl,recompile_struct
@@ -3380,6 +3401,10 @@ opgenMBCorVRAMwrite:
 	 ld (hl),$02
 	 inc hl
 	 inc hl
+#ifdef DEBUG
+	 ld a,4
+	 call record_wasted_bytes
+#endif
 	pop de
 	jp opgen_next_swap_skip
 	
@@ -3444,6 +3469,10 @@ _
 	 ld (hl),$21 ;LD HL,
 	 inc hl
 	 inc hl
+#ifdef DEBUG
+	 ld a,3
+	 call record_wasted_bytes
+#endif
 opgenRAMwrite_finish:
 	 inc hl
 	 ex de,hl
@@ -3604,6 +3633,11 @@ opgenHMEMwrite_direct:
 	ld (hl),c
 	inc hl
 	ld (hl),$FF
+#ifdef DEBUG
+	ld a,b
+	add a,2
+	call record_wasted_bytes
+#endif
 	jp opgen_next_swap_skip
 	
 _opgenE2:
@@ -3652,6 +3686,10 @@ _
 	 ld (hl),$21 ;LD HL,
 	 inc hl
 	 inc hl
+#ifdef DEBUG
+	 ld a,3
+	 call record_wasted_bytes
+#endif
 	pop de
 	jp opgen_next_swap_skip
 	
@@ -3730,6 +3768,10 @@ opgenHRAMread:
 	ld (hl),c
 	inc hl
 	ld (hl),$FF
+#ifdef DEBUG
+	ld a,5
+	call record_wasted_bytes
+#endif
 	jp opgen_next_swap_skip
 	
 #ifdef SCHEDULER_LOG

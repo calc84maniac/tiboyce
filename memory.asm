@@ -1228,7 +1228,15 @@ vram_banked_write_handler:
 	inc hl
 	inc hl
 	push hl
-	jr do_vram_banked_write_any
+do_vram_banked_write_any:
+	push de
+	 ex af,af'
+	 ld e,a
+	 ex af,af'
+	 ld a,r
+	 ld a,e
+	 jp.lil p,write_vram_and_expand
+	 jp.lil write_vram_and_expand_catchup
 	
 	; Input: IX=Game Boy BC, L=write value, C'=cycle offset, BCDEHL' are swapped
 	; Output: Value written, or write instruction is unpatched
@@ -1241,7 +1249,6 @@ op_write_bc_vram:
 	ld a,b
 	cp $20
 	jp po,unpatch_op_write_bc_vram
-do_vram_banked_write_any:
 	exx
 	ld a,r
 	ld a,l
