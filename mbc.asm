@@ -54,7 +54,7 @@ rom_bank_mask_smc = $+1
 	 and 0
 mbc5_rom_bank_optimize_dst = $ ; Copy to here to eliminate zero mask check
 mbc_zero_page_optimize_smc = $+1 ; Update jump when zero mask equals bank mask
-	 jr z,mbc_zero_page_override
+	 jr z,mbc_zero_page_override_fast
 mbc_zero_page_continue:
 mbc1_upper_bits_smc = $+1 ; Combine with upper bits of bank
 mbc1_upper_bits_dst = $+2 ; Copy to here to enable upper bit combine
@@ -72,13 +72,15 @@ mbc_optimize_start = $ ; Copy this sequence of code forward or backward
 	ret
 mbc_optimize_size = $ - mbc_optimize_start
 	
-mbc_zero_page_override:
 	 ; Switch to page 0 or 1 depending on the written value
-	 ld a,l
-rom_bank_zero_mask_smc = $+1
-	 and ~$1F
-	 scf
-	 sbc a,l
+mbc_zero_page_override_mbc2:
+	 add hl,hl
+mbc_zero_page_override_mbc1:
+	 add hl,hl
+	 add hl,hl
+mbc_zero_page_override_mbc3:
+	 add hl,hl
+	 cp l
 	 sbc a,a
 	 ; Fast entry point if the zero mask is the same as the ROM size mask
 mbc_zero_page_override_fast:

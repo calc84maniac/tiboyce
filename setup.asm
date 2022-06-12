@@ -750,7 +750,7 @@ _
 	ld a,(rom_bank_mask)
 	ld c,a
 	push bc
-	 ld c,9
+	 ld c,10
 	 mlt bc
 	 APTR(mbc_info)
 	 add hl,bc
@@ -771,19 +771,20 @@ _
 	 ld (de),a
 	 ; Check if it's greater than or equal to the bank zero mask
 	 cp (hl)
-	 jr c,_
-	 ; If so, optimize the zero page override implementation
-	 ld a,mbc_zero_page_override_fast - (mbc_zero_page_optimize_smc+1)
-	 ld (z80codebase+mbc_zero_page_optimize_smc),a
-_
-	 ; Get the bank zero mask
+	 inc hl
+	 ; Get the zero page implementation offset
 	 ld a,(hl)
-	 ; If the zero mask is 0 (MBC5), remove the zero check
+	 ld hl,z80codebase+mbc_zero_page_optimize_smc
+	 jr nc,_
+	 ; If ROM is not large enough, use the specified implementation offset
+	 ld (hl),a
+_
+	 inc hl ;HL=z80codebase+mbc_optimize_start
+	 ; If the offset is 0 (MBC5), remove the zero check
 	 or a
-	 cpl
-	 ld hl,z80codebase+mbc_optimize_start
 	 jr nz,++_
 	 ; Set RAM protect check to mask with $FF instead of $0F
+	 cpl
 	 ld (z80codebase+mbc_cram_protect_mask_smc),a
 	 ld a,(de) ; Get back the ROM bank mask value
 	 inc de ;z80codebase+mbc5_rom_bank_optimize_dst
@@ -796,9 +797,6 @@ _
 	 ldir
 _
 	 add hl,bc ;HL=z80codebase+mbc_optimize_start+mbc_optimize_size
-	 ; Set the bank zero mask (inverted)
-	 ld de,z80codebase+rom_bank_zero_mask_smc
-	 ld (de),a
 	
 	; Check for MBC3+RTC
 	pop bc
@@ -885,7 +883,7 @@ setup_ram_bank_no_rtc:
 	; This overwrites the beginning of the zero page override implementation,
 	; but we've already optimized to use the fast version which is safe.
 	;HL=z80codebase+mbc_optimize_start+mbc_optimize_size
-	;DE=z80codebase+mbc1_upper_bits_dst+mbc_optimize_size
+	ld de,z80codebase+mbc1_upper_bits_dst+mbc_optimize_size
 	;B=0
 	ld c,mbc_optimize_size+1
 	lddr
@@ -3073,6 +3071,7 @@ mbc_info:
 	.dw mbc_write_denied_handler
 	.dw mbc_write_denied_handler
 	.dw mbc_write_denied_handler
+	.db $00
 	.db $FF
 	;MBC1
 	.dw mbc_write_cram_protect_handler
@@ -3080,29 +3079,34 @@ mbc_info:
 	.dw mbc_write_cram_bank_handler
 	.dw mbc1_write_mode_handler
 	.db $1F
+	.db mbc_zero_page_override_mbc1 - (mbc_zero_page_optimize_smc+1)
 	;MBC2
 	.dw mbc_write_cram_protect_handler
 	.dw mbc_write_rom_bank_handler
 	.dw mbc_write_denied_handler
 	.dw mbc_write_denied_handler
 	.db $0F
+	.db mbc_zero_page_override_mbc2 - (mbc_zero_page_optimize_smc+1)
 	;MBC3
 	.dw mbc_write_cram_protect_handler
 	.dw mbc_write_rom_bank_handler
 	.dw mbc_write_cram_bank_handler
 	.dw mbc_write_denied_handler
 	.db $7F
+	.db mbc_zero_page_override_mbc3 - (mbc_zero_page_optimize_smc+1)
 	;MBC3+RTC
 	.dw mbc_write_cram_protect_handler
 	.dw mbc_write_rom_bank_handler
 	.dw mbc_write_rtc_cram_bank_handler
 	.dw mbc_write_rtc_latch_handler
 	.db $7F
+	.db mbc_zero_page_override_mbc3 - (mbc_zero_page_optimize_smc+1)
 	;MBC5
 	.dw mbc_write_cram_protect_handler
 	.dw mbc_write_rom_bank_handler
 	.dw mbc_write_cram_bank_handler
 	.dw mbc_write_denied_handler
+	.db $00
 	.db 0
 	
 customHardwareSettings:
