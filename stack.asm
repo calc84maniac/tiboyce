@@ -846,6 +846,7 @@ do_pop_any_slow_unswapped:
 	 call read_mem_any
 	 push af
 	  call read_mem_any_stale_bus_next
+	  exx
 	 pop hl
 	 ld l,h
 	 ld h,a

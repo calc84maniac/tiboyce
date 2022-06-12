@@ -59,7 +59,6 @@
 ;     LD (HL),n:
 ;       LD HL,n | (addr&$FF00) \ JP mbc_write_*_handler - 4
 
-allocate_high_trampoline_for_jit:
 	; Set Z flag and always allow allocation
 	or a
 	sbc hl,hl
@@ -71,7 +70,9 @@ allocate_trampoline:
 	; Get the low pool pointer
 	ld hl,(recompile_struct_end)
 	ld hl,(hl)
-_
+	; Input: HL=current JIT output address to use as the allocation limit
+	;        Z flag set
+allocate_high_trampoline_for_jit:
 	push bc
 	 push de
 	  ; Zero-extend the allocation size
@@ -253,10 +254,11 @@ _
 	push.s hl
 	exx
 	ex.s (sp),ix
-	ex de,hl
+	inc.s bc
 	ld c,a
 	sub e
 	ld b,a
+	ex de,hl
 #ifdef VALIDATE_SCHEDULE
 	call schedule_event_helper
 #else

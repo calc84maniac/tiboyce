@@ -195,17 +195,16 @@ writeLCDC:
 writeSTAThandler:
 	ld e,a
 writeSTAT:
-	call updateSTAT
 	push de
 	 push bc
+	  call updateSTAT
 	  jp.lil stat_write_helper
 	
 writeLYChandler:
 	ld e,a
 writeLYC:
 	call updateSTAT_if_changed_lyc
-	 pop bc
-	 jp.lil lyc_write_helper
+	  jp.lil lyc_write_helper
 	
 writeDIVhandler:
 	ld e,a

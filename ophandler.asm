@@ -365,18 +365,20 @@ lyc_write_0:
 ; Triggers a GB interrupt if LY already matches the new LYC value,
 ; but only if LYC is changing.
 ;
-; Inputs:  B = L' = value being written
+; Inputs:  L' = value being written
 ;          (LY), (STAT) = current PPU state
-;          (SPS) = Z80 return address
-;          (SPL) = saved HL'
+;          BC, DE, return address on Z80 stack
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
 	; Set the new value of LYC
+	exx
+	ld a,l
+	exx
 	ld hl,hram_base+LYC
-	ld (hl),b
+	ld (hl),a
 	; Calculate the new LYC cycle offset (from vblank)
-	ld a,b
+	ld b,a
 	or a
 	jr z,lyc_write_0
 	ld d,-CYCLES_PER_SCANLINE
@@ -1534,6 +1536,10 @@ validate_schedule:
 	    push de
 _
 	     push bc
+	      ; Verify that BCU=0
+	      ld hl,$FF0000
+	      add hl,bc
+	      ASSERT_NC
 	      lea.s bc,ix
 	      call lookup_gb_code_address
 	     pop bc

@@ -2498,6 +2498,7 @@ do_ret_full_maybe_overflow:
 	 lea hl,ix
 	 exx
 	 ; Get the target cycle offset
+	 dec bc ;Set BCU=0; prior C is at least 4 so B doesn't change
 	 ld c,a
 	 ex de,hl
 #ifdef VALIDATE_SCHEDULE

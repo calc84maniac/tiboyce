@@ -1462,9 +1462,9 @@ unpatch_op_write_hl_any:
 	  inc de
 	  ld a,(de)
 	  ld (hl),a
-	  dec hl
 	  ld a,$2E ;LD L,n
 _
+	  dec hl
 	  ; Translate from LD L, to LD (HL),
 	  sub -8 ; Sets carry
 	  ld (hl),a

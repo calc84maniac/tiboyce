@@ -89,6 +89,8 @@ _
 	 ld hl,z80codebase+dispatch_vblank+2
 	 ld d,a
 	 ld e,$40
+	 dec a
+	 ld (recompile_cycle_offset_sp),a
 _
 	 push de
 	  push hl
@@ -2890,6 +2892,10 @@ opgen_last_cycle_count_smc = $+1
 	 push de
 	  push hl
 	   ex de,hl ;DEU=z80codebase>>16
+	   ; Check for trampoline overlap and avoid modifying data to be flushed
+	   ld hl,(z80codebase+trampoline_next)
+	   sbc hl,de
+	   jr c,++_
 	   ld hl,(opgen_last_cycle_count_smc)
 	   ld c,(hl)
 	   ld hl,recompile_cycle_offset_stack - 1
@@ -2903,6 +2909,7 @@ _
 	   ld (de),a
 	   inc l
 	   jr nz,-_
+_
 	   ASSERT_C
 	   sbc a,a
 	   ld (recompile_cycle_offset_sp),a
@@ -3554,8 +3561,11 @@ _
 opgenE2_finish:
 	push hl
 	 ld a,5
+	 cp a ; Set Z flag
 	 call allocate_high_trampoline_for_jit
-	 ASSERT_NC
+	 ; Avoid emitting a trampoline if a flush is imminent,
+	 ; to avoid overwriting code prior to this JIT block
+	 jr c,_
 	 ; Emit the GB address before the jump
 	 inc de
 	 call opgen_emit_gb_address_noinc
@@ -3569,6 +3579,7 @@ opgenE2_finish:
 	  ld (hl),b
 	 ; Use the trampoline as the handler
 	 pop bc
+_
 	pop hl
 opgen_port_write_no_trampoline:
 	; Emit handler call
