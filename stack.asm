@@ -753,11 +753,15 @@ ophandlerC1_smc_size = $-ophandlerC1_smc
 	call shift_stack_window_higher
 	ret nc
 do_pop_bc_slow:
-	ld l,$C1 ;POP BC
+	;ld l,$C1 ;POP BC
 	call do_pop_any_slow
 	push hl
 	pop ix
 	ret
+	
+ophandlerC1_slow:
+	call p,shift_stack_window_higher
+	jr do_pop_bc_slow
 	
 	; POP DE
 ophandlerD1:
@@ -775,7 +779,7 @@ ophandlerD1_smc_size = $+1-ophandlerD1_smc
 	call shift_stack_window_higher
 	ret nc
 do_pop_de_slow:
-	ld l,$D1 ;POP DE
+	;ld l,$D1 ;POP DE
 	call do_pop_any_slow
 	ld b,h
 	ld c,l
@@ -797,7 +801,7 @@ ophandlerE1_smc_size = $-ophandlerE1_smc
 	call shift_stack_window_higher
 	ret nc
 do_pop_hl_slow:
-	ld l,$E1 ;POP HL
+	;ld l,$E1 ;POP HL
 	call do_pop_any_slow
 	ex de,hl
 	ret
@@ -822,12 +826,13 @@ do_pop_af_finish:
 	ret
 	
 ophandlerF1_slow:
-	jp m,do_pop_af_slow
+	call p,shift_stack_window_higher_preserved_a
+	jr do_pop_af_slow
 ophandlerF1_overflow:
 	call shift_stack_window_higher_preserved_a
 	jr nc,do_pop_af_finish
 do_pop_af_slow:
-	ld l,$F1 ;POP AF
+	;ld l,$F1 ;POP AF
 	call do_pop_any_slow_unswapped
 	ex af,af'
 	jr do_pop_af_slow_finish
@@ -836,7 +841,7 @@ do_pop_any_slow:
 	ex af,af'
 do_pop_any_slow_unswapped:
 	push af
-	 ld a,l
+	 ;ld a,l
 	 exx
 	 ld hl,(stack_window_base)
 	 lea bc,iy-2
@@ -845,7 +850,7 @@ do_pop_any_slow_unswapped:
 	 ld b,h
 	 ld c,l
 	 dec e ; The first read is 1 cycle earlier
-	 call read_mem_any
+	 call read_mem_any_stale_bus
 	 push af
 	  call read_mem_any_stale_bus_next
 	  exx
@@ -927,18 +932,19 @@ pop_slow_src:
 	;ophandlerC1_smc
 	inc iyl
 	inc iyl
-	jp m,do_pop_bc_slow
-	.db $2E ;LD L,
+	jr $+(ophandlerC1_slow-(ophandlerC1_smc+4))
+	nop
+	nop
 	;ophandlerD1_smc
 	inc iyl
 	inc iyl
-	jp m,do_pop_de_slow
-	jr $+4
+	call p,shift_stack_window_higher
+	jr $+(do_pop_de_slow-(ophandlerD1_smc+7))
 	;ophandlerE1_smc
 	inc iyl
 	inc iyl
-	jp m,do_pop_hl_slow
-	jr $+3
+	call p,shift_stack_window_higher
+	jr $+(do_pop_hl_slow-(ophandlerE1_smc+7))
 	;ophandlerF1_smc
 	.db $18, ophandlerF1_slow - (ophandlerF1_smc+2) ;JR ophandlerF1_slow
 	

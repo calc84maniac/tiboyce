@@ -654,6 +654,11 @@ write_mem_any:
 	jp (hl)
 	
 do_hmem_write_any:
+	ex af,af'
+	exx
+	ld l,a
+	exx
+	ex af,af'
 	ld b,c
 	ld c,e
 	ld e,a
