@@ -906,11 +906,7 @@ recompile_struct_end = $+2
 	 ld hl,(ix)
 	 ld (ix+2),de
 	 bit 7,d
-#ifdef DEBUG
 	 jp nz,recompile_ram
-#else
-	 jr nz,recompile_ram
-#endif
 	
 #ifdef DEBUG
 	 push ix
@@ -950,12 +946,16 @@ _
 	 inc l
 	 cp l
 	 jr nc,-_
+	 ; Check for approaching the end of the JIT code space
+	 ld a,d
+	 cp (flags_lut >> 8) - 2
+	 jr nc,prepare_flush_from_buffer_overflow
 	pop af
 	
 	; Check for collision with trampolines
 	ld hl,(z80codebase+trampoline_next)
 	sbc hl,de
-	jr c,_
+	jr c,prepare_flush_from_recompile
 	; Check for collision with cache
 recompile_cache = $+1
 	ld hl,0
@@ -967,7 +967,7 @@ recompile_cache = $+1
 	ld hl,cache_flushes_allowed
 	dec (hl)
 	jr nz,flush_cache
-_
+prepare_flush_from_recompile:
 	; Retrieve the Game Boy start address from the generated code block
 	ld ix,(recompile_struct_end)
 	ld hl,(ix-6)
@@ -982,6 +982,26 @@ prepare_flush:
 	ld ix,flush_handler
 	; Don't consume any cycles during dispatch
 	xor a
+	ret
+	
+prepare_flush_from_buffer_overflow:
+	pop hl
+	; Check if flags LUT was actually overflowed into
+	cp flags_lut >> 8
+	jr c,prepare_flush_from_recompile
+	APTR(flags_lut_init)
+	ld de,z80codebase+flags_lut
+	ld bc,$0100
+	ldir
+	jr prepare_flush_from_recompile
+	
+flush_cache:
+	push af
+	 MEMSET_FAST(recompile_cache_LUT, 256, 0)
+	 MEMSET_FAST(recompile_cache_LUT+256, 256, (recompile_cache_end>>8)&$FF)
+	pop af
+	ld hl,recompile_cache_end
+	ld (recompile_cache),hl
 	ret
 	
 recompile_ram:
@@ -1044,15 +1064,6 @@ ram_block_padding = $+1
 	 ; Report block cycle length of 0
 	 xor a
 	 jp recompile_end_common
-	 
-flush_cache:
-	push af
-	 MEMSET_FAST(recompile_cache_LUT, 256, 0)
-	 MEMSET_FAST(recompile_cache_LUT+256, 256, (recompile_cache_end>>8)&$FF)
-	pop af
-	ld hl,recompile_cache_end
-	ld (recompile_cache),hl
-	ret
 	
 	
 check_coherency_helper:

@@ -1423,7 +1423,6 @@ unpatch_op_write_bc_port:
 	dec hl
 	ld (hl),op_write_bc_normal & $FF
 	dec hl
-	ld (hl),$CD
 	jp (hl)
 	
 	; Input: BC=Game Boy DE, L=write value, C'=cycle offset, BCDEHL' are swapped
@@ -1458,7 +1457,6 @@ unpatch_op_write_de_port:
 	dec hl
 	ld (hl),op_write_de_normal & $FF
 	dec hl
-	ld (hl),$CD
 	jp (hl)
 
 	; Input: DE=Game Boy HL, L=write value, C'=cycle offset, BCDEHL' are swapped
@@ -1621,7 +1619,6 @@ _
 	dec hl
 	ld (hl),do_swap_hl_normal & $FF
 	dec hl
-	ld (hl),$CD
 	jr unpatch_op_readwrite_hl_finish_2
 	
 op_readwrite_hl_port_swap:
