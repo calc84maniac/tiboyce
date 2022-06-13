@@ -3169,14 +3169,19 @@ opgen08_slow:
 	jr opgen08_finish
 	
 _opgen36:
+	inc hl
+opgenCB_readwrite_finish:
 	dec iyl
 	ex de,hl
 	ld (hl),RST_GET_HL_READWRITE_PTR
+opgenCB_read_finish:
 	inc hl
 	ld (hl),$5B ;.LIL
 	inc hl
+	ld (hl),c
+	inc hl
 	ex de,hl
-	jp opgen2byte
+	jp opgen1byte
 	
 opgenCB_bc:
 	ld c,$54 ;LD D,H
@@ -3225,7 +3230,9 @@ opgenCB_bc_bit:
 	jp opgen_next_swap_skip
 	
 _opgenCB:
-	ldi
+	ld a,c
+	ld (de),a
+	inc hl
 	ld a,(hl)
 	xor $36
 	ld c,a
@@ -3233,6 +3240,7 @@ _opgenCB:
 	jr z,opgenCB_swap
 	xor c
 	jr z,opgenCB_mem
+	inc de
 	dec a
 	jp z,opgen1byte
 	cp 5
@@ -3246,24 +3254,18 @@ _opgenCB:
 	jp opgen_next_fast
 	
 opgenCB_mem:
-	dec hl
-	dec de
 	dec iyl
 	; Check for BIT
 	ld a,c
 	cp $C0
-	jp po,_opgen36
+	ld c,$CB
+	jp po,opgenCB_readwrite_finish
 	ex de,hl
 	ld (hl),RST_GET_HL_READ_PTR
-	inc hl
-	ld (hl),$5B ;.LIL
-	inc hl
-	ex de,hl
-	jp opgen2byte
+	jp opgenCB_read_finish
 	
 opgenCB_swap:
 	ex de,hl
-	dec hl
 	inc a
 	xor c
 	jr nz,_

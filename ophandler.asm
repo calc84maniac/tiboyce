@@ -1540,8 +1540,19 @@ _
 	      ld hl,$FF0000
 	      add hl,bc
 	      ASSERT_NC
+	      ; Check if target block is expected to be 0 cycles
+	      ld a,b
+	      or a
 	      lea.s bc,ix
-	      call lookup_gb_code_address
+	      jr nz,_
+	      ; Skip reverse lookup if the flush handler is the target
+	      ; This is only valid when the target block is 0 cycles
+	      ld hl,flush_handler
+	      sbc hl,bc
+	      add hl,bc
+	      ex de,hl
+_
+	      call nz,lookup_gb_code_address
 	     pop bc
 	     sub b
 	     call nz,validate_schedule_nops

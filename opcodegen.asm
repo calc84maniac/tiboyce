@@ -150,11 +150,11 @@ opgenNOP:
 	inc hl
 	jr opgen_next_fast
 	
-opgen76:
-	jp _opgen76
-	
 opgenCB:
 	jp _opgenCB
+	
+opgen76:
+	jp _opgen76
 	
 opgen2byte:
 	ldi

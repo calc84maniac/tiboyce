@@ -233,8 +233,9 @@ flush_for_halt:
 	   ld (flush_event_smc_2),hl
 	   call flush_code
 	   call lookup_code
-	  pop de
-	 pop hl
+	  pop hl
+	 pop de
+	 ex.s de,hl
 	 exx
 	 ex (sp),ix
 	pop hl
