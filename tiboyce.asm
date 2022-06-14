@@ -1334,6 +1334,9 @@ AdjustColors:
 ; Confirm state save/load (Bit 0=Load, Bit 1=Save)
 ConfirmStateOperation:
 	.db 3
+; Select preferred model (0=GB, 1=GBC)
+PreferredModel:
+	.db 1
 	
 ; Number of key bytes
 	.db key_config_count
@@ -1355,6 +1358,7 @@ game_config_start:
 GameFrameskipValue = game_config_start + (FrameskipValue - config_start)
 GameSkinDisplay = game_config_start + (SkinDisplay - config_start)
 GameMessageDisplay = game_config_start + (MessageDisplay - config_start)
+GamePreferredModel = game_config_start + (PreferredModel - config_start)
 GameOptionConfig = game_config_start + (OptionConfig - config_start)
 GameKeyConfig = game_config_start + (KeyConfig - config_start)
 game_config_end = game_config_start + (config_end - config_start)

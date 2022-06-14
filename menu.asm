@@ -1215,6 +1215,8 @@ OptionList:
 	.dw OptionMessageDisplay+1
 	.dw OptionAdjustColors+1
 	.dw OptionConfirmState+1
+	.dw OptionPreferredModel+1
+	; This always goes at the end
 	.dw OptionConfigSelect+1
 	
 CmdList:
@@ -1358,20 +1360,27 @@ ControlsMenu:
 	.db ITEM_LINK,0, 190,1,"Back",0
 	
 EmulationMenu:
-	.db 6
+	.db 7
 	.db 5,11,"Emulation Options",0
+	.db "Preferred Game Boy model to emulate.\n GBC will only be used if compatible.\n Requires game restart to take effect.",0
+	.db ITEM_OPTION,13, 50,1,"Preferred model: %-14s",0
 	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
-	.db ITEM_OPTION,2, 50,1,"Auto save state: %-3s",0
+	.db ITEM_OPTION,2, 70,1,"Auto save state: %-3s",0
 	.db "",0
-	.db ITEM_OPTION,12, 60,1,"Confirm state save/load: %-9s",0
+	.db ITEM_OPTION,12, 80,1,"Confirm state save/load: %-9s",0
 	.db "",0
-	.db ITEM_OPTION,8, 70,1,"Turbo mode: %-6s",0
+	.db ITEM_OPTION,8, 90,1,"Turbo mode: %-6s",0
 	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
-	.db ITEM_OPTION,4, 90,1,"Time zone: UTC%-6s",0
+	.db ITEM_OPTION,4, 110,1,"Time zone: UTC%-6s",0
 	.db "Set to on if DST is currently active.",0
-	.db ITEM_OPTION,5, 100,1,"Daylight Saving Time: %-3s",0
+	.db ITEM_OPTION,5, 120,1,"Daylight Saving Time: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 160,1,"Back",0
+	
+OptionPreferredModel:
+	.db 2
+	.db "Game Boy",0
+	.db "Game Boy Color",0
 	
 OptionConfigSelect:
 	.db 2
