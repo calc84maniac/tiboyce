@@ -1826,7 +1826,6 @@ handle_waitloop_finish:
 	
 handle_waitloop_set_sentinel:
 	ld a,e
-handle_waitloop_set_sentinel_2:
 	ld hl,waitloop_sentinel
 	ld (event_address),hl
 	jr handle_waitloop_finish
@@ -1860,14 +1859,14 @@ handle_waitloop_variable:
 	inc d
 	jr z,handle_waitloop_overflow
 _
-	ld c,a
+	ld e,a
 	; Check if the waitloop sentinel is set
 	ld a,(event_address+1)
 	or a
+	jr nz,handle_waitloop_set_sentinel
 	; Skip straight to the counter expiration
-	jr z,handle_waitloop_variable_finish
-	ld a,c
-	jr handle_waitloop_set_sentinel_2
+	ld c,b
+	jr handle_waitloop_variable_finish
 
 ophandlerEI_delay_expired:
 	; An event is scheduled for the current cycle, so we have to delay the
