@@ -636,17 +636,6 @@ trigger_interrupt_retry_dispatch:
 	pop ix
 	jr trigger_interrupt_pushed
 	
-do_push_for_interrupt_no_shadow_stack:
-	; Restore Game Boy BC
-	ex (sp),ix
-	; Restore cycle count into DE
-	pop de
-	ld h,b
-	ld l,c
-	call do_push_any_slow_for_call
-	exx
-	jr trigger_interrupt_pushed
-	
 #ifdef SHADOW_STACK
 do_push_for_interrupt_set_shadow_stack:
 	call set_shadow_stack
@@ -661,12 +650,14 @@ trigger_interrupt:
 	; Disable interrupts
 	ld a,$08 ;EX AF,AF'
 	ld (intstate_smc_1),a
+	; Get the number of cycles to be taken by RET
+	rrca	;ld a,4
+	add a,e
 	dec iyl
 	jp p,do_push_overflow_for_interrupt
-	rrca	;ld a,4
+do_push_for_interrupt_continue:
 event_gb_address = $+1
 	ld bc,event_gb_address
-do_push_for_interrupt_continue:
 do_push_for_interrupt_shadow_stack_smc = $
 trigger_interrupt_push_offset_smc_1 = $+3
 	ld.l (iy),b
@@ -674,9 +665,6 @@ trigger_interrupt_push_offset_smc_1 = $+3
 trigger_interrupt_push_offset_smc_2 = $+3
 	ld.l (iy),c
 	push.l bc  ; Cache Game Boy return address on callstack
-	; Get the number of cycles to be taken by RET
-	add a,e
-	ld b,a
 	; Restore cycle count into DE
 	lea de,ix
 	; Restore Game Boy BC
@@ -691,6 +679,7 @@ trigger_interrupt_push_offset_smc_2 = $+3
 trigger_int_callstack_overflow_continue:
 	exx
 	; Push stack offset and RET cycle count
+	ld b,a
 	ld c,iyl
 	push bc
 trigger_interrupt_pushed:
@@ -726,26 +715,28 @@ dispatch_int_no_overflow:
 	
 do_push_overflow_for_interrupt:
 	push hl
+	 ld d,a ; Preserve the RET cycle count
 	 call shift_stack_window_lower_preserved_a_swapped
 	 exx
+	 ld a,d
 	pop hl
-	ld a,4
 	jr nc,do_push_for_interrupt_continue
+do_push_for_interrupt_no_shadow_stack:
 	; Restore cycle count into DE and restore Game Boy BC
 	ex (sp),ix
 	pop de
+	ld a,e
 	exx
-	; Push JIT return address
-	push hl
 	ld hl,(event_gb_address)
+	call do_push_any_slow
+	ex af,af'
 	exx
-	push hl
-	 ld a,e
-	 exx
-	 call do_push_any_slow_swapped
-	 exx
-	 ld e,a
-	pop hl
+	ld e,a
+	; Re-check the active interrupts
+	ld hl,(IE)
+	ld a,l
+	and h
+	ld l,a
 	jr trigger_interrupt_pushed
 	
 dispatch_int_maybe_overflow:

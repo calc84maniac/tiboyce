@@ -1549,8 +1549,7 @@ _
 	      ; This is only valid when the target block is 0 cycles
 	      ld hl,flush_handler
 	      sbc hl,bc
-	      add hl,bc
-	      ex de,hl
+	      ld.sis de,(flush_address)
 _
 	      call nz,lookup_gb_code_address
 	     pop bc
