@@ -367,9 +367,45 @@ OutOfMemoryFinish:
 StartROMAutoStateNoError:
 	ld de,AutoStateLoadedMessage
 	ACALL(SetEmulatorMessage)
-	jr StartFromHere
+	jr StartFromHereTrampoline2
 	
+RestartFromHere:
+	; Check for GBC support
+	ld hl,(rom_start)
+	ld bc,$0143
+	add hl,bc
+	bit 7,(hl)
+	; If no support, default to GB
+	jr z,++_
+	ld a,(GamePreferredModel)
+	cp $FF
+	jr nz,_
+	ld a,(PreferredModel)
+_
+	or a
+_
+	push af
+	 ld bc,save_state_size + 1
+	 jr z,_
+	 ld bc,save_state_gbc_size + 1
+_
+	 ld hl,save_state_size_bytes
+	 ld de,(hl)
+	 ld (hl),bc
+	 inc hl
+	 inc hl
+	 inc hl
+	 dec de
+	 dec bc
+	 push hl
+	  push bc
+	   ACALL(DelMemSafe)
+	  pop de
+	 pop hl
+	 ACALL(InsertMemSafe)
+	 jr nc,StartROMInitStateContinue
 StartROMInitStateOutOfMemory:
+	pop af
 	xor a
 	ld (current_state),a
 	; Temporarily prevent auto state saving because state is clean
@@ -387,58 +423,55 @@ StartROMInitStateOutOfMemory:
 	ld (errorArg),hl
 	jr OutOfMemoryFinish
 	
-RestartFromHere:
-	ld hl,save_state_size_bytes
-	ld de,(hl)
-	ld bc,save_state_size + 1
-	ld (hl),bc
-	inc hl
-	inc hl
-	inc hl
-	dec de
-	dec bc
-	push hl
-	 push bc
-	  ACALL(DelMemSafe)
-	 pop de
-	pop hl
-	ACALL(InsertMemSafe)
-	jr c,StartROMInitStateOutOfMemory
-	push de
-	pop hl
-	inc de
-	dec bc
-	ld (hl),0
-	ldir
+StartFromHereTrampoline2:
+	jr StartFromHere
+RestartFromHereTrampoline:
+	jr RestartFromHere
 	
-	inc hl
-	ld a,(hl)
-	dec a
-	inc hl
-	or (hl)
-	jr z,_
-	inc hl
-	inc hl
-	ld (cram_start),hl
+StartROMInitStateContinue:
+	 push de
+	 pop hl
+	 inc de
+	 dec bc
+	 ld (hl),0
+	 ldir
+	
+	 inc hl
+	 ld a,(hl)
+	 dec a
+	 inc hl
+	 or (hl)
+	 jr z,_
+	 inc hl
+	 inc hl
+	 ld (cram_start),hl
 _
+	 APTR(hmem_init)
+	 ld de,hram_saved + $0100
+	 ld c,hmem_init_size
+	 ldir
+	 push hl ;regs_init
 	
-	APTR(regs_init)
+	  push de
+	  pop hl
+	  dec hl
+	  ld c,$80 - hmem_init_size + 1
+	  ldir
+	
+	  ld (hl),c
+	  ld c,$7F
+	  ldir
+	
+	 pop hl
+	pop af
+	ld bc,regs_init_gbc - regs_init
+	jr z,_
+	add hl,bc
+	; Update SC register, which is different on GBC
+	ld a,$7F
+	ld (hram_saved + $0102),a
+_
 	ld de,regs_saved
-	ld bc,hmem_init - regs_init
-	ldir
-	
-	ld de,hram_saved + $0100
-	ld c,hmem_init_size
-	ldir
-	
-	push de
-	pop hl
-	dec hl
-	ld c,$80 - hmem_init_size + 1
-	ldir
-	
-	ld (hl),c
-	ld c,$7F
 	ldir
 	
 StartFromHere:
@@ -446,7 +479,7 @@ StartFromHere:
 	ld a,l
 	dec a
 	or h
-	jr z,RestartFromHere
+	jr z,RestartFromHereTrampoline
 	
 	ld a,3
 	ld (main_menu_selection),a
@@ -2366,12 +2399,16 @@ _
 	push de
 	 ACALL(DecompressFile)
 	pop ix
-	; Only load original Game Boy
+	; Only load Game Boy or Game Boy Color
 	ld a,(decompress_buffer + (regs_saved + STATE_SYSTEM_TYPE - save_state_start))
 	or a
-	jr nz,LoadStateInvalid
-	; Ensure state size is valid
 	ld hl,save_state_size
+	jr z,LoadStateValidateSize
+	dec a
+	ld hl,save_state_gbc_size
+	jr nz,LoadStateInvalid
+LoadStateValidateSize:
+	; Ensure state size is valid
 	sbc hl,bc
 	jr nz,LoadStateInvalid
 	
@@ -2846,30 +2883,88 @@ _
 GeneratePixelCache:
 	ld hl,vram_start
 	ld de,vram_pixels_start
-	ld c,$0C
-_
-	push hl
-	 ld hl,(hl)
-	 push bc
-	  ld b,8
-_
-	  sla h
-	  ccf
-	  sbc a,a
-	  or $01
-	  sla l
-	  jr nc,$+5 \ rlca \ adc a,0
+	ld c,e
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	inc a
+	ld b,a
+	ld ixh,a
+GeneratePixelCacheOuterLoop:
+	ld ixl,$0C
+GeneratePixelCacheLoop:
+	push bc
+	 ; Get the HIGH and low bitplanes with nibbles X and Y
+	 ld a,(hl)  ;A=[x][y]
+	 inc hl     ;(HL)=[X][Y]
+	 push hl
+	  rlca \ rlca \ rlca \ rlca  ;A=[y][x]
+	  xor (hl) ;A=[X^y][Y^x]
+	  ld c,a   ;C=[X^y][Y^x]
+	  and $0F  ;A=[0][Y^x]
+	  xor (hl) ;A=[X][x]
+	  ld hl,overlapped_pixel_index_lut
+	  ld l,a   ;L=[X][x]
+	  xor c    ;A=[y][Y]
+	  rrca \ rrca \ rrca \ rrca  ;A=[Y][y]
+	  djnz GeneratePixelCacheGBC
+	  ; Look up sequence of pixels for nibble X
+	  ld l,(hl)
+	  inc h
+	  ; Copy 4 pixels to cached VRAM tile data
+	  ld c,4
+	  ldir
+	  ld l,a  ;L=[Y][y]
+	  ; Look up sequence of pixels for nibble Y
+	  ld h,(overlapped_pixel_index_lut >> 8) & $FF
+	  ld l,(hl)
+	  inc h
+	  ; Copy 4 pixels to cached VRAM tile data
+	  ld c,4
+	  ldir
+GeneratePixelCacheContinue:
+	 pop hl
+	 inc hl
+	pop bc
+	dec c
+	jr nz,GeneratePixelCacheLoop
+	dec ixl
+	jr nz,GeneratePixelCacheLoop
+	dec ixh
+	ret z
+	; Generate the second bank on GBC
+	ld hl,vram_gbc_start + $2000
+	ld de,vram_pixels_start + 4
+	jr GeneratePixelCacheOuterLoop
+	
+GeneratePixelCacheGBC:
+	  ; Preserve nibble X for later
+	  ld b,l
+	  ; Copy the index for nibble X
+	  ld c,(hl)
+	  ld l,a
+	  ld a,c
 	  ld (de),a
 	  inc de
-	  djnz -_
-	 pop bc
-	pop hl
-	inc hl
-	inc hl
-	djnz --_
-	dec c
-	jr nz,--_
-	ret
+	  ; Calculate the relative offset for nibble Y and write it
+	  cpl
+	  add a,(hl)
+	  add a,-3
+	  ld (de),a
+	  inc de
+	  ; Copy the index for reverse nibble Y
+	  inc h
+	  ld a,(hl)
+	  ld (de),a
+	  inc de
+	  ; Calculate the relative offset for reverse nibble X and write it
+	  cpl
+	  ld l,b
+	  add a,(hl)
+	  add a,-3
+	  ld (de),a
+	  inc de
+	  ; Skip the tile from the other bank
+	  inc de \ inc de \ inc de \ inc de
+	  jr GeneratePixelCacheContinue
 	
 SetScalingMode:
 	; Disable GRAM access from DMA to allow a clean buffer rewrite
@@ -3371,6 +3466,14 @@ spiSetupDoubleScale:
 	SPI_PARAM($14)   ;  Interlace
 	SPI_END
 	
+hmem_init:
+	.db $CF,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
+	.db $80,$BF,$F3,$FF,$BF,$FF,$3F,$00,$FF,$BF,$7F,$FF,$9F,$FF,$BF,$FF
+	.db $FF,$00,$00,$BF,$77,$F3,$F1,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+	.db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	.db $91,0,$00,$00,0,$00,$FF,$FC,$FF,$FF,$00,$00,$FF
+hmem_init_size = $ - hmem_init
+	
 regs_init:
 	.db $00	; Hardware type
 	.db $00 ; Interrupt enable
@@ -3384,14 +3487,18 @@ regs_init:
 	.db $02 ; MBC mode
 	.db $00 ; CPU mode
 	
-	
-hmem_init:
-	.db $CF,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
-	.db $80,$BF,$F3,$FF,$BF,$FF,$3F,$00,$FF,$BF,$7F,$FF,$9F,$FF,$BF,$FF
-	.db $FF,$00,$00,$BF,$77,$F3,$F1,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-	.db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-	.db $91,0,$00,$00,0,$00,$FF,$FC,$FF,$FF,$00,$00,$FF
-hmem_init_size = $ - hmem_init
+regs_init_gbc:
+	.db $01 ; Hardware type
+	.db $00 ; Interrupt enable
+	;     AF,   BC,   DE,   HL,   SP,   PC
+	.dw $1180,$0000,$FF56,$000D,$FFFE,$0100
+	.dw $0000 ; Frame cycle counter
+	.dw -$6AF3 ; Serial transfer cycle counter
+	.dw $6AF3 ; Divisor cycle counter
+	.db $01 ; Cart ROM bank
+	.db $00 ; Cart RAM bank
+	.db $02 ; MBC mode
+	.db $00 ; CPU mode
 	
 	; Used to convert between flag register formats.
 	; When bit 3 is reset, converts from Game Boy F to ez80 F.
