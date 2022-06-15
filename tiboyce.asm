@@ -158,26 +158,55 @@ STATE_CPU_MODE = 23
 STATE_END = 24
 
 ; Constant color palette entries
-BLUE = 3
-MAGENTA = 4
-OLIVE = 5
-BLACK = 6
-WHITE = 7
-GRAY = 8
+BLUE = 9
+MAGENTA = 10
+OLIVE = 11
+BLACK = 12
+WHITE = 13
+GRAY = 14
 ; Palette entries representing the raw BGP colors. Must precede OBP0 colors.
-BG_COLOR_0 = 9
-BG_COLOR_1 = 10
-BG_COLOR_2 = 11
-BG_COLOR_3 = 12
+BG_COLOR_0 = 15
+BG_COLOR_1 = 16
+BG_COLOR_2 = 17
+BG_COLOR_3 = 18
 ; Palette entries representing every possible combination of three OBJ colors.
 ; The data is overlapped such that a unique sequence of three colors begins
 ; at each entry. Note that this means each table is (64 + 2) entries large.
 ; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
 ; at the offset corresponding to palette %100100, which is $0D.
-OBP0_COLORS_START = 13
+OBP0_COLORS_START = 19
 OBP0_ORIG_COLORS = OBP0_COLORS_START+$0D
 OBP1_COLORS_START = OBP0_COLORS_START + (64 + 2)
 OBP1_ORIG_COLORS = OBP1_COLORS_START+$0D
+
+; Palette entry representing transparent OBJ pixels on GBC.
+; Never rendered, only used to determine priority against rendered pixels.
+GBC_OBJ_TRANSPARENT_COLOR = 0
+; Palette entries representing transparent BG pixels on GBC.
+; One per palette, for 8 in total.
+GBC_BG_TRANSPARENT_COLORS = 1
+; Palette entries representing low-priority opaque OBJ pixels on GBC.
+; Never rendered, only used to determine priority against rendered pixels.
+; Three are allocated, to enable translation to actual OBJ colors.
+GBC_OBJ_LOW_PRIO_COLORS = 12
+; Palette entries representing normal-priority opaque BG pixels on GBC.
+; Three per palette, for 24 in total.
+GBC_BG_OPAQUE_COLORS = GBC_OBJ_LOW_PRIO_COLORS + 3
+; Palette entries representing normal-priority opaque OBJ pixels on GBC.
+; Never rendered, only used to determine priority against rendered pixels.
+; Three are allocated, to enable translation to actual OBJ colors.
+GBC_OBJ_NORMAL_PRIO_COLORS = GBC_BG_OPAQUE_COLORS + 24
+; Palette entries representing high-priority opaque BG pixels on GBC.
+; These represent the same literal colors as the normal-priority pixels.
+; Three per palette, for 24 in total.
+GBC_BG_HIGH_PRIO_COLORS = GBC_OBJ_NORMAL_PRIO_COLORS + 3
+; Palette entries representing high-priority opaque OBJ pixels on GBC.
+; Never rendered, only used to determine priority against rendered pixels.
+; Three are allocated, to enable translation to actual OBJ colors.
+GBC_OBJ_HIGH_PRIO_COLORS = GBC_BG_HIGH_PRIO_COLORS + 24
+; Palette entries representing rendered opaque OBJ pixels on GBC.
+; Three per palette, for 24 in total.
+GBC_OBJ_OPAQUE_COLORS = GBC_OBJ_HIGH_PRIO_COLORS + 3
 
 ; System calls used
 _sprintf = $0000BC

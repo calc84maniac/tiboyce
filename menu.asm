@@ -243,6 +243,11 @@ ClearMenuBuffer:
 	ldir
 	ret
 	
+LoadPalettesGBC:
+	; TODO: Update colors based on color adjustment setting
+	ld bc,0
+	ret
+	
 	; Input: A = palette index
 	; Output: BC = 0
 	; Destroys: AF,DE,HL,IX
@@ -256,6 +261,10 @@ LoadPalettes:
 	ld b,3
 	mlt bc
 	add ix,bc
+	
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	or a
+	jr nz,LoadPalettesGBC
 	
 	; Load BGP
 	ld a,e

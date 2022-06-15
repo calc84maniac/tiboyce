@@ -516,11 +516,6 @@ _
 	ld b,2
 	ldir
 	
-	APTR(cursorcode)
-	ld de,mpLcdCursorImg
-	ld bc,cursorcodesize
-	ldir
-	
 	APTR(z80code)
 	ld de,z80codebase
 	ld bc,z80codesize
@@ -535,31 +530,84 @@ _
 	push de
 	 inc b
 	 ldir
-	 ex (sp),hl
-	 ; Use the index data to sprinkle appropriate overlapped pixels
+	
+	 ; Duplicate palette overlapped indices to fill the 256-byte table
+	 ld de,overlapped_palette_index_lut
 _
-	 ld a,l
+	 ld a,(hl) \ inc hl
+	 ld (de),a \ inc e
+	 ld (de),a \ inc e
+	 ld (de),a \ inc e
+	 ld (de),a \ inc e
+	 jr nz,-_
+	
+	 ; Generate a routine in cursor memory to generate overlapped pixels
+	 ; First fill 512 bytes with DEC HL
+	 ld hl,mpLcdCursorImg
+	 push hl
+	 pop de
+	 ld (hl),$2B ;DEC HL
+	 inc de
+	 ld b,2
+	 ldir
+	 ld (hl),$C9 ;RET
+	
+	 ; Use the index data to sprinkle LD (HL),B/C/D/E instructions
+	pop de
+	dec hl
+_
+	push hl
+	 ld a,(de)
+	 ld c,a
+	 ld a,e
 	 and %10001000
-	 sub 1
-	 jr c,_
+	 sbc hl,bc
+	 sbc hl,bc
+	 add a,%00111000
 	 rlca
 	 rlca
 	 and 3
-_
-	 ld e,(hl)
-	 ld (de),a
-	 inc l
-	 jr nz,--_
+	 add a,$70
+	 ld (hl),a
 	pop hl
-	; Duplicate palette overlapped indices to fill the 256-byte table
-	ld de,overlapped_palette_index_lut
-_
-	ld a,(hl) \ inc hl
-	ld (de),a \ inc e
-	ld (de),a \ inc e
-	ld (de),a \ inc e
-	ld (de),a \ inc e
+	inc e
 	jr nz,-_
+	
+	ld a,(iy-state_size+STATE_SYSTEM_TYPE)
+	or a
+	jr nz,SetupOverlappedGBCPixels
+	
+	push de
+	
+	 ; Generate fake tile row for when the BG is disabled
+	 ld d,(fake_tile >> 8) & $FF
+	 push de
+	 pop hl
+	 inc de
+	 ld (hl),$FF
+	 ld c,64
+	 ldir
+	 ld (hl),b
+	 ld a,(fake_tile - vram_pixels_start) >> 8
+	 ld (de),a
+	 inc de
+	 ld c,40
+	 ldir
+	
+	 ; Generate overlapped BG pixels
+	 dec b ;B=$FF
+	 ld de,$0102
+	 ld hl,overlapped_pixel_data + (256+3)
+	 call mpLcdCursorImg + 512 - (3*2)
+	 call mpLcdCursorImg
+	
+	 ; Initialize cursor memory code
+	 APTR(cursorcode)
+	 ld de,mpLcdCursorImg
+	 ld bc,cursorcodesize
+	 ldir
+	
+	pop de
 	; Get initial OBP palette indices
 	ld hl,(iy-ioregs+OBP0)
 	ld e,l
@@ -568,29 +616,125 @@ _
 	ld (overlapped_obp0_palette_index),a
 	ld e,h
 	ld a,(de)
-	add a,OBP1_COLORS_START
+	add a,OBP1_COLORS_START ; Resets carry flag
 	ld (overlapped_obp1_palette_index),a
 	
-	; The trailing pixel data is always color 0
-	scf
-	sbc hl,hl
-	ld (overlapped_pixel_data + 256),hl
-	
+	; Fill the palette conversion LUT with the identity transform
 	ld hl,convert_palette_LUT
 _
 	ld (hl),l
 	inc l
 	jr nz,-_
-	
-	ld hl,BGP_frequencies
+
+	; Fill the BGP value frequencies with 0
+	ld h,(BGP_frequencies >> 8) & $FF
 _
 	ld (hl),b
 	inc l
 	jr nz,-_
 	dec h
+	; Initialize the BGP write queue
 	ld l,BGP_write_queue & $FF
 	ld (hl),$FF
+	jr SetupOverlappedPixelsDone
 	
+SetupOverlappedGBCPixels:
+	; Generate the reversed overlapped index LUT
+	push de
+	pop hl
+	inc d ;DE=overlapped_pixel_rev_index_lut
+_
+	; Copy from the first LUT to the second
+	ld a,l
+	ldi
+	dec de
+	; Get the changed bits in L
+	xor l
+	; Rotate them to the top of A to get the reverse
+_
+	rra
+	jr c,-_
+	; Rotate back to the original nibbles
+	rrca
+	rrca
+	rrca
+	rrca
+	; Apply the reverse of the changed bits in each nibble
+	xor e
+	ld e,a
+	jr nz,--_
+	
+	; Generate the tile attributes LUT
+	ld h,(gbc_tile_attributes_lut >> 8) & $FF
+_
+	ld a,l
+	rrca
+	; Get only vertical flip, horizontal flip, and VRAM bank
+	and $68
+	; Move horizontal flip to bit 2
+	bit 5,a
+	jr z,_
+	xor $24
+_
+	; Duplicate vertical flip into bits 4 and 5
+	bit 6,a
+	jr z,_
+	xor $30
+_
+	rrca
+	ld (hl),a
+	inc l
+	jr nz,---_
+	
+	; Generate overlapped BG palette pixels
+	ld hl,gbc_overlapped_pixel_data_end
+	ld b,GBC_BG_TRANSPARENT_COLORS + 7
+	ld a,GBC_BG_OPAQUE_COLORS + 24
+_
+	; Generate the high priority palette
+	add a,GBC_BG_HIGH_PRIO_COLORS - GBC_BG_OPAQUE_COLORS - 1
+	ld e,a
+	dec a
+	ld d,a
+	dec a
+	ld c,a
+	call mpLcdCursorImg + 512 - (6*2)
+	call mpLcdCursorImg
+	call mpLcdCursorImg
+	; Generate the normal priority palette
+	sub GBC_BG_HIGH_PRIO_COLORS - GBC_BG_OPAQUE_COLORS
+	ld c,a
+	inc a
+	ld d,a
+	inc a
+	ld e,a
+	call mpLcdCursorImg + 512 - (6*2)
+	call mpLcdCursorImg
+	call mpLcdCursorImg
+	; Move to the previous palette
+	djnz -_
+	
+	; Generate the sprite priority palettes
+	;B=GBC_OBJ_TRANSPARENT_COLOR
+	ld a,GBC_OBJ_HIGH_PRIO_COLORS
+_
+	ld c,a
+	inc a
+	ld d,a
+	inc a
+	ld e,a
+	call mpLcdCursorImg
+	sub (GBC_OBJ_HIGH_PRIO_COLORS - GBC_OBJ_NORMAL_PRIO_COLORS) + 2
+	jr nc,-_
+	
+	; Initialize cursor memory code
+	APTR(cursorcode)
+	ld de,mpLcdCursorImg
+	ld bc,cursorcodesize
+	ldir
+	
+	scf
+SetupOverlappedPixelsDone:
 	; Clear the mini frame backup for a clean initial frame
 	ld hl,mini_frame_backup
 	push hl
@@ -600,34 +744,82 @@ _
 	ld (hl),BG_COLOR_0
 	ldir
 	
+	; Here carry is set for GBC or reset for GB
 	ld a,vram_tiles_start >> 16
 	ld mb,a
 	ld ix,vram_tiles_start + 128
 	ld hl,vram_start + $1800
 	ld c,$40
 	ld a,c
-_
+SetupTilemapCacheOuterLoop:
 	ld b,$20
-_
+SetupTilemapCacheInnerLoop:
 	ld e,(hl)
 	inc hl
 	ld d,a
 	mlt de
 	ld.s (ix-128),de
-	ld.s (ix-64),de
+	jr c,_
+	ld.s (ix-64),de ; GB only
+_
 	bit 5,d
 	jr nz,_
 	set 6,d
 _
 	ld.s (ix),de
-	ld.s (ix+64),de
+	jr c,_
+	ld.s (ix+64),de ; GB only
+_
 	lea ix,ix+2
-	djnz --_
-	lea ix,ix-64
-	inc ixh
+	jr nc,_
+	lea ix,ix+2 ; GBC only
+_
+	djnz SetupTilemapCacheInnerLoop
+	lea ix,ix+64
+	ld ixl,128
 	dec c
-	jr nz,---_
+	jr nz,SetupTilemapCacheOuterLoop
 	
+	jr nc,SetupTilemapCacheDone
+	
+	; Now handle GBC tile attributes
+	ld hl,vram_gbc_start + $2000 + $1800
+	ld de,gbc_tile_attributes_lut | ((vram_tiles_start >> 8) & $FF)
+	ld ixh,e
+	ld c,a
+SetupTilemapAttributesOuterLoop:
+	ld b,$20
+SetupTilemapAttributesInnerLoop:
+	; Get the attributes byte
+	ld e,(hl)
+	inc hl
+	; Map the attributes to combine with the low byte of the tile cache
+	ld a,(de)
+	or (ix-128)
+	ld (ix-128),a
+	ld (ix),a
+	; Get the palette index from the palette and priority bits
+	ld a,e
+	and $87
+	rlca
+	; Multiply the index by (256+3)*2=512+6
+	add a,a
+	ld e,a
+	add a,a
+	add a,e
+	ld (ix-126),a
+	ld (ix+2),a
+	ld a,e
+	add a,(gbc_overlapped_pixel_data - vram_pixels_start) >> 8
+	ld (ix-125),a
+	ld (ix+3),a
+	lea ix,ix+4
+	djnz SetupTilemapAttributesInnerLoop
+	ld ixl,128
+	dec c
+	jr nz,SetupTilemapAttributesOuterLoop
+	
+SetupTilemapCacheDone:
 	ld a,z80codebase >> 16
 	ld mb,a
 	
@@ -650,20 +842,6 @@ _
 	and 7
 	jr nz,-_
 	djnz --_
-	
-	ld hl,fake_tile
-	push hl
-	pop de
-	inc de
-	ld (hl),$FF
-	ld c,64
-	ldir
-	ld (hl),b
-	ld a,(fake_tile - vram_pixels_start) >> 8
-	ld (de),a
-	inc de
-	ld c,40
-	ldir
 	
 	ld.sis sp,myz80stack
 	ld hl,callstack_ret_dummy_target  ; Return handler when no cached calls are available
@@ -717,6 +895,9 @@ _
 	ld (z80codebase+cram_base_1),hl
 	ld b,a
 	
+	cp (iy-state_size+STATE_SYSTEM_TYPE)
+	jr nz,SetupNoGBMemoryMap
+	
 	; Set up memory map for original GB
 	; Disable banked WRAM absolute reads/writes
 	ld hl,z80codebase+wram_banked_write_handler
@@ -753,6 +934,7 @@ _
 	ld c,$FF80 - (WX+2)
 	ldir
 	
+SetupNoGBMemoryMap:
 	; Handle MBC-specific mapping
 	ld hl,z80codebase+mem_write_lut+$01
 	push hl
