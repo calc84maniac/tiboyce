@@ -22,13 +22,16 @@ LCDC_2_smc_5 = $+1
 	add a,9			;add a,1 when 8x16 sprites
 	ld (draw_sprite_top_smc),a
 	ld (draw_sprites_save_sp),sp
-	ld ix,$FEA4
+gbc_draw_sprites_smc_1 = $+2
+	ld ix,$FEA4 ;$FE5C for GBC
 draw_next_sprite:
-	lea ix,ix-3
+gbc_draw_sprites_smc_2 = $+2
+	lea ix,ix-3 ;+5 for GBC
 draw_next_sprite_2:
 	dec ixl
 	jr z,draw_sprites_done
-	ld.s bc,(ix-4)
+gbc_draw_sprites_smc_3 = $+3
+	ld.s bc,(ix-4) ;-$60 for GBC
 	dec b
 	ld a,b
 	cp 167
@@ -72,15 +75,16 @@ _
 _
 	 ld sp,hl
 	 
-	 ld hl,vram_pixels_start
-	 ld l,a
+gbc_render_start = $
 	 ld.s de,(ix-2)
 	 inc c
 	 ld ixl,c
 	 ld c,e
+	 ld hl,vram_pixels_start
+	 ld l,a
 	 ld a,b
 	 ld b,64
-LCDC_2_smc_3 = $+1
+LCDC_2_smc_3_gb = $+1
 	 res 0,b		;res 0,c when 8x16 sprites
 	 mlt bc
 	 add hl,bc
@@ -119,7 +123,7 @@ _
 	 ld ixh,8
 	 jr z,_
 	 ld ixh,-8
-LCDC_2_smc_1 = $+1
+LCDC_2_smc_1_gb = $+1
 	 xor $38
 _
 	 
@@ -248,7 +252,6 @@ _
 	; Output: Value written to VRAM, cache updated if needed
 	; Destroys: AF, BC, DE, HL
 write_vram_and_expand:
-vram_bank_base_for_write = $+1
 	ld hl,vram_base
 	add hl,bc
 	xor (hl)

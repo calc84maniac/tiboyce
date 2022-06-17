@@ -636,6 +636,8 @@ _
 	; Initialize the BGP write queue
 	ld l,BGP_write_queue & $FF
 	ld (hl),$FF
+	; GB empty frame is BGP color 0
+	ld a,BG_COLOR_0
 	jr SetupOverlappedPixelsDone
 	
 SetupOverlappedGBCPixels:
@@ -664,50 +666,24 @@ _
 	ld e,a
 	jr nz,--_
 	
-	; Generate the tile attributes LUT
-	ld h,(gbc_tile_attributes_lut >> 8) & $FF
-_
-	ld a,l
-	rrca
-	; Get only vertical flip, horizontal flip, and VRAM bank
-	and $68
-	; Move horizontal flip to bit 2
-	bit 5,a
-	jr z,_
-	xor $24
-_
-	; Duplicate vertical flip into bits 4 and 5
-	bit 6,a
-	jr z,_
-	xor $30
-_
-	rrca
-	ld (hl),a
-	inc l
-	jr nz,---_
-	
 	; Generate overlapped BG palette pixels
 	ld hl,gbc_overlapped_pixel_data_end
 	ld b,GBC_BG_TRANSPARENT_COLORS + 7
 	ld a,GBC_BG_OPAQUE_COLORS + 24
 _
 	; Generate the high priority palette
-	add a,GBC_BG_HIGH_PRIO_COLORS - GBC_BG_OPAQUE_COLORS - 1
-	ld e,a
-	dec a
-	ld d,a
-	dec a
+	add a,GBC_BG_HIGH_PRIO_COLORS - GBC_BG_OPAQUE_COLORS - 3
 	ld c,a
+	ld d,c \ inc d
+	ld e,d \ inc e
 	call mpLcdCursorImg + 512 - (6*2)
 	call mpLcdCursorImg
 	call mpLcdCursorImg
 	; Generate the normal priority palette
 	sub GBC_BG_HIGH_PRIO_COLORS - GBC_BG_OPAQUE_COLORS
 	ld c,a
-	inc a
-	ld d,a
-	inc a
-	ld e,a
+	ld d,c \ inc d
+	ld e,d \ inc e
 	call mpLcdCursorImg + 512 - (6*2)
 	call mpLcdCursorImg
 	call mpLcdCursorImg
@@ -715,25 +691,31 @@ _
 	djnz -_
 	
 	; Generate the sprite priority palettes
-	;B=GBC_OBJ_TRANSPARENT_COLOR
-	ld a,GBC_OBJ_HIGH_PRIO_COLORS
+	;B=GBC_OBJ_TRANSPARENT_COLOR	
+	ld a,GBC_OBJ_NORMAL_PRIO_COLORS
 _
 	ld c,a
-	inc a
-	ld d,a
-	inc a
-	ld e,a
+	ld d,c \ inc d
+	ld e,d \ inc e
 	call mpLcdCursorImg
-	sub (GBC_OBJ_HIGH_PRIO_COLORS - GBC_OBJ_NORMAL_PRIO_COLORS) + 2
-	jr nc,-_
+	sub GBC_OBJ_NORMAL_PRIO_COLORS - GBC_OBJ_LOW_PRIO_COLORS
+	cp GBC_OBJ_NORMAL_PRIO_COLORS
+	jr c,-_
+	ld a,GBC_OBJ_HIGH_PRIO_COLORS
+	jr nz,-_
 	
 	; Initialize cursor memory code
 	APTR(cursorcode)
 	ld de,mpLcdCursorImg
-	ld bc,cursorcodesize
+	ld bc,gbc_render_start - cursorcode
+	ldir
+	ld bc,cursorcodesize - (gbc_render_start - cursorcode)
+	add hl,bc
 	ldir
 	
 	scf
+	; GBC empty frame is white
+	ld a,WHITE
 SetupOverlappedPixelsDone:
 	; Clear the mini frame backup for a clean initial frame
 	ld hl,mini_frame_backup
@@ -741,7 +723,7 @@ SetupOverlappedPixelsDone:
 	pop de
 	inc de
 	ld bc,160*144-1
-	ld (hl),BG_COLOR_0
+	ld (hl),a
 	ldir
 	
 	; Here carry is set for GBC or reset for GB
@@ -782,11 +764,39 @@ _
 	
 	jr nc,SetupTilemapCacheDone
 	
-	; Now handle GBC tile attributes
 	ld hl,vram_gbc_start + $2000 + $1800
-	ld de,gbc_tile_attributes_lut | ((vram_tiles_start >> 8) & $FF)
-	ld ixh,e
-	ld c,a
+	ld ixh,(vram_tiles_start >> 8) & $FF
+	ld c,a ;$40
+	
+	; Generate the GBC tile attribute LUTs
+	ld de,gbc_tile_attributes_lut
+_
+	ld a,e
+	rrca
+	; Get only vertical flip, horizontal flip, and VRAM bank
+	and $68
+	; Move horizontal flip to bit 2
+	bit 5,a
+	jr z,_
+	xor $24
+_
+	; Duplicate vertical flip into bits 4, 5, and 7
+	bit 6,a
+	jr z,_
+	or $B0
+_
+	rrca
+	; Fill in gbc_tile_attributes_lut_2 first
+	inc d
+	ld (de),a
+	; Remove bit 6 for gbc_tile_attributes_lut
+	res 6,a
+	dec d
+	ld (de),a
+	inc e
+	jr nz,---_
+	
+	; Now handle GBC tile attributes
 SetupTilemapAttributesOuterLoop:
 	ld b,$20
 SetupTilemapAttributesInnerLoop:
@@ -818,6 +828,10 @@ SetupTilemapAttributesInnerLoop:
 	ld ixl,128
 	dec c
 	jr nz,SetupTilemapAttributesOuterLoop
+	
+	; Treat BGP/OBP0/OBP1 as direct read/write ports
+	ld hl,(write_port_direct - mem_write_port_routines) * $010101
+	ld (z80codebase+mem_write_port_lut+(BGP-ioregs)),hl
 	
 SetupTilemapCacheDone:
 	ld a,z80codebase >> 16
@@ -1417,12 +1431,12 @@ _
 	add hl,hl
 	jr nc,_
 	ld a,$78 ;(overriding $38)
-	ld (LCDC_2_smc_1),a
+	ld (LCDC_2_smc_1_gb),a
 	ld a,15 ;(overriding 7)
 	ld (LCDC_2_smc_2),a
 	ld (LCDC_2_smc_4),a
 	ld a,$81 ;RES 0,C (overriding RES 0,B)
-	ld (LCDC_2_smc_3),a
+	ld (LCDC_2_smc_3_gb),a
 	ld a,1 ;(overriding 9)
 	ld (LCDC_2_smc_5),a
 _
@@ -1435,7 +1449,7 @@ _
 	sbc a,a
 	and $39-$31 ;ADD HL,SP or LD SP,
 	add a,$31
-	ld (LCDC_0_smc),a
+	ld (LCDC_0_smc_gb),a
 	
 	ld hl,(iy-ioregs+SCY)
 	ld a,l
@@ -3371,6 +3385,76 @@ sha_code_size = $ - sha_code
 sha_code_entry_offset = (15 - (160 % 15)) * 4
 convert_palette_row = mpShaData + sha_code_entry_offset
 convert_palette_row_loop_count = (160 / 15) + 1
+	
+sha_code_gbc:
+	.org mpShaData
+gbc_render_tile_loop:
+	; Get the row offset
+	ld a,ixh
+	; Pop the tile data offset and flip attributes
+	pop.s hl
+	; Apply the vertical flip attribute to the row offset
+	xor l
+	ld l,a
+	; Get the pointer to the tile data
+	add hl,sp
+	; Get the palette table index to the first 4 pixels
+	ld c,(hl)
+	inc hl
+	; Get the offset to the last 4 pixels
+	ld a,(hl)
+	; Pop the palette table offset and get the table pointer
+	pop.s hl
+	add hl,sp
+	; Index and copy the first 4 pixels
+	add hl,bc
+	ld c,4
+	ldir
+	; Index and copy the last 4 pixels
+	ld c,a
+	add hl,bc
+	ld c,4
+	ldir
+	dec ixl
+	jr nz,gbc_render_tile_loop
+	jp (iy)
+	
+gbc_render_sprite_row:
+	ld e,(iy)
+gbc_render_sprite_pixels_first:
+	; Get the sprite priority data
+	ld a,(de)
+	; Compare to the framebuffer pixel
+	cp (hl)
+	jr c,_
+	; Add the sprite palette offset
+	add a,c
+	ld (hl),a
+_
+	inc hl
+	inc e ; Wraparound in priority table
+	djnz gbc_render_sprite_pixels_first
+	ld b,4
+	ld a,e
+	add a,(iy+1)
+	ld e,a
+gbc_render_sprite_pixels_last:
+	; Get the sprite priority data
+	ld a,(de)
+	; Compare to the framebuffer pixel
+	cp (hl)
+	jr c,_
+	; Add the sprite palette offset
+	add a,c
+	ld (hl),a
+_
+	inc hl
+	inc e ; Wraparound in priority table
+	djnz gbc_render_sprite_pixels_last
+	jp gbc_draw_sprite_unclipped_loop
+	
+sha_code_gbc_size = $ - gbc_render_tile_loop
+	.org sha_code_gbc + sha_code_gbc_size
 	
 mbc_info:
 	;No MBC

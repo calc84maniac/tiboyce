@@ -292,22 +292,14 @@ write_hdma:
 writeHDMA5:
 	jp _writeHDMA5
 	
-writeSVBKhandler:
+writeVBKhandler:
 	ld e,a
-writeSVBK:
+writeVBK:
 	exx
 	ld a,l
-	or $F8
-	ld (SVBK),a
-	ld l,a
-	ld h,wram_bank_base_lut >> 8
-	ld a,(hl)
-	ld (wram_mirror_bank_base+1-z80codebase),a
-	add a,$20
-	ld l,(wram_bank_base_for_write+1) & $FF
-	ld (hl),a
-	dec h \ dec h
-	jr writeSVBK_finish
+	or $FE
+	ld (VBK),a
+	jp.lil writeVBK_helper
 
 ;writeP1:
 ;	jr _writeP1
@@ -326,22 +318,24 @@ write_palette_index:
 	
 write_palette_data:
 	djnz _write_palette_data
-
-writeVBKhandler:
+	
+writeSVBKhandler:
 	ld e,a
-writeVBK:
+writeSVBK:
 	exx
-	.echo mem_write_port_routines+256-$, " bytes remaining for port writes"	
+	.echo mem_write_port_routines+256-$, " bytes remaining for port writes"
 	ld a,l
-	or $FE
-	ld (VBK),a
-	rrca
-	rrca
-	rrca
-	add a,((vram_gbc_base >> 8) - $DF) & $FF
-	ld.lil (vram_bank_base_for_write+1),a
-	ld hl,vram_bank_base+1-z80codebase
-writeSVBK_finish:
+	or $F8
+	ld (SVBK),a
+	ld l,a
+	ld h,wram_bank_base_lut >> 8
+	ld a,(hl)
+	ld (wram_mirror_bank_base+1-z80codebase),a
+	add a,$20
+	ld l,(wram_bank_base_for_write+1) & $FF
+	ld (hl),a
+	dec h \ dec h
+writeVBK_finish:
 	ld (hl),a
 	dec h \ dec h
 	ld (hl),a

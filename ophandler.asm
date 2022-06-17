@@ -784,7 +784,7 @@ lcdc_write_helper:
 _
 	bit 0,b
 	jr z,_
-	ld hl,LCDC_0_smc
+	ld hl,LCDC_0_smc_gb
 	ld a,(hl)
 	xor $39 ^ $31	;ADD.SIS HL,SP \ LD.SIS SP,HL vs LD.SIS SP,$F940
 	ld (hl),a
@@ -798,7 +798,7 @@ _
 _
 	bit 2,b
 	jr z,_
-	ld hl,LCDC_2_smc_1
+	ld hl,LCDC_2_smc_1_gb
 	ld a,(hl)
 	xor $38^$78
 	ld (hl),a
@@ -809,7 +809,7 @@ _
 	ld (LCDC_2_smc_4),a
 	xor 7^9
 	ld (LCDC_2_smc_5),a
-	ld hl,LCDC_2_smc_3
+	ld hl,LCDC_2_smc_3_gb
 	ld a,(hl)
 	xor $80 ^ $81	;RES 0,B vs RES 0,C
 	ld (hl),a

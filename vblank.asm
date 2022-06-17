@@ -1277,7 +1277,7 @@ SCX_smc_1 = $+1
 LCDC_4_smc = $+2
 LCDC_3_smc = $+3
 	    ld.sis sp,(vram_tiles_start & $FFFF) + $80
-LCDC_0_smc = $+1
+LCDC_0_smc_gb = $+1
 	    add.sis hl,sp
 	    ld.sis sp,hl
 	 

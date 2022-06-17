@@ -557,6 +557,14 @@ gbc_tile_attributes_lut = BGP_frequencies
 ; Must be 256-byte aligned (and currently, follow BGP_frequencies).
 overlapped_palette_index_lut = BGP_frequencies + 256
 
+; Converts GBC tile attributes for use in 8x16 sprite rendering.
+; This bitmask is XORed with the tile row offset in bits 3-6 during rendering.
+; Bit 1: Horizontal flip
+; Bit 2: VRAM bank
+; Bits 3-6: Vertical flip (all 1 or all 0)
+; Must be 256-byte aligned and follow the first LUT. GBC only.
+gbc_tile_attributes_lut_2 = gbc_tile_attributes_lut + 256
+
 ; Table representing every possible combination of three BGP colors.
 ; The data is overlapped such that a unique sequence of three colors begins
 ; at each word. Note that this means the table is (64 + 2) * 2 bytes large.
@@ -594,6 +602,13 @@ fake_tilemap = $D0F940
 ; Game Boy Color only data
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+; Tables mapping sprite attributes to palette offsets.
+; The first table applies to high sprite priority,
+; and the second table applies to low/normal sprite priority.
+; Must be 256-byte aligned.
+high_prio_sprite_palette_lut = ((romListStart + (256*3) - 1) | $1FF) + 1
+low_normal_prio_sprite_palette_lut = high_prio_sprite_palette_lut + 256
+
 ; Tables representing every possible combination of four sprite pixels.
 ;
 ; The pixels contained in these LUTs correspond to indices with no color,
@@ -604,10 +619,10 @@ fake_tilemap = $D0F940
 ; The data is overlapped such that a unique sequence of four pixels begins
 ; at each byte. Sprite rendering uses wrapping logic rather than LDIR,
 ; so only 256 bytes are required per table.
-; Must be 256-byte aligned.
-low_priority_sprite_lut = ((romListStart + (256*3)) | $FF) + 1
-normal_priority_sprite_lut = low_priority_sprite_lut + 256
-high_priority_sprite_lut = normal_priority_sprite_lut + 256
+; Must be 256-byte aligned, and follow the palette LUTs.
+high_prio_sprite_pixel_lut = low_normal_prio_sprite_palette_lut + 256
+low_prio_sprite_pixel_lut = high_prio_sprite_pixel_lut + 256
+normal_prio_sprite_pixel_lut = low_prio_sprite_pixel_lut + 256
 
 ; Tables representing every possible combination of four BG pixels, for each
 ; possible palette. High-priority BG tiles are considered as unique palettes,
@@ -617,7 +632,7 @@ high_priority_sprite_lut = normal_priority_sprite_lut + 256
 ; at each byte. Additionally, the data is repeated such that the copy pointer
 ; can move forward directly from one set of 4 pixels to the next 4 pixels.
 ; As such, each table is (256+3)*2 bytes in size, for 8288 bytes in total.
-gbc_overlapped_pixel_data = high_priority_sprite_lut + 256
+gbc_overlapped_pixel_data = normal_prio_sprite_pixel_lut + 256
 gbc_overlapped_pixel_data_end = gbc_overlapped_pixel_data + ((256+3)*2*16)
 
 ; Start of Game Boy HRAM region. 512 bytes in size, includes OAM and MMIO.
@@ -1505,5 +1520,6 @@ save_state_gbc_size = save_state_gbc_end - save_state_start
 	#include "menu.asm"
 	#include "z80mode.asm"
 	#include "render.asm"
+	#include "render_gbc.asm"
 
 	.echo "Total size: ", program_size + $
