@@ -43,7 +43,9 @@ frame_emulated_count = $+1
 	    ld a,144
 	    call draw_sprites
 	    call sync_frame_flip
+#ifndef GBC
 	    call convert_palette
+#endif
 _
 	    
 preservedAreaHeight = $+1
@@ -433,7 +435,7 @@ frame_interrupt:
 ; and prepares the current palette pointers.
 ;
 ; Inputs:  None
-; Destroys: AF, DE, HL
+; Destroys: AF, BC, DE, HL
 prepare_next_frame:
 	; Swap buffers
 	ld de,(current_display)
@@ -479,6 +481,37 @@ frame_dma_size_smc = $+1
 	ld hl,0
 	sbc hl,de
 	ld (frame_flip_end_check_smc),hl
+#ifdef GBC
+	ld hl,z80codebase+gbc_bg_palette_data
+	ld de,gbc_bg_transparent_colors
+	ld bc,$0816
+	ld a,l
+_
+	ldi
+	ldi
+	add a,b
+	ld l,a
+	jr nz,-_
+	ld l,gbc_bg_palette_data & $FF
+	ld b,a
+	ld a,c
+_
+	inc hl
+	inc hl
+	ld c,a
+	ldir
+	cp l
+	jr c,-_
+	ld hl,z80codebase+gbc_obj_palette_data
+_
+	inc hl
+	inc hl
+	ld c,a
+	ldir
+	cp l
+	jr c,-_
+	ret
+#else
 	; Clear the frequency count for the native BGP value
 	ld a,(BGP_max_value)
 	ld hl,BGP_frequencies
@@ -494,6 +527,7 @@ frame_dma_size_smc = $+1
 	add a,a
 	ld (update_palettes_bgp123_index),a
 	ret
+#endif
 	
 convert_palette_for_menu:
 	; Get the current native BGP palette
@@ -764,6 +798,24 @@ do_frame_flip_always_no_gram_flip:
 ;
 ; Destroys AF,BC,DE,HL
 update_palettes:
+#ifdef GBC
+	ld hl,gbc_bg_transparent_colors
+	ld de,mpLcdPalette + (GBC_BG_TRANSPARENT_COLORS*2)
+	ld bc,8*2
+	ldir
+	ld e,GBC_BG_OPAQUE_COLORS*2
+	ld c,24*2
+	ld a,c
+	ldir
+	ld e,GBC_OBJ_OPAQUE_COLORS*2
+	ld c,a
+	ldir
+	ld l,gbc_bg_opaque_colors & $FF
+	ld e,GBC_BG_HIGH_PRIO_COLORS*2
+	ld c,a
+	ldir
+	ret
+#else
 update_palettes_bgp0_index = $+1
 	ld hl,bg_palette_colors
 	ld de,mpLcdPalette + (255*2)
@@ -775,6 +827,7 @@ update_palettes_bgp123_index = $+1
 	ld c,3*2
 	ldir
 	ret
+#endif
 	
 	; Swap GRAM sub-buffers in stretched display mode to avoid tearing.
 	; Input: A=1
@@ -1240,10 +1293,16 @@ myLY = $+1
 	 push bc
 render_scanlines_wait_smc = $+1
 	  call sync_frame_flip
+#ifdef GBC
 	  ; Handle any deferred VRAM writes
+	  ld a,(gbc_write_vram_last_slice)
+	  rra
+	  call c,gbc_write_vram_catchup
+#else
 	  ld a,(write_vram_last_slice)
 	  rra
 	  call c,write_vram_catchup
+#endif
 	 pop bc
 	 push ix
 	  push iy
@@ -1255,7 +1314,11 @@ scanlineLUT_ptr = $+2
 	   or a
 	   ld hl,-6
 	   add hl,sp
+#ifdef GBC
+	   ld (gbc_render_save_spl),hl
+#else
 	   ld (render_save_spl),hl
+#endif
 render_scanline_loop:
 	   push bc
 	    ; Get current scanline pointer from LUT
@@ -1304,7 +1367,11 @@ window_trigger_smc_2 = $
 	    jr do_window_trigger ; Replaced with SUB B \ ADD A,n
 WX_smc_2 = $
 	    .db 0
+#ifdef GBC
+	    call c,gbc_scanline_do_render
+#else
 	    call c,scanline_do_render
+#endif
 	 
 window_tile_ptr = $+2
 	    ld.sis sp,(vram_tiles_start & $FFFF) + $80	;(+$2000) (-$80)
@@ -1328,7 +1395,11 @@ WX_smc_3 = $+1
 scanline_no_window:
 	    ld a,167
 	    sub b
+#ifdef GBC
+	    call gbc_scanline_do_render
+#else
 	    call scanline_do_render
+#endif
 	 
 render_scanline_next:
 	    ; Advance to next scanline

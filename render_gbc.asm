@@ -64,6 +64,8 @@ gbc_draw_sprite_unclipped_offset_smc = $+1
 	add hl,bc
 	ld c,a
 	ld b,4
+	ld e,(iy)
+gbc_render_sprite_row_smc = $+1
 	jp nz,gbc_render_sprite_row
 	pop.s ix
 	jp draw_next_sprite_2
@@ -239,7 +241,10 @@ gbc_write_vram_catchup_smc = $+1
 	
 writeVBK_helper:
 	inc a
+	ld a,(gbc_write_vram_last_slice)
+	rra
 	jr nz,_
+	call c,gbc_write_vram_catchup
 	ld hl,vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
 	ld (gbc_write_tilemap_bank_smc),hl
 	ld hl,vram_pixels_start-((vram_start*4) & $FFFFFF)
@@ -249,14 +254,169 @@ writeVBK_helper:
 	ld hl,vram_bank_base+1-z80codebase
 	jp.sis writeVBK_finish
 _
+	call c,gbc_write_vram_catchup
 	ld hl,vram_tiles_start-(((vram_start+$3800)*8) & $FFFFFF)+1
 	ld (gbc_write_tilemap_bank_smc),hl
 	ld hl,vram_pixels_start-(((vram_start+$2000)*4) & $FFFFFF)+4
 	ld (gbc_write_pixels_bank_smc),hl
-	ld a,(vram_gbc_base >> 8) & $FF
+	ld a,((vram_gbc_base + $2000) >> 8) & $FF
 	ld (vram_bank_base_for_write+1),a
 	ld hl,vram_bank_base+1-z80codebase
 	jp.sis writeVBK_finish
+	
+gbc_scanline_do_subtile:
+	ld a,ixl
+	pop.s hl
+	xor l
+	ld l,a
+	add hl,sp
+	ld a,8
+	sub b
+	ld b,0
+	jr c,gbc_scanline_subtile_no_left_clip
+	bit 2,a
+	jr nz,_
+	ld ix,(hl)
+	ld c,ixl
+	pop.s hl
+	add hl,sp
+	add hl,bc
+	ld c,a
+	add hl,bc
+	cpl
+	add a,5
+	ld c,a
+	jr gbc_scanline_subtile_left_clip_full
+_
+	add a,(hl)
+	inc hl
+	add a,(hl)
+	ld c,a
+	pop.s hl
+	add hl,sp
+	add hl,bc
+	jr gbc_scanline_subtile_left_clip_half
+	
+	; Input: B=Start X+8, A=Length-1, HL=pixel base pointer, DE=pixel output pointer, IY=scanline pointer, SPS=tilemap pointer
+gbc_scanline_do_render:
+	ld c,l
+	ld ixl,c
+	ld l,0
+	ld sp,hl
+	ld c,a
+	and 7
+	ld (gbc_scanline_right_clip_smc),a
+	xor c
+	jr z,gbc_scanline_do_subtile
+	add.s hl,sp
+	add hl,hl
+	add a,l
+	jr c,gbc_scanline_no_wrap
+	rrca
+	rrca
+	rrca
+	ld (gbc_scanline_post_wrap_smc),a
+	xor a
+gbc_scanline_no_wrap:
+	sub l
+	rrca
+	rrca
+	rrca
+	ld ixh,a
+	ld hl,-8*256
+	add hl,bc
+	jr nc,gbc_scanline_left_clip
+	ld b,0
+gbc_render_tile_loop_smc_1 = $+1
+	jp z,gbc_render_tile_loop
+gbc_render_scanline_finish:
+gbc_scanline_post_wrap_smc = $+1
+	ld c,$FF
+	inc c
+	jr z,gbc_scanline_right_clip
+	ld hl,-128
+	add.s hl,sp
+	ld.s sp,hl
+	sbc a,a
+	ld (gbc_scanline_post_wrap_smc),a
+	dec c
+	ld ixh,c
+gbc_render_tile_loop_smc_2 = $+1
+	jp nz,gbc_render_tile_loop
+gbc_scanline_right_clip:
+	ld a,ixl
+	pop.s hl
+	xor l
+	ld l,a
+	add hl,sp
+gbc_scanline_subtile_no_left_clip:
+	ld c,(hl)
+	inc hl
+	ld a,(hl)
+	ld ixh,a
+	pop.s hl
+	add hl,sp
+	add hl,bc
+gbc_scanline_subtile_left_clip_half:
+	ld c,4
+gbc_scanline_subtile_left_clip_full:
+gbc_scanline_right_clip_smc = $+1
+	ld a,0
+	cp c
+	jr nc,_
+	sub c
+	ldir
+	ld c,ixh
+	add hl,bc
+_
+	inc a
+	ld c,a
+	ldir
+gbc_render_save_spl = $+1
+	ld sp,0
+	ret
+	
+gbc_scanline_left_clip:
+	ld a,ixl
+	pop.s hl
+	xor l
+	ld l,a
+	add hl,sp
+	ld a,8
+	sub b
+	ld c,b
+	bit 2,a
+	jr nz,_
+	add a,(hl)
+	inc hl
+	ld b,(hl)
+	pop.s hl
+	add hl,sp
+	inc h
+	add a,l
+	ld l,a
+	ldi \ ldi \ ldi \ ldi
+	ld a,l
+	add a,b
+	ld l,a
+	jr ++_
+_
+	add a,(hl)
+	inc hl
+	add a,(hl)
+	pop.s hl
+	add hl,sp
+	inc h
+	add a,l
+	ld l,a
+_
+	xor a
+	ld b,a
+	ldir
+	cp ixh
+gbc_render_tile_loop_smc_3 = $+1
+	jp z,gbc_render_tile_loop
+	jr gbc_render_scanline_finish
 	
 gbc_cursorcodesize = $-mpLcdCursorImg
 	.org cursorcode+cursorcodesize+($-gbc_render_start)

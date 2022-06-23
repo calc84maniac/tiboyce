@@ -707,10 +707,11 @@ _
 	; Initialize cursor memory code
 	APTR(cursorcode)
 	ld de,mpLcdCursorImg
-	ld bc,gbc_render_start - cursorcode
+	ld bc,gbc_render_start - mpLcdCursorImg
 	ldir
-	ld bc,cursorcodesize - (gbc_render_start - cursorcode)
+	ld bc,cursorcodesize - (gbc_render_start - mpLcdCursorImg)
 	add hl,bc
+	ld bc,gbc_cursorcodesize - (gbc_render_start - mpLcdCursorImg)
 	ldir
 	
 	scf
@@ -866,10 +867,26 @@ _
 	APTR(sha_code)
 	ld de,mpShaData
 	ld c,sha_code_size
+	or (iy-state_size+STATE_SYSTEM_TYPE)
+	jr z,_
+	add hl,bc ;sha_code_gbc
+	scf
+_
 	call.is try_unlock_sha
 	ldir
-	jr nz,_
+	jr nz,++_
 	; If the model is too new, execute from cached Flash instead
+	jr nc,_
+	ld c,sha_code_size-1
+	sbc hl,bc
+	ld (gbc_render_tile_loop_smc_1),hl
+	ld (gbc_render_tile_loop_smc_2),hl
+	ld (gbc_render_tile_loop_smc_3),hl
+	ld c,gbc_render_sprite_row - gbc_render_tile_loop
+	add hl,bc
+	ld (gbc_render_sprite_row_smc),hl
+	jr ++_
+_
 	ld c,sha_code_size - sha_code_entry_offset
 	sbc hl,bc
 	ld (convert_palette_row_smc_1),hl
@@ -1430,13 +1447,23 @@ _
 	ld (LCDC_3_smc),a
 	add hl,hl
 	jr nc,_
+#ifdef GBC
+	ld a,(gbc_tile_attributes_lut_2 >> 8) & $FF
+	ld (LCDC_2_smc_1_gbc),a
+#else
 	ld a,$78 ;(overriding $38)
 	ld (LCDC_2_smc_1_gb),a
+#endif
 	ld a,15 ;(overriding 7)
 	ld (LCDC_2_smc_2),a
 	ld (LCDC_2_smc_4),a
+#ifdef GBC
+	ld a,$80 ;RES 0,B (overriding RES 0,C)
+	ld (LCDC_2_smc_3_gbc),a
+#else
 	ld a,$81 ;RES 0,C (overriding RES 0,B)
 	ld (LCDC_2_smc_3_gb),a
+#endif
 	ld a,1 ;(overriding 9)
 	ld (LCDC_2_smc_5),a
 _
@@ -1447,17 +1474,27 @@ _
 _
 	add hl,hl
 	sbc a,a
+#ifdef GBC
+	and $80
+	ld (LCDC_0_smc_2_gbc),a
+	rlca
+	add a,(high_prio_sprite_palette_lut >> 8) & $FF
+	ld (LCDC_0_smc_1_gbc),a
+#else
 	and $39-$31 ;ADD HL,SP or LD SP,
 	add a,$31
 	ld (LCDC_0_smc_gb),a
+#endif
 	
 	ld hl,(iy-ioregs+SCY)
 	ld a,l
 	ld (SCY_smc),a
 	ld a,h
+	and $F8
 	rrca
+#ifndef GBC
 	rrca
-	and $3E
+#endif
 	ld (SCX_smc_1),a
 	ld a,h
 	cpl
@@ -3386,11 +3423,13 @@ sha_code_entry_offset = (15 - (160 % 15)) * 4
 convert_palette_row = mpShaData + sha_code_entry_offset
 convert_palette_row_loop_count = (160 / 15) + 1
 	
+	.echo "SHA code size: ", sha_code_size
+	
 sha_code_gbc:
 	.org mpShaData
 gbc_render_tile_loop:
 	; Get the row offset
-	ld a,ixh
+	ld a,ixl
 	; Pop the tile data offset and flip attributes
 	pop.s hl
 	; Apply the vertical flip attribute to the row offset
@@ -3415,12 +3454,11 @@ gbc_render_tile_loop:
 	add hl,bc
 	ld c,4
 	ldir
-	dec ixl
+	dec ixh
 	jr nz,gbc_render_tile_loop
-	jp (iy)
+	jp gbc_render_scanline_finish
 	
 gbc_render_sprite_row:
-	ld e,(iy)
 gbc_render_sprite_pixels_first:
 	; Get the sprite priority data
 	ld a,(de)
@@ -3455,6 +3493,8 @@ _
 	
 sha_code_gbc_size = $ - gbc_render_tile_loop
 	.org sha_code_gbc + sha_code_gbc_size
+	
+	.echo "GBC SHA code size: ", sha_code_gbc_size
 	
 mbc_info:
 	;No MBC

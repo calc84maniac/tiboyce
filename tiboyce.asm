@@ -535,7 +535,7 @@ palette_backup = digits + 264
 ; Stored in a compressed format, with either:
 ;   Byte 0 = Number of scanlines, Byte 1 = BGP value for all scanlines
 ;   Byte 0 = Number of scanlines (N) + 144, Bytes 1-N = BGP values per scanline
-; Must end at a 256-byte aligned address.
+; Must end at a 256-byte aligned address. Game Boy only.
 BGP_write_queue = (((palette_backup + 32) + 192) | 255) - 192
 
 ; Tracks the frequency of each BGP value as they are queued.
@@ -570,9 +570,17 @@ gbc_tile_attributes_lut_2 = gbc_tile_attributes_lut + 256
 ; at each word. Note that this means the table is (64 + 2) * 2 bytes large.
 ; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
 ; at the index corresponding to palette %100100, which is $0D.
-; This table must be 256-byte aligned.
+; This table must be 256-byte aligned. Game Boy only.
 overlapped_bg_palette_colors = overlapped_palette_index_lut + 256
 bg_palette_colors = overlapped_bg_palette_colors + ($0D*2)
+
+; Table of GBC palette colors ready to copy to the native palette.
+; There are 8 transparent BG colors, followed by 24 opaque BG colors,
+; followed by 24 opaque OBJ colors, for a total of (8 + 24 + 24) * 2 bytes.
+; This table must be 256-byte aligned. GBC only.
+gbc_bg_transparent_colors = overlapped_bg_palette_colors
+gbc_bg_opaque_colors = gbc_bg_transparent_colors + (8*2)
+gbc_obj_opaque_colors = gbc_bg_opaque_colors + (24*2)
 
 ; Stack of cycle offset fixup locations during JIT block recompilation.
 ; Up to one pointer may be allocated for each recompiled opcode, meaning

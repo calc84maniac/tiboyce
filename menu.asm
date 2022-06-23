@@ -527,7 +527,9 @@ ItemSelectDigit:
 	jr ItemSelectLink
 
 emulator_menu_ingame:
+#ifndef GBC
 	call convert_palette_for_menu
+#endif
 	xor a
 emulator_menu:
 	push af
