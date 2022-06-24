@@ -645,6 +645,7 @@ SetupOverlappedGBCPixels:
 	push de
 	pop hl
 	inc d ;DE=overlapped_pixel_rev_index_lut
+	inc b
 _
 	; Copy from the first LUT to the second
 	ld a,l
@@ -692,17 +693,20 @@ _
 	
 	; Generate the sprite priority palettes
 	;B=GBC_OBJ_TRANSPARENT_COLOR	
-	ld a,GBC_OBJ_NORMAL_PRIO_COLORS
+	ld a,GBC_OBJ_LOW_PRIO_COLORS
 _
 	ld c,a
 	ld d,c \ inc d
 	ld e,d \ inc e
 	call mpLcdCursorImg
-	sub GBC_OBJ_NORMAL_PRIO_COLORS - GBC_OBJ_LOW_PRIO_COLORS
-	cp GBC_OBJ_NORMAL_PRIO_COLORS
+	add a,GBC_OBJ_NORMAL_PRIO_COLORS - GBC_OBJ_LOW_PRIO_COLORS
+	cp GBC_OBJ_HIGH_PRIO_COLORS+1
 	jr c,-_
-	ld a,GBC_OBJ_HIGH_PRIO_COLORS
-	jr nz,-_
+	
+	ld h,(high_prio_sprite_palette_lut >> 8) & $FF
+	ld a,GBC_OBJ_OPAQUE_COLORS - GBC_OBJ_HIGH_PRIO_COLORS
+	ld c,256-8
+	call fill_sprite_palette_luts
 	
 	; Initialize cursor memory code
 	APTR(cursorcode)
@@ -773,7 +777,6 @@ _
 	ld de,gbc_tile_attributes_lut
 _
 	ld a,e
-	rrca
 	; Get only vertical flip, horizontal flip, and VRAM bank
 	and $68
 	; Move horizontal flip to bit 2

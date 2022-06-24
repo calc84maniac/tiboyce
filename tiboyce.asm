@@ -614,7 +614,7 @@ fake_tilemap = $D0F940
 ; The first table applies to high sprite priority,
 ; and the second table applies to low/normal sprite priority.
 ; Must be 256-byte aligned.
-high_prio_sprite_palette_lut = ((romListStart + (256*3) - 1) | $1FF) + 1
+high_prio_sprite_palette_lut = ((romListStart + (256*3) - 1) | $FF) + 1
 low_normal_prio_sprite_palette_lut = high_prio_sprite_palette_lut + 256
 
 ; Tables representing every possible combination of four sprite pixels.
@@ -629,8 +629,8 @@ low_normal_prio_sprite_palette_lut = high_prio_sprite_palette_lut + 256
 ; so only 256 bytes are required per table.
 ; Must be 256-byte aligned, and follow the palette LUTs.
 high_prio_sprite_pixel_lut = low_normal_prio_sprite_palette_lut + 256
-low_prio_sprite_pixel_lut = high_prio_sprite_pixel_lut + 256
-normal_prio_sprite_pixel_lut = low_prio_sprite_pixel_lut + 256
+normal_prio_sprite_pixel_lut = high_prio_sprite_pixel_lut + 256
+low_prio_sprite_pixel_lut = normal_prio_sprite_pixel_lut + 256
 
 ; Tables representing every possible combination of four BG pixels, for each
 ; possible palette. High-priority BG tiles are considered as unique palettes,
@@ -640,7 +640,7 @@ normal_prio_sprite_pixel_lut = low_prio_sprite_pixel_lut + 256
 ; at each byte. Additionally, the data is repeated such that the copy pointer
 ; can move forward directly from one set of 4 pixels to the next 4 pixels.
 ; As such, each table is (256+3)*2 bytes in size, for 8288 bytes in total.
-gbc_overlapped_pixel_data = normal_prio_sprite_pixel_lut + 256
+gbc_overlapped_pixel_data = low_prio_sprite_pixel_lut + 256
 gbc_overlapped_pixel_data_end = gbc_overlapped_pixel_data + ((256+3)*2*16)
 
 ; Start of Game Boy HRAM region. 512 bytes in size, includes OAM and MMIO.
@@ -993,6 +993,25 @@ memset_fast_loop:
 	push de
 memset_fast_save_sp = $+1
 	ld sp,0
+	ret
+	
+fill_sprite_palette_luts:
+	call fill_sprite_palette_lut
+	ld a,GBC_OBJ_OPAQUE_COLORS - GBC_OBJ_NORMAL_PRIO_COLORS
+	call fill_half_sprite_palette_lut
+	ld a,GBC_OBJ_OPAQUE_COLORS - GBC_OBJ_LOW_PRIO_COLORS
+fill_half_sprite_palette_lut:
+	ld c,128-8
+fill_sprite_palette_lut:
+	ld b,8
+	push hl
+	pop de
+_
+	ld (de),a
+	inc de
+	add a,3
+	djnz -_
+	ldir
 	ret
 	
 ; Gets a pointer to the current menu in HL, the current selection index in BC,

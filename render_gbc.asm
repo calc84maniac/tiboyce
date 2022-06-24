@@ -4,6 +4,7 @@
 	; C = number of rows to render, minus 1
 	; A = tile row offset
 	; IX = OAM pointer plus $60
+	pea.s ix+5
 	ld.s de,(ix-$60+2)
 	inc c
 	ld ixl,c
@@ -17,6 +18,7 @@ LCDC_2_smc_1_gbc = $+2 ; Replace with gbc_tile_attributes_lut_2 for 8x16
 	ld iyl,a
 	; Get the row direction offset
 	ld a,d
+	cpl
 	and c ;64
 	rrca
 	rrca
@@ -31,13 +33,13 @@ LCDC_2_smc_3_gbc = $+1
 	add iy,bc
 	
 	; Get the sprite palette offset
-LCDC_0_smc_1_gbc = $+1 ;Replace with (high_priority_sprite_palette_lut >> 8) & $FF
+LCDC_0_smc_1_gbc = $+1 ;Replace with (high_prio_sprite_palette_lut >> 8) & $FF
 	ld h,(low_normal_prio_sprite_palette_lut >> 8) & $FF
 	ld c,(hl)
 	
 	; Get the pixel LUT for the current sprite priority
 LCDC_0_smc_2_gbc = $+1 ;Replace low byte with 0
-	ld de,low_prio_sprite_pixel_lut - low_normal_prio_sprite_palette_lut + $80
+	ld de,normal_prio_sprite_pixel_lut - low_normal_prio_sprite_palette_lut + $80
 	add hl,de
 	ex de,hl
 	
@@ -98,8 +100,8 @@ vram_bank_base_for_write = $+1
 	ld (hl),e
 	ld d,a
 	ld a,b
-	cp $98
-	jr c,gbc_write_vram_pixels
+	add a,256-$98
+	jr nc,gbc_write_vram_pixels
 	add hl,hl
 	add hl,hl
 	add hl,hl
@@ -158,7 +160,7 @@ gbc_write_vram_tile_attrs:
 	inc hl
 	ld (hl),d
 	; Do the same for the alternate tile set
-	set 7,d
+	set 7,l
 	ld (hl),d
 	dec hl
 	ld (hl),e
@@ -171,6 +173,8 @@ gbc_write_vram_catchup:
 	; Disable the normal return to z80 mode by using a false jump condition
 	ld a,$EA ;JP PE,
 	ld (gbc_write_vram_catchup_smc),a
+	push bc
+	push de
 	; Carry is set, which forces the written value to have bit 0 reset
 gbc_write_vram_pixels:
 	; Check if writing to the same slice as the last write
@@ -235,6 +239,8 @@ gbc_write_pixels_bank_smc = $+1
 gbc_write_vram_defer_pixels:
 gbc_write_vram_catchup_smc = $+1
 	jp.sis write_vram_and_expand_finish ;Replaced with JP PE when catching up
+	pop de
+	pop bc
 	ld a,$C3 ;JP
 	ld (gbc_write_vram_catchup_smc),a
 	ret
@@ -243,7 +249,7 @@ writeVBK_helper:
 	inc a
 	ld a,(gbc_write_vram_last_slice)
 	rra
-	jr nz,_
+	jr z,_
 	call c,gbc_write_vram_catchup
 	ld hl,vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
 	ld (gbc_write_tilemap_bank_smc),hl
@@ -311,7 +317,7 @@ gbc_scanline_do_render:
 	add.s hl,sp
 	add hl,hl
 	add a,l
-	jr c,gbc_scanline_no_wrap
+	jr nc,gbc_scanline_no_wrap
 	rrca
 	rrca
 	rrca
@@ -328,7 +334,7 @@ gbc_scanline_no_wrap:
 	jr nc,gbc_scanline_left_clip
 	ld b,0
 gbc_render_tile_loop_smc_1 = $+1
-	jp z,gbc_render_tile_loop
+	jp nz,gbc_render_tile_loop
 gbc_render_scanline_finish:
 gbc_scanline_post_wrap_smc = $+1
 	ld c,$FF
@@ -363,7 +369,7 @@ gbc_scanline_subtile_left_clip_full:
 gbc_scanline_right_clip_smc = $+1
 	ld a,0
 	cp c
-	jr nc,_
+	jr c,_
 	sub c
 	ldir
 	ld c,ixh

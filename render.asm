@@ -23,15 +23,27 @@ LCDC_2_smc_5 = $+1
 	ld (draw_sprite_top_smc),a
 	ld (draw_sprites_save_sp),sp
 gbc_draw_sprites_smc_1 = $+2
+#ifdef GBC
+	ld ix,$FE5C
+#else
 	ld ix,$FEA4 ;$FE5C for GBC
+#endif
 draw_next_sprite:
 gbc_draw_sprites_smc_2 = $+2
+#ifdef GBC
+	lea ix,ix+5
+#else
 	lea ix,ix-3 ;+5 for GBC
+#endif
 draw_next_sprite_2:
 	dec ixl
 	jr z,draw_sprites_done
 gbc_draw_sprites_smc_3 = $+3
+#ifdef GBC
+	ld.s bc,(ix-$60)
+#else
 	ld.s bc,(ix-4) ;-$60 for GBC
+#endif
 	dec b
 	ld a,b
 	cp 167
@@ -44,38 +56,38 @@ draw_sprite_height_smc_1 = $+1
 	sub 144 + 7
 	jr nc,draw_next_sprite
 	
-	pea.s ix-3
 scanlineLUT_sprite_ptr = $+1
-	 ld hl,0
+	ld hl,0
 LCDC_2_smc_2 = $+1
-	 ld c,7			;ld c,15 when 8x16 sprites
-	 ld d,c
-	 adc a,c
-	 jr nc,_
-	 xor c
-	 ld c,a
+	ld c,7			;ld c,15 when 8x16 sprites
+	ld d,c
+	adc a,c
+	jr nc,_
+	xor c
+	ld c,a
 _
-	 ld a,e
-	 sub d
-	 jr nc,_
-	 add a,c
-	 ld c,a
-	 ld a,e
-	 xor d
-	 add a,a
-	 add a,a
-	 add a,a
-	 jr ++_
+	ld a,e
+	sub d
+	jr nc,_
+	add a,c
+	ld c,a
+	ld a,e
+	xor d
+	add a,a
+	add a,a
+	add a,a
+	jr ++_
 _
-	 ld e,a
-	 ld d,3
-	 mlt de
-	 add hl,de
-	 xor a
+	ld e,a
+	ld d,3
+	mlt de
+	add hl,de
+	xor a
 _
-	 ld sp,hl
+	ld sp,hl
 	 
 gbc_render_start = $
+	pea.s ix-3
 	 ld.s de,(ix-2)
 	 inc c
 	 ld ixl,c
