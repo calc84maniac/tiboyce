@@ -100,7 +100,7 @@ wram_banked_read_handler:
 	ex af,af'
 wram_banked_read_any:
 wram_bank_base_for_read = $+2+z80codebase
-	ld.lil hl,0
+	ld.lil hl,wram_gbc_base
 _
 	add.l hl,bc
 	ex af,af'
@@ -513,7 +513,7 @@ wram_banked_write_handler:
 	ex af,af'
 wram_banked_write_any:
 wram_bank_base_for_write = $+2+z80codebase
-	ld.lil hl,0
+	ld.lil hl,wram_gbc_base
 _
 	add.l hl,bc
 	ex af,af'
