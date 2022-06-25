@@ -43,12 +43,12 @@ LCDC_0_smc_2_gbc = $+1 ;Replace low byte with 0
 	add hl,de
 	ex de,hl
 	
-	; Do X clipping
+	ld ixh,4
 	ld b,0
+	; Do X clipping
 	sub 7
 	jr c,gbc_draw_sprite_clipped_left
 	ld (gbc_draw_sprite_unclipped_offset_smc),a
-	ld ixh,4
 	sub 153
 	jr c,gbc_draw_sprite_unclipped_start
 gbc_draw_sprite_clipped_right:
@@ -58,18 +58,19 @@ gbc_draw_sprite_clipped_right:
 	inc a
 	ld ixh,a
 	jr c,gbc_draw_sprite_unclipped_start
-	; For 1-4 pixels wide, use the second half only
+	; For 1-4 pixels wide, use the first half only
 	add a,4
 	ld ixh,a
-gbc_render_sprite_row_half_smc = $+1
-	ld hl,gbc_render_sprite_row_half
+gbc_render_sprite_row_first_half_smc = $+1
+	ld hl,gbc_render_sprite_row_first_half
 	ld (gbc_render_sprite_row_smc_1),hl
 	jr gbc_draw_sprite_unclipped_start
 	
 gbc_draw_sprite_unclipped_loop:
 gbc_draw_sprite_unclipped_dir_smc = $+2
 	lea iy,iy+8
-	dec ixl
+gbc_draw_sprite_clipped_left_smc = $
+	dec ixl ; Replaced with JR to clipped impl
 gbc_draw_sprite_unclipped_start:
 	pop hl
 	ld a,c
@@ -81,15 +82,56 @@ gbc_draw_sprite_unclipped_offset_smc = $+1
 	ld e,(iy)
 gbc_render_sprite_row_smc_1 = $+1
 	jp nz,gbc_render_sprite_row
-gbc_draw_sprite_finish:
-	pop.s ix
 gbc_render_sprite_row_smc_2 = $+1
 	ld hl,gbc_render_sprite_row
 	ld (gbc_render_sprite_row_smc_1),hl
+gbc_draw_sprite_finish:
+	pop.s ix
 	jp draw_next_sprite_2
 	
 gbc_draw_sprite_clipped_left:
+	inc ixl
+	; For 5-7 pixels wide, use a shorter first row half
+	add a,3
+	jr c,gbc_draw_sprite_clipped_left_full
+	; For 1-4 pixels wide, use the second half only
+	add a,5
+	ld ixh,a
+	ld hl,$18 | ((gbc_draw_sprite_clipped_left_half_loop - (gbc_draw_sprite_clipped_left_smc+2)) << 8)
+	ld (gbc_draw_sprite_clipped_left_smc),hl
+gbc_draw_sprite_clipped_left_half_loop:
+	pop hl
+	ld a,(iy)
+	add a,8
+	sub ixh
+	dec ixl
+gbc_render_sprite_row_second_half_smc = $+1
+	jp nz,gbc_render_sprite_row_second_half
+gbc_draw_sprite_clipped_left_finish:
+	.db $21 ;LD HL,
+	 dec ixl
+	 pop hl
+	ld (gbc_draw_sprite_clipped_left_smc),hl
 	jr gbc_draw_sprite_finish
+	
+	
+gbc_draw_sprite_clipped_left_full:
+	inc a
+	ld (gbc_draw_sprite_clipped_left_full_smc),a
+	ld hl,$18 | ((gbc_draw_sprite_clipped_left_full_loop - (gbc_draw_sprite_clipped_left_smc+2)) << 8)
+	ld (gbc_draw_sprite_clipped_left_smc),hl
+gbc_draw_sprite_clipped_left_full_loop:
+	pop hl
+gbc_draw_sprite_clipped_left_full_smc = $+1
+	ld b,1
+	ld a,(iy)
+	add a,4
+	sub b
+	ld e,a
+	dec ixl
+gbc_render_sprite_row_smc_3 = $+1
+	jp nz,gbc_render_sprite_row
+	jr gbc_draw_sprite_clipped_left_finish
 	
 _
 	 push de
@@ -186,8 +228,8 @@ gbc_write_vram_tile_attrs:
 	jp.sis write_vram_and_expand_finish
 	
 gbc_write_vram_catchup:
-	; Disable the normal return to z80 mode by using a false jump condition
-	ld a,$EA ;JP PE,
+	; Disable the normal return to z80 mode by using a load instruction
+	ld a,$21 ;LD HL,
 	ld (gbc_write_vram_catchup_smc),a
 	push bc
 	push de
@@ -253,38 +295,13 @@ gbc_write_pixels_bank_smc = $+1
 	add a,-3
 	ld (de),a
 gbc_write_vram_defer_pixels:
-gbc_write_vram_catchup_smc = $+1
-	jp.sis write_vram_and_expand_finish ;Replaced with JP PE when catching up
+gbc_write_vram_catchup_smc = $
+	jp.sis write_vram_and_expand_finish ;Replaced with LD HL, when catching up
 	pop de
 	pop bc
-	ld a,$C3 ;JP
+	ld a,$40 ;.SIS
 	ld (gbc_write_vram_catchup_smc),a
 	ret
-	
-writeVBK_helper:
-	inc a
-	ld a,(gbc_write_vram_last_slice)
-	rra
-	jr z,_
-	call c,gbc_write_vram_catchup
-	ld hl,vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
-	ld (gbc_write_tilemap_bank_smc),hl
-	ld hl,vram_pixels_start-((vram_start*4) & $FFFFFF)
-	ld (gbc_write_pixels_bank_smc),hl
-	ld a,(vram_gbc_base >> 8) & $FF
-	ld (vram_bank_base_for_write+1),a
-	ld hl,vram_bank_base+1-z80codebase
-	jp.sis writeVBK_finish
-_
-	call c,gbc_write_vram_catchup
-	ld hl,vram_tiles_start-(((vram_start+$3800)*8) & $FFFFFF)+1
-	ld (gbc_write_tilemap_bank_smc),hl
-	ld hl,vram_pixels_start-(((vram_start+$2000)*4) & $FFFFFF)+4
-	ld (gbc_write_pixels_bank_smc),hl
-	ld a,((vram_gbc_base + $2000) >> 8) & $FF
-	ld (vram_bank_base_for_write+1),a
-	ld hl,vram_bank_base+1-z80codebase
-	jp.sis writeVBK_finish
 	
 	; Input: B=Start X+8, A=Length-1, HL=pixel base pointer, DE=pixel output pointer, IY=scanline pointer, SPS=tilemap pointer
 gbc_scanline_do_render:

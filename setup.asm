@@ -889,9 +889,13 @@ _
 	add hl,bc
 	ld (gbc_render_sprite_row_smc_1),hl
 	ld (gbc_render_sprite_row_smc_2),hl
-	ld c,gbc_render_sprite_row_half - gbc_render_sprite_row
+	ld (gbc_render_sprite_row_smc_3),hl
+	ld c,gbc_render_sprite_row_second_half - gbc_render_sprite_row
 	add hl,bc
-	ld (gbc_render_sprite_row_half_smc),hl
+	ld (gbc_render_sprite_row_second_half_smc),hl
+	ld c,gbc_render_sprite_row_first_half - gbc_render_sprite_row_second_half
+	add hl,bc
+	ld (gbc_render_sprite_row_first_half_smc),hl
 	jr ++_
 _
 	ld c,sha_code_size - sha_code_entry_offset
@@ -3480,9 +3484,10 @@ _
 	inc e ; Wraparound in priority table
 	djnz gbc_render_sprite_pixels_first
 	ld a,e
+gbc_render_sprite_row_second_half:
 	add a,(iy+1)
 	ld e,a
-gbc_render_sprite_row_half:
+gbc_render_sprite_row_first_half:
 	ld b,ixh
 gbc_render_sprite_pixels_last:
 	; Get the sprite priority data
