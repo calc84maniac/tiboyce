@@ -459,11 +459,7 @@ prepare_initial_frame:
 	add a,(vram_tiles_start >> 8) & $FF
 	ld (window_tile_ptr+1),a
 	ld a,$A9 ;XOR C
-	ld (window_trigger_smc_1),a
-	ld a,$18 ;JR
-	ld (window_trigger_smc_2),a
-	ld a,do_window_trigger - (window_trigger_smc_2+2)
-	ld (window_trigger_smc_2+1),a
+	ld (window_trigger_smc),a
 	; Disable rendering catchup during vblank (or LCD off)
 	xor a
 	ld r,a
@@ -1252,7 +1248,11 @@ render_scanline_off:
 	pop hl
 	inc de
 	ld bc,159
+#ifdef GBC
+	ld (hl),WHITE
+#else
 	ld (hl),BG_COLOR_0
+#endif
 	ldir
 	jp render_scanline_next
 	
@@ -1358,19 +1358,19 @@ LCDC_5_smc = $
 	 
 WY_smc = $+1
 	    ld a,0
-window_trigger_smc_1 = $
-	    xor c ; Replaced with XOR A
+window_trigger_smc = $
+	    xor c ; Replaced with SCF (Z flag remains reset)
+	    jr z,do_window_trigger
+do_window_trigger_continue:
 WX_smc_1 = $
-	    jr nz,scanline_no_window
-	   
-window_trigger_smc_2 = $
-	    jr do_window_trigger ; Replaced with SUB B \ ADD A,n
-WX_smc_2 = $
-	    .db 0
+	    jr nc,scanline_no_window ; Replaced with JR
+WX_smc_2 = $+1
+	    ld a,0
+	    sub b
 #ifdef GBC
-	    call c,gbc_scanline_do_render
+	    call nc,gbc_scanline_do_render
 #else
-	    call c,scanline_do_render
+	    call nc,scanline_do_render
 #endif
 	 
 window_tile_ptr = $+2
@@ -1420,13 +1420,9 @@ render_scanline_next:
 	ret
 	
 do_window_trigger:
-	    ld a,$AF ; XOR A
-	    ld (window_trigger_smc_1),a
-	    ld a,$90 ; SUB B
-	    ld (window_trigger_smc_2),a
-	    ld a,$C6 ; ADD A,n
-	    ld (window_trigger_smc_2+1),a
-	    jr window_trigger_smc_1
+	    sub -$37 ; SCF (also set C here)
+	    ld (window_trigger_smc),a
+	    jr do_window_trigger_continue
 
 spiDrawBufferLeft:
 	SPI_START

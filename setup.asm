@@ -887,7 +887,11 @@ _
 	ld (gbc_render_tile_loop_smc_3),hl
 	ld c,gbc_render_sprite_row - gbc_render_tile_loop
 	add hl,bc
-	ld (gbc_render_sprite_row_smc),hl
+	ld (gbc_render_sprite_row_smc_1),hl
+	ld (gbc_render_sprite_row_smc_2),hl
+	ld c,gbc_render_sprite_row_half - gbc_render_sprite_row
+	add hl,bc
+	ld (gbc_render_sprite_row_half_smc),hl
 	jr ++_
 _
 	ld c,sha_code_size - sha_code_entry_offset
@@ -1514,7 +1518,7 @@ _
 	inc a
 	ld (WX_smc_3),a
 	sbc a,a
-	and $20-$18 ;JR NZ or JR
+	and $30-$18 ;JR NC or JR
 	add a,$18
 	ld (WX_smc_1),a
 	
@@ -3475,10 +3479,11 @@ _
 	inc hl
 	inc e ; Wraparound in priority table
 	djnz gbc_render_sprite_pixels_first
-	ld b,4
 	ld a,e
 	add a,(iy+1)
 	ld e,a
+gbc_render_sprite_row_half:
+	ld b,ixh
 gbc_render_sprite_pixels_last:
 	; Get the sprite priority data
 	ld a,(de)

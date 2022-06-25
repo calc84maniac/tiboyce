@@ -249,8 +249,8 @@ scroll_write_WX:
 	inc a
 	ld (WX_smc_3),a
 	sbc a,a
-	and $08
-	add a,$18	;JR vs JR NZ
+	and $30-$18 ;JR NC or JR
+	add a,$18
 	ld (WX_smc_1),a
 	jp.sis z80_restore_swap_ret
 	

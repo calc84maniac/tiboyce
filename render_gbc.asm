@@ -23,7 +23,7 @@ LCDC_2_smc_1_gbc = $+2 ; Replace with gbc_tile_attributes_lut_2 for 8x16
 	rrca
 	rrca
 	sub 8
-	ld ixh,a
+	ld (gbc_draw_sprite_unclipped_dir_smc),a
 	; Get pointer to tile index data
 	ld a,b
 	ld b,e
@@ -48,15 +48,27 @@ LCDC_0_smc_2_gbc = $+1 ;Replace low byte with 0
 	sub 7
 	jr c,gbc_draw_sprite_clipped_left
 	ld (gbc_draw_sprite_unclipped_offset_smc),a
+	ld ixh,4
 	sub 153
 	jr c,gbc_draw_sprite_unclipped_start
 gbc_draw_sprite_clipped_right:
-	jr gbc_draw_sprite_finish
+	; For 5-7 pixels wide, use a shorter second row half
+	cpl
+	add a,3
+	inc a
+	ld ixh,a
+	jr c,gbc_draw_sprite_unclipped_start
+	; For 1-4 pixels wide, use the second half only
+	add a,4
+	ld ixh,a
+gbc_render_sprite_row_half_smc = $+1
+	ld hl,gbc_render_sprite_row_half
+	ld (gbc_render_sprite_row_smc_1),hl
+	jr gbc_draw_sprite_unclipped_start
 	
 gbc_draw_sprite_unclipped_loop:
-	ld a,iyl
-	add a,ixh
-	ld iyl,a
+gbc_draw_sprite_unclipped_dir_smc = $+2
+	lea iy,iy+8
 	dec ixl
 gbc_draw_sprite_unclipped_start:
 	pop hl
@@ -67,10 +79,13 @@ gbc_draw_sprite_unclipped_offset_smc = $+1
 	ld c,a
 	ld b,4
 	ld e,(iy)
-gbc_render_sprite_row_smc = $+1
+gbc_render_sprite_row_smc_1 = $+1
 	jp nz,gbc_render_sprite_row
 gbc_draw_sprite_finish:
 	pop.s ix
+gbc_render_sprite_row_smc_2 = $+1
+	ld hl,gbc_render_sprite_row
+	ld (gbc_render_sprite_row_smc_1),hl
 	jp draw_next_sprite_2
 	
 gbc_draw_sprite_clipped_left:
@@ -273,15 +288,17 @@ _
 	
 	; Input: B=Start X+8, A=Length-1, HL=pixel base pointer, DE=pixel output pointer, IY=scanline pointer, SPS=tilemap pointer
 gbc_scanline_do_render:
-	ld c,l
-	ld ixl,c
-	ld l,0
-	ld sp,hl
-	ld c,a
+	ld c,b
+	ld b,l
+	ld ixl,b
+	ld b,a
 	and 7
 	ld (gbc_scanline_right_clip_smc),a
-	xor c
+	xor b
+	ld l,0
+	ld sp,hl
 	jr z,gbc_scanline_do_subtile
+	ld b,l
 	add.s hl,sp
 	add hl,hl
 	add a,l
@@ -297,14 +314,12 @@ gbc_scanline_no_wrap:
 	rrca
 	rrca
 	ld ixh,a
-	ld a,b
+	ld a,c
 	cp 8
-	ld b,0
 gbc_render_tile_loop_smc_1 = $+1
 	jp nc,gbc_render_tile_loop
 
 gbc_scanline_left_clip:
-	ld c,a
 	ld a,ixl
 	pop.s hl
 	xor l
@@ -325,18 +340,17 @@ gbc_scanline_left_clip_half:
 	jr gbc_scanline_left_clip_finish
 	
 gbc_scanline_do_subtile:
-	ld a,b
+	ld h,b
+	ld b,l
+	ld a,c
 	sub 8
 	jr nc,gbc_scanline_right_clip
-	ld hl,gbc_scanline_right_clip_smc
-	add a,(hl)
+	add a,h
 	jr nc,gbc_scanline_finish
 	cpl
 	dec a
 	ld (gbc_scanline_post_wrap_smc),a
 	ld ixh,1
-	ld a,b
-	ld b,0
 	jr gbc_scanline_left_clip
 	
 gbc_scanline_left_clip_full:
@@ -369,13 +383,14 @@ gbc_scanline_post_wrap_smc = $+1
 	inc c
 	jr z,gbc_scanline_right_clip
 	ld hl,-128
-	jp m,gbc_scanline_subtile_finish
+	ld a,h
+	ld (gbc_scanline_post_wrap_smc),a
+	add a,c
+	ld ixh,a
+	rla
+	jr c,gbc_scanline_subtile_finish
 	add.s hl,sp
 	ld.s sp,hl
-	sbc a,a
-	ld (gbc_scanline_post_wrap_smc),a
-	dec c
-	ld ixh,c
 gbc_render_tile_loop_smc_2 = $+1
 	jp nz,gbc_render_tile_loop
 gbc_scanline_right_clip:
@@ -413,8 +428,6 @@ gbc_scanline_subtile_finish:
 	ld l,c
 	add hl,de
 	ex de,hl
-	sbc a,a
-	ld (gbc_scanline_post_wrap_smc),a
 	jr gbc_scanline_finish
 	
 gbc_cursorcodesize = $-mpLcdCursorImg
