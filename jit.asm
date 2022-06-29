@@ -2930,7 +2930,11 @@ opgenblockend:
 	ld c,a
 	ld a,(bc)
 	ld d,a
+#ifdef DEBUG
+	ld (hl),$CD	;CALL
+#else
 	ld (hl),$C3	;JP
+#endif
 	djnz opgenblockend_finish
 	
 opgenblockend_invalid:

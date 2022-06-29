@@ -2194,6 +2194,9 @@ z80_ret:
 	
 	; JP HL
 ophandlerE9:
+#ifdef DEBUG
+	pop hl
+#endif
 	ex af,af'
 	push ix
 	 exx
@@ -2241,6 +2244,9 @@ ophandlerF3:
 	ret
 	
 ophandlerRETI:
+#ifdef DEBUG
+	pop hl
+#endif
 	ex af,af'
 	exx
 	ld e,a
@@ -2267,12 +2273,18 @@ ophandlerRETI:
 	ld i,hl
 	ld d,-1
 	ld a,-4
+#ifdef DEBUG
+	.db $5B ;.LIL
+#endif
 	.db $21 ;LD HL,
 	
 	; (SPS) = cached RET cycles, cached stack offset
 	; (SPS+2) = cached JIT address
 	; (SPL) = cached bank delta, cached GB address
 ophandlerRET:
+#ifdef DEBUG
+	pop hl
+#endif
 	ex af,af'
 	exx
 ophandlerRET_swapped:
