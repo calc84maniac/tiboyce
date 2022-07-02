@@ -1243,16 +1243,13 @@ _
 	ret
 
 
-render_scanline_off:
+render_scanline_fill:
 	push de
 	pop hl
 	inc de
 	ld bc,159
-#ifdef GBC
+scanline_fill_color_smc = $+1
 	ld (hl),WHITE
-#else
-	ld (hl),BG_COLOR_0
-#endif
 	ldir
 	jp render_scanline_next
 	
@@ -1326,8 +1323,8 @@ render_scanline_loop:
 	    lea iy,iy+3
 	   
 	    ; Zero flag is reset
-LCDC_7_smc = $
-	    jr z,render_scanline_off
+LCDC_0_7_smc = $
+	    jr z,render_scanline_fill
 SCY_smc = $+1
 	    ld l,0
 	    add hl,bc
@@ -1340,9 +1337,8 @@ SCX_smc_1 = $+1
 LCDC_4_smc = $+2
 LCDC_3_smc = $+3
 	    ld.sis sp,(vram_tiles_start & $FFFF) + $80
-LCDC_0_smc_gb = $+1
-	    add.sis hl,sp
-	    ld.sis sp,hl
+	    add.s hl,sp
+	    ld.s sp,hl
 	 
 	    ld hl,vram_pixels_start
 	    rrca

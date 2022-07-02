@@ -526,12 +526,14 @@ _
 	inc b
 	ldir
 	
+	;HL=overlapped_pixel_index_lut_init
 	ld de,overlapped_pixel_index_lut
 	push de
 	 inc b
 	 ldir
 	
 	 ; Duplicate palette overlapped indices to fill the 256-byte table
+	 ;HL=overlapped_palette_index_lut_init
 	 ld de,overlapped_palette_index_lut
 _
 	 ld a,(hl) \ inc hl
@@ -574,68 +576,56 @@ _
 	jr nz,-_
 	
 	ld a,(iy-state_size+STATE_SYSTEM_TYPE)
-	or a
-	jr nz,SetupOverlappedGBCPixels
+	dec a
+	jr z,SetupOverlappedGBCPixels
 	
-	push de
+	;A=BG_PALETTE_COLOR_0
+	ld (scanline_fill_color_smc),a
 	
-	 ; Generate fake tile row for when the BG is disabled
-	 ld d,(fake_tile >> 8) & $FF
-	 push de
-	 pop hl
-	 inc de
-	 ld (hl),$FF
-	 ld c,64
-	 ldir
-	 ld (hl),b
-	 ld a,(fake_tile - vram_pixels_start) >> 8
-	 ld (de),a
-	 inc de
-	 ld c,40
-	 ldir
+	; Generate overlapped BG pixels
+	ld c,b ;C=$00
+	dec b ;B=$FF
+	ld de,$0102
+	ld hl,overlapped_pixel_data + (256+3)
+	call mpLcdCursorImg + 512 - (3*2)
+	call mpLcdCursorImg
 	
-	 ; Generate overlapped BG pixels
-	 dec b ;B=$FF
-	 ld de,$0102
-	 ld hl,overlapped_pixel_data + (256+3)
-	 call mpLcdCursorImg + 512 - (3*2)
-	 call mpLcdCursorImg
+	; Initialize cursor memory code
+	APTR(cursorcode)
+	ld de,mpLcdCursorImg
+	ld bc,cursorcodesize
+	ldir
 	
-	 ; Initialize cursor memory code
-	 APTR(cursorcode)
-	 ld de,mpLcdCursorImg
-	 ld bc,cursorcodesize
-	 ldir
-	
-	pop de
 	; Get initial OBP palette indices
-	ld hl,(iy-ioregs+OBP0)
-	ld e,l
-	ld a,(de)
-	add a,OBP0_COLORS_START
+	ld hl,overlapped_palette_index_lut + OBP0_COLORS_START
+	ld de,(iy-ioregs+OBP0)
+	ld a,l ;OBP0_COLORS_START
+	ld l,e
+	add a,(hl)
 	ld (overlapped_obp0_palette_index),a
-	ld e,h
-	ld a,(de)
-	add a,OBP1_COLORS_START ; Resets carry flag
+	ld a,OBP1_COLORS_START
+	ld l,d
+	add a,(hl) ; Resets carry flag
 	ld (overlapped_obp1_palette_index),a
 	
-	; Fill the palette conversion LUT with the identity transform
-	ld hl,convert_palette_LUT
-_
-	ld (hl),l
-	inc l
-	jr nz,-_
-
 	; Fill the BGP value frequencies with 0
-	ld h,(BGP_frequencies >> 8) & $FF
+	dec h ;BGP_frequencies
 _
-	ld (hl),b
+	ld (hl),c ;0
 	inc l
-	jr nz,-_
-	dec h
+	djnz -_
+	dec h ;BGP_write_queue
 	; Initialize the BGP write queue
 	ld l,BGP_write_queue & $FF
 	ld (hl),$FF
+	
+	; Fill the palette conversion LUT with the identity transform
+	ld h,(convert_palette_LUT >> 8) & $FF
+_
+	ld (hl),l
+	inc l
+	djnz -_
+	
 	; GB empty frame is BGP color 0
 	ld a,BG_COLOR_0
 	jr SetupOverlappedPixelsDone
@@ -722,6 +712,8 @@ _
 	; GBC empty frame is white
 	ld a,WHITE
 SetupOverlappedPixelsDone:
+	ld (scanline_off_color_smc),a
+
 	; Clear the mini frame backup for a clean initial frame
 	ld hl,mini_frame_backup
 	push hl
@@ -1429,16 +1421,13 @@ _
 	ld.sis (write_audio_disable_smc),hl
 _
 	
+	ld a,$28 ;JR Z
+	ld (LCDC_0_7_smc),a
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
-	ld a,$28 ;JR Z
-	jr c,_
 	push hl
-	 call do_lcd_disable
+	 call nc,do_lcd_disable
 	pop hl
-	ld a,$20 ;JR NZ
-_
-	ld (LCDC_7_smc),a
 	add hl,hl
 	add hl,hl
 	sbc a,a
@@ -1484,18 +1473,25 @@ _
 	ld (LCDC_1_smc),a
 _
 	add hl,hl
-	sbc a,a
-#ifdef GBC
-	and $80
+	ld a,$20 ;JR NZ
+	ld b,(iy-state_size+STATE_SYSTEM_TYPE)
+	djnz _
+	ld a,b ;0
+	rra
 	ld (LCDC_0_smc_2_gbc),a
 	rlca
-	add a,(high_prio_sprite_palette_lut >> 8) & $FF
+	; Set carry flag
+	sub 256-((high_prio_sprite_palette_lut >> 8) & $FF)
 	ld (LCDC_0_smc_1_gbc),a
-#else
-	and $39-$31 ;ADD HL,SP or LD SP,
-	add a,$31
+	ld a,$28 ;JR Z
+_
 	ld (LCDC_0_smc_gb),a
-#endif
+	jr c,_
+	ld hl,LCDC_0_7_smc
+	cp (hl) ; Only replace JR Z, not JR
+	jr nc,_
+	ld (hl),a ;JR NZ
+_
 	
 	ld hl,(iy-ioregs+SCY)
 	ld a,l
@@ -1503,9 +1499,11 @@ _
 	ld a,h
 	and $F8
 	rrca
-#ifndef GBC
+	inc b
+	jr nz,_
+	; GB only
 	rrca
-#endif
+_
 	ld (SCX_smc_1),a
 	ld a,h
 	cpl

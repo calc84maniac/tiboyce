@@ -533,6 +533,13 @@ do_lcd_disable:
 	ld h,stat_lyc_write_no_reschedule - (stat_write_disable_smc+2)
 	ld (stat_write_disable_smc),hl
 	
+	; Force scanline fill and set its color
+	ld a,l ;JR
+	ld (LCDC_0_7_smc),a
+scanline_off_color_smc = $+1
+	ld a,WHITE
+	ld (scanline_fill_color_smc),a
+	
 	; Update PPU scheduler to do events once per "frame"
 	push ix
 	ld ix,z80codebase+ppu_expired_lcd_off
@@ -800,9 +807,12 @@ _
 	xor $80 ^ $00
 	ld (hl),a
 #else
-	ld hl,LCDC_0_smc_gb
+	ld hl,LCDC_0_7_smc
 	ld a,(hl)
-	xor $39 ^ $31	;ADD.SIS HL,SP \ LD.SIS SP,HL vs LD.SIS SP,$F940
+	; Only update this SMC if the LCD is not disabled
+	cp $18 ;JR
+	jr z,_
+	xor $20 ^ $28	;JR NZ vs. JR Z
 	ld (hl),a
 #endif
 _
@@ -875,15 +885,71 @@ _
 _
 	bit 7,b
 	jp.sis z,z80_restore_swap_ret
-	; Get the current cycle offset safely
-	jp.sis lcd_enable_disable_helper
+	; Get the current cycle offset
+	push.s de
+	push.s bc
+	; Get the value of DIV
+	ld hl,i
+	add hl,de
+	ld b,$FF
+	add hl,bc
+	ex de,hl
 	
-lcd_enable_disable_continue:
-	ld a,(LCDC_7_smc)
-	xor $08	;JR NZ vs JR Z
-	ld (LCDC_7_smc),a
-	jp po,lcd_disable_helper
+	; Check the actual LCDC value
+	ld a,(hram_base+LCDC)
+	rlca
+	jr c,lcd_enable_helper
+
+	; Determine whether the persistent vblank time has already passed
+	ld.sis bc,(vblank_counter)
+	; Check how many cycles the persistent vblank is before the current vblank
+	ASSERT_NC
+	ld.sis hl,(persistent_vblank_counter)
+	sbc hl,bc
+	; Check if the persistent vblank is at or after the current vblank
+	; This should work in both single and double speed
+	ld a,h
+	cp (((CYCLES_PER_SCANLINE * 10) + 1) >> 7) + 1
+	; If so, use the persistent vblank
+	jr c,_
+	; Get the number of cycles left until the current vblank
+	ex de,hl
+	sbc hl,bc
+	; If current vblank was passed in this instruction, make no change
+	ld a,h
+	or a
+	jr z,++_
+	; Check whether the current time is after the persistent vblank time
+	sbc.s hl,de
+	; If not, use the persistent vblank time
+	ex de,hl
+	jr c,_
+	; If so, use the current time
+	add hl,de
+_
+	add hl,bc
+	ld.sis (vblank_counter),hl
+_
+	
+	; Disable the LCD
+	call do_lcd_disable
+	jp.sis reschedule_event_PPU
+	
+	
+lcd_enable_helper:
 	; Enable the LCD
+	
+	; Check bit 0 of LCDC to update scanline fill logic
+	bit 1,a
+	ld a,$28 ;JR Z
+	jr nz,_
+	ASSERT_C
+	sbc a,a ;A=BG_PALETTE_COLOR_0
+	ld (scanline_fill_color_smc),a
+LCDC_0_smc_gb = $+1
+	ld a,$20 ;JR NZ or JR Z
+_
+	ld (LCDC_0_7_smc),a
 	
 	; Force skip rendering the first frame after the LCD is enabled,
 	; this is consistent with hardware behavior to avoid glitch frames
@@ -967,40 +1033,6 @@ _
 	; trigger an event unconditionally
 	jp.sis trigger_event_pop
 	
-lcd_disable_helper:
-	; Determine whether the persistent vblank time has already passed
-	ld.sis bc,(vblank_counter)
-	; Check how many cycles the persistent vblank is before the current vblank
-	ASSERT_NC
-	sbc hl,bc
-	; Check if the persistent vblank is at or after the current vblank
-	; This should work in both single and double speed
-	ld a,h
-	cp (((CYCLES_PER_SCANLINE * 10) + 1) >> 7) + 1
-	; If so, use the persistent vblank
-	jr c,_
-	; Get the number of cycles left until the current vblank
-	ex de,hl
-	sbc hl,bc
-	; If current vblank was passed in this instruction, make no change
-	ld a,h
-	or a
-	jr z,++_
-	; Check whether the current time is after the persistent vblank time
-	sbc.s hl,de
-	; If not, use the persistent vblank time
-	ex de,hl
-	jr c,_
-	; If so, use the current time
-	add hl,de
-_
-	add hl,bc
-	ld.sis (vblank_counter),hl
-_
-	
-	; Disable the LCD
-	call do_lcd_disable
-	jp.sis reschedule_event_PPU
 	
 lcd_on_STAT_restore_helper:
 	ld a,$C9

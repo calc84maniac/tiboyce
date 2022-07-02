@@ -618,23 +618,6 @@ write_audio_enable:
 	ex af,af'
 	exx
 	ret
-
-	; This cannot be implemented as a mixed-mode call; get_mem_cycle_offset
-	; relies on the ADL stack having only one pushed value
-lcd_enable_disable_helper:
-	push de
-	 push bc
-	  ; Get the value of DIV
-	  ld hl,i
-	  add hl,de
-	  ld b,$FF
-	  add hl,bc
-	  ex de,hl
-	  ; Get the persistent vblank counter, just in case
-persistent_vblank_counter = $+1
-	  ld hl,0
-	  jp.lil lcd_enable_disable_continue
-	
 	
 ;==============================================================================
 ; Port read handlers

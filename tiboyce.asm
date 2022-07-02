@@ -157,6 +157,11 @@ STATE_MBC_MODE = 22
 STATE_CPU_MODE = 23
 STATE_END = 24
 
+; Palette entries representing remapped BGP colors.
+BG_PALETTE_COLOR_0 = 255
+BG_PALETTE_COLOR_1 = 0
+BG_PALETTE_COLOR_2 = 1
+BG_PALETTE_COLOR_3 = 2
 ; Constant color palette entries
 BLUE = 9
 MAGENTA = 10
@@ -594,17 +599,6 @@ scanlineLUT_2 = scanlineLUT_1 + (144*3)
 
 ; A list of VAT entries for found ROM files. 256 pointers in size.
 romListStart = scanlineLUT_2 + (144*3)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Game Boy only data
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-; A fake tile filled with Game Boy color 0. 64 bytes in size.
-; Used when BG tilemap is disabled (Game Boy only).
-fake_tile = $D0F900
-; A fake tilemap row pointing to fake_tile. 42 bytes in size.
-; Used when BG tilemap is disabled (Game Boy only).
-fake_tilemap = $D0F940
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Game Boy Color only data

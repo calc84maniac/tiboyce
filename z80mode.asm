@@ -2645,6 +2645,8 @@ keys:
 	
 trampoline_next:
 	.dl 0
+persistent_vblank_counter:
+	.dw 0
 render_save_sps:
 	.dw 0
 	
