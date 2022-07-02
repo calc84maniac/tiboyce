@@ -467,9 +467,15 @@ _
 	ld bc,regs_init_gbc - regs_init
 	jr z,_
 	add hl,bc
-	; Update SC register, which is different on GBC
-	ld a,$7F
-	ld (hram_saved + $0102),a
+	; Update registers which are different on GBC
+	ld a,$7E
+	ld (hram_saved + $0100 + (KEY1-ioregs)),a
+	inc a ;A=$7F
+	ld (hram_saved + $0100 + (SC-ioregs)),a
+	rlca ;A=$FE
+	ld (hram_saved + $0100 + (VBK-ioregs)),a
+	ld a,$F8
+	ld (hram_saved + $0100 + (SVBK-ioregs)),a
 _
 	ld de,regs_saved
 	ldir
@@ -1527,6 +1533,60 @@ _
 	ld a,(iy-ioregs+IF)
 	and $1F
 	ld (z80codebase+active_ints),a
+	
+	djnz SetupLoadStateNoGBC
+	
+	; Set up VRAM and WRAM banks
+	bit 0,(iy-ioregs+VBK)
+	ld hl,vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
+	ld de,vram_pixels_start-((vram_start*4) & $FFFFFF)
+	ld a,(vram_gbc_base >> 8) & $FF
+	jr z,_
+	ld hl,vram_tiles_start-(((vram_start+$3800)*8) & $FFFFFF)+1
+	ld de,vram_pixels_start-(((vram_start+$2000)*4) & $FFFFFF)+4
+	ld a,((vram_gbc_base + $2000) >> 8) & $FF
+_
+	ld (gbc_write_tilemap_bank_smc),hl
+	ld (gbc_write_pixels_bank_smc),de
+	ld (vram_bank_base_for_write+1),a
+	ld hl,vram_bank_base+1
+	ld (hl),a
+	dec h \ dec h ;vram_bank_base_for_read
+	ld (hl),a
+	ld l,(wram_mirror_unbanked_base + 1) & $FF
+	ld (hl),((wram_gbc_base-$2000) >> 8) & $FF
+	ld h,wram_bank_base_lut >> 8
+	ld l,(iy-ioregs+SVBK)
+	ld a,(hl)
+	ld (wram_mirror_bank_base+1),a
+	add a,$20
+	ld l,(wram_bank_base_for_write+1) & $FF
+	ld (hl),a
+	dec h \ dec h ;wram_bank_base
+	ld (hl),a
+	dec h \ dec h ;wram_bank_base_for_read
+	ld (hl),a
+	ld a,(wram_gbc_base >> 8) & $FF
+	ld l,(wram_unbanked_base_for_read + 1) & $FF
+	ld (hl),a
+	inc h \ inc h ;wram_unbanked_base
+	ld (hl),a
+	inc h \ inc h ;wram_unbanked_base_for_write
+	ld (hl),a
+	
+	ld hl,gbc_write_vram_and_expand
+	ld (gbc_write_vram_and_expand_smc_1),hl
+	ld (gbc_write_vram_and_expand_smc_2),hl
+	ld (gbc_write_vram_and_expand_smc_3),hl
+	ld (gbc_write_vram_and_expand_smc_4),hl
+	ld hl,gbc_write_vram_and_expand_catchup
+	ld (gbc_write_vram_and_expand_catchup_smc_1),hl
+	ld (gbc_write_vram_and_expand_catchup_smc_2),hl
+	ld (gbc_write_vram_and_expand_catchup_smc_3),hl
+	ld (gbc_write_vram_and_expand_catchup_smc_4),hl
+	
+	
+SetupLoadStateNoGBC:
 	
 	; Prepare initial frame, but skip setting frame and scanline pointers
 	; which are handled in SetScalingMode

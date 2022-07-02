@@ -113,11 +113,7 @@ wram_mirror_banked_read_any:
 	
 wram_unbanked_read_any:
 wram_unbanked_base_for_read = $+2+z80codebase
-#ifdef GBC
-	ld.lil hl,wram_gbc_base
-#else
 	ld.lil hl,wram_base
-#endif
 _
 	add.l hl,bc
 	ex af,af'
@@ -328,11 +324,7 @@ wram_mirror_bank_base = $+2+z80codebase
 	
 wram_unbanked_get_ptr:
 wram_unbanked_base = $+2+z80codebase
-#ifdef GBC
-	ld.lil hl,wram_gbc_base
-#else
 	ld.lil hl,wram_base
-#endif
 _
 	add.l hl,de
 	ex af,af'
@@ -342,11 +334,7 @@ _
 
 wram_mirror_unbanked_get_ptr:
 wram_mirror_unbanked_base = $+2+z80codebase
-#ifdef GBC
-	ld.lil hl,wram_gbc_base-$2000
-#else
 	ld.lil hl,wram_base-$2000
-#endif
 	jr -_
 	
 shadow_stack_get_ptr:
@@ -526,11 +514,7 @@ wram_mirror_banked_write_any:
 	
 wram_unbanked_write_any:
 wram_unbanked_base_for_write = $+2+z80codebase
-#ifdef GBC
-	ld.lil hl,wram_gbc_base
-#else
 	ld.lil hl,wram_base
-#endif
 _
 	add.l hl,bc
 	ex af,af'
@@ -1309,13 +1293,10 @@ do_vram_banked_write_any:
 	 ex af,af'
 	 ld a,r
 	 ld a,e
-#ifdef GBC
-	 jp.lil p,gbc_write_vram_and_expand
-	 jp.lil gbc_write_vram_and_expand_catchup
-#else
+gbc_write_vram_and_expand_smc_1 = z80codebase+$+2
 	 jp.lil p,write_vram_and_expand
+gbc_write_vram_and_expand_catchup_smc_1 = z80codebase+$+2
 	 jp.lil write_vram_and_expand_catchup
-#endif
 	
 	; Input: IX=Game Boy BC, L=write value, C'=cycle offset, BCDEHL' are swapped
 	; Output: Value written, or write instruction is unpatched
@@ -1334,13 +1315,10 @@ op_write_bc_vram:
 	exx
 	push de
 	 ld e,a
-#ifdef GBC
-	 jp.lil p,gbc_write_vram_and_expand
-	 jp.lil gbc_write_vram_and_expand_catchup
-#else
+gbc_write_vram_and_expand_smc_2 = z80codebase+$+2
 	 jp.lil p,write_vram_and_expand
+gbc_write_vram_and_expand_catchup_smc_2 = z80codebase+$+2
 	 jp.lil write_vram_and_expand_catchup
-#endif
 	
 	; Input: BC=Game Boy DE, L=write value, C'=cycle offset, BCDEHL' are swapped
 	; Output: Value written, or write instruction is unpatched
@@ -1360,13 +1338,10 @@ op_write_de_vram:
 	pop bc
 	push de
 	 ld e,a
-#ifdef GBC
-	 jp.lil p,gbc_write_vram_and_expand
-	 jp.lil gbc_write_vram_and_expand_catchup
-#else
+gbc_write_vram_and_expand_smc_3 = z80codebase+$+2
 	 jp.lil p,write_vram_and_expand
+gbc_write_vram_and_expand_catchup_smc_3 = z80codebase+$+2
 	 jp.lil write_vram_and_expand_catchup
-#endif
 	
 op_readwrite_hl_vram_swap:
 	ld hl,$0318 ;JR $+5
@@ -1422,13 +1397,10 @@ op_write_hl_vram_finish:
 	pop bc
 	push de
 	 ld e,a
-#ifdef GBC
-	 jp.lil p,gbc_write_vram_and_expand
-	 jp.lil gbc_write_vram_and_expand_catchup
-#else
+gbc_write_vram_and_expand_smc_4 = z80codebase+$+2
 	 jp.lil p,write_vram_and_expand
+gbc_write_vram_and_expand_catchup_smc_4 = z80codebase+$+2
 	 jp.lil write_vram_and_expand_catchup
-#endif
 
 	; Input: IX=Game Boy BC, L=write value, C'=cycle offset, BCDEHL' are swapped
 	; Output: Value written to port at BC
