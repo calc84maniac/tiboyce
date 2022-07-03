@@ -252,12 +252,13 @@ write_audio_disable_smc = $
 	ld (hl),b
 	set 7,l ;audio_port_masks
 	ld a,(hl)
-	; Handle writes to the enable bit specially
-	cp $BF
-	jr nz,_
-	bit 7,b
-	jp nz,write_audio_enable
-_
+	; Handle writes to enable bits specially
+	or a
+	jp po,write_audio_finish_fast
+	; For NR30, leave the high bit the same
+	; For NRx4, invert the high bit
+	xor b
+	jp p,write_audio_enable_disable
 	or b
 	jr write_audio_finish
 	
@@ -606,9 +607,13 @@ writeHDMA5handler:
 _writeHDMA5:
 	FIXME
 	
-write_audio_enable:
-	or b
+write_audio_enable_disable:
+	xor b
+	cp $80
+	jr z,write_audio_finish_fast
 	ld hl,NR52
+	jr c,writeNR30_disable
+	or b
 	ld b,h
 	ld (bc),a
 	; Set the appropriate bit in NR52
@@ -621,6 +626,17 @@ write_audio_enable:
 	rra
 	or (hl)
 	ld (hl),a
+	ld a,e
+	ex af,af'
+	exx
+	ret
+	
+writeNR30_disable:
+	res 2,(hl)
+write_audio_finish_fast:
+	or b
+	ld b,$FF
+	ld (bc),a
 	ld a,e
 	ex af,af'
 	exx
