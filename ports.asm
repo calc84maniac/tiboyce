@@ -586,7 +586,14 @@ writeNR52_finish:
 writeKEY1handler:
 	ld e,a
 _writeKEY1:
-	FIXME
+	ld a,e
+	exx
+	srl l
+	ld hl,KEY1
+	rr (hl)
+	rlc (hl)
+	ex af,af'
+	ret
 	
 write_hdma_handler:
 	ex af,af'
