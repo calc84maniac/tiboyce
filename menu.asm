@@ -244,9 +244,20 @@ ClearMenuBuffer:
 	ret
 	
 LoadPalettesGBC:
-	; TODO: Update colors based on color adjustment setting
-	ld bc,0
-	ret
+	ld a,(adjust_color_enable_smc)
+	add a,a
+	ld a,$18 ;JR
+	ld (hl),a
+	inc hl
+	ld (hl),update_palettes_gbc - (update_palettes_gbc_smc+2)
+	ex de,hl
+	ld (hl),prepare_next_frame_gbc_no_adjust - (prepare_next_frame_gbc_smc+2)
+	jr c,_
+	ld (hl),prepare_next_frame_gbc_adjust - (prepare_next_frame_gbc_smc+2)
+_
+	dec hl
+	ld (hl),a
+	jp (hl)
 	
 	; Input: A = palette index
 	; Output: BC = 0
@@ -264,10 +275,17 @@ LoadPalettes:
 	
 	ld a,(regs_saved + STATE_SYSTEM_TYPE)
 	or a
+	ld a,e
+	ld hl,update_palettes_gbc_smc
+	ld de,prepare_next_frame_gbc_smc+1
 	jr nz,LoadPalettesGBC
+	ld (hl),$21 ;LD HL,
+	ex de,hl
+	ld (hl),BGP_max_value & $FF
+	dec hl
+	ld (hl),$3A ;LD A,(BGP_max_value)
 	
 	; Load BGP
-	ld a,e
 	ld de,overlapped_bg_palette_colors
 	ld c,(ix+2)
 	ACALL(LoadSinglePalette)
@@ -527,9 +545,9 @@ ItemSelectDigit:
 	jr ItemSelectLink
 
 emulator_menu_ingame:
-#ifndef GBC
-	call convert_palette_for_menu
-#endif
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	or a
+	call z,convert_palette_for_menu
 	xor a
 emulator_menu:
 	push af

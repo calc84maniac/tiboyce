@@ -43,9 +43,9 @@ frame_emulated_count = $+1
 	    ld a,144
 	    call draw_sprites
 	    call sync_frame_flip
-#ifndef GBC
-	    call convert_palette
-#endif
+	    ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	    or a
+	    call z,convert_palette
 _
 	    
 preservedAreaHeight = $+1
@@ -477,7 +477,27 @@ frame_dma_size_smc = $+1
 	ld hl,0
 	sbc hl,de
 	ld (frame_flip_end_check_smc),hl
-#ifdef GBC
+prepare_next_frame_gbc_smc = $
+	; Clear the frequency count for the native BGP value
+	ld a,(BGP_max_value)
+	ld hl,BGP_frequencies
+	ld l,a
+	ld (hl),0
+	; Get the indices for each palette type
+	and 3
+	add a,a
+	add a,bg_palette_colors & $FF
+	ld (update_palettes_bgp0_index),a
+	inc h
+	ld a,(hl)
+	add a,a
+	ld (update_palettes_bgp123_index),a
+	ret
+	
+prepare_next_frame_gbc_no_adjust:
+prepare_next_frame_gbc_adjust:
+	; Copy current palette values to the internal palette buffer,
+	; without adjusting colors
 	ld hl,z80codebase+gbc_bg_palette_data
 	ld de,gbc_bg_transparent_colors
 	ld bc,$0816
@@ -507,23 +527,6 @@ _
 	cp l
 	jr c,-_
 	ret
-#else
-	; Clear the frequency count for the native BGP value
-	ld a,(BGP_max_value)
-	ld hl,BGP_frequencies
-	ld l,a
-	ld (hl),0
-	; Get the indices for each palette type
-	and 3
-	add a,a
-	add a,bg_palette_colors & $FF
-	ld (update_palettes_bgp0_index),a
-	inc h
-	ld a,(hl)
-	add a,a
-	ld (update_palettes_bgp123_index),a
-	ret
-#endif
 	
 convert_palette_for_menu:
 	; Get the current native BGP palette
@@ -794,7 +797,20 @@ do_frame_flip_always_no_gram_flip:
 ;
 ; Destroys AF,BC,DE,HL
 update_palettes:
-#ifdef GBC
+update_palettes_gbc_smc = $
+update_palettes_bgp0_index = $+1
+	ld hl,bg_palette_colors
+	ld de,mpLcdPalette + (255*2)
+	ld bc,2
+	ldir
+update_palettes_bgp123_index = $+1
+	ld l,overlapped_bg_palette_colors & $FF
+	ld d,mpLcdPalette >> 8 & $FF
+	ld c,3*2
+	ldir
+	ret
+	
+update_palettes_gbc:
 	ld hl,gbc_bg_transparent_colors
 	ld de,mpLcdPalette + (GBC_BG_TRANSPARENT_COLORS*2)
 	ld bc,8*2
@@ -811,19 +827,6 @@ update_palettes:
 	ld c,a
 	ldir
 	ret
-#else
-update_palettes_bgp0_index = $+1
-	ld hl,bg_palette_colors
-	ld de,mpLcdPalette + (255*2)
-	ld bc,2
-	ldir
-update_palettes_bgp123_index = $+1
-	ld l,overlapped_bg_palette_colors & $FF
-	ld d,mpLcdPalette >> 8 & $FF
-	ld c,3*2
-	ldir
-	ret
-#endif
 	
 	; Swap GRAM sub-buffers in stretched display mode to avoid tearing.
 	; Input: A=1
@@ -1290,16 +1293,12 @@ myLY = $+1
 	 push bc
 render_scanlines_wait_smc = $+1
 	  call sync_frame_flip
-#ifdef GBC
 	  ; Handle any deferred VRAM writes
-	  ld a,(gbc_write_vram_last_slice)
-	  rra
-	  call c,gbc_write_vram_catchup
-#else
+gbc_write_vram_last_slice_smc = $+1
 	  ld a,(write_vram_last_slice)
 	  rra
+gbc_write_vram_catchup_smc = $+1
 	  call c,write_vram_catchup
-#endif
 	 pop bc
 	 push ix
 	  push iy
@@ -1311,11 +1310,8 @@ scanlineLUT_ptr = $+2
 	   or a
 	   ld hl,-6
 	   add hl,sp
-#ifdef GBC
-	   ld (gbc_render_save_spl),hl
-#else
+gbc_render_save_spl_smc = $+1
 	   ld (render_save_spl),hl
-#endif
 render_scanline_loop:
 	   push bc
 	    ; Get current scanline pointer from LUT
@@ -1363,11 +1359,8 @@ WX_smc_1 = $
 WX_smc_2 = $+1
 	    ld a,0
 	    sub b
-#ifdef GBC
-	    call nc,gbc_scanline_do_render
-#else
+gbc_scanline_do_render_smc_1 = $+1
 	    call nc,scanline_do_render
-#endif
 	 
 window_tile_ptr = $+2
 	    ld.sis sp,(vram_tiles_start & $FFFF) + $80	;(+$2000) (-$80)
@@ -1391,11 +1384,8 @@ WX_smc_3 = $+1
 scanline_no_window:
 	    ld a,167
 	    sub b
-#ifdef GBC
-	    call gbc_scanline_do_render
-#else
+gbc_scanline_do_render_smc_2 = $+1
 	    call scanline_do_render
-#endif
 	 
 render_scanline_next:
 	    ; Advance to next scanline

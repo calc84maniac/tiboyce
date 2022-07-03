@@ -262,9 +262,8 @@ scroll_write_SCX:
 	ld c,a
 	and $F8
 	rrca
-#ifndef GBC
-	rrca
-#endif
+gbc_scroll_write_SCX_smc = $
+	rrca ;NOP on GBC
 	ld (SCX_smc_1),a
 	ld a,c
 	cpl
@@ -781,12 +780,10 @@ lcdc_write_helper:
 	ld (hl),a
 	xor b
 	ld b,a
-#ifdef GBC
-	and $07
-#else
-	and $06
-#endif
-	jr z,_
+lcdc_write_sprite_change_smc_1 = $+1
+	and $06 ;$07 for GBC
+lcdc_write_sprite_change_smc_2 = $+1
+	jr z,lcdc_write_no_sprite_change_gbc
 	push bc
 	 push de
 	  ld a,(myLY)
@@ -794,28 +791,6 @@ lcdc_write_helper:
 	  call nz,sprite_catchup
 	 pop de
 	pop bc
-_
-	bit 0,b
-	jr z,_
-#ifdef GBC
-	ld hl,LCDC_0_smc_1_gbc
-	ld a,(hl)
-	xor (low_normal_prio_sprite_palette_lut ^ high_prio_sprite_palette_lut) >> 8
-	ld (hl),a
-	ld hl,LCDC_0_smc_2_gbc
-	ld a,(hl)
-	xor $80 ^ $00
-	ld (hl),a
-#else
-	ld hl,LCDC_0_7_smc
-	ld a,(hl)
-	; Only update this SMC if the LCD is not disabled
-	cp $18 ;JR
-	jr z,_
-	xor $20 ^ $28	;JR NZ vs. JR Z
-	ld (hl),a
-#endif
-_
 	bit 1,b
 	jr z,_
 	ld hl,LCDC_1_smc
@@ -825,17 +800,12 @@ _
 _
 	bit 2,b
 	jr z,_
-#ifdef GBC
-	ld hl,LCDC_2_smc_1_gbc
+LCDC_2_change_smc_1 = $+1
+	ld hl,LCDC_2_smc_1_gb ;vs. LCDC_2_smc_1_gbc
 	ld a,(hl)
-	xor (gbc_tile_attributes_lut ^ gbc_tile_attributes_lut_2) >> 8
+LCDC_2_change_smc_2 = $+1
+	xor $38^$78 ;vs. (gbc_tile_attributes_lut ^ gbc_tile_attributes_lut_2) >> 8
 	ld (hl),a
-#else
-	ld hl,LCDC_2_smc_1_gb
-	ld a,(hl)
-	xor $38^$78
-	ld (hl),a
-#endif
 	ld hl,LCDC_2_smc_2
 	ld a,(hl)
 	xor 7^15
@@ -843,15 +813,36 @@ _
 	ld (LCDC_2_smc_4),a
 	xor 7^9
 	ld (LCDC_2_smc_5),a
-#ifdef GBC
-	ld hl,LCDC_2_smc_3_gbc
-#else
-	ld hl,LCDC_2_smc_3_gb
-#endif
+LCDC_2_change_smc_3 = $+1
+	ld hl,LCDC_2_smc_3_gb ;vs. LCDC_2_smc_3_gbc
 	ld a,(hl)
 	xor $80 ^ $81	;RES 0,B vs RES 0,C
 	ld (hl),a
 _
+lcdc_write_no_sprite_change_gb:
+	bit 0,b
+	jr z,_
+LCDC_0_change_smc = $
+	; GBC impl
+	;ld hl,LCDC_0_smc_1_gbc
+	;ld a,(hl)
+	;xor (low_normal_prio_sprite_palette_lut ^ high_prio_sprite_palette_lut) >> 8
+	;ld (hl),a
+	;ld hl,LCDC_0_smc_2_gbc
+	;ld a,(hl)
+	;xor $80 ^ $00
+	;ld (hl),a
+	; GB impl
+	ld a,(LCDC_0_7_smc)
+	; Only update this SMC if the LCD is not disabled
+	cp $18 ;JR
+	jr z,_
+	xor $20 ^ $28	;JR NZ vs. JR Z
+	ld (LCDC_0_7_smc),a
+	nop
+	nop
+_
+lcdc_write_no_sprite_change_gbc:
 	bit 3,b
 	jr z,_
 	ld hl,LCDC_3_smc

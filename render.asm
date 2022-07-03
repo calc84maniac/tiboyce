@@ -23,27 +23,15 @@ LCDC_2_smc_5 = $+1
 	ld (draw_sprite_top_smc),a
 	ld (draw_sprites_save_sp),sp
 gbc_draw_sprites_smc_1 = $+2
-#ifdef GBC
-	ld ix,$FE5C
-#else
 	ld ix,$FEA4 ;$FE5C for GBC
-#endif
 draw_next_sprite:
 gbc_draw_sprites_smc_2 = $+2
-#ifdef GBC
-	lea ix,ix+5
-#else
 	lea ix,ix-3 ;+5 for GBC
-#endif
 draw_next_sprite_2:
 	dec ixl
 	jr z,draw_sprites_done
 gbc_draw_sprites_smc_3 = $+3
-#ifdef GBC
-	ld.s bc,(ix-$60)
-#else
 	ld.s bc,(ix-4) ;-$60 for GBC
-#endif
 	dec b
 	ld a,b
 	cp 167

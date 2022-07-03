@@ -835,6 +835,14 @@ SetupTilemapAttributesInnerLoop:
 	ld hl,(write_port_direct - mem_write_port_routines) * $010101
 	ld (z80codebase+mem_write_port_lut+(BGP-ioregs)),hl
 	
+	; Fix up the GBC sprite drawing loop to iterate forward through OAM
+	ld a,$5C
+	ld (gbc_draw_sprites_smc_1),a
+	ld a,5
+	ld (gbc_draw_sprites_smc_2),a
+	ld a,-$60
+	ld (gbc_draw_sprites_smc_3),a
+	
 SetupTilemapCacheDone:
 	ld a,z80codebase >> 16
 	ld mb,a
@@ -1434,50 +1442,62 @@ _
 	push hl
 	 call nc,do_lcd_disable
 	pop hl
+	
 	add hl,hl
 	add hl,hl
 	sbc a,a
 	and $38-$30 ;JR C or JR NC
 	add a,$30
 	ld (LCDC_5_smc),a
+	
 	add hl,hl
 	sbc a,a
 	inc a ;$00 or $80
 	rrca
 	ld (LCDC_4_smc),a
 	ld (window_tile_ptr),a
+	
 	add hl,hl
 	sbc a,a
 	and $20
 	add a,(vram_tiles_start >> 8) & $FF
 	ld (LCDC_3_smc),a
+	
+	ld a,(iy-state_size+STATE_SYSTEM_TYPE)
+	or a
+	ld de,LCDC_2_smc_1_gb
+	ld bc,LCDC_2_smc_3_gb
+	ld a,$38^$78
+	jr z,_
+	ld de,LCDC_2_smc_1_gbc
+	ld bc,LCDC_2_smc_3_gbc
+	ld a,(gbc_tile_attributes_lut ^ gbc_tile_attributes_lut_2) >> 8
+_	
+	ld (LCDC_2_change_smc_1),de
+	ld (LCDC_2_change_smc_2),a
+	ld (LCDC_2_change_smc_3),bc
 	add hl,hl
 	jr nc,_
-#ifdef GBC
-	ld a,(gbc_tile_attributes_lut_2 >> 8) & $FF
-	ld (LCDC_2_smc_1_gbc),a
-#else
-	ld a,$78 ;(overriding $38)
-	ld (LCDC_2_smc_1_gb),a
-#endif
+	ex de,hl
+	xor (hl)
+	ex de,hl
+	ld (de),a
 	ld a,15 ;(overriding 7)
 	ld (LCDC_2_smc_2),a
 	ld (LCDC_2_smc_4),a
-#ifdef GBC
-	ld a,$80 ;RES 0,B (overriding RES 0,C)
-	ld (LCDC_2_smc_3_gbc),a
-#else
-	ld a,$81 ;RES 0,C (overriding RES 0,B)
-	ld (LCDC_2_smc_3_gb),a
-#endif
+	ld a,(bc)
+	xor $80 ^ $81	;RES 0,B vs RES 0,C
+	ld (bc),a
 	ld a,1 ;(overriding 9)
 	ld (LCDC_2_smc_5),a
 _
+	
 	add hl,hl
 	jr c,_
 	ld a,$C9 ;RET (overriding LD C,myspriteLY)
 	ld (LCDC_1_smc),a
 _
+	
 	add hl,hl
 	ld a,$20 ;JR NZ
 	ld b,(iy-state_size+STATE_SYSTEM_TYPE)
@@ -1534,7 +1554,28 @@ _
 	and $1F
 	ld (z80codebase+active_ints),a
 	
-	djnz SetupLoadStateNoGBC
+	APTR(LCDC_0_change_impls)
+	ld de,LCDC_0_change_smc
+	ld a,b
+	or $06
+	ld (lcdc_write_sprite_change_smc_1),a
+	ld a,b
+	dec a
+	and $0F ;RRCA vs. NOP
+	ld (gbc_scroll_write_SCX_smc),a
+	ld bc,16
+	jr nz,_
+	add hl,bc
+_
+	ldir
+	ld a,lcdc_write_no_sprite_change_gb - (lcdc_write_sprite_change_smc_2+1)
+	ld ix,write_vram_last_slice
+	ld de,write_vram_catchup
+	ld bc,render_save_spl
+	ld hl,scanline_do_render
+	jr z,_
+	AJUMP(SetupLoadStateNoGBC)
+_
 	
 	; Set up VRAM and WRAM banks
 	bit 0,(iy-ioregs+VBK)
@@ -1585,15 +1626,26 @@ _
 	ld (gbc_write_vram_and_expand_catchup_smc_3),hl
 	ld (gbc_write_vram_and_expand_catchup_smc_4),hl
 	
-	
+	ld a,lcdc_write_no_sprite_change_gbc - (lcdc_write_sprite_change_smc_2+1)
+	ld ix,gbc_write_vram_last_slice
+	ld de,gbc_write_vram_catchup
+	ld bc,gbc_render_save_spl
+	ld hl,gbc_scanline_do_render
 SetupLoadStateNoGBC:
+	ld (lcdc_write_sprite_change_smc_2),a
+	ld (gbc_write_vram_last_slice_smc),ix
+	ld (gbc_write_vram_catchup_smc),de
+	ld (gbc_render_save_spl_smc),bc
+	ld (gbc_scanline_do_render_smc_1),hl
+	ld (gbc_scanline_do_render_smc_2),hl
+	
+	ACALL(IdentifyDefaultPalette)
+	ACALL(ApplyConfiguration)
 	
 	; Prepare initial frame, but skip setting frame and scanline pointers
 	; which are handled in SetScalingMode
 	call prepare_initial_frame
 	
-	ACALL(IdentifyDefaultPalette)
-	ACALL(ApplyConfiguration)
 	ACALL(SetScalingMode)
 	
 	call flush_code_reset_padding
@@ -3657,6 +3709,27 @@ cram_mbc2_write_any_impl = $
 	ret
 cram_mbc2_write_any_size = $ - cram_mbc2_write_any_impl
 	.assume adl=1
+	
+LCDC_0_change_impls:
+	; GB impl
+	ld a,(LCDC_0_7_smc)
+	; Only update this SMC if the LCD is not disabled
+	cp $18 ;JR
+	jr z,_
+	xor $20 ^ $28	;JR NZ vs. JR Z
+	ld (LCDC_0_7_smc),a
+	nop
+	nop
+_
+	; GBC impl
+	ld hl,LCDC_0_smc_1_gbc
+	ld a,(hl)
+	xor (low_normal_prio_sprite_palette_lut ^ high_prio_sprite_palette_lut) >> 8
+	ld (hl),a
+	ld hl,LCDC_0_smc_2_gbc
+	ld a,(hl)
+	xor $80 ^ $00
+	ld (hl),a
 	
 customHardwareSettings:
 	;mpIntEnable
