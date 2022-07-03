@@ -600,8 +600,8 @@ romListStart = scanlineLUT_2 + (144*3)
 ; Tables mapping sprite attributes to palette offsets.
 ; The first table applies to high sprite priority,
 ; and the second table applies to low/normal sprite priority.
-; Must be 256-byte aligned.
-high_prio_sprite_palette_lut = ((romListStart + (256*3) - 1) | $FF) + 1
+; Must be at a 256-byte offset from a 512-byte alignment.
+high_prio_sprite_palette_lut = ((romListStart + (256*3) - 257) | $1FF) + 257
 low_normal_prio_sprite_palette_lut = high_prio_sprite_palette_lut + 256
 
 ; Tables representing every possible combination of four sprite pixels.
@@ -627,6 +627,8 @@ low_prio_sprite_pixel_lut = normal_prio_sprite_pixel_lut + 256
 ; at each byte. Additionally, the data is repeated such that the copy pointer
 ; can move forward directly from one set of 4 pixels to the next 4 pixels.
 ; As such, each table is (256+3)*2 bytes in size, for 8288 bytes in total.
+; The first LUT must be 512-byte aligned, to allow using INC H from the start
+; of each palette to get a contiguous 256-byte region.
 gbc_overlapped_pixel_data = low_prio_sprite_pixel_lut + 256
 gbc_overlapped_pixel_data_end = gbc_overlapped_pixel_data + ((256+3)*2*16)
 
