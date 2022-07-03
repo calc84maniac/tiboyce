@@ -729,13 +729,24 @@ SetupOverlappedPixelsDone:
 	ld (hl),a
 	ldir
 	
-	; Here carry is set for GBC or reset for GB
 	ld a,vram_tiles_start >> 16
 	ld mb,a
+	
+	; Load BG and OBJ palettes for GBC
+	ld hl,bg_palettes_saved
+	ld de,z80codebase + gbc_bg_palette_data
+	ld a,64
+	ld c,a
+	ldir
+	inc d ;gbc_obj_palette_data
+	ld e,gbc_obj_palette_data & $FF
+	ld c,a
+	ldir
+	
+	; Here carry is set for GBC or reset for GB
 	ld ix,vram_tiles_start + 128
 	ld hl,vram_start + $1800
-	ld c,$40
-	ld a,c
+	ld c,a ;64
 SetupTilemapCacheOuterLoop:
 	ld b,$20
 SetupTilemapCacheInnerLoop:
@@ -1590,12 +1601,12 @@ _
 	ld (gbc_write_tilemap_bank_smc),hl
 	ld (gbc_write_pixels_bank_smc),de
 	ld (vram_bank_base_for_write+1),a
-	ld hl,vram_bank_base+1
+	ld hl,wram_mirror_unbanked_base+1
+	ld (hl),((wram_gbc_base-$2000) >> 8) & $FF
+	ld l,(vram_bank_base + 1) & $FF
 	ld (hl),a
 	dec h \ dec h ;vram_bank_base_for_read
 	ld (hl),a
-	ld l,(wram_mirror_unbanked_base + 1) & $FF
-	ld (hl),((wram_gbc_base-$2000) >> 8) & $FF
 	ld h,wram_bank_base_lut >> 8
 	ld l,(iy-ioregs+SVBK)
 	ld a,(hl)
@@ -1770,9 +1781,8 @@ _
 	and 3
 	push.s af ;STATE_INTERRUPTS
 	
-	; Set CPU mode, 0 = running, 1 = halted
+	; Save CPU mode, 0 = running, 1 = halted
 	xor a
-	ld (ix-state_size+STATE_SYSTEM_TYPE),a
 	add hl,hl
 	rla
 	ld (ix-state_size+STATE_CPU_MODE),a
@@ -1816,6 +1826,23 @@ _
 	lea de,ix-ioregs+NR10
 	ld bc,NR52 - NR10
 	ldir
+	
+	; Save system type
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld (ix-state_size+STATE_SYSTEM_TYPE),a
+	or a
+	jr z,_
+	; Save palette data on GBC
+	ld de,bg_palettes_saved
+	inc h ;gbc_bg_palette_data
+	ld l,gbc_bg_palette_data & $FF
+	ld c,64
+	ldir
+	inc h ;gbc_obj_palette_data
+	ld l,gbc_obj_palette_data & $FF
+	ld c,64
+	ldir
+_
 	
 	; Save the active interrupts in IF
 	ld.s a,(bc) ;active_ints

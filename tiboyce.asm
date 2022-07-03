@@ -499,17 +499,10 @@ recompile_cache_LUT = recompile_index_LUT + $0200
 ; Must be 256-byte aligned.
 convert_palette_LUT = recompile_cache_LUT + $0200
 
-; Start of the ROM bank lookup table. 256 pointers in size.
-; Stores the base address of each ROM bank (or mirror), minus $4000.
-; The pre-subtracted $4000 means that the memory can be indexed by GB address.
-; This buffer is also used to cache the pointers to appvars in the ROM list.
-rombankLUT = convert_palette_LUT + 256
-rombankLUT_end = rombankLUT + (256*3)
-
 ; A table with the largest Y position of a sprite using the corresponding tile,
 ; or 0 if the tile is not used by any onscreen sprite.
 ; Must be 256-byte aligned.
-oam_tile_usage_lut = rombankLUT_end
+oam_tile_usage_lut = convert_palette_LUT + 256
 
 ; Specifies offsets into a buffer of pixel data corresponding to the
 ; input 2bpp pixel data. Note that the input has the high palette bits
@@ -636,6 +629,13 @@ low_prio_sprite_pixel_lut = normal_prio_sprite_pixel_lut + 256
 ; As such, each table is (256+3)*2 bytes in size, for 8288 bytes in total.
 gbc_overlapped_pixel_data = low_prio_sprite_pixel_lut + 256
 gbc_overlapped_pixel_data_end = gbc_overlapped_pixel_data + ((256+3)*2*16)
+
+; The ROM bank lookup table. 256 pointers in size.
+; Stores the base address of each ROM bank (or mirror), minus $4000.
+; The pre-subtracted $4000 means that the memory can be indexed by GB address.
+; This must be located beyond the compression buffer.
+rombankLUT_end = (usbArea & ~$FF) - 256
+rombankLUT = rombankLUT_end - (256*3)
 
 ; Start of Game Boy HRAM region. 512 bytes in size, includes OAM and MMIO.
 hram_start = z80codebase + $FE00
