@@ -1,6 +1,8 @@
 z80code:
 	.assume adl=0
 	.org 0
+	CPU_SPEED_START()
+	
 active_ints:
 	.db 0
 waitloop_sentinel:
@@ -858,9 +860,11 @@ ppu_mode2_continue:
 	; Allow catch-up rendering if this frame is not skipped
 ppu_mode2_enable_catchup_smc = $+1
 	ld r,a
+	CPU_SPEED_IMM8($+1)
 	ld l,-MODE_2_CYCLES
 	add hl,de
 	ld (nextupdatecycle_STAT),hl
+	CPU_SPEED_IMM8($+1)
 	ld hl,-CYCLES_PER_SCANLINE
 	ex de,hl
 	add hl,de
@@ -918,10 +922,12 @@ ppu_mode0_blocked:
 	; Allow catch-up rendering if this frame is not skipped
 ppu_mode0_enable_catchup_smc = $+1
 	ld r,a
+	CPU_SPEED_IMM8($+1)
 	ld l,-MODE_0_CYCLES
 	add hl,de
 	ld (nextupdatecycle_STAT),hl
 	ld (nextupdatecycle_LY),hl
+	CPU_SPEED_IMM8($+1)
 	ld hl,-CYCLES_PER_SCANLINE
 	ex de,hl
 	add hl,de
@@ -978,6 +984,7 @@ _
 ppu_mode0_prepare_vblank:
 	; Reset scheduled time and offset
 	sbc hl,de
+	CPU_SPEED_IMM8($+1)
 	ld e,-MODE_0_CYCLES
 	add hl,de
 	ld (ppu_counter),hl
@@ -1012,9 +1019,11 @@ ppu_lyc_enable_catchup_smc = $+1
 	dec h
 _
 	; Set LY/STAT caches
+	CPU_SPEED_IMM8($+1)
 	ld l,-MODE_2_CYCLES
 	add hl,de
 	ld (nextupdatecycle_STAT),hl
+	CPU_SPEED_IMM8($+1)
 	ld hl,-CYCLES_PER_SCANLINE
 	add hl,de
 	ld (nextupdatecycle_LY),hl
@@ -1054,12 +1063,14 @@ ppu_expired_vblank:
 	jr nz,ppu_vblank_mode1_int
 ppu_vblank_stat_int_continue:
 	; Set next LY/STAT update to scanline 145
+	CPU_SPEED_IMM8($+1)
 	ld l,-CYCLES_PER_SCANLINE
 	add hl,de
 	ld (nextupdatecycle_LY),hl
 	ld (nextupdatecycle_STAT),hl
 ppu_expired_lcd_off:
 	; Set the next vblank start time
+	CPU_SPEED_IMM16($+1)
 	ld hl,CYCLES_PER_FRAME
 	add hl,bc
 	ld (vblank_counter),hl
@@ -1259,11 +1270,14 @@ _
 	pop.l bc
 audio_expired_disabled:
 	ld a,b
+audio_counter_offset = $+1
+	CPU_SPEED_IMM8($+1)
 	add a,4096 >> 8	; Double this in double-speed mode
 	ld (audio_counter+1),a
 	sub b
 	add a,d
 	ret c
+	CPU_SPEED_IMM8($+2)
 	ld de,-4096	; Double this in double-speed mode
 	ret
 
@@ -2192,6 +2206,55 @@ z80_swap_af_ret:
 z80_ret:
 	ret
 	
+ophandlerSTOP:
+	ex af,af'
+	exx
+	pop hl
+	ld hl,(hl)
+	push ix
+	 ld e,a
+	 ld bc,KEY1
+	 ld a,(bc)
+	 rra
+	 jr nc,_
+	 add a,a
+	 xor $80
+	 ld (bc),a
+	 ld d,a
+	 ld b,d
+	 ld c,e
+	 push hl
+	  call.il reset_div
+	  ld i,hl
+	  ld a,d
+	  call.il set_cpu_speed
+	 pop hl
+	 ld de,$FFFF
+_
+	 push de
+	  ex de,hl
+	  call.il lookup_code_cached
+	  ex de,hl
+	 pop de
+	 scf
+	 adc a,e
+	 jr nc,_
+	 inc d
+	 jr nz,_
+	 exx
+	 lea hl,ix
+	 exx
+	 inc bc
+	 ld c,a
+	 sbc a,e
+	 ld b,a
+	 ex de,hl
+#ifdef VALIDATE_SCHEDULE
+	 call.il schedule_event_helper
+#else
+	 jp.lil schedule_event_helper
+#endif
+	
 	; JP HL
 ophandlerE9:
 #ifdef DEBUG
@@ -2662,6 +2725,8 @@ event_counter_checker_slot_serial:
 	.dw disabled_counter_checker
 event_counter_checkers_ei_delay:
 	.dw event_counter_checkers_done
+	
+	CPU_SPEED_END()
 	
 	.assume adl=1
 z80codesize = $-0

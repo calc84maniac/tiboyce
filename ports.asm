@@ -1121,6 +1121,7 @@ nextupdatecycle_STAT = $+1
 	dec h
 	jr nz,updateSTAT_full
 	ld a,l
+	CPU_SPEED_IMM8($+1)
 	cp CYCLES_PER_SCANLINE
 	jr nc,updateSTAT_full
 	ld h,l
@@ -1135,6 +1136,7 @@ lcd_on_updateSTAT_smc = $+1
 updateSTAT_mode2:
 	; Check if we're currently in mode 3
 	inc b
+	CPU_SPEED_IMM8($+1)
 	add a,-MODE_3_CYCLES
 	jr nc,updateSTAT_finish
 updateSTAT_mode3:
@@ -1142,6 +1144,7 @@ updateSTAT_mode3:
 	dec b
 	dec b
 	dec b
+	CPU_SPEED_IMM8($+1)
 	add a,-MODE_0_CYCLES
 	ld l,a
 	; Allow rendering catch-up after leaving mode 3, unless this frame is skipped
@@ -1178,6 +1181,7 @@ _
 updateSTAT_mode1_exit:
 	inc b
 	ld a,l
+	CPU_SPEED_IMM8($+1)
 	add a,-MODE_2_CYCLES
 	jr c,updateSTAT_mode2
 updateSTAT_finish:
@@ -1221,8 +1225,9 @@ vblank_counter = $+1
 	 ; Decrement by 1, for cycles until the cycle before vblank
 	 dec hl
 	 ; Normalize the divisor and also check if the current cycle is past vblank
-	 add hl,hl
-	 jr c,get_scanline_past_vblank
+updateSTAT_full_speed_smc = $
+	 add.s hl,hl ; Replace with LD A,H \ INC A
+	 jr c,get_scanline_past_vblank ; Replace with JR Z
 	
 get_scanline_from_cycle_count:
 	 ; Algorithm adapted from Improved division by invariant integers
@@ -1271,7 +1276,8 @@ updateSTAT_full_enable_catchup_smc = $+1
 	 ld r,a
 	 ld h,a
 	 xor l
-	 rrca ;NOP this out in double-speed
+cpu_speed_factor_smc_1 = $
+	 rrca ; NOP this out in double-speed mode
 	 ld l,a
 	 ; Add to the negative DIV count
 	 add hl,de
@@ -1279,6 +1285,7 @@ updateSTAT_full_enable_catchup_smc = $+1
 	 ; Determine the STAT mode and the cycles until next update
 	 ; Check if during mode 0
 	 ld l,a
+	 CPU_SPEED_IMM8($+1)
 	 add a,MODE_0_CYCLES
 	 jr c,_
 	 ; Check if during mode 3
@@ -1286,6 +1293,7 @@ updateSTAT_full_enable_catchup_smc = $+1
 	 inc c
 	 inc c
 	 inc c
+	 CPU_SPEED_IMM8($+1)
 	 add a,MODE_3_CYCLES
 	 jr c,_
 	 ; During mode 2
@@ -1336,6 +1344,7 @@ updateSTAT_full_vblank:
 	 sbc a,a
 	 ld h,a
 	 xor l
+cpu_speed_factor_smc_2 = $
 	 rrca ; NOP this out in double-speed mode
 _
 	 ld l,a
@@ -1353,8 +1362,10 @@ updateSTAT_full_last_scanline:
 	 ld h,$FF
 	 ld a,l
 	 cpl
-	 rrca
+cpu_speed_factor_smc_3 = $
+	 rrca ; NOP this out in double-speed mode
 	 ld l,a
+	 CPU_SPEED_IMM8($+1)
 	 add a,CYCLES_PER_SCANLINE - 1
 	 jr nc,--_
 	 ld b,0
@@ -1383,6 +1394,7 @@ nextupdatecycle_LY = $+1
 	jr nz,updateSTAT_full_for_LY_trampoline
 updateLY_from_STAT:
 	ld a,l
+	CPU_SPEED_IMM8($+1)
 	ld l,-CYCLES_PER_SCANLINE
 	add a,l
 	jr c,updateSTAT_full_for_LY_restore
@@ -1416,6 +1428,7 @@ updateLY_from_STAT:
 	; Exit vblank (setting mode 0) and schedule forward to line 1 change
 	ld l,STAT & $FF
 	dec (hl)
+	CPU_SPEED_IMM8($+1)
 	ld bc,1-CYCLES_PER_SCANLINE
 updateLY_to_line_0_vblank:
 	; Line 0 node 1 duration is one cycle less than originally scheduled
@@ -1429,6 +1442,7 @@ updateLY_to_line_153:
 updateLY_from_line_152:
 	; If LY was 152, check whether to proceed to line 0
 	ld a,c
+	CPU_SPEED_IMM8($+1)
 	ld bc,CYCLES_PER_SCANLINE=1
 	add a,c
 	jr nc,updateLY_to_line_153

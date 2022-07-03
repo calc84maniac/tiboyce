@@ -153,8 +153,8 @@ opgenNOP:
 opgenCB:
 	jp _opgenCB
 	
-opgen76:
-	jp _opgen76
+opgenHALT_STOP:
+	jp _opgenHALT_STOP
 	
 opgen2byte:
 	ldi

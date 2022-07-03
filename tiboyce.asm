@@ -18,6 +18,42 @@
 
 #define .safe_fill SAFE_FILL(
 
+#macro CPU_SPEED_START()
+	#define CPU_SPEED_BASE eval($)
+#endmacro
+
+#macro CPU_SPEED_IMM(addr, width)
+	#define CPU_SPEED_OFFSET eval(addr - CPU_SPEED_BASE)
+	buf(1)
+	#if CPU_SPEED_OFFSET < $40
+	#define CPU_SPEED_VALUE eval((CPU_SPEED_OFFSET << 2) | width)
+	wr(".db ", CPU_SPEED_VALUE)
+	#else
+	#define CPU_SPEED_VALUE eval((CPU_SPEED_OFFSET >> 8 << 2) | width | 1)
+	wr(".db ", CPU_SPEED_VALUE)
+	#define CPU_SPEED_VALUE eval(CPU_SPEED_OFFSET & $FF)
+	wr(".db ", CPU_SPEED_VALUE)
+	#endif
+	#undef CPU_SPEED_VALUE
+	#undef CPU_SPEED_OFFSET
+#endmacro
+
+#macro CPU_SPEED_IMM8(addr)
+	CPU_SPEED_IMM(addr, 0)
+	#define CPU_SPEED_BASE eval(addr)
+#endmacro
+
+#macro CPU_SPEED_IMM16(addr)
+	CPU_SPEED_IMM(addr, 2)
+	#define CPU_SPEED_BASE eval(addr+1)
+#endmacro
+
+#macro CPU_SPEED_END()
+	buf(1)
+	wr(".db 0")
+	#undef CPU_SPEED_BASE
+#endmacro
+
 ; Gets the 24-bit base pointer for a given Game Boy address.
 ; The base plus the address can be used to directly read GB memory.
 ;
@@ -1544,5 +1580,15 @@ save_state_gbc_size = save_state_gbc_end - save_state_start
 	#include "z80mode.asm"
 	#include "render.asm"
 	#include "render_gbc.asm"
+
+CpuSpeedRelocs:
+	.dw vblank_counter
+	.dw persistent_vblank_counter
+	.dw ppu_counter
+	.dw nextupdatecycle_STAT
+	.dw nextupdatecycle_LY
+	.dw ppu_post_vblank_event_offset
+	buf(1)
+	run()
 
 	.echo "Total size: ", program_size + $

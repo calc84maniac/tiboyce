@@ -1292,6 +1292,14 @@ _
 	ld (hl),de
 _
 	
+	; Before doing any timing-related init, set the CPU speed
+	ld a,(iy-state_size+STATE_SYSTEM_TYPE)
+	rrca
+	and (iy-ioregs+KEY1)
+	push af
+	 call.il set_cpu_speed
+	pop bc
+	
 	; Set the initial DIV counter to one cycle in the future
 	ld hl,(iy-state_size+STATE_DIV_COUNTER)
 	push hl
@@ -1302,7 +1310,7 @@ _
 	 ; Calculate the LYC cycle offset (from vblank)
 	 ld a,(iy-ioregs+LYC)
 	 ; Special case for line 0, thanks silly PPU hardware
-	 ld hl,-(CYCLES_PER_SCANLINE * 9 + 1)
+	 ld hl,(-(CYCLES_PER_SCANLINE * 9 + 1)) & $FFFF
 	 ld c,1-CYCLES_PER_SCANLINE
 	 or a
 	 jr z,++_
@@ -1329,11 +1337,18 @@ _
 	 add a,h
 	 ld h,a
 _
-	 ld (lyc_cycle_offset),hl
 	 ld a,c
+	 bit 7,b
+	 jr z,_
+	 add a,a
+	 ; This should always reset carry
+	 add hl,hl
+_
+	 ld (lyc_cycle_offset),hl
 	 ld (z80codebase+ppu_lyc_scanline_length_smc),a
 	
 	 ; Get the number of cycles from one cycle in the future until vblank
+	 ld a,b
 	 ld hl,CYCLES_PER_SCANLINE * 144
 	 ld bc,(iy-state_size+STATE_FRAME_COUNTER)
 	 inc.s bc
@@ -1341,6 +1356,10 @@ _
 	 sbc hl,bc
 	 jr nc,_
 	 ld bc,CYCLES_PER_FRAME
+	 add hl,bc
+	 ; Add again in double-speed
+	 rla
+	 jr nc,_
 	 add hl,bc
 _
 	 ; Add to the DIV counter
@@ -1422,8 +1441,10 @@ _
 	
 	; Set the next audio frame sequencer counter based on DIV
 	; Low byte of this counter is always 0
-	ld a,b
-	or $0F	; $1F in double speed mode
+	; Get the mask based on the current CPU speed
+	ld a,(z80codebase+audio_counter_offset)
+	dec a
+	or b
 	inc a
 	ld (z80codebase+audio_counter+1),a
 	
@@ -1728,6 +1749,7 @@ ExitEmulation:
 	ex de,hl
 	
 	; Save the frame-relative cycle count
+	ld ix,state_start+state_size
 	ld.sis hl,(vblank_counter)
 	ld a,e
 	sub l
@@ -1736,11 +1758,18 @@ ExitEmulation:
 	sbc a,h
 	ld h,a
 	ld bc,CYCLES_PER_SCANLINE * 144 + $FF0000
+	; Double the offset amount in double speed
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	rrca
+	and (ix-ioregs+KEY1)
+_
+	jr z,_
+	sla c
+	rl b ; Should reset Z flag
 _
 	add hl,bc
 	ld bc,CYCLES_PER_FRAME
-	jr nc,-_
-	ld ix,state_start+state_size
+	jr nc,--_
 	ld (ix-state_size+STATE_FRAME_COUNTER),hl
 	
 	; Save the serial cycle count
@@ -4070,6 +4099,7 @@ DefaultGameConfig:
 	
 #macro DEFINE_ERROR(name, text)
 	#define NUM_ERRORS eval(NUM_ERRORS+1)
+	buf(0)
 	clr()
 	wr(name,"=NUM_ERRORS")
 	run()

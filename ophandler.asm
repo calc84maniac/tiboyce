@@ -352,9 +352,13 @@ BGP_max_frequency = $+1
 BGP_write_done:
 	jp.sis z80_restore_swap_ret
 	
-lyc_write_0:	
+lyc_write_0:
+cpu_speed_ram_start = $
+	CPU_SPEED_START()
 	; Special case for line 0, thanks silly PPU hardware
+	CPU_SPEED_IMM16($+1)
 	ld de,-(CYCLES_PER_SCANLINE * 9 + 1)
+	CPU_SPEED_IMM8($+1)
 	ld a,1-CYCLES_PER_SCANLINE
 	ld (z80codebase+ppu_lyc_scanline_length_smc),a
 	jr lyc_write_continue
@@ -382,6 +386,7 @@ lyc_write_helper:
 	ld b,a
 	or a
 	jr z,lyc_write_0
+	CPU_SPEED_IMM8($+1)
 	ld d,-CYCLES_PER_SCANLINE
 	add a,10
 	ld e,a
@@ -542,6 +547,7 @@ scanline_off_color_smc = $+1
 	; Update PPU scheduler to do events once per "frame"
 	push ix
 	ld ix,z80codebase+ppu_expired_lcd_off
+	CPU_SPEED_IMM16($+1)
 	ld hl,-CYCLES_PER_FRAME
 	ld.sis (ppu_post_vblank_event_handler),ix
 	ld.sis (ppu_post_vblank_event_offset),hl
@@ -551,6 +557,7 @@ stat_setup_hblank:
 	ld ix,z80codebase+ppu_expired_mode0_line_0
 	ld (ix-ppu_expired_mode0_line_0+ppu_mode0_event_line),b ;144
 	ex de,hl
+	CPU_SPEED_IMM16($+1)
 	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
 	; Check if LYC match is during vblank
 	cp b ;144
@@ -577,10 +584,12 @@ lcd_on_stat_setup_mode_smc = $+1
 	cp e
 	ld a,d
 	; Normally, schedule before the end of the current scanline
+	CPU_SPEED_IMM8($+1)
 	ld de,MODE_0_CYCLES
 	jr z,_
 	; For hblank, schedule in the next scanline
 	dec d
+	CPU_SPEED_IMM8($+1)
 	ld e,-(MODE_2_CYCLES + MODE_3_CYCLES)
 _
 	ld.sis hl,(nextupdatecycle_LY)
@@ -603,6 +612,7 @@ stat_setup_hblank_trampoline:
 	
 stat_setup_hblank_post_vblank:
 	ld ix,z80codebase+ppu_expired_mode0_line_0
+	CPU_SPEED_IMM16($+1)
 	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
 	jr stat_setup_next_from_vblank
 	
@@ -613,6 +623,7 @@ stat_setup_hblank_lyc_match:
 stat_setup_lyc_vblank:
 	; The next event from vblank is vblank, unless LYC is during mode 1
 	ex de,hl
+	CPU_SPEED_IMM16($+1)
 	ld hl,-CYCLES_PER_FRAME
 	call nz,stat_setup_lyc_mode1_filter
 stat_setup_next_vblank_post_vblank:
@@ -673,6 +684,7 @@ stat_setup_next_from_vblank:
 	ld.sis de,(vblank_counter)
 	sbc hl,de
 	; Offset is from start of vblank, so adjust back to previous vblank
+	CPU_SPEED_IMM16($+1)
 	ld de,CYCLES_PER_FRAME
 	add hl,de
 stat_setup_done:
@@ -686,6 +698,7 @@ stat_setup_oam:
 	ld ix,z80codebase+ppu_expired_mode2_line_0
 	ld (ix-ppu_expired_mode2_line_0+ppu_mode2_event_line),143
 	ex de,hl
+	CPU_SPEED_IMM16($+1)
 	ld hl,-(CYCLES_PER_SCANLINE * 10)
 	; Check if LYC match is during vblank
 	cp b ;144
@@ -719,6 +732,7 @@ stat_setup_oam:
 	
 stat_setup_oam_post_vblank:
 	lea ix,ix-ppu_expired_mode2+ppu_expired_mode2_line_0
+	CPU_SPEED_IMM16($+1)
 	ld hl,-(CYCLES_PER_SCANLINE * 10)
 	jr stat_setup_next_from_vblank
 	
@@ -981,6 +995,7 @@ _
 	ld.sis (event_counter_checker_slot_PPU),hl
 	
 	; Schedule vblank relative to now (minus 1 cycle because the LCD is wack)
+	CPU_SPEED_IMM16($+1)
 	ld hl,(CYCLES_PER_SCANLINE * 144) - 1
 	add hl,de
 	ld.sis (vblank_counter),hl
@@ -1011,9 +1026,11 @@ _
 	
 	; Set LY and STAT cache times for line 0, mode 2 (fake mode 0)
 	; This is reduced by 1 cycle because of course it is
+	CPU_SPEED_IMM8($+1)
 	ld l,1-CYCLES_PER_SCANLINE
 	sbc hl,de
 	ld.sis (nextupdatecycle_LY),hl
+	CPU_SPEED_IMM8($+1)
 	ld de,MODE_0_CYCLES + MODE_3_CYCLES
 	add hl,de
 	ld.sis (nextupdatecycle_STAT),hl
@@ -1043,58 +1060,184 @@ lcd_on_STAT_restore_helper:
 	
 div_write_helper:
 	push bc
-	 ld hl,i
-	 add hl,bc
-	 ld b,h
-	 ld c,l
-	 ; If bit 11 of DIV was already reset, delay audio counter
-	 ld a,b
-	 cpl
-	 and $08 ;(4096 >> 8) >> 1
-	 ld.sis hl,(vblank_counter)
-	 sbc hl,bc
-	 ld.sis (vblank_counter),hl
-	 add a,a
-	 ld (z80codebase+audio_counter+1),a
-	 ld.sis hl,(persistent_vblank_counter)
-	 sbc hl,bc
-	 ld.sis (persistent_vblank_counter),hl
-	 ld.sis hl,(ppu_counter)
-	 add hl,bc
-	 ld.sis (ppu_counter),hl
-	 ld.sis hl,(nextupdatecycle_STAT)
-	 add hl,bc
-	 ld.sis (nextupdatecycle_STAT),hl
-	 ld.sis hl,(nextupdatecycle_LY)
-	 add hl,bc
-	 ld.sis (nextupdatecycle_LY),hl
-	 ld.sis hl,(serial_counter)
-	 xor a
-	 sbc hl,bc
-	 ld.sis (serial_counter),hl
-	 ; Update timer schedule, with logic to cause an instant TIMA increment
-	 ; if the specified bit of DIV is moving from 1 to 0
-	 ld b,a
-	 ld a,(hram_base+TIMA)
-	 cpl
-	 ld l,a
-	 ld a,(z80codebase+timer_cycles_reset_factor_smc)
-	 ld h,a
-	 ; Only if the old bit of DIV is 0, add to the scheduled time
-	 ; In effect, if the bit was 1, this schedules the next increment immediately
-	 and c
-	 xor h
-	 ld c,a
-	 mlt hl
-	 add.s hl,bc
-	 add hl,hl
-	 inc hl
-	 ld.sis (timer_counter),hl
+	 call.il reset_div
 	pop bc
-	sbc hl,hl
 	sbc hl,bc
 	ld i,hl
 	jp.sis trigger_event
+	
+reset_div:
+	ld hl,i
+	add hl,bc
+	ld b,h
+	ld c,l
+	; If bit 11 of DIV was already reset, delay audio counter
+	ld a,b
+	cpl
+	CPU_SPEED_IMM8($+1) ; Use bit 12 for double speed
+	CPU_SPEED_END()
+	and $08 ;(4096 >> 8) >> 1
+	ld.sis hl,(vblank_counter)
+	sbc hl,bc
+	ld.sis (vblank_counter),hl
+	add a,a
+	ld (z80codebase+audio_counter+1),a
+	ld.sis hl,(persistent_vblank_counter)
+	sbc hl,bc
+	ld.sis (persistent_vblank_counter),hl
+	ld.sis hl,(ppu_counter)
+	add hl,bc
+	ld.sis (ppu_counter),hl
+	ld.sis hl,(nextupdatecycle_STAT)
+	add hl,bc
+	ld.sis (nextupdatecycle_STAT),hl
+	ld.sis hl,(nextupdatecycle_LY)
+	add hl,bc
+	ld.sis (nextupdatecycle_LY),hl
+	ld.sis hl,(serial_counter)
+	xor a
+	sbc hl,bc
+	ld.sis (serial_counter),hl
+	; Update timer schedule, with logic to cause an instant TIMA increment
+	; if the specified bit of DIV is moving from 1 to 0
+	ld b,a
+	ld a,(hram_base+TIMA)
+	cpl
+	ld l,a
+	ld a,(z80codebase+timer_cycles_reset_factor_smc)
+	ld h,a
+	; Only if the old bit of DIV is 0, add to the scheduled time
+	; In effect, if the bit was 1, this schedules the next increment immediately
+	and c
+	xor h
+	ld c,a
+	mlt hl
+	add.s hl,bc
+	add hl,hl
+	inc hl
+	ld.sis (timer_counter),hl
+	sbc hl,hl
+	ret.l
+	
+	; Input: Bit 7 of A indicates CPU speed
+set_cpu_speed:
+	APTR(CpuSpeedRelocs)
+	ex de,hl
+	rla
+	jr nc,set_cpu_single_speed
+	ld hl,lyc_cycle_offset
+	sla (hl) \ inc hl \ rl (hl)
+	ld hl,z80codebase+ppu_lyc_scanline_length_smc
+	sla (hl)
+	ld hl,z80codebase+audio_counter+1
+	sla (hl)
+	ld b,6
+_
+	ex de,hl
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	inc hl
+	ex de,hl
+	sla (hl)
+	inc hl
+	rl (hl)
+	djnz -_
+	
+	.db $21 ;LD HL,
+	 ld a,h
+	 inc a
+	 .db $28 ;JR Z,
+	xor a ;NOP
+	jr set_cpu_any_speed
+	
+set_cpu_single_speed:
+	ld hl,lyc_cycle_offset+1
+	scf \ rr (hl) \ dec hl \ rr (hl)
+	ld hl,z80codebase+ppu_lyc_scanline_length_smc
+	scf \ rr (hl)
+	ld hl,z80codebase+audio_counter+1
+	srl (hl)
+	ld b,6
+_
+	ex de,hl
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	inc hl
+	ex de,hl
+	ld a,b
+	cp 5
+	inc hl
+	rr (hl)
+	dec hl
+	rr (hl)
+	djnz -_
+	
+	.db $21
+	 add.sis hl,hl
+	 .db $38 ;JR C,
+	ld a,$0F ;RRCA
+set_cpu_any_speed:
+	ld (z80codebase+updateSTAT_full_speed_smc),hl
+	ld (z80codebase+cpu_speed_factor_smc_1),a
+	ld (z80codebase+cpu_speed_factor_smc_2),a
+	ld (z80codebase+cpu_speed_factor_smc_3),a
+	; Convert NOP to RLA and RRCA to NOP
+	cpl
+	add a,$17+1
+	res 3,a
+	ld (apply_cpu_speed_shift_smc_1),a
+	ld (apply_cpu_speed_shift_smc_2),a
+	
+	ld ix,(ArcBase)
+	ld bc,cpu_speed_ram_start - program_end
+	add ix,bc
+	ld hl,cpu_speed_ram_start
+	inc.s bc
+	call apply_cpu_speed
+	
+	ld ix,(ArcBase)
+	ld bc,z80code
+	add ix,bc
+	ld hl,z80codebase
+	call apply_cpu_speed
+	ret.l
+	
+apply_cpu_speed_byte:
+	add ix,bc
+	add hl,bc
+apply_cpu_speed_word_finish:
+	ld a,(ix)
+apply_cpu_speed_shift_smc_1 = $
+	rla
+	ld (hl),a
+apply_cpu_speed:
+	ld a,(de)
+	inc de
+	or a
+	ret z
+	ld b,0
+	rra
+	jr nc,apply_cpu_speed_short_offset
+	ld b,a
+	srl b
+	ld a,(de)
+	inc de
+	rla
+apply_cpu_speed_short_offset:
+	rra
+	ld c,a
+	jr nc,apply_cpu_speed_byte
+	add ix,bc
+	add hl,bc
+	ld a,(ix)
+apply_cpu_speed_shift_smc_2 = $
+	rla
+	ld (hl),a
+	inc ix
+	inc hl
+	jr apply_cpu_speed_word_finish
 	
 ; Writes to the GB timer control (TAC).
 ; Does not use a traditional call/return, must be jumped to directly.

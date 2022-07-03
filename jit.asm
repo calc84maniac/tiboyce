@@ -1644,6 +1644,7 @@ opcycleRETcond:
 opcycleRETI:
 opcycleRST:
 opcycleE9:
+opcycleSTOP:
 	jp runtime_error
 
 	.echo "Opcycle routine size: ", $ - opcycleroutines
@@ -1671,7 +1672,7 @@ opcounttable:
 	.db opcycle2byte_ix - opcycleroutines
 	.db opcycleROTC - opcycleroutines
 ;10
-	.db opcycleNOP - opcycleroutines
+	.db opcycleSTOP - opcycleroutines
 	.db opcycle3byte - opcycleroutines
 	.db opcycleMEM - opcycleroutines
 	.db opcycle1byte_2cc - opcycleroutines
@@ -2028,7 +2029,7 @@ opcoderecsizes:
 opcodecycles:
 	.db 1,3,2,2,1,1,2,1
 	.db 5,2,2,2,1,1,2,1
-	.db 1,3,2,2,1,1,2,1
+	.db 0,3,2,2,1,1,2,1
 	.db 0,2,2,2,1,1,2,1
 	.db 2,3,2,2,1,1,2,1
 	.db 2,2,2,2,1,1,2,1
@@ -2124,7 +2125,7 @@ opgentable:
 	.db opgen2byte_remap_ix - opgenroutines
 	.db opgenROT - opgenroutines
 ;10
-	.db opgenNOP - opgenroutines
+	.db opgenHALT_STOP - opgenroutines
 	.db opgen3byte_remap - opgenroutines
 	.db opgenDEwrite - opgenroutines
 	.db opgen1byte_2cc_remap - opgenroutines
@@ -2238,7 +2239,7 @@ opgentable:
 	.db opgenHLwrite - opgenroutines
 	.db opgenHLwrite - opgenroutines
 	.db opgenHLwrite - opgenroutines
-	.db opgen76 - opgenroutines
+	.db opgenHALT_STOP - opgenroutines
 	.db opgenHLwrite - opgenroutines
 ;78
 	.db opgen1byte_remap_ix - opgenroutines
@@ -2937,6 +2938,16 @@ opgenblockend:
 #endif
 	djnz opgenblockend_finish
 	
+_opgenSTOP:
+	ld (hl),ophandlerSTOP & $FF
+	inc hl
+	ld (hl),ophandlerSTOP >> 8
+	; Emit the address following the STOP instruction
+	inc de
+	call opgen_emit_gb_address
+	dec de
+	jr opgen_reset_cycle_count
+	
 opgenblockend_invalid:
 	push hl
 	ex de,hl
@@ -2991,10 +3002,12 @@ _
 	xor a
 	ret
 	
-_opgen76:
+_opgenHALT_STOP:
 	ex de,hl
 	ld (hl),$CD
 	inc hl
+	bit 6,c
+	jr z,_opgenSTOP
 	ld (hl),decode_halt & $FF
 	inc hl
 	ld (hl),decode_halt >> 8
@@ -3026,7 +3039,7 @@ _opgen76:
 	ld ixl,a
 	; Check if we need to special-case a copy of the first opcode byte
 	sub opgen_next_fast & $FF
-	add a,opgen_next_fast - opgen76
+	add a,opgen_next_fast - opgenHALT_STOP
 	jr nc,_
 	; If the bugged opcode is a HALT, it will bug eternally
 	; To avoid infinite code generation, instead we emit an invalid opcode
