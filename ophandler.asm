@@ -397,6 +397,8 @@ lyc_write_helper:
 	; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
 	add a,-9
 	sbc a,a
+ppu_lyc_scanline_length_speed_smc = $
+	nop ; Replace with ADD A,A in double-speed mode
 	or d
 	ld (z80codebase+ppu_lyc_scanline_length_smc),a
 _
@@ -1183,12 +1185,16 @@ set_cpu_any_speed:
 	ld (z80codebase+cpu_speed_factor_smc_1),a
 	ld (z80codebase+cpu_speed_factor_smc_2),a
 	ld (z80codebase+cpu_speed_factor_smc_3),a
-	; Convert NOP to RLA and RRCA to NOP
-	cpl
-	add a,$17+1
-	res 3,a
-	ld (apply_cpu_speed_shift_smc_1),a
+	; Convert NOP to ADD A,A and RRCA to NOP
+	xor $0F
+	; $0F -> $87, $00 -> $00
+	ld l,a
+	rrca
 	ld (apply_cpu_speed_shift_smc_2),a
+	ld (ppu_lyc_scanline_length_speed_smc),a
+	; Convert ADD A,A to ADC A,A and NOP to NOP
+	or l
+	ld (apply_cpu_speed_shift_smc_1),a
 	
 	ld ix,(ArcBase)
 	ld bc,cpu_speed_ram_start - program_end
@@ -1210,7 +1216,7 @@ apply_cpu_speed_byte:
 apply_cpu_speed_word_finish:
 	ld a,(ix)
 apply_cpu_speed_shift_smc_1 = $
-	rla
+	adc a,a
 	ld (hl),a
 apply_cpu_speed:
 	ld a,(de)
@@ -1233,7 +1239,7 @@ apply_cpu_speed_short_offset:
 	add hl,bc
 	ld a,(ix)
 apply_cpu_speed_shift_smc_2 = $
-	rla
+	add a,a
 	ld (hl),a
 	inc ix
 	inc hl

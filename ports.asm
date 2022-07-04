@@ -1431,6 +1431,7 @@ updateLY_from_STAT:
 	jr z,updateLY_from_line_0
 	; If LY was 153, check whether to exit vblank
 	ld a,c
+	CPU_SPEED_IMM8($+1)
 	ld bc,1
 	; Always advance to line 0
 	ld (hl),b
