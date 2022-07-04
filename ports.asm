@@ -301,6 +301,16 @@ writeVBK:
 	or $FE
 	ld (VBK),a
 	jp.lil writeVBK_helper
+	
+writeSVBK_stack:
+	; Adjust the direct stack pointer when it points to banked WRAM
+	ld c,a
+	dec h \ dec h
+	sub (hl)
+	add a,iyh
+	ld iyh,a
+	ld a,c
+	jr writeVBK_finish
 
 ;writeP1:
 ;	jr _writeP1
@@ -326,6 +336,7 @@ writeSVBK:
 	exx
 	.echo mem_write_port_routines+256-$, " bytes remaining for port writes"
 	ld a,l
+	exx
 	or $F8
 	ld (SVBK),a
 	ld l,a
@@ -335,12 +346,12 @@ writeSVBK:
 	add a,$20
 	ld l,(wram_bank_base_for_write+1) & $FF
 	ld (hl),a
+writeSVBK_stack_smc = $
 	dec h \ dec h
 writeVBK_finish:
 	ld (hl),a
 	dec h \ dec h
 	ld (hl),a
-	exx
 	ld a,e
 	ex af,af'
 	exx

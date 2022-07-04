@@ -499,6 +499,7 @@ set_gb_stack_region_finish:
 	 ; Apply SMC as needed to stack accesses when SP changes banks.
 set_gb_stack_region:
 	 ld (curr_gb_stack_region),a
+	 ld bc,$2525 ; DEC H \ DEC H
 	 ; Check for read-only vs. read-write
 	 cp cram_bank_base & $FF
 	 jr c,set_gb_stack_region_read_only
@@ -568,6 +569,10 @@ set_gb_stack_region_cram:
 	 cp $18 ;JR
 	 jr z,set_gb_stack_region_io
 set_gb_stack_region_long_ptr:
+	 cp wram_bank_base & $FF
+	 jr nz,_
+	 ld bc,$18 | ((writeSVBK_stack - (writeSVBK_stack_smc+2)) << 8)
+_
 	 ; Set push handlers
 	 ld a,do_push_bc_long_ptr - push_routines_start
 	 ld (ophandlerC5_smc),a
@@ -602,6 +607,8 @@ set_gb_stack_region_long_ptr:
 set_gb_stack_long_ptr_finish:
 	 ld l,pop_long_ptr_src - pop_routines_start
 set_gb_stack_region_apply_pop_smc:
+	 ; Apply WRAM banking SMC
+	 ld (writeSVBK_stack_smc),bc
 	 ; Select the appropriate stack offset routine
 	 ld (apply_stack_offset_smc_offset_smc),a
 	 ; Get the new offset from the window base

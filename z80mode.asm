@@ -559,11 +559,12 @@ schedule_ei_delay:
 	 call event_counter_checkers_done
 schedule_ei_delay_startup:
 	 ; Enable interrupts, but check for halt spin
+	 ; Interrupts may have been enabled by RETI so check specifically for halt mode
 	 ld hl,intstate_smc_2
 	 ld a,(hl)
-	 or a
+	 cp cpu_exit_halt_no_interrupt - (intstate_smc_2 + 1)
 	 ld (hl),trigger_interrupt - (intstate_smc_2 + 1)
-	 jr z,_
+	 jr nz,_
 	 ld (hl),cpu_exit_halt_trigger_interrupt - (intstate_smc_2 + 1)
 _
 	 ; Restore the default counter checker end pointer
@@ -788,7 +789,7 @@ dispatch_int_handle_events:
 	 ; Set the restoring interrupt trigger
 	 ld a,trigger_interrupt_retry_dispatch - (intstate_smc_2 + 1)
 	 ld (intstate_smc_2),a
-	 ; The correct SP restore value is already saved, so enter the loop directly
+	 ; SP may have been adjusted by the callstack push, so set the new SP restore value
 	 push de
 	  jp event_expired_interrupt_loop
 	

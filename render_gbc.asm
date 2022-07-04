@@ -231,7 +231,6 @@ gbc_write_vram_catchup:
 	; Disable the normal return to z80 mode by using a load instruction
 	ld a,$21 ;LD HL,
 	ld (gbc_write_vram_catchup_ret_smc),a
-	push bc
 	push de
 	; Carry is set, which forces the written value to have bit 0 reset
 gbc_write_vram_pixels:
@@ -298,7 +297,6 @@ gbc_write_vram_defer_pixels:
 gbc_write_vram_catchup_ret_smc = $
 	jp.sis write_vram_and_expand_finish ;Replaced with LD HL, when catching up
 	pop de
-	pop bc
 	ld a,$40 ;.SIS
 	ld (gbc_write_vram_catchup_ret_smc),a
 	ret

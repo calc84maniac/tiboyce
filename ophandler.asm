@@ -1320,6 +1320,7 @@ timer_smc_data:
 	
 	
 writeVBK_helper:
+	exx
 	inc a
 	ld a,(gbc_write_vram_last_slice)
 	rra
