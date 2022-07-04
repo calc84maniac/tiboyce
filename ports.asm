@@ -1454,7 +1454,7 @@ updateLY_from_line_152:
 	; If LY was 152, check whether to proceed to line 0
 	ld a,c
 	CPU_SPEED_IMM8($+1)
-	ld bc,CYCLES_PER_SCANLINE=1
+	ld bc,CYCLES_PER_SCANLINE-1
 	add a,c
 	jr nc,updateLY_to_line_153
 	; Advance to line 0 in mode 1, keeping original schedule
