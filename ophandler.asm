@@ -1077,7 +1077,6 @@ reset_div:
 	ld a,b
 	cpl
 	CPU_SPEED_IMM8($+1) ; Use bit 12 for double speed
-	CPU_SPEED_END()
 	and $08 ;(4096 >> 8) >> 1
 	ld.sis hl,(vblank_counter)
 	sbc hl,bc
@@ -1120,6 +1119,138 @@ reset_div:
 	ld.sis (timer_counter),hl
 	sbc hl,hl
 	ret.l
+	
+gdma_transfer_helper:
+	push bc
+	 push de
+	  ld hl,hram_base+HDMA5
+	  ld b,(hl)
+	  ld (hl),$FF
+	  inc b
+	  ld c,b
+	  ld a,$C9 ;RET
+	  ld (gbc_write_tilemap_for_dma_ret_smc_1),a
+	  ld (gbc_write_tilemap_for_dma_ret_smc_2),a
+	  ld (gbc_write_pixels_for_dma_ret_smc),a
+	  ld h,hdma_port_value_base >> 8
+	  dec hl
+	  ld a,(hl)
+	  dec hl
+	  ld d,(hl)
+	  and $F0
+	  ld e,a
+	  dec hl
+	  ld a,(hl)
+	  dec hl
+	  ld h,(hl)
+	  and $F0
+	  ld l,a
+	  ex.s de,hl
+	  push ix
+gdma_transfer_loop:
+	   jr c,gdma_transfer_overflow
+	   push bc
+	    call hdma_single_transfer
+	   pop bc
+	   djnz gdma_transfer_loop
+gdma_transfer_finish:
+	  pop ix
+	  ld a,d
+	  ld (z80codebase+hdma_src_ptr),a
+	  ld a,l
+	  ld l,e
+	  ld (z80codebase+hdma_src_ptr+1),hl
+	  ld (z80codebase+hdma_dst_ptr+1),a
+	  ld a,$40 ;.SIS
+	  ld (gbc_write_tilemap_for_dma_ret_smc_1),a
+	  ld (gbc_write_tilemap_for_dma_ret_smc_2),a
+	  ld (gbc_write_pixels_for_dma_ret_smc),a
+	  ; Consume cycles from the transfer
+	  CPU_SPEED_IMM8($+1)
+	  CPU_SPEED_END()
+	  ld b,8
+	  mlt bc
+	  add ix,bc
+	 pop de
+	pop bc
+	pop.s hl
+	jp.s (hl)
+	
+gdma_transfer_overflow:
+	   ld a,c
+	   sub b
+	   ld c,a
+	   ld a,b
+	   add a,$7F
+	   ld (hram_base+HDMA5),a
+	   jr gdma_transfer_finish
+	
+	; Input: DE = Game Boy source pointer
+	;        HL = Game Boy destination pointer
+	; Output: DE = source pointer plus 16
+	;         HL = dest pointer plus 16
+	;         Carry set if dest pointer overflowed
+	; Destroys: AF, BC, IX
+hdma_single_transfer:
+	push hl
+	 push de
+	  ld a,h
+	  ld c,l
+	  ld hl,z80codebase+mem_read_lut
+	  ld l,d
+	  ld l,(hl)
+	  inc h ;mem_get_ptr_routines
+	  inc l \ inc l
+	  ld ix,(hl)
+	  add ix,de
+	  ld e,c
+	  and $1F
+	  add a,$80
+	  ld d,a
+	  ld hl,(vram_bank_base)
+	  add hl,de
+	  cp $98
+	  jr nc,hdma_single_transfer_tilemap_loop
+hdma_single_transfer_pixel_loop:
+	  ld de,(ix)
+	  ld (hl),e
+	  inc hl
+	  ld (hl),d
+	  push hl
+	   call gbc_write_pixels_for_dma
+	  pop hl
+	  inc hl
+	  lea ix,ix+2
+	  ld a,l
+	  sub vram_gbc_start & $FF
+	  and $0F
+	  jr nz,hdma_single_transfer_pixel_loop
+	  jr hdma_single_transfer_finish
+	  
+hdma_single_transfer_tilemap_loop:
+	  ld a,(ix)
+	  ld e,a
+	  xor (hl)
+	  ld (hl),e
+	  ld d,a
+	  push hl
+	   call nz,gbc_write_tilemap_for_dma
+	  pop hl
+	  inc hl
+	  inc ix
+	  ld a,l
+	  sub vram_gbc_start & $FF
+	  and $0F
+	  jr nz,hdma_single_transfer_tilemap_loop
+hdma_single_transfer_finish:
+	  ld bc,16
+	 pop hl
+	 add.s hl,bc
+	 ex de,hl
+	pop hl
+	add.s hl,bc
+	ret
+	
 	
 	; Input: Bit 7 of A indicates CPU speed
 set_cpu_speed:

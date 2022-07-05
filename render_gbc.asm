@@ -160,6 +160,7 @@ vram_bank_base_for_write = $+1
 	ld a,b
 	add a,256-$98
 	jr nc,gbc_write_vram_pixels
+gbc_write_tilemap_for_dma:
 	add hl,hl
 	add hl,hl
 	add hl,hl
@@ -188,6 +189,7 @@ _
 	dec hl
 	ld (hl),a
 gbc_write_vram_no_change:
+gbc_write_tilemap_for_dma_ret_smc_1 = $
 	jp.sis write_vram_and_expand_finish
 	
 gbc_write_vram_tile_attrs:
@@ -225,6 +227,7 @@ gbc_write_vram_tile_attrs:
 	dec hl
 	dec hl
 	ld (hl),a
+gbc_write_tilemap_for_dma_ret_smc_2 = $
 	jp.sis write_vram_and_expand_finish
 	
 gbc_write_vram_catchup:
@@ -250,6 +253,7 @@ _
 	jr z,gbc_write_vram_defer_pixels
 	; Write pixels from the last slice
 	ex de,hl
+gbc_write_pixels_for_dma:
 	; Get the HIGH and low bitplanes with nibbles X and Y
 	ld b,(hl)  ;B=[X][Y]
 	dec hl
@@ -295,6 +299,7 @@ gbc_write_pixels_bank_smc = $+1
 	ld (de),a
 gbc_write_vram_defer_pixels:
 gbc_write_vram_catchup_ret_smc = $
+gbc_write_pixels_for_dma_ret_smc = $
 	jp.sis write_vram_and_expand_finish ;Replaced with LD HL, when catching up
 	pop de
 	ld a,$40 ;.SIS

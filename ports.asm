@@ -218,6 +218,9 @@ writeSC:
 writeKEY1:
 	jp _writeKEY1
 	
+writeHDMA5:
+	jp _writeHDMA5
+	
 ;==============================================================================
 ; Everything above this point may cause a reschedule on write
 ;==============================================================================
@@ -230,6 +233,7 @@ write_port_direct:
 	ld c,b
 write_audio_finish:
 	ld b,$FF
+write_hdma_finish:
 	ld (bc),a
 write_port_ignore:
 	ld a,e
@@ -262,6 +266,17 @@ write_audio_disable_smc = $
 	or b
 	jr write_audio_finish
 	
+write_hdma_handler:
+	ex af,af'
+	ld e,a
+write_hdma:
+	exx
+	ld a,l
+	exx
+	ld c,b
+	ld b,hdma_port_value_base >> 8
+	jr write_hdma_finish
+	
 write_scroll:
 	jp _write_scroll
 	
@@ -286,12 +301,6 @@ writeBGP:
 	
 writeNR52:
 	jp _writeNR52
-	
-write_hdma:
-	jp _write_hdma
-	
-writeHDMA5:
-	jp _writeHDMA5
 	
 writeVBKhandler:
 	ld e,a
@@ -607,15 +616,37 @@ _writeKEY1:
 	ex af,af'
 	ret
 	
-write_hdma_handler:
-	ex af,af'
-	ld e,a
-_write_hdma:
-	FIXME
-	
 writeHDMA5handler:
 	ld e,a
 _writeHDMA5:
+	ld hl,HDMA5
+	exx
+	ld a,l
+	exx
+	add a,a
+	jr c,enableHDMA
+	bit 7,(hl)
+	jr z,disableHDMA
+	rrca
+	ld (hl),a
+	; Save the original EI delay event and replace it
+	ld hl,(event_counter_checkers_ei_delay)
+	ld (gdma_event_restore_smc),hl
+	ld hl,gdma_transfer
+	ld (event_counter_checkers_ei_delay),hl
+	jp trigger_event
+	
+gdma_transfer:
+gdma_event_restore_smc = $+1
+	ld hl,0
+	push hl
+	jp.lil gdma_transfer_helper
+	
+enableHDMA:
+	FIXME
+
+disableHDMA:
+	set 7,(hl)
 	FIXME
 	
 write_audio_enable_disable:

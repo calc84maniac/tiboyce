@@ -961,6 +961,7 @@ pop_slow_src:
 	.block (pop_routines_start+256)-$
 push_routines_start:
 audio_port_value_base:
+hdma_port_value_base:
 	
 do_push_bc_long_ptr:
 	lea hl,ix
@@ -1009,6 +1010,13 @@ do_push_short_ptr_offset_smc_2 = $+2
 	ld (iy),ix
 	ex af,af'
 	ret
+
+	.block (hdma_port_value_base + (HDMA1-ioregs)) - $
+	; The current values of HDMA registers
+hdma_src_ptr:
+	.dw 0
+hdma_dst_ptr:
+	.dw 0
 
 do_push_de_short_ptr:
 	dec iyl
