@@ -966,6 +966,7 @@ _
 	ld (z80codebase+ppu_mode0_enable_catchup_smc),a
 	ld (z80codebase+ppu_mode2_enable_catchup_smc),a
 	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
+	ld (hdma_overflow_enable_catchup_smc),a
 	
 	; Enable cache updates for STAT and LY registers
 	ld a,$ED ;LD HL,I
@@ -1167,7 +1168,6 @@ gdma_transfer_finish:
 	  ld (gbc_write_pixels_for_dma_ret_smc),a
 	  ; Consume cycles from the transfer
 	  CPU_SPEED_IMM8($+1)
-	  CPU_SPEED_END()
 	  ld b,8
 	  mlt bc
 	  add ix,bc
@@ -1184,6 +1184,81 @@ gdma_transfer_overflow:
 	   add a,$7F
 	   ld (hram_base+HDMA5),a
 	   jr gdma_transfer_finish
+	
+hdma_transfer_helper:
+	; Consume cycles from the transfer
+	CPU_SPEED_IMM8($+2)
+	CPU_SPEED_END()
+	pea ix+8
+	 push bc
+	  push de
+	   ld a,$C9 ;RET
+	   ld (gbc_write_tilemap_for_dma_ret_smc_1),a
+	   ld (gbc_write_tilemap_for_dma_ret_smc_2),a
+	   ld (gbc_write_pixels_for_dma_ret_smc),a
+	   ld hl,z80codebase+hdma_dst_ptr+1
+	   ld a,(hl)
+	   dec hl
+	   ld d,(hl)
+	   and $F0
+	   ld e,a
+	   dec hl
+	   ld a,(hl)
+	   dec hl
+	   ld h,(hl)
+	   and $F0
+	   ld l,a
+	   ex.s de,hl
+	   call hdma_single_transfer
+	   ld a,d
+	   ld (z80codebase+hdma_src_ptr),a
+	   ld a,l
+	   ld l,e
+	   ld (z80codebase+hdma_src_ptr+1),hl
+	   ld (z80codebase+hdma_dst_ptr+1),a
+	   ld a,$40 ;.SIS
+	   ld (gbc_write_tilemap_for_dma_ret_smc_1),a
+	   ld (gbc_write_tilemap_for_dma_ret_smc_2),a
+	   ld (gbc_write_pixels_for_dma_ret_smc),a
+	   ld hl,hram_base+HDMA5
+	   ld a,h ; Set upper bit of A for R load
+	   dec (hl)
+	   jp m,hdma_transfer_overflow
+	   jr c,hdma_transfer_overflow
+hdma_transfer_finish:
+	  pop de
+	 pop bc
+	pop ix
+	jp.sis ppu_mode0_blocked
+	
+hdma_transfer_overflow:
+	   ld l,STAT & $FF
+	   ld c,(hl)
+	   .db $21 ;LD HL,
+	    set 1,(hl)
+	    nop
+	   ld.sis (ppu_hdma_enable_smc),hl
+	   .db $21 ;LD HL,
+	    bit 6,a
+	    nop
+	   ld.sis (ppu_hdma_enable_lyc_match_smc),hl
+	   ; Only update STAT schedule if hblank interrupts are disabled
+	   bit 3,c
+	   jr nz,hdma_transfer_finish
+hdma_overflow_enable_catchup_smc = $+1
+	   ld r,a
+	  pop de
+	  ; Set the STAT expiration time, since we're not returning
+	  ld hl,-MODE_0_CYCLES
+	  add hl,de
+	  ld.sis (nextupdatecycle_STAT),hl
+	  call stat_setup_c
+	 pop bc
+	pop ix
+	; Get the offset to the new event time
+	add hl,bc
+	ex de,hl
+	jp.sis audio_counter_checker
 	
 	; Input: DE = Game Boy source pointer
 	;        HL = Game Boy destination pointer
@@ -1251,6 +1326,36 @@ hdma_single_transfer_finish:
 	add.s hl,bc
 	ret
 	
+hdma_enable_disable_helper:
+	ld hl,hram_base+STAT
+	ld c,(hl)
+	ld l,HDMA5 & $FF
+	bit 7,(hl)
+	.db $21 ;LD HL,
+	 set 1,(hl)
+	 nop
+	.db $11 ;LD DE,
+	 bit 6,a
+	 nop
+	ld a,c
+	set 3,a
+	jr nz,_
+	ld hl,$18 | ((ppu_hdma_trigger - (ppu_hdma_enable_smc+2)) << 8)
+	ld de,$18 | ((ppu_hdma_trigger_lyc_match - (ppu_hdma_enable_lyc_match_smc+2)) << 8)
+	; Force hblank timing selection
+	ld a,c
+	set 3,c
+_
+	ld.sis (ppu_hdma_enable_smc),hl
+	ld.sis (ppu_hdma_enable_lyc_match_smc),de
+	; Only update schedule on change
+	xor c
+	jp.sis z,z80_pop_restore_swap_ret
+	push ix
+	 call stat_setup_c
+	pop ix
+	; Reschedule the current PPU event
+	jp.sis reschedule_event_PPU
 	
 	; Input: Bit 7 of A indicates CPU speed
 set_cpu_speed:

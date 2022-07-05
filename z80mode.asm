@@ -914,6 +914,7 @@ ppu_expired_mode0_line_0:
 	sbc hl,hl ;ld hl,active_ints
 ppu_expired_mode0:
 	; Request STAT interrupt
+ppu_hdma_enable_smc = $
 	set 1,(hl) ;active_ints
 	; Set mode 0
 	ld hl,STAT
@@ -962,6 +963,7 @@ ppu_expired_mode0_lyc_match:
 	or 4
 	ld (hl),a
 	; Block mode 0 interrupt during LYC coincidence, if enabled
+ppu_hdma_enable_lyc_match_smc = $
 	bit 6,a
 	jr nz,ppu_mode0_blocked
 	; Request STAT interrupt
@@ -982,6 +984,27 @@ _
 	; Set next line event to LYC
 	ld (ppu_mode2_event_line),a
 	jr ppu_expired_pre_vblank
+	
+ppu_hdma_trigger:
+	ld hl,STAT
+	ld a,(hl)
+	and $F8
+	ld (hl),a
+	; Request STAT interrupt only if enabled
+	cpl
+	and $08
+ppu_hdma_trigger_finish:
+	jr nz,_
+	sbc hl,hl ;ld hl,active_ints
+	set 1,(hl)
+_
+	jp.lil hdma_transfer_helper
+	
+ppu_hdma_trigger_lyc_match:
+	; Request STAT interrupt only if LYC match disabled and mode 0 enabled
+	and $48
+	cp $08
+	jr ppu_hdma_trigger_finish
 	
 ppu_mode0_prepare_vblank:
 	; Reset scheduled time and offset

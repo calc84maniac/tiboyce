@@ -623,7 +623,7 @@ _writeHDMA5:
 	exx
 	ld a,l
 	exx
-	add a,a
+	rlca
 	jr c,enableHDMA
 	bit 7,(hl)
 	jr z,disableHDMA
@@ -641,13 +641,18 @@ gdma_event_restore_smc = $+1
 	ld hl,0
 	push hl
 	jp.lil gdma_transfer_helper
-	
-enableHDMA:
-	FIXME
 
 disableHDMA:
-	set 7,(hl)
-	FIXME
+	ld a,(hl)
+	rlca
+enableHDMA:
+	ccf
+	rra
+	ld (hl),a
+	push de
+	 push bc
+	  call updateSTAT
+	  jp.lil hdma_enable_disable_helper
 	
 write_audio_enable_disable:
 	xor b
