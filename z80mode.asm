@@ -133,7 +133,7 @@ do_push_overflow_for_call_slow:
 do_call_callstack_overflow:
 	call callstack_overflow_helper
 	scf
-	jr do_call_dispatch
+	jr do_call_dispatch_push
 	
 #ifdef SHADOW_STACK
 do_call_set_shadow_stack:
@@ -169,6 +169,7 @@ do_call_no_cycle_overflow:
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	jr nc,do_call_callstack_overflow
+do_call_dispatch_push:
 	; Push RET cycle count and stack offset
 	ld c,iyl
 	push bc
