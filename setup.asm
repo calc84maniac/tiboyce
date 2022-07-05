@@ -1591,6 +1591,11 @@ _
 	ld a,b
 	or $06
 	ld (lcdc_write_sprite_change_smc_1),a
+	add a,a
+	add a,a
+	add a,b
+	xor ($06 << 2) ^ $A7 ;AND A vs. AND D
+	ld (stat_write_bug_smc),a
 	ld a,b
 	dec a
 	and $0F ;RRCA vs. NOP

@@ -495,7 +495,8 @@ stat_write_disable_smc = $
 	jr nz,_
 	; If not, this write can cause an interrupt to trigger
 	; Emulate DMG STAT write bug by just checking if any source is enabled
-	or a ; Replace with AND D for GBC emulation, to check against new bits
+stat_write_bug_smc = $
+	and a ; Replace with AND D for GBC emulation, to check against new bits
 	jr z,_
 	; If so, check if IE STAT bit is set and set IF STAT bit
 	ld l,h ;ld l,IE & $FF
