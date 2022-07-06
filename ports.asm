@@ -924,10 +924,12 @@ op_read_bc_port:
 	ld a,(ix)
 	ret
 	
+readSTAThandler:
+	ex af,af'
+	ld e,a
 	; Inputs: AFBCDEHL' are swapped, C=block cycle offset, DE=cycle counter
 	; Outputs: AFBCDEHL' are unswapped, STAT read into A
 	; Destroys: BC', E', HL'
-readSTAThandler:
 op_read_any_STAT:
 	call updateSTAT
 	ld a,e
@@ -936,10 +938,12 @@ op_read_any_STAT:
 	ld a,(STAT)
 	ret
 	
+readLYhandler:
+	ex af,af'
+	ld e,a
 	; Inputs: AFBCDEHL' are swapped, C=block cycle offset, DE=cycle counter
 	; Outputs: AFBCDEHL' are unswapped, LY read into A
 	; Destroys: BC', E', HL'
-readLYhandler:
 op_read_any_LY:
 	call updateLY
 	ld a,e
@@ -953,7 +957,6 @@ op_read_any_DIV_TIMA:
 	; Inputs: AFBCDEHL' are swapped, C=block cycle offset, DE=cycle counter
 	; Outputs: AFBCDEHL' are unswapped, TIMA read into A
 	; Destroys: BC', E', HL'
-readTIMAhandler:
 	call updateTIMA
 	ld a,e
 	ex af,af'
@@ -961,10 +964,22 @@ readTIMAhandler:
 	ld a,(TIMA)
 	ret
 	
+readTIMAhandler:
+	ex af,af'
+	ld e,a
+	call updateTIMA
+	ld a,e
+	ex af,af'
+	exx
+	ld a,(TIMA)
+	ret
+	
+readIFhandler:
+	ex af,af'
+	ld e,a
 	; Inputs: AFBCDEHL' are swapped, C=block cycle offset, DE=cycle counter
 	; Outputs: AFBCDEHL' are unswapped, DIV read into A
 	; Destroys: BC', E', HL'
-readIFhandler:
 op_read_any_IF:
 	ld a,d
 	or a
@@ -978,10 +993,12 @@ op_read_any_IF:
 	exx
 	ret
 	
+readDIVhandler:
+	ex af,af'
+	ld e,a
 	; Inputs: AFBCDEHL' are swapped, C=block cycle offset, DE=cycle counter
 	; Outputs: AFBCDEHL' are unswapped, DIV read into A
 	; Destroys: BC', E', HL'
-readDIVhandler:
 op_read_any_DIV:
 	ld hl,i
 	add hl,de

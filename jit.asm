@@ -28,21 +28,6 @@
 cache_flushes_allowed:
 	.db 0
 
-#ifdef DEBUG
-record_wasted_bytes:
-	push hl
-	 push bc
-wasted_jit_bytes = $+1
-	  ld hl,0
-	  ld bc,0
-	  ld c,a
-	  add hl,bc
-	  ld (wasted_jit_bytes),hl
-	 pop bc
-	pop hl
-	ret
-#endif
-
 ; Do as in flush_code, but also reset RAM block padding amount.
 ; This is called only at startup, because block padding should 
 ; persist between flushes to reduce flush rates overall.
@@ -58,13 +43,7 @@ flush_code_reset_padding:
 flush_code:
 	push de
 #ifdef DEBUG
-	 ld hl,(wasted_jit_bytes)
-	 push hl
-	  or a
-	  sbc hl,hl
-	  ld (wasted_jit_bytes),hl
-	  APRINTF(FlushMessage)
-	 pop hl
+	 APRINTF(FlushMessage)
 #endif
 	 ; Empty recompiled code information struct
 	 ld hl,recompile_struct
@@ -275,6 +254,79 @@ lookup_gb_found_start:
 	xor a
 	ret
 	
+lookup_gb_found_abs_read_write:
+	  ; Add a cycle for the memory access
+	  dec a
+	  ; Get the real JIT pointer in HL
+	 pop bc
+	 push bc
+	  push hl
+	   lea hl,ix
+	   add hl,bc
+	   ld bc,3
+	   ; Check for LDH
+	   bit 1,e
+	   jr z,lookup_gb_found_abs_read_write_high
+	   ; Add another cycle
+	   dec a
+	   ; Check the first JIT byte for short read/write
+	   ; This checks for a LD (nn),A or JR instruction,
+	   ; as opposed to .LIL, LD L,A, or EXX
+	   bit.s 0,(hl)
+	   jr z,lookup_gb_pop_add
+	   ; Check the second JIT byte for long read/write
+	   ; This checks for a LD (nnn),A or LD A,(nnn) instruction,
+	   ; as opposed to CALL, EXX, LD C,n, or LD BC,nnnn
+	   inc hl
+	   bit.s 5,(hl)
+	  pop hl
+	  ld c,5
+	  jr nz,lookup_gb_add
+	  ; Default to an 8-byte implementation
+	  ld c,8
+	  ; Decrement to the MSB of the accessed address
+	  dec hl
+	  ; Check for read vs. write
+	  bit 4,e
+	  jr z,lookup_gb_found_abs_write
+	  ; Check for a port read
+	  ld e,(hl)
+	  inc hl
+	  inc e
+	  jr nz,lookup_gb_add
+	  ; Port reads are 6 bytes
+	  ld c,6
+	  jr lookup_gb_add
+	 
+lookup_gb_found_abs_write:
+	  ; Check for an MBC write
+	  bit 7,(hl)
+	  inc hl
+	  jr nz,lookup_gb_add
+	  ; MBC writes are 4 bytes
+	  ld c,4
+	  jr lookup_gb_add
+	
+runtime_error_trampoline:
+	jr runtime_error
+	
+lookup_gb_found_abs_read_write_high:
+	   ; Check the first JIT byte for short read/write
+	   ; This checks for a LD (nn),A or JR instruction,
+	   ; as opposed to .LIL, LD L,A, or EXX
+	   bit.s 0,(hl)
+lookup_gb_pop_add:
+	  pop hl
+	  jr z,lookup_gb_add
+	  ; Check for read vs. write
+	  bit 4,e
+	  ; Port reads are 6 bytes
+	  ld c,6
+	  jr nz,lookup_gb_add
+	  ; Port writes are 8 bytes
+	  ld c,8 ;8-6
+	  jr lookup_gb_add
+	
 ; Gets the Game Boy opcode address from a recompiled code pointer.
 ;
 ; The pointer must point either to the start of a recompiled instruction
@@ -296,15 +348,15 @@ lookup_gb_code_address:
 	call lookup_code_block
 	ld a,ixh
 	or ixl
-	jr z,runtime_error
+	jr z,runtime_error_trampoline
 	ld de,(ix)
 	ld hl,(ix+2)
 	ex.s de,hl
 	sbc hl,bc
 	jr z,lookup_gb_found_start
 	push hl
-	 GET_BASE_ADDR_FAST
-#ifdef DEBUG
+	 GET_BASE_ADDR_NO_ASSERT
+#ifdef 0
 	 ld a,d
 	 sub $40
 	 cp $40
@@ -350,12 +402,7 @@ lookup_gb_add:
 	  jr nc,lookup_gb_found_loop
 	  dec ix
 	  add ix,ix
-runtime_error_trampoline:
-#ifdef DEBUG
-	  jp nc,runtime_error
-#else
-	  jr nc,runtime_error
-#endif
+	  jr nc,runtime_error_trampoline
 lookup_gb_finish_overlapped:
 	 pop bc
 lookup_gb_finish:
@@ -387,7 +434,7 @@ _
 	
 lookup_gb_new_sub_block:
 	  cp -5
-	  jr c,lookup_gb_prefix
+	  jr c,lookup_gb_variable_length
 	  ; Note: for an overlapped instruction, the following transformations
 	  ; may end up incorrect, but they will be discarded after the bounds check
 	  inc e
@@ -423,13 +470,16 @@ lookup_gb_found_overlapped:
 	  xor a
 	  jr lookup_gb_finish_overlapped
 	
-lookup_gb_prefix:
+lookup_gb_variable_length:
 	  ; Count CB-prefixed opcode cycles
 	  sub 1+2
 	  ; If the cycle count overflowed from a CB-prefix instruction,
 	  ; this means it must have been an overlapped instruction
 	  ; This path is also taken if we reached a HALT
 	  jr c,lookup_gb_found_overlapped_or_halt
+	  ; Differentiate CB prefix and absolute reads/writes
+	  bit 0,e
+	  jp z,lookup_gb_found_abs_read_write
 	  ; Look up the second byte in the CB opcode table
 	  dec hl
 	  ld e,(hl)
@@ -450,7 +500,7 @@ lookup_gb_prefix:
 _
 	  sub 2 ; Adjust cycles for read/write
 	  jr lookup_gb_add
-	  
+	  	  
 lookup_gb_found_overlapped_or_halt:
 	  ; Check if the opcode was a HALT or not
 	  inc a
@@ -608,6 +658,150 @@ _
 	ld a,c
 	ret.l
 	
+
+lookup_found_special:
+	 ; Check whether this was a cycle overflow or a variable-length impl
+	 cp -5
+	 jr c,lookup_found_variable_length
+	 ; Found a new sub-block
+	 ; Add cycles for the next sub-block
+	 add.s a,(ix-4)
+	 ASSERT_C
+	 inc e
+	 bit 2,e
+	 jr z,_  ; For RET/JR/JP/RST, offsets are normal
+	 inc ix  ; For CALL, offsets are stored -1
+_
+	 add hl,bc
+	 add iy,bc
+	 jr nc,lookup_found_loop
+	 jr lookup_found_loop_finish
+	
+lookup_found_variable_length:
+	 ; Count variable-length opcode cycles (assume cycles=opcode bytes)
+	 sbc a,c
+	 ; If we're stepping past a HALT, then continue
+	 jr c,lookup_found_continue
+	 ; Differentiate CB prefix and absolute reads/writes
+	 bit 0,e
+	 jr z,lookup_found_abs_read_write
+	 ; Look up the second byte in the CB opcode table
+	 inc hl
+	 ld e,(hl)
+	 inc hl
+	 ex de,hl
+	 dec h
+	 ld c,(hl)
+	 inc h
+	 ex de,hl
+	 ; Check for (HL) access
+	 srl c
+	 jr nc,++_
+	 ; Check for BIT b,(HL)
+	 jr nz,_
+	 ; Set actual recompiled code size
+	 ld c,4
+	 ; Adjust cycle count for read
+	 inc a
+_
+	 ; Adjust cycle count for read/write
+	 sub 2
+_
+	 ; Add actual recompiled code size
+	 add ix,bc
+	 ; Restore GB instruction size
+	 ld c,2
+	 jr lookup_found_continue_2
+	
+lookup_code_in_block:
+	add.s hl,de
+	push de
+	 ex de,hl
+	 GET_BASE_ADDR_FAST
+	 add hl,de
+	 ld de,opcoderecsizes
+lookup_found_loop:
+	 ; Get current opcode
+	 ld e,(hl)
+	 ex de,hl
+	 ; Add recompiled instruction size
+	 ld c,(hl)
+	 add ix,bc
+	 ; Add cycles
+	 inc h
+	 sub (hl)
+	 inc h
+	 ; Add GB instruction size
+	 ld c,(hl)
+	 dec h
+	 dec h
+	 ex de,hl
+	 jr c,lookup_found_special
+lookup_found_continue:
+	 add hl,bc
+lookup_found_continue_2:
+	 add iy,bc
+	 jr nc,lookup_found_loop
+lookup_found_loop_finish:
+	pop de
+	dec iy
+	add iy,iy
+	ret
+	
+lookup_found_abs_read_write:
+	 ; Add a cycle for the memory access
+	 dec a
+	 ; Check the first JIT byte for short read/write
+	 ; This checks for a LD (nn),A instruction,
+	 ; as opposed to .LIL, LD L,A, or EXX
+	 bit.s 0,(ix)
+	 lea ix,ix+3
+	 jr z,lookup_found_continue
+	 ; Check for LDH
+	 bit 0,c
+	 jr z,lookup_found_abs_read_write_high
+	 ; Check the second JIT byte for long read/write
+	 ; This checks for a LD (nnn),A or LD A,(nnn) instruction,
+	 ; as opposed to CALL, EXX, LD C,n, or LD BC,nnnn
+	 bit.s 5,(ix-3+1)
+	 lea ix,ix+5-3
+	 jr nz,lookup_found_continue
+	 ; Default to an 8-byte implementation
+	 add ix,bc ;8-5
+	 ; Advance to the MSB of the accessed address
+	 inc hl
+	 inc hl
+	 ; Check for read vs. write
+	 bit 4,e
+	 jr z,lookup_found_abs_write
+	 ; Check for a port read
+	 ld e,(hl)
+	 inc hl
+	 inc e
+	 jr nz,lookup_found_continue_2
+	 ; Port reads are 6 bytes
+	 lea ix,ix-2
+	 jr lookup_found_continue_2
+	 
+lookup_found_abs_write:
+	 ; Check for an MBC write
+	 bit 7,(hl)
+	 inc hl
+	 jr nz,lookup_found_continue_2
+	 ; MBC writes are 4 bytes
+	 lea ix,ix-4
+	 jr lookup_found_continue_2
+	 
+lookup_found_abs_read_write_high:
+	 ; Check for read vs. write
+	 bit 4,e
+	 ; Port reads are 6 bytes
+	 lea ix,ix+6-3
+	 jr nz,lookup_found_continue
+	 ; Port writes are 8 bytes
+	 add ix,bc ;8-6
+	 jr lookup_found_continue
+	
 	
 lookup_code_link_internal_with_bank_cached:
 	call.il lookup_code_cached_with_bank
@@ -620,54 +814,6 @@ internal_found_start:
 	lea ix,ix+RAM_PREFIX_SIZE
 	scf
 	ret
-	
-internal_found_new_subblock:
-	  cp -5
-	  jr c,internal_found_prefix
-	  add.s a,(ix-4)
-	  ;ASSERT_C
-	  inc e
-	  bit 2,e
-	  jr z,_ ; For RET/JR/JP/RST, offsets are normal
-	  inc ix  ; For CALL, offsets are stored -1
-_
-	  add hl,bc
-	  add iy,bc
-	  jr nc,foundloop_internal
-	  jr foundloop_internal_finish
-	  
-internal_found_prefix:
-	  ; Count CB-prefixed opcode cycles
-	  sbc a,c
-	  ; If we're stepping past a HALT, then continue
-	  jr c,foundloop_internal_continue
-	  ; Look up the second byte in the CB opcode table
-	  inc hl
-	  ld e,(hl)
-	  inc hl
-	  ex de,hl
-	  dec h
-	  ld c,(hl)
-	  inc h
-	  ex de,hl
-	  ; Check for (HL) access
-	  srl c
-	  jr nc,++_
-	  ; Check for BIT b,(HL)
-	  jr nz,_
-	  ; Set actual recompiled code size
-	  ld c,4
-	  ; Adjust cycle count for read
-	  inc a
-_
-	  ; Adjust cycle count for read/write
-	  sub 2
-_
-	  ; Add actual recompiled code size
-	  add ix,bc
-	  ; Restore GB instruction size
-	  ld c,2
-	  jr foundloop_internal_continue_2
 	
 lookup_code_link_internal:
 	call get_banked_address
@@ -701,41 +847,10 @@ lookup_code_link_internal_with_bank:
 	sbc hl,bc
 	push hl
 	 ex (sp),iy
-	 add.s hl,de
-	 push de
-	  ex de,hl
-	  GET_BASE_ADDR_NO_ASSERT
-	  add hl,de
-	  ld de,opcoderecsizes
-	  ld a,(ix+7)
-	  ld ix,(ix)
-	  lea ix,ix+RAM_PREFIX_SIZE
-foundloop_internal:
-	  ; Get current opcode
-	  ld e,(hl)
-	  ex de,hl
-	  ; Add recompiled instruction size
-	  ld c,(hl)
-	  add ix,bc
-	  ; Add cycles
-	  inc h
-	  sub (hl)
-	  inc h
-	  ; Add GB instruction size
-	  ld c,(hl)
-	  dec h
-	  dec h
-	  ex de,hl
-	  jr c,internal_found_new_subblock
-foundloop_internal_continue:
-	  add hl,bc
-foundloop_internal_continue_2:
-	  add iy,bc
-	  jr nc,foundloop_internal
-foundloop_internal_finish:
-	 pop de
-	 dec iy
-	 add iy,iy
+	 ld a,(ix+7)
+	 ld ix,(ix)
+	 lea ix,ix+RAM_PREFIX_SIZE
+	 call lookup_code_in_block
 	pop iy
 	ret c
 	jp lookup_code_link_internal_with_bank_cached
@@ -784,7 +899,7 @@ lookuploop:
 	 lea ix,ix-8
 	 ld a,ixh
 	 or ixl
-	 jr z,recompile_trampoline
+	 jr z,recompile
 	 ld hl,(ix+2)
 	 sbc hl,de
 	 jr z,lookupfoundstart
@@ -800,96 +915,13 @@ lookuploop:
 	  sbc hl,bc
 	  push hl
 	  pop iy
-	  add.s hl,de
-	  push de
-	   ex de,hl
-	   GET_BASE_ADDR_FAST
-	   add hl,de
-	   ld de,opcoderecsizes
-	   ld a,(ix+7)
-	   ld ix,(ix)
-lookup_found_loop:
-	   ; Get current opcode
-	   ld e,(hl)
-	   ex de,hl
-	   ; Add recompiled instruction size
-	   ld c,(hl)
-	   add ix,bc
-	   ; Add cycles
-	   inc h
-	   sub (hl)
-	   inc h
-	   ; Add GB instruction size
-	   ld c,(hl)
-	   dec h
-	   dec h
-	   ex de,hl
-	   jr c,lookup_found_new_subblock
-lookup_found_continue:
-	   add hl,bc
-lookup_found_continue_2:
-	   add iy,bc
-	   jr nc,lookup_found_loop
-lookup_found_loop_finish:
-	  pop de
-	  dec iy
-	  add iy,iy
+	  ld a,(ix+7)
+	  ld ix,(ix)
+	  call lookup_code_in_block
 	  jr nc,lookuploop_restore
 	 pop hl
 	pop iy
 	ret
-	
-lookup_found_new_subblock:
-	   cp -5
-	   jr c,lookup_found_prefix
-	   add.s a,(ix-4)
-	   ASSERT_C
-	   inc e
-	   bit 2,e
-	   jr z,_  ; For RET/JR/JP/RST, offsets are normal
-	   inc ix  ; For CALL, offsets are stored -1
-_
-	   add hl,bc
-	   add iy,bc
-	   jr nc,lookup_found_loop
-	   jr lookup_found_loop_finish
-	
-recompile_trampoline:
-	jr recompile
-	
-lookup_found_prefix:
-	   ; Count CB-prefixed opcode cycles
-	   sbc a,c
-	   ; If we're stepping past a HALT, then continue
-	   jr c,lookup_found_continue
-	   ; Look up the second byte in the CB opcode table
-	   inc hl
-	   ld e,(hl)
-	   inc hl
-	   ex de,hl
-	   dec h
-	   ld c,(hl)
-	   inc h
-	   ex de,hl
-	   ; Check for (HL) access
-	   srl c
-	   jr nc,++_
-	   ; Check for BIT b,(HL)
-	   jr nz,_
-	   ; Set actual recompiled code size
-	   ld c,4
-	   ; Adjust cycle count for read
-	   inc a
-_
-	   ; Adjust cycle count for read/write
-	   sub 2
-_
-	   ; Add actual recompiled code size
-	   add ix,bc
-	   ; Restore GB instruction size
-	   ld c,2
-	   jr lookup_found_continue_2
-	
 	
 ; Recompiles a new code block starting from a banked GB address.
 ;
@@ -1400,8 +1432,99 @@ _
 	jp (hl)
 #endmacro
 	
-	.block (-$)&255	
+	.block (203-$)&255	
+
+opcycleCB_hl:
+	; Check for BIT
+	jr z,opcycleCB_bit_hl
+	; 2b op, variable rec, 4cc
+	add ix,bc
+	ld c,3
+	add a,4
+	ret c
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+opcycleCB_bit_hl:
+	; 2b op, 4b rec, 3cc
+	lea ix,ix+4
+	ld c,3
+	add a,c
+	ret c
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+	
+opcycle_abs_read_write_special:
+	add ix,bc
+	ex de,hl
+	; Check read vs. write
+	bit 4,(hl)
+	inc hl
+	inc hl
+	jr z,opcycle_abs_write_special
+	; Check for port read
+	ld e,(hl)
+	inc hl
+	inc e
+	jr nz,opcycle_abs_read_write_special_finish
+	; Port reads are 6 bytes
+	lea ix,ix-2
+	jr opcycle_abs_read_write_special_finish
+	
+opcycle_abs_write_special:
+	; Check for MBC write
+	bit 7,(hl)
+	inc hl
+	jr nz,opcycle_abs_read_write_special_finish
+	; MBC writes are 4 bytes
+	lea ix,ix-4
+	jr opcycle_abs_read_write_special_finish
+	
+	.block (-$)&255
 opcycleroutines:
+opcycleCB:
+	; Look up second opcode byte in opcoderecsizes_CB
+	ex de,hl
+	inc hl
+	ld e,(hl)
+	inc hl
+	ex de,hl
+	inc h
+	inc h
+	ld c,(hl)
+	dec h
+	ex de,hl
+	ld e,(hl)
+	; Check for (HL) access
+	srl c
+	jr c,opcycleCB_hl
+	; 2b op, variable rec, 2cc
+	add ix,bc
+	ld c,3
+	add a,2
+	ret c
+	ex de,hl
+	ld l,(hl)
+	dec h
+	jp (hl)
+	
+	; 3b op, variable rec, 4cc
+opcycle_abs_read_write:
+	bit.s 0,(ix)
+	add ix,bc
+	jr z,opcycle_abs_read_write_finish
+	bit.s 5,(ix-3+1)
+	lea ix,ix+5-3
+	jr z,opcycle_abs_read_write_special
+opcycle_abs_read_write_finish:
+	ex de,hl
+	add hl,bc
+opcycle_abs_read_write_special_finish:
+	add a,4
+	OPCYCLE_NEXT
 	
 	; 1b op, 4b rec, 1cc
 opcycleROT:
@@ -1444,6 +1567,14 @@ opcycleEI:
 	dec h
 	jp (hl)
 	
+	; 3b op, 7b rec, 5cc
+opcycle08:
+	lea ix,ix+7
+	ex de,hl
+	add hl,bc
+	add a,5
+	jr opcycle_next
+	
 	; 2b op, 3b rec, 2cc
 opcycle2byte_ix:
 	inc de
@@ -1457,6 +1588,7 @@ opcycleF9:
 	inc de
 	ex de,hl
 	add a,2
+opcycle_next:
 	OPCYCLE_NEXT
 	
 	; 1b op, 6b rec, 2cc
@@ -1512,17 +1644,27 @@ opcycle3byte:
 	add a,c
 	OPCYCLE_NEXT
 	
-	; 2b op, 8b rec, 3cc
+	; 2b op, variable rec, 3cc
 opcycleE0:
-opcycleF0:
-	lea ix,ix+8
+	bit.s 0,(ix)
+	add ix,bc
+	jr nz,opcycleE0_port
 	inc de
 	inc de
 	ex de,hl
 	add a,c
 	OPCYCLE_NEXT
 	
+	; 2b op, variable rec, 3cc
+opcycleF0:
+	bit.s 0,(ix)
+	add ix,bc
+	inc de
+	jr z,opcycleF0_normal
+	jr opcycleF0_port
+	
 	; 2b op, 5b rec, 3cc
+opcycleE0_port:
 opcycleF8:
 	inc ix
 	; 2b op, 4b rec, 3cc
@@ -1532,70 +1674,15 @@ opcycle36:
 opcyclePOP:
 	inc ix
 	; 1b op, 3b rec, 3cc
+opcycleF0_port:
 opcycle34:
 opcycle35:
 opcycleF1:
 	add ix,bc
+opcycleF0_normal:
 	inc de
 	ex de,hl
 	add a,c
-	OPCYCLE_NEXT
-
-opcycleCB:
-	; Look up second opcode byte in opcoderecsizes_CB
-	ex de,hl
-	inc hl
-	ld e,(hl)
-	inc hl
-	ex de,hl
-	inc h
-	inc h
-	ld c,(hl)
-	dec h
-	ex de,hl
-	ld e,(hl)
-	; Check for (HL) access
-	srl c
-	jr c,opcycleCB_hl
-	; 2b op, variable rec, 2cc
-	add ix,bc
-	ld c,3
-	add a,2
-	ret c
-	ex de,hl
-	ld l,(hl)
-	dec h
-	jp (hl)
-opcycleCB_hl:
-	; Check for BIT
-	jr z,opcycleCB_bit_hl
-	; 2b op, variable rec, 4cc
-	add ix,bc
-	ld c,3
-	add a,4
-	ret c
-	ex de,hl
-	ld l,(hl)
-	dec h
-	jp (hl)
-opcycleCB_bit_hl:
-	; 2b op, 4b rec, 3cc
-	lea ix,ix+4
-	ld c,3
-	add a,c
-	ret c
-	ex de,hl
-	ld l,(hl)
-	dec h
-	jp (hl)
-
-	; 3b op, 8b rec, 4cc
-opcycleEA:
-opcycleFA:
-	lea ix,ix+8
-	ex de,hl
-	add hl,bc
-	add a,4
 	OPCYCLE_NEXT
 
 	; 2b op, 5b rec, 4cc
@@ -1608,14 +1695,6 @@ opcyclePUSH:
 	add ix,bc
 	ex de,hl
 	add a,4
-	OPCYCLE_NEXT
-	
-	; 3b op, 7b rec, 5cc
-opcycle08:
-	lea ix,ix+7
-	ex de,hl
-	add hl,bc
-	add a,5
 	OPCYCLE_NEXT
 	
 	; Bugged halt instruction
@@ -1917,7 +1996,7 @@ opcounttable:
 ;E8
 	.db opcycleE8 - opcycleroutines
 	.db opcycleE9 - opcycleroutines
-	.db opcycleEA - opcycleroutines
+	.db opcycle_abs_read_write - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
@@ -1935,7 +2014,7 @@ opcounttable:
 ;F8
 	.db opcycleF8 - opcycleroutines
 	.db opcycleF9 - opcycleroutines
-	.db opcycleFA - opcycleroutines
+	.db opcycle_abs_read_write - opcycleroutines
 	.db opcycleEI - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
 	.db opcycleINVALID - opcycleroutines
@@ -1984,7 +2063,8 @@ opcoderecsizes_CB:
 	.db 16,16,4,4,4,4,9,4
 	
 ; A table of recompiled opcode sizes.
-; Does not apply to block-ending or CB-prefix opcodes.
+; Does not apply to block-ending opcodes or variable-length implementations.
+; Currently CB, E0, EA, F0, and EA are variable-length.
 ; CALL opcodes are offset by 1 to make it easier to find sub-block cycles.
 opcoderecsizes:
 	.db 0,4,4,2,2,2,3,3
@@ -2018,14 +2098,15 @@ opcoderecsizes:
 	.db 12,0,19,0,11-1,11-1,2,9
 	.db 12,4,19,0,11-1,3,2,9
 	.db 12,0,19,0,11-1,0,2,9
-	.db 8,4,6,0,0,3,2,9
-	.db 5,0,8,0,0,0,2,9
-	.db 8,3,6,3,0,3,2,9
-	.db 5,3,8,3,0,0,2,9
+	.db 0,4,6,0,0,3,2,9
+	.db 5,0,0,0,0,0,2,9
+	.db 0,3,6,3,0,3,2,9
+	.db 5,3,0,3,0,0,2,9
 	
 ; A table of Game Boy opcode cycles. Block-ending opcodes are set to 0.
 ; Conditional branches are assumed not taken.
-; Prefix opcodes (i.e. CB) and HALT are set to -1, for efficient detection.
+; Opcodes with variable-length implementations (e.g. CB) and HALT are set to -1,
+; for efficient detection.
 opcodecycles:
 	.db 1,3,2,2,1,1,2,1
 	.db 5,2,2,2,1,1,2,1
@@ -2058,10 +2139,10 @@ opcodecycles:
 	.db 2,0,3,-1,4,4,2,4
 	.db 2,3,3,0,4,4,2,4
 	.db 2,0,3,0,4,0,2,4
-	.db 3,3,2,0,0,4,2,4
-	.db 4,0,4,0,0,0,2,4
-	.db 3,3,2,1,0,4,2,4
-	.db 3,2,4,1,0,0,2,4
+	.db -1,3,2,0,0,4,2,4
+	.db 4,0,-1,0,0,0,2,4
+	.db -1,3,2,1,0,4,2,4
+	.db 3,2,-1,1,0,0,2,4
 	
 ; A table of Game Boy opcode sizes.
 ; The HALT opcode defaults to 3 bytes, to include the following opcode bytes
@@ -3461,16 +3542,6 @@ opgenMBCorVRAMwrite:
 	 ld (hl),e
 	 inc hl
 	 ld (hl),d
-	 inc hl
-	 ld (hl),$18 ;JR $+4
-	 inc hl
-	 ld (hl),$02
-	 inc hl
-	 inc hl
-#ifdef DEBUG
-	 ld a,4
-	 call record_wasted_bytes
-#endif
 	pop de
 	jp opgen_next_swap_skip
 	
@@ -3531,14 +3602,8 @@ _
 	 ld (hl),$32
 	 inc hl
 	 ld (hl),de
-	 inc hl \ inc hl \ inc hl
-	 ld (hl),$21 ;LD HL,
 	 inc hl
 	 inc hl
-#ifdef DEBUG
-	 ld a,3
-	 call record_wasted_bytes
-#endif
 opgenRAMwrite_finish:
 	 inc hl
 	 ex de,hl
@@ -3583,16 +3648,14 @@ opgenFFwrite:
 opgenHMEMwrite:
 	ld b,mem_write_port_lut >> 8
 	ld.s a,(bc)
-	ld b,3 ;JR $+5 offset
 	; Check for direct write (no handler call)
 	cp write_port_direct - mem_write_port_routines
 	jr z,opgenHMEMwrite_direct
-	; Set bit 0 of B if a trampoline should be emitted, and also adjust
-	; the JR offset to $+8 if write is ignored
-	rl b
 	; Check for ignored write (no handler call)
 	cp write_port_ignore - mem_write_port_routines
-	jr z,opgenHMEMwrite_direct
+	jr z,opgenHMEMwrite_ignored
+	; Set bit 0 of B if a trampoline should be emitted
+	rl b
 	push hl
 	 ; Resolve the real handler address
 	 ld hl,z80codebase+mem_write_port_routines
@@ -3687,23 +3750,19 @@ opgen_port_write_no_trampoline:
 	
 opgenHMEMwrite_direct:
 	ex de,hl
-	ld (hl),$18 ;JR $+5 or JR $+8
-	inc hl
-	ld (hl),b
-	inc hl
-	inc hl
-	inc hl
-	inc hl
 	ld (hl),$32 ;LD ($FF00+n),A
 	inc hl
 	ld (hl),c
 	inc hl
 	ld (hl),$FF
-#ifdef DEBUG
-	ld a,b
-	add a,2
-	call record_wasted_bytes
-#endif
+	jp opgen_next_swap_skip
+	
+opgenHMEMwrite_ignored:
+	ex de,hl
+	ld (hl),$18 ;JR $+3
+	inc hl
+	ld (hl),$01
+	inc hl
 	jp opgen_next_swap_skip
 	
 _opgenE2:
@@ -3748,14 +3807,7 @@ _
 	 ld (hl),$3A
 	 inc hl
 	 ld (hl),de
-	 inc hl \ inc hl \ inc hl
-	 ld (hl),$21 ;LD HL,
-	 inc hl
-	 inc hl
-#ifdef DEBUG
-	 ld a,3
-	 call record_wasted_bytes
-#endif
+	 inc hl \ inc hl
 	pop de
 	jp opgen_next_swap_skip
 	
@@ -3813,10 +3865,6 @@ _
 	ld bc,readSTAThandler
 opgenHMEMreadroutine:
 	call opgen_emit_load_cycle_offset
-	ld (hl),$08 ;EX AF,AF'
-	inc hl
-	ld (hl),$5F ;LD E,A
-	inc hl
 	ld (hl),$CD ;CALL read_*_handler
 	inc hl
 	ld (hl),c
@@ -3825,19 +3873,11 @@ opgenHMEMreadroutine:
 	jp opgen_next_swap_skip
 	
 opgenHRAMread:
-	ld (hl),$18 ;JR $+5
-	inc hl
-	ld (hl),$03
-	inc hl \ inc hl \ inc hl \ inc hl
 	ld (hl),$3A ;LD A,(addr)
 	inc hl
 	ld (hl),c
 	inc hl
 	ld (hl),$FF
-#ifdef DEBUG
-	ld a,5
-	call record_wasted_bytes
-#endif
 	jp opgen_next_swap_skip
 	
 #ifdef SCHEDULER_LOG
