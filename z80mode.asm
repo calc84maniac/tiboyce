@@ -400,7 +400,7 @@ schedule_event_finish:
 	 ld (event_gb_address),hl
 #ifdef DEBUG
 	 ld a,(event_address+1)
-	 cp (event_value >> 8) + 1
+	 cp (event_debug_address >> 8) + 1
 	 jr nc,$
 #endif
 	 lea hl,ix
@@ -474,10 +474,15 @@ start_emulation:
 	ex af,af'
 	jr event_not_expired_start_emulation
 	
+#ifdef DEBUG
+event_debug_address:
+	.db 0
+#endif
+	
 do_event:
 	exx
 #ifdef DEBUG
-	ld hl,event_value
+	ld hl,event_debug_address
 	ld (event_address),hl
 #endif
 	ex af,af'
@@ -2187,7 +2192,7 @@ trigger_event:
 	 jr nz,trigger_event_no_remove
 #ifdef DEBUG
 	 ld a,(event_address+1)
-	 cp (event_value >> 8) + 1
+	 cp (event_debug_address >> 8) + 1
 	 jr c,$
 #endif
 	 ld a,(event_value)
@@ -2199,7 +2204,7 @@ event_address = $+1
 trigger_event_no_remove:
 #ifdef DEBUG
 	 ld a,(event_address+1)
-	 cp (event_value >> 8) + 1
+	 cp (event_debug_address >> 8) + 1
 	 jr nc,$
 _
 #endif

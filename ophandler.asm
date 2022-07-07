@@ -1822,7 +1822,7 @@ schedule_event_now_unresolved:
 	ld ixl,a
 	ld ixh,d
 #ifdef DEBUG
-	ld hl,event_value
+	ld hl,event_debug_address
 	ld.sis (event_address),hl
 #endif
 	; This is a code path that could target the flush handler
@@ -1897,7 +1897,7 @@ _
 	ld ixl,a
 	ld ixh,d
 #ifdef DEBUG
-	ld hl,event_value
+	ld hl,event_debug_address
 	ld.sis (event_address),hl
 #endif
 	jp.sis do_event_pushed
@@ -2004,7 +2004,7 @@ schedule_event_now:
 	ld ixl,a
 	ld ixh,d
 #ifdef DEBUG
-	ld hl,event_value
+	ld hl,event_debug_address
 	ld.sis (event_address),hl
 #endif
 	; This is a code path that could target the flush handler
