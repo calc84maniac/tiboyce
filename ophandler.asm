@@ -417,11 +417,19 @@ lyc_write_disable_smc = $
 	dec hl
 	ld a,b
 	cp (hl)
+	; Check if HDMA is enabled
+	ld l,HDMA5 & $FF
+	ld a,(hl)
+	rla
 	; Set or reset the LYC coincidence bit in STAT
 	ld l,STAT & $FF
 	ld c,(hl)
 	res 2,c
 	ld d,c
+	; Indicate the HDMA state
+	jr c,_
+	res 7,d
+_
 	jr nz,_
 	set 2,c
 	; If LYC interrupts are enabled, handle interrupt blocking logic
@@ -490,6 +498,14 @@ stat_write_disable_smc = $
 	rra
 	rra
 	and $78
+	; Check if HDMA is active
+	ld l,HDMA5 & $FF
+	bit 7,(hl)
+	jr nz,_
+	; If so, indicate HDMA enabled and ignore any changes to hblank bit
+	res 7,d
+	res 3,e
+_
 	; Check if interrupt condition was already true
 	tst a,c
 	jr nz,_
@@ -518,6 +534,12 @@ _
 	call stat_setup
 	; Reschedule the current PPU event
 	jp.sis reschedule_event_PPU
+	
+stat_setup_hblank_post_vblank:
+	ld ix,z80codebase+ppu_expired_mode0_line_0
+	CPU_SPEED_IMM16($+1)
+	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
+	jp stat_setup_next_from_vblank
 	
 do_lcd_disable:
 	; Set STAT mode 0 and LY=0
@@ -613,12 +635,6 @@ _
 stat_setup_hblank_trampoline:
 	jr stat_setup_hblank
 	
-stat_setup_hblank_post_vblank:
-	ld ix,z80codebase+ppu_expired_mode0_line_0
-	CPU_SPEED_IMM16($+1)
-	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
-	jr stat_setup_next_from_vblank
-	
 stat_setup_hblank_lyc_match:
 	lea ix,ix-ppu_expired_mode0+ppu_expired_mode0_lyc_match
 	jr stat_setup_done
@@ -644,6 +660,7 @@ stat_setup_done_trampoline:
 	jr stat_setup_done
 	
 	; Input: C = current value of STAT
+	;        Additionally, bit 7 is reset if HDMA is active
 stat_setup_c:
 	ld d,c
 	; Input: D = current writable bits of STAT, C = current read-only bits of STAT
@@ -663,6 +680,9 @@ _
 	; Check if hblank interrupt is enabled (blocks OAM)
 	bit 3,d
 	jr nz,stat_setup_hblank_trampoline
+	; Check if HDMA is enabled (treat as hblank for now)
+	bit 7,d
+	jr z,stat_setup_hblank_trampoline
 	; Check if OAM interrupt is enabled
 	bit 5,d
 	jr nz,stat_setup_oam
@@ -1023,9 +1043,16 @@ _
 	; Leave mode as 0, even though it's really mode 2
 	ld (hl),c
 	jr nz,_
-	sbc hl,hl ;ld hl,active_ints
+	ld l,h
+	inc hl ;ld hl,active_ints
 	set.s 1,(hl)
-	dec h
+	dec hl
+_
+	; Check if HDMA is active and indicate it to STAT setup
+	ld l,HDMA5 & $FF
+	bit 7,(hl)
+	jr nz,_
+	res 7,c
 _
 	
 	; Set LY and STAT cache times for line 0, mode 2 (fake mode 0)
@@ -1249,10 +1276,15 @@ hdma_transfer_overflow:
 hdma_overflow_enable_catchup_smc = $+1
 	   ld r,a
 	  pop de
-	  ; Set the STAT expiration time, since we're not returning
-	  ld hl,-MODE_0_CYCLES
+	  ; Finish updating LY/STAT, since we're not returning
+	  ld a,(z80codebase+ppu_mode0_LY)
+	  ld hl,hram_base+LY
+	  ld (hl),a
+	  ld l,-MODE_0_CYCLES
 	  add hl,de
 	  ld.sis (nextupdatecycle_STAT),hl
+	  ld.sis (nextupdatecycle_LY),hl
+	  ; Leave bit 7 of C set to disable HDMA logic
 	  call stat_setup_c
 	 pop bc
 	pop ix
@@ -1338,20 +1370,17 @@ hdma_enable_disable_helper:
 	.db $11 ;LD DE,
 	 bit 6,a
 	 nop
-	ld a,c
-	set 3,a
 	jr nz,_
 	ld hl,$18 | ((ppu_hdma_trigger - (ppu_hdma_enable_smc+2)) << 8)
 	ld de,$18 | ((ppu_hdma_trigger_lyc_match - (ppu_hdma_enable_lyc_match_smc+2)) << 8)
-	; Force hblank timing selection
-	ld a,c
-	set 3,c
+	; Indicate HDMA enabled
+	res 7,c
 _
 	ld.sis (ppu_hdma_enable_smc),hl
 	ld.sis (ppu_hdma_enable_lyc_match_smc),de
-	; Only update schedule on change
-	xor c
-	jp.sis z,z80_pop_restore_swap_ret
+	; Only update schedule if hblank interrupt is disabled
+	bit 3,c
+	jp.sis nz,z80_pop_restore_swap_ret
 	push ix
 	 call stat_setup_c
 	pop ix

@@ -1374,6 +1374,18 @@ _
 	 ld.s (hl),a
 	 ; Update PPU scheduler state based on LY and STAT caches
 	 ld c,a
+	 ; Check if HDMA is enabled
+	 ld l,HDMA5 & $FF
+	 bit 7,(hl)
+	 jr nz,_
+	 ; If so, indicate it to STAT setup
+	 res 7,c
+	 ; Also set up HDMA SMC
+	 ld hl,$18 | ((ppu_hdma_trigger - (ppu_hdma_enable_smc+2)) << 8)
+	 ld.sis (ppu_hdma_enable_smc),hl
+	 ld hl,$18 | ((ppu_hdma_trigger_lyc_match - (ppu_hdma_enable_lyc_match_smc+2)) << 8)
+	 ld.sis (ppu_hdma_enable_lyc_match_smc),hl
+_
 	 call stat_setup_c
 	; Restore original DIV counter
 	pop bc
@@ -1448,8 +1460,21 @@ _
 	inc a
 	ld (z80codebase+audio_counter+1),a
 	
-	lea hl,iy-ioregs+NR10
+	; Copy HDMA registers to internal variables
 	ld ix,z80codebase + audio_port_masks
+	lea hl,iy-ioregs+HDMA4
+	lea de,ix + hdma_dst_ptr + 1 - audio_port_masks
+	ld bc,4
+	lddr
+	; Replace with $FF
+	inc hl
+	dec bc
+	ld (hl),c
+	inc hl
+	ld (hl),bc
+	
+	; Copy audio registers to internal variables and apply masks
+	ld l,NR10 & $FF
 	ld b,NR52 - NR10
 _
 	ld a,(hl)
@@ -1859,6 +1884,12 @@ _
 	ld hl,z80codebase + audio_port_values
 	lea de,ix-ioregs+NR10
 	ld bc,NR52 - NR10
+	ldir
+	
+	; Do the same for the HDMA source/dest
+	ld l,HDMA1 & $FF
+	ld e,l
+	ld c,HDMA5-HDMA1
 	ldir
 	
 	; Save system type
