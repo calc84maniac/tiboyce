@@ -1,3 +1,17 @@
+waitloop_found_uncond_jump:
+	; See if we reached the loop end
+	inc de
+	inc de
+	inc de
+	inc de
+	pop.s hl
+	push.s hl
+	sbc.s hl,de	;Carry is reset
+	ret nz
+	ld b,h
+	ld c,l
+	jp waitloop_identified
+
 ; Filters output from decode_branch based on whether a waitloop is detected.
 ;
 ; In general, a waitloop consists of a loop for which the output state of the
@@ -45,14 +59,14 @@ identify_waitloop:
 	cp $CB		;Bitwise ops
 	inc hl
 	jr z,waitloop_found_read_bitwise
-	; Consume 3 bytes of recompiled code
-	inc de
-	inc de
-	inc de
 	cp $F0		;LD A,($FF00+nn)
 	jr z,waitloop_found_read_1
 	cp $FA		;LD A,(nnnn)
 	jr z,waitloop_found_read_2
+	; Consume 3 bytes of recompiled code
+	inc de
+	inc de
+	inc de
 	cp $18		;JR
 	jr z,waitloop_found_uncond_jump
 	cp $C3
@@ -68,44 +82,54 @@ identify_waitloop:
 	ret nz
 	jr waitloop_found_read_hl
 	
-waitloop_found_uncond_jump:
-	; See if we reached the loop end
-	inc de
-	inc de
-	inc de
-	inc de
-	pop.s hl
-	push.s hl
-	sbc.s hl,de	;Carry is reset
-	ret nz
-	ld b,h
-	ld c,l
-	jr waitloop_identified_trampoline
-	
 waitloop_found_read_1:
 	; Use 8-bit immediate as HRAM read address
 	ld c,(hl)
+	; Check for direct vs. port read
+	ld.s a,(de)
+	rra
 	; Set -1 for read in 3rd cycle
 	ld a,-1
-	; Consume immediate value
-	inc hl
 	; Z flag is set from earlier comparison
-	jr _
+	jr nc,waitloop_found_read_3byte
+	; Consume 3 bytes of recompiled code
+	inc de
+	inc de
+	inc de
+	jr waitloop_found_read_3byte
 	
 waitloop_found_read_2:
 	; Use 16-bit immediate as read address
 	ld c,(hl)
 	inc hl
-	; Set Z flag if read is HRAM
-	ld a,$FF
-	cp (hl)
-	inc hl
-	; Set -2 for read in fourth cycle, and preserve Z flag
-	rla
+	; Set Z flag for HRAM read
+	ld.s a,(de)
+	bit 0,a
+	jr z,_
+	; Consume 2 bytes of recompiled code
+	inc de
+	ld.s a,(de)
+	inc de
+	; Reset Z flag for direct read
+	bit 5,a
+	jr nz,_
+	; Consume 1 byte of recompiled code
+	inc de
+	; Set Z flag for port read
+	ld a,(hl)
+	inc a
+	jr z,_
+	; Reset Z flag for banked read
+	; Consume 2 bytes of recompiled code
+	inc de
+	inc de
 _
-	; Consume 5 more bytes of recompiled code
-	inc de
-	inc de
+	; Set -2 for read in fourth cycle, and preserve Z flag
+	ld a,-2
+waitloop_found_read_3byte:
+	; Consume immediate value
+	inc hl
+	; Consume 3 bytes of recompiled code
 	inc de
 	inc de
 	inc de
@@ -210,7 +234,6 @@ waitloop_found_data_op:
 	push.s hl
 	 sbc.s hl,de	;Carry is reset
 	pop hl
-waitloop_identified_trampoline:
 	jr z,waitloop_identified
 	ret c
 	
