@@ -1371,22 +1371,23 @@ _
 	 call.is updateSTAT_full_for_setup
 	 ; Ensure top bit of STAT is set, for compatibility with old save states
 	 or $80
-	 ld.s (hl),a
-	 ; Update PPU scheduler state based on LY and STAT caches
-	 ld c,a
-	 ; Check if HDMA is enabled
-	 ld l,HDMA5 & $FF
-	 bit 7,(hl)
+	 ; Force mode 0 when LCD is off to prevent HDMA triggers
+	 bit 7,(iy-ioregs+LCDC)
 	 jr nz,_
-	 ; If so, indicate it to STAT setup
-	 res 7,c
-	 ; Also set up HDMA SMC
-	 ld hl,$18 | ((ppu_hdma_trigger - (ppu_hdma_enable_smc+2)) << 8)
-	 ld.sis (ppu_hdma_enable_smc),hl
-	 ld hl,$18 | ((ppu_hdma_trigger_lyc_match - (ppu_hdma_enable_lyc_match_smc+2)) << 8)
-	 ld.sis (ppu_hdma_enable_lyc_match_smc),hl
+	 and $FC
 _
+	 ld.s (hl),a
+	 ld c,a
+	 
+	 ; Update PPU scheduler state based on LY and STAT caches
 	 call stat_setup_c
+	 
+	 ; Check if HDMA is enabled
+	 bit 7,(iy-ioregs+HDMA5)
+	 jr nz,_
+	 ; If so, enable its event
+	 call.is schedule_hdma_for_setup
+_
 	; Restore original DIV counter
 	pop bc
 	

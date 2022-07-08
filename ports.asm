@@ -623,10 +623,10 @@ _writeHDMA5:
 	exx
 	ld a,l
 	exx
-	rlca
-	jr c,enableHDMA
+	add a,a
 	bit 7,(hl)
-	jr z,disableHDMA
+	jr z,disableorupdateHDMA
+	jp c,enableHDMA
 	rrca
 	ld (hl),a
 	; Save the original EI delay event and replace it
@@ -642,17 +642,73 @@ gdma_event_restore_smc = $+1
 	push hl
 	jp.lil gdma_transfer_helper
 
+disableorupdateHDMA:
+	jr c,updateHDMA
 disableHDMA:
-	ld a,(hl)
-	rlca
-enableHDMA:
-	ccf
-	rra
+	set 7,(hl)
+	ld hl,event_counter_checkers_ei_delay
+	ld (event_counter_checkers_ei_delay_smc_1),hl
+	ld (event_counter_checkers_ei_delay_smc_2),hl
+	ld hl,(event_counter_checkers_ei_delay_2)
+	ld (event_counter_checkers_ei_delay),hl
+_
+	ld a,e
+	ex af,af'
+	exx
+	ret
+	
+updateHDMA:
+	rrca
 	ld (hl),a
-	push de
-	 push bc
-	  call updateSTAT
-	  jp.lil hdma_enable_disable_helper
+	jr -_
+	
+schedule_hdma:
+	ld hl,event_counter_checkers_ei_delay
+	ld bc,(hl)
+	ld (hl),hdma_counter_checker & $FF
+	inc hl
+	ld (hl),hdma_counter_checker >> 8
+	inc hl
+	ld (hl),bc
+	ld (event_counter_checkers_ei_delay_smc_1),hl
+	ld (event_counter_checkers_ei_delay_smc_2),hl
+	ld a,(STAT)
+	and 3
+	dec a
+	jr z,schedule_hdma_vblank
+	rlca
+	CPU_SPEED_IMM8($+1)
+	ld hl,-MODE_0_CYCLES
+	jr nc,_
+	CPU_SPEED_IMM8($+1)
+	ld hl,MODE_2_CYCLES + MODE_3_CYCLES
+_
+	ld a,(LY)
+	adc a,256-144
+	jr c,schedule_hdma_last_line
+	ld bc,(nextupdatecycle_LY)
+	sbc hl,bc
+schedule_hdma_finish:
+	ld (hdma_counter),hl
+	ld (hdma_line_counter),a
+	ret
+	
+schedule_hdma_last_line:
+	CPU_SPEED_IMM16($+1)
+	ld bc,(CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES
+	jr _
+schedule_hdma_vblank:
+	CPU_SPEED_IMM16($+1)
+	ld bc,-((CYCLES_PER_SCANLINE * 143) + MODE_0_CYCLES)
+_
+	ld hl,(vblank_counter)
+	add hl,bc
+	ld a,256-144
+	jr schedule_hdma_finish
+	
+schedule_hdma_for_setup:
+	call schedule_hdma
+	ret.l
 	
 write_audio_enable_disable:
 	xor b

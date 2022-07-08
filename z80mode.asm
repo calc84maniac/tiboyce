@@ -5,6 +5,8 @@ z80code:
 	
 active_ints:
 	.db 0
+hdma_line_counter:
+	.db 0
 waitloop_sentinel:
 	.db 0
 	
@@ -919,7 +921,6 @@ ppu_expired_mode0_line_0:
 	sbc hl,hl ;ld hl,active_ints
 ppu_expired_mode0:
 	; Request STAT interrupt
-ppu_hdma_enable_smc = $
 	set 1,(hl) ;active_ints
 	; Set mode 0
 	ld hl,STAT
@@ -968,7 +969,6 @@ ppu_expired_mode0_lyc_match:
 	or 4
 	ld (hl),a
 	; Block mode 0 interrupt during LYC coincidence, if enabled
-ppu_hdma_enable_lyc_match_smc = $
 	bit 6,a
 	jr nz,ppu_mode0_blocked
 	; Request STAT interrupt
@@ -982,34 +982,13 @@ ppu_mode2_prepare_vblank:
 	ld a,(LYC)
 	cp 143
 	jr c,_
-	jr nz,ppu_expired_pre_vblank
+	jp nz,ppu_expired_pre_vblank
 	; If LYC is on line 143, set coincidence bit
 	set 2,(hl)
 _
 	; Set next line event to LYC
 	ld (ppu_mode2_event_line),a
-	jr ppu_expired_pre_vblank
-	
-ppu_hdma_trigger:
-	ld hl,STAT
-	ld a,(hl)
-	and $F8
-	ld (hl),a
-	; Request STAT interrupt only if enabled
-	cpl
-	and $08
-ppu_hdma_trigger_finish:
-	jr nz,_
-	sbc hl,hl ;ld hl,active_ints
-	set 1,(hl)
-_
-	jp.lil hdma_transfer_helper
-	
-ppu_hdma_trigger_lyc_match:
-	; Request STAT interrupt only if LYC match disabled and mode 0 enabled
-	and $48
-	cp $08
-	jr ppu_hdma_trigger_finish
+	jp ppu_expired_pre_vblank
 	
 ppu_mode0_prepare_vblank:
 	; Reset scheduled time and offset
@@ -1336,6 +1315,68 @@ serial_expired_handler:
 	res 7,(hl)
 	call disabled_counter_checker
 disabled_counter_checker:
+	ret
+	
+hdma_immediate_handler:
+	; Do an immediate transfer, then check the time until the next transfer
+	ld a,(LCDC)
+	rla
+	jr nc,hdma_immediate_lcd_off
+	call hdma_do_transfer
+	
+hdma_counter_checker:
+hdma_counter = $+1
+	ld hl,0
+	or a
+	sbc hl,bc
+	jr z,hdma_expired_handler
+	add hl,de
+	ret c
+	ex de,hl
+	sbc hl,de
+	ex de,hl
+	ret
+	
+hdma_immediate_lcd_off:
+	call hdma_do_transfer
+	
+hdma_lcd_off_handler:
+	ret
+	
+hdma_expired_handler:
+	inc hl ;hdma_line_counter
+	inc (hl)
+	jr z,hdma_schedule_next_vblank
+	CPU_SPEED_IMM8($+1)
+	ld l,CYCLES_PER_SCANLINE
+hdma_schedule_next:
+	add hl,bc
+	ld (hdma_counter),hl
+	or a
+	sbc hl,bc
+	add hl,de
+	jr c,hdma_do_transfer
+	ex de,hl
+	sbc hl,de
+	ex de,hl
+hdma_do_transfer:
+	jp.lil hdma_transfer_helper
+	
+hdma_schedule_next_vblank:
+	ld (hl),256-144
+	CPU_SPEED_IMM16($+1)
+	ld hl,CYCLES_PER_SCANLINE * 11
+	jr hdma_schedule_next
+	
+hdma_transfer_finish:
+	ret p
+hdma_transfer_overflow:
+	; Set SP directly in case this was an immediate HDMA
+	ld sp,event_counter_checkers_ei_delay_2
+	ex (sp),hl
+	push hl
+	ld (event_counter_checkers_ei_delay_smc_1),sp
+	ld (event_counter_checkers_ei_delay_smc_2),sp
 	ret
 	
 decode_block_bridge:
@@ -1916,6 +1957,7 @@ ophandlerEI_delay_expired:
 	; An event is scheduled for the current cycle, so we have to delay the
 	; actual enabling of the IME flag.
 	ld hl,schedule_ei_delay
+event_counter_checkers_ei_delay_smc_1 = $+1
 	ld (event_counter_checkers_ei_delay),hl
 ophandlerEI_no_interrupt:
 	; IME did not change, which also means no need to check for interrupts
@@ -2116,6 +2158,25 @@ tima_reschedule_helper:
 	pop bc ; Restore current cycle count
 	jr reschedule_event_any
 	
+enableHDMA:
+	rrca
+	ld (hl),a
+	push bc
+	 call updateSTAT
+	 call schedule_hdma
+	 ; Get the relative time of the event from the currently scheduled event
+	 ld b,h
+	 ld c,l
+	 ld hl,i ; Resets carry
+	 sbc hl,bc
+	pop bc
+	ld a,(STAT)
+	and 3
+	jr nz,_
+	ld hl,hdma_immediate_handler
+	ld (event_counter_checker_slot_HDMA),hl
+	jr trigger_event
+	
 reschedule_event_PPU:
 	 pop bc
 	 ; Get the relative time of the event from the currently scheduled event
@@ -2123,6 +2184,7 @@ reschedule_event_PPU:
 	 ld hl,i
 	 add hl,de
 	pop de
+_
 	; Calculate current cycle count from block offset
 	ld a,e
 	add a,c
@@ -2333,6 +2395,7 @@ ophandlerF3:
 	ld (hl),0
 	; Disable any delayed EI
 	ld hl,event_counter_checkers_done
+event_counter_checkers_ei_delay_smc_2 = $+1
 	ld (event_counter_checkers_ei_delay),hl
 	ret
 	
@@ -2753,7 +2816,10 @@ event_counter_checker_slot_timer:
 	.dw disabled_counter_checker
 event_counter_checker_slot_serial:
 	.dw disabled_counter_checker
+event_counter_checker_slot_HDMA:
 event_counter_checkers_ei_delay:
+	.dw event_counter_checkers_done
+event_counter_checkers_ei_delay_2:
 	.dw event_counter_checkers_done
 	
 	CPU_SPEED_END()

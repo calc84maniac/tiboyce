@@ -19,7 +19,6 @@ ApplyConfiguration:
 	ld (z80codebase+ppu_mode0_enable_catchup_smc),a
 	ld (z80codebase+ppu_mode2_enable_catchup_smc),a
 	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
-	ld (hdma_overflow_enable_catchup_smc),a
 	
 	; Frameskip value
 	ld ix,FrameskipValue
