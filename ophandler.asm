@@ -982,7 +982,7 @@ _
 	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
 	
 	; Enable cache updates for STAT and LY registers
-	ld a,$ED ;LD HL,I
+	ld a,$25 ;DEC H
 	ld (z80codebase+updateSTAT_disable_smc),a
 	ld (z80codebase+updateLY_disable_smc),a
 	

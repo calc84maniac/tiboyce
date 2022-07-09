@@ -814,7 +814,16 @@ op_read_hl_port_l_unchecked:
 	ret
 	
 op_read_hl_STAT:
-	call updateSTAT
+	; Quickly test to see if STAT is valid for this memory access
+	; Get the value of DIV at the end of the JIT block
+	ld hl,i
+	add hl,de
+	ld b,$FF
+	add hl,bc
+	ld bc,(nextupdatecycle_STAT)
+	add hl,bc
+	inc h
+	call nz,updateSTAT_fast
 	ld a,e
 	exx
 	ex af,af'
@@ -824,7 +833,14 @@ op_read_hl_STAT:
 	ret
 	
 op_read_hl_LY:
-	call updateLY
+	ld hl,i
+	add hl,de
+	ld b,$FF
+	add hl,bc
+	ld bc,(nextupdatecycle_LY)
+	add hl,bc
+	inc h
+	call nz,updateLY_fast
 	ld a,e
 	exx
 	ex af,af'
@@ -982,7 +998,17 @@ readSTAThandler:
 	; Outputs: AFBCDEHL' are unswapped, STAT read into A
 	; Destroys: BC', E', HL'
 op_read_any_STAT:
-	call updateSTAT
+	; Quickly test to see if STAT is valid for this memory access
+	; Get the value of DIV at the end of the JIT block
+	ld hl,i
+	add hl,de
+	ld b,$FF
+	add hl,bc
+nextupdatecycle_STAT = $+1
+	ld bc,0
+	add hl,bc
+	inc h
+	call nz,updateSTAT_fast
 	ld a,e
 	ex af,af'
 	exx
@@ -996,7 +1022,17 @@ readLYhandler:
 	; Outputs: AFBCDEHL' are unswapped, LY read into A
 	; Destroys: BC', E', HL'
 op_read_any_LY:
-	call updateLY
+	; Quickly test to see if LY is valid for this memory access
+	; Get the value of DIV at the end of the JIT block
+	ld hl,i
+	add hl,de
+	ld b,$FF
+	add hl,bc
+nextupdatecycle_LY = $+1
+	ld bc,0
+	add hl,bc
+	inc h
+	call nz,updateLY_fast
 	ld a,e
 	ex af,af'
 	exx
@@ -1008,16 +1044,6 @@ op_read_any_DIV_TIMA:
 	; Inputs: AFBCDEHL' are swapped, C=block cycle offset, DE=cycle counter
 	; Outputs: AFBCDEHL' are unswapped, TIMA read into A
 	; Destroys: BC', E', HL'
-	call updateTIMA
-	ld a,e
-	ex af,af'
-	exx
-	ld a,(TIMA)
-	ret
-	
-readTIMAhandler:
-	ex af,af'
-	ld e,a
 	call updateTIMA
 	ld a,e
 	ex af,af'
@@ -1101,7 +1127,7 @@ op_read_c_hmem:
 	ld e,a
 	ld a,b
 	cp STAT & $FF
-	jr z,op_read_any_STAT
+	jp z,op_read_any_STAT
 	cp LY & $FF
 	jr z,op_read_any_LY
 	sub IF & $FF
@@ -1143,6 +1169,16 @@ _
 	ld (hl),RST_GET_HL_READ_PTR
 	ex af,af'
 	jp (hl)
+	
+readTIMAhandler:
+	ex af,af'
+	ld e,a
+	call updateTIMA
+	ld a,e
+	ex af,af'
+	exx
+	ld a,(TIMA)
+	ret
 	
 	
 ;==============================================================================
@@ -1221,19 +1257,19 @@ updateSTAT_push:
 updateSTAT:
 	; Quickly test to see if STAT is valid for this memory access
 	; Get the value of DIV at the end of the JIT block
-updateSTAT_disable_smc = $
-	ld hl,i ; Replaced with RET when LCD is disabled
+	ld hl,i
 	add hl,de
 	ld b,$FF
 	add hl,bc
-nextupdatecycle_STAT = $+1
-	ld bc,0
+	ld bc,(nextupdatecycle_STAT)
 	add hl,bc
 	inc h
 	ret z
+updateSTAT_fast:
+updateSTAT_disable_smc = $
 	; Now check to see if we are within one scanline after the update time
 	; This limitation is needed to ensure the STAT update time is still valid
-	dec h
+	dec h ; Replaced with RET when LCD is disabled
 	jr nz,updateSTAT_full
 	ld a,l
 	CPU_SPEED_IMM8($+1)
@@ -1490,22 +1526,10 @@ updateSTAT_full_for_setup:
 	call updateSTAT_full
 	ret.l
 	
-updateLY:
-	; Quickly test to see if LY is valid for this memory access,
-	; or during the entire block if no cycle info is available
-	; Get the value of DIV at the end of the JIT block
+updateLY_fast:
 updateLY_disable_smc = $
-	ld hl,i ; Replaced with RET when LCD is disabled
-	add hl,de
-	ld b,$FF
-	add hl,bc
-nextupdatecycle_LY = $+1
-	ld bc,0
-	add hl,bc
-	inc h
-	ret z
 	; Now check to see if we are within one scanline after the update time
-	dec h
+	dec h  ; Replaced with RET when LCD is disabled
 	jr nz,updateSTAT_full_for_LY_trampoline
 updateLY_from_STAT:
 	ld a,l
