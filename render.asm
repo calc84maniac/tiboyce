@@ -32,10 +32,6 @@ draw_next_sprite_2:
 	jr z,draw_sprites_done
 gbc_draw_sprites_smc_3 = $+3
 	ld.s bc,(ix-4) ;-$60 for GBC
-	dec b
-	ld a,b
-	cp 167
-	jr nc,draw_next_sprite
 	ld a,c
 draw_sprite_top_smc = $+1
 	sub 1
@@ -67,7 +63,7 @@ _
 	jr ++_
 _
 	ld e,a
-	ld d,3
+	ld d,6
 	mlt de
 	add hl,de
 	xor a
@@ -75,14 +71,18 @@ _
 	ld sp,hl
 	 
 gbc_render_start = $
+	ld hl,vram_pixels_start
+	ld l,a
+	ld a,b
+	dec a
+	cp 167
+	; TODO: Handle per-scanline limits
+	jr nc,draw_next_sprite
 	pea.s ix-3
 	 ld.s de,(ix-2)
 	 inc c
 	 ld ixl,c
 	 ld c,e
-	 ld hl,vram_pixels_start
-	 ld l,a
-	 ld a,b
 	 ld b,64
 LCDC_2_smc_3_gb = $+1
 	 res 0,b		;res 0,c when 8x16 sprites
@@ -133,6 +133,7 @@ _
 	 jr nz,draw_sprite_flip
 	
 draw_sprite_normal_row:
+	 inc sp \ inc sp \ inc sp
 	 pop de
 	 ld l,a
 	 ld a,iyl
@@ -163,6 +164,7 @@ _
 draw_sprite_flip:
 	 xor 7
 draw_sprite_flip_row:
+	 inc sp \ inc sp \ inc sp
 	 pop de
 	 ld l,a
 	 ld a,iyl
@@ -203,6 +205,7 @@ _
 	 add a,$80
 	 ld (draw_sprite_priority_hdir_2),a
 draw_sprite_priority_row:
+	 inc sp \ inc sp \ inc sp
 	 pop de
 	 ld a,iyl
 	 add a,e

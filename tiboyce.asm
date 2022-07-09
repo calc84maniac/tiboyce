@@ -622,12 +622,19 @@ gbc_obj_opaque_colors = gbc_bg_opaque_colors + (24*2)
 ; Conveniently this fits in a 256-byte space along with the BG palette colors.
 recompile_cycle_offset_stack = overlapped_bg_palette_colors + 256
 
-; A list of scanline start addresses. 144*2 pointers in size.
+; Two arrays of scanline information, one for each double buffer.
+; Offset 0: Pointer to scanline sprite usage count.
+; Offset 3: Pointer to the first pixel of the scanline in the frame buffer.
 scanlineLUT_1 = recompile_cycle_offset_stack
-scanlineLUT_2 = scanlineLUT_1 + (144*3)
+scanlineLUT_2 = scanlineLUT_1 + (144*6)
+
+; One byte for each scanline indicating the number of sprites remaining
+; in the current frame. Filled with 10 at the start of each frame, and
+; decremented by 1 each time a sprite is rendered on that scanline.
+scanline_sprite_counts = scanlineLUT_2 + (144*6)
 
 ; A list of VAT entries for found ROM files. 256 pointers in size.
-romListStart = scanlineLUT_2 + (144*3)
+romListStart = scanline_sprite_counts + 144
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Game Boy Color only data

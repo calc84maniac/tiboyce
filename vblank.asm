@@ -496,6 +496,23 @@ prepare_next_frame_gbc_smc = $
 	
 prepare_next_frame_gbc_no_adjust:
 prepare_next_frame_gbc_adjust:
+	; Fill the scanline usage LUT
+	or a
+	sbc hl,hl
+	add hl,sp
+	ld b,144/18
+	ld de,$0A0A0A
+	ld sp,scanline_sprite_counts + 144
+_
+	push de
+	push de
+	push de
+	push de
+	push de
+	push de
+	djnz -_
+	ld sp,hl
+	
 	; Copy current palette values to the internal palette buffer,
 	; without adjusting colors
 	ld hl,z80codebase+gbc_bg_palette_data
@@ -1043,11 +1060,11 @@ convert_palette_loop:
 	  call convert_palette_setup
 	  ; Convert all scanlines
 convert_palette_multiple_row_loop:
-	  ld hl,(ix)
+	  ld hl,(ix+3)
 	  ld b,convert_palette_row_loop_count
 convert_palette_row_smc_1 = $+1
 	  call convert_palette_row
-	  lea ix,ix+3
+	  lea ix,ix+6
 	  dec c
 	  jr nz,convert_palette_multiple_row_loop
 	 pop hl
@@ -1080,13 +1097,13 @@ BGP_max_value = $+1
 	  ; Set up palette conversion LUT
 	  call convert_palette_setup
 	  ; Convert this scanline
-	  ld hl,(ix)
+	  ld hl,(ix+3)
 	  ld b,convert_palette_row_loop_count
 convert_palette_row_smc_2 = $+1
 	  call convert_palette_row
 	 pop hl
 _
-	 lea ix,ix+3
+	 lea ix,ix+6
 	 dec c
 	 jr nz,convert_multiple_palettes_row_loop
 convert_palette_loop_continue:
@@ -1315,8 +1332,8 @@ gbc_render_save_spl_smc = $+1
 render_scanline_loop:
 	   push bc
 	    ; Get current scanline pointer from LUT
-	    ld de,(iy)
-	    lea iy,iy+3
+	    ld de,(iy+3)
+	    lea iy,iy+6
 	   
 	    ; Zero flag is reset
 LCDC_0_7_smc = $
@@ -1409,6 +1426,16 @@ do_window_trigger:
 	    sub -$37 ; SCF (also set C here)
 	    ld (window_trigger_smc),a
 	    jr do_window_trigger_continue
+
+draw_sprite_offscreen:
+	pop hl
+	ld b,ixl
+_
+	dec (hl)
+	inc hl
+	djnz -_
+	pop.s ix
+	jp draw_next_sprite_2
 
 spiDrawBufferLeft:
 	SPI_START

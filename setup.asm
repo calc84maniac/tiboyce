@@ -3272,10 +3272,10 @@ _
 	ld de,mini_frame_backup
 	ld a,144
 backup_mini_screen_row_loop:
-	ld hl,(ix)
+	ld hl,(ix+3)
 	ld bc,160
 	ldir
-	lea ix,ix+3
+	lea ix,ix+6
 	dec a
 	jr nz,backup_mini_screen_row_loop
 	
@@ -3328,6 +3328,17 @@ _
 	jp spiFastTransfer
 	
 GeneratePixelCache:
+	; Fill in the scanline sprite count pointers
+	ld de,scanline_sprite_counts+144
+	ld b,144
+_
+	lea ix,ix-6
+	dec de
+	ld (ix),de
+	djnz -_
+	ccf
+	jr c,GeneratePixelCache
+	
 	ld hl,vram_start
 	ld de,vram_pixels_start
 	ld c,e
@@ -3440,21 +3451,21 @@ SetScalingMode:
 	ld a,144/3*2
 _
 	ld c,160
-	ld (ix),de
-	ldir
-	ld c,160
-	ex de,hl
-	add hl,bc
-	ex de,hl
 	ld (ix+3),de
 	ldir
 	ld c,160
 	ex de,hl
 	add hl,bc
 	ex de,hl
-	ld (ix+6),de
+	ld (ix+9),de
 	ldir
-	lea ix,ix+9
+	ld c,160
+	ex de,hl
+	add hl,bc
+	ex de,hl
+	ld (ix+15),de
+	ldir
+	lea ix,ix+18
 	dec a
 	jr nz,-_
 	ACALL(GeneratePixelCache)
@@ -3479,9 +3490,9 @@ _
 	push af
 _
 	 ld c,160
-	 ld (ix),de
+	 ld (ix+3),de
 	 ldir
-	 lea ix,ix+3
+	 lea ix,ix+6
 	 dec a
 	 jr nz,-_
 	 ld de,gb_frame_buffer_2

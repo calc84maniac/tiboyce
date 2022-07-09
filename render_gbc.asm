@@ -26,6 +26,9 @@ LCDC_2_smc_1_gbc = $+2 ; Replace with gbc_tile_attributes_lut_2 for 8x16
 	ld (gbc_draw_sprite_unclipped_dir_smc),a
 	; Get pointer to tile index data
 	ld a,b
+	dec a
+	cp 167
+	jp nc,draw_sprite_offscreen
 	ld b,e
 LCDC_2_smc_3_gbc = $+1
 	res 0,c		;res 0,b when 8x16 sprites
@@ -66,12 +69,17 @@ gbc_render_sprite_row_first_half_smc = $+1
 	ld (gbc_render_sprite_row_smc_1),hl
 	jr gbc_draw_sprite_unclipped_start
 	
+gbc_draw_sprite_unclipped_loop_reset_b:
+	ld b,0
 gbc_draw_sprite_unclipped_loop:
 gbc_draw_sprite_unclipped_dir_smc = $+2
 	lea iy,iy+8
-gbc_draw_sprite_clipped_left_smc = $
-	dec ixl ; Replaced with JR to clipped impl
+	dec ixl
+gbc_draw_sprite_clipped_left_smc = $+1
+	jr z,gbc_draw_sprite_unclipped_finish
 gbc_draw_sprite_unclipped_start:
+	pop hl
+	dec (hl)
 	pop hl
 	ld a,c
 gbc_draw_sprite_unclipped_offset_smc = $+1
@@ -81,7 +89,16 @@ gbc_draw_sprite_unclipped_offset_smc = $+1
 	ld b,4
 	ld e,(iy)
 gbc_render_sprite_row_smc_1 = $+1
-	jp nz,gbc_render_sprite_row
+	jp p,gbc_render_sprite_row
+	jr gbc_draw_sprite_unclipped_loop_reset_b
+	
+gbc_draw_sprite_clipped_left_finish:
+	.db $21 ;LD HL,
+	 .db gbc_draw_sprite_unclipped_finish - (gbc_draw_sprite_clipped_left_smc+1)
+	 pop hl
+	 dec (hl)
+	ld (gbc_draw_sprite_clipped_left_smc),hl
+gbc_draw_sprite_unclipped_finish:
 gbc_render_sprite_row_smc_2 = $+1
 	ld hl,gbc_render_sprite_row
 	ld (gbc_render_sprite_row_smc_1),hl
@@ -90,48 +107,49 @@ gbc_draw_sprite_finish:
 	jp draw_next_sprite_2
 	
 gbc_draw_sprite_clipped_left:
-	inc ixl
 	; For 5-7 pixels wide, use a shorter first row half
 	add a,3
 	jr c,gbc_draw_sprite_clipped_left_full
 	; For 1-4 pixels wide, use the second half only
 	add a,5
 	ld ixh,a
-	ld hl,$18 | ((gbc_draw_sprite_clipped_left_half_loop - (gbc_draw_sprite_clipped_left_smc+2)) << 8)
+	.db $21 ;LD HL,
+	 .db gbc_draw_sprite_clipped_left_finish - (gbc_draw_sprite_clipped_left_smc+1)
+	 .db $18 ;JR
+	 .db gbc_draw_sprite_clipped_left_half_loop - (gbc_draw_sprite_clipped_left_smc+3)
 	ld (gbc_draw_sprite_clipped_left_smc),hl
 gbc_draw_sprite_clipped_left_half_loop:
-	pop hl
 	ld a,(iy)
 	add a,8
 	sub ixh
-	dec ixl
+	pop hl
+	dec (hl)
+	pop hl
 gbc_render_sprite_row_second_half_smc = $+1
-	jp nz,gbc_render_sprite_row_second_half
-gbc_draw_sprite_clipped_left_finish:
-	.db $21 ;LD HL,
-	 dec ixl
-	 pop hl
-	ld (gbc_draw_sprite_clipped_left_smc),hl
-	jr gbc_draw_sprite_finish
-	
+	jp p,gbc_render_sprite_row_second_half
+	jr gbc_draw_sprite_unclipped_loop
 	
 gbc_draw_sprite_clipped_left_full:
 	inc a
 	ld (gbc_draw_sprite_clipped_left_full_smc),a
-	ld hl,$18 | ((gbc_draw_sprite_clipped_left_full_loop - (gbc_draw_sprite_clipped_left_smc+2)) << 8)
+	.db $21 ;LD HL,
+	 .db gbc_draw_sprite_clipped_left_finish - (gbc_draw_sprite_clipped_left_smc+1)
+	 .db $18 ;JR
+	 .db gbc_draw_sprite_clipped_left_full_loop - (gbc_draw_sprite_clipped_left_smc+3)
 	ld (gbc_draw_sprite_clipped_left_smc),hl
 gbc_draw_sprite_clipped_left_full_loop:
-	pop hl
 gbc_draw_sprite_clipped_left_full_smc = $+1
 	ld b,1
 	ld a,(iy)
 	add a,4
 	sub b
 	ld e,a
-	dec ixl
+	pop hl
+	dec (hl)
+	pop hl
 gbc_render_sprite_row_smc_3 = $+1
-	jp nz,gbc_render_sprite_row
-	jr gbc_draw_sprite_clipped_left_finish
+	jp p,gbc_render_sprite_row
+	jr gbc_draw_sprite_unclipped_loop_reset_b
 	
 _
 	 push de
