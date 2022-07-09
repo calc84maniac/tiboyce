@@ -623,9 +623,9 @@ _writeHDMA5:
 	exx
 	ld a,l
 	exx
-	add a,a
 	bit 7,(hl)
 	jr z,disableorupdateHDMA
+	add a,a
 	jp c,enableHDMA
 	rrca
 	ld (hl),a
@@ -643,24 +643,19 @@ gdma_event_restore_smc = $+1
 	jp.lil gdma_transfer_helper
 
 disableorupdateHDMA:
-	jr c,updateHDMA
-disableHDMA:
-	set 7,(hl)
+	add a,$80
+	ld (hl),a
+	jr c,nodisableHDMA
 	ld hl,event_counter_checkers_ei_delay
 	ld (event_counter_checkers_ei_delay_smc_1),hl
 	ld (event_counter_checkers_ei_delay_smc_2),hl
 	ld hl,(event_counter_checkers_ei_delay_2)
 	ld (event_counter_checkers_ei_delay),hl
-_
+nodisableHDMA:
 	ld a,e
 	ex af,af'
 	exx
 	ret
-	
-updateHDMA:
-	rrca
-	ld (hl),a
-	jr -_
 	
 schedule_hdma:
 	ld hl,event_counter_checkers_ei_delay
