@@ -2011,8 +2011,8 @@ decode_halt:
 decode_halt_continue:
 	ld (ix),a
 	ld (ix+1),hl
-	ld hl,ophandler_halt
-	ld (ix-2),hl
+	ld bc,ophandler_halt
+	ld (ix-2),bc
 	ex (sp),ix
 	ld a,h
 	cp flush_handler >> 8

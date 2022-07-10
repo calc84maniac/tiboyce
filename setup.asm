@@ -1377,7 +1377,11 @@ _
 	
 	 ; Get the number of cycles from one cycle in the future until vblank
 	 ld a,b
+	 rlca
 	 ld hl,CYCLES_PER_SCANLINE * 144
+	 jr nc,_
+	 add hl,hl
+_
 	 ld bc,(iy-state_size+STATE_FRAME_COUNTER)
 	 inc.s bc
 	 ASSERT_NC
@@ -1386,11 +1390,13 @@ _
 	 ld bc,CYCLES_PER_FRAME
 	 add hl,bc
 	 ; Add again in double-speed
-	 rla
+	 rrca
 	 jr nc,_
 	 add hl,bc
 _
 	 ; Add to the DIV counter
+	 ld b,h
+	 ld c,l
 	 add hl,de
 	 ld.sis (vblank_counter),hl
 	 ld.sis (persistent_vblank_counter),hl
@@ -1526,6 +1532,18 @@ _
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
 	push hl
+	 ; Enable interrupt and rescheduling effects for LYC and STAT writes
+	 .db $21 ;ld hl,
+	  dec hl
+	  ld a,b
+	  cp (hl)
+	 ld (lyc_write_disable_smc), hl
+	 .db $21 ;ld hl,
+	  rrca
+	  rrca
+	  .db $C6 ;add a,
+	 ld (stat_write_disable_smc),hl
+	 
 	 call nc,do_lcd_disable
 	pop hl
 	
