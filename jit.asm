@@ -2599,6 +2599,228 @@ opgentable:
 	.db ophandlerF1 >> 8
 	.db ophandlerF8_positive >> 8
 	
+rom_bank_fill_routines:
+	.db 0
+	.db rom_bank_fill_rem_0 - rom_bank_fill_routines
+	.db rom_bank_fill_exactly_1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-2 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-2 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-2 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-3 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-3 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-3 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-4 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-4 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-4 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-5 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-5 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-5 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-6 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-6 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-6 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-7 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-7 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-7 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-8 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-8 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-8 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-9 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-9 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-9 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-10 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-10 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-10 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-11 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-11 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-11 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-12 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-12 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-12 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-13 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-13 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-13 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-14 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-14 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-14 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-15 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-15 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-15 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-16 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-16 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-16 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-17 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-17 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-17 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-18 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-18 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-18 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-19 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-19 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-19 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-20 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-20 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-20 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-21 - rom_bank_fill_routines
+	
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+rom_bank_fill_rem_0:
+	ld sp,(mbc_change_rom_bank_smc)
+	jp.sis nz,mbc_no_fix_sp
+	jr rom_bank_fill_fix_sp
+	
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+rom_bank_fill_rem_1:
+	inc sp \ inc sp
+	push bc
+	ld sp,(mbc_change_rom_bank_smc)
+	jp.sis nz,mbc_no_fix_sp
+rom_bank_fill_fix_sp:
+	ld hl,(rom_bank_base)
+	jp.sis mbc_fix_sp
+	
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+	push bc
+rom_bank_fill_rem_2:
+	inc sp
+	push bc
+	ld sp,(mbc_change_rom_bank_smc)
+	jp.sis nz,mbc_no_fix_sp
+	jr rom_bank_fill_fix_sp
+	
+rom_bank_fill_exactly_1:
+	ld hl,-1
+	add hl,sp
+	ld (hl),c
+	ld sp,(mbc_change_rom_bank_smc)
+	jp.sis nz,mbc_no_fix_sp
+	jr rom_bank_fill_fix_sp
+	
+	.block (rom_bank_fill_routines+192) - $
+	.db rom_bank_fill_rem_0-21 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-20 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-20 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-20 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-19 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-19 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-19 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-18 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-18 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-18 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-17 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-17 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-17 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-16 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-16 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-16 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-15 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-15 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-15 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-14 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-14 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-14 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-13 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-13 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-13 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-12 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-12 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-12 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-11 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-11 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-11 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-10 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-10 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-10 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-9 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-9 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-9 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-8 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-8 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-8 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-7 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-7 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-7 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-6 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-6 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-6 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-5 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-5 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-5 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-4 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-4 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-4 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-3 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-3 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-3 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-2 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-2 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-2 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2-1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_1-1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0-1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_2 - rom_bank_fill_routines
+	.db rom_bank_fill_exactly_1 - rom_bank_fill_routines
+	.db rom_bank_fill_rem_0 - rom_bank_fill_routines
 	
 block_bridge_template:
 	.assume adl=0

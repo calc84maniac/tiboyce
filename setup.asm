@@ -929,19 +929,47 @@ _
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
 	ld (z80codebase+rom_bank_check_smc_1),a
+	ld de,z80codebase+mem_read_lut+4
 	ld c,a
-	ld b,3
+	ld b,e
 	mlt bc
 	ld hl,rombankLUT
+	ld e,(hl)
 	add hl,bc
+	ld a,(hl)
+	ld (curr_rom_bank_trim_msb),a
+	inc hl
 	ld hl,(hl)
 	ld (rom_bank_base),hl
 	ld (rom_bank_base_for_read),hl
 	
+	; Apply trimmed reads for the unbanked ROM area
+	; This area is never fully trimmed, so don't handle $3F
+	ex de,hl
+	res 6,l
+	.db $11 ;LD DE,
+	 .db rom_trimmed_get_ptr & $FF
+	 .db 3
+	 ; Skip next byte
+_
+	ld (hl),e
+	inc l
+	bit 6,l
+	jr z,-_
+	
+	; Apply trimmed reads for the banked ROM area
+	ld l,a
+	.db $28 ;JR Z,
+_
+	ld (hl),e
+	inc l
+	bit 7,l
+	jr z,-_
+	
 	ld a,(cram_size+1)
 	add a,a
 	sbc a,a
-	and 3
+	and d
 	ld (z80codebase+cram_size_smc),a
 	
 	xor a
@@ -2243,24 +2271,25 @@ LoadROMAndRAM:
 	ACALL_SAFERET(LoadROM)
 	ret c
 	
-	ld ix,rombankLUT
-	ld hl,(ix)
+	ld a,d
+	ld hl,rombankLUT+1
+	ld de,(hl)
+	dec hl
 	; Get the end of the loaded ROM banks.
 	; If 256 banks were loaded this gets the start instead,
-	; but that makes the mirroring copy a no-op as it should be in that case.
-	ld e,3
-	ld a,d
-	mlt de
-	add ix,de
+	; but the power-of-2 check prevents any filling.
+	ld c,4
+	ld b,a
+	mlt bc
+	add hl,bc
 	ld b,a
 	; Make sure the ROM size is a power of 2 (and at least 2)
-	; If not, fill up to the next power of 2 with blank pages
-	ld de,mpZeroPage - $4000
+	; If not, fill up to the next power of 2 with fully trimmed pages
 	djnz ++_
 	; If the page count was 1, always fill at least one page
 _
-	ld (ix),de
-	lea ix,ix+3
+	ld (hl),$3F
+	inc hl \ inc hl \ inc hl \ inc hl
 	ld b,a
 	inc a
 _
@@ -2270,7 +2299,7 @@ _
 	dec a
 	ld (rom_bank_mask),a
 
-	ld de,$4000
+	ld hl,$4000
 	add hl,de
 	ld (rom_start),hl
 	ld bc,$0147
@@ -2518,8 +2547,8 @@ _
 	push hl
 	pop de
 	inc de
-	ld bc,256*3 - 1
-	ld (hl),c
+	ld bc,256*4 - 1
+	ld (hl),l
 	ldir
 	ld d,a
 	ld e,a
@@ -2554,13 +2583,12 @@ LoadROMPageLoop:
 	ret c
 	push de
 	 ld e,(hl)
-	 ld d,3
+	 ld d,4
 	 mlt de
 	 ld ix,rombankLUT
 	 add ix,de
-	 bit 7,(ix+2)
-	 scf
-	 jr z,_
+	 cp (ix) ; Check for $3F-$7F (already found) rather than $00
+	 jr c,_
 	 inc hl
 	 dec bc
 	 push bc
@@ -2568,12 +2596,17 @@ LoadROMPageLoop:
 	  inc hl
 	  ld b,(hl)
 	  inc hl
-	  ld de,-$4000
-	  add hl,de
-	  ld (ix),hl
-	  add hl,bc
+	  ld de,$4000
 	  sbc hl,de
+	  ld (ix+1),hl
+	  ex de,hl
+	  add hl,bc
+	  ex de,hl
+	  add hl,de
+	  dec de
+	  ld (ix),d
 	  ex (sp),hl
+	  inc bc
 	  inc bc
 	  sbc hl,bc
 	  ex (sp),hl

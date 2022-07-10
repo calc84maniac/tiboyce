@@ -675,12 +675,13 @@ low_prio_sprite_pixel_lut = normal_prio_sprite_pixel_lut + 256
 gbc_overlapped_pixel_data = low_prio_sprite_pixel_lut + 256
 gbc_overlapped_pixel_data_end = gbc_overlapped_pixel_data + ((256+3)*2*16)
 
-; The ROM bank lookup table. 256 pointers in size.
-; Stores the base address of each ROM bank (or mirror), minus $4000.
+; The ROM bank lookup table. 256 entries in size.
+; Offset 0: The MSB of the first trimmed portion of the bank, minus 1 ($3F-$7F).
+; Offset 1: The base address of the ROM bank, minus $4000.
 ; The pre-subtracted $4000 means that the memory can be indexed by GB address.
-; This must be located beyond the compression buffer.
+; This must be located beyond the decompression buffer.
 rombankLUT_end = (usbArea & ~$FF) - 256
-rombankLUT = rombankLUT_end - (256*3)
+rombankLUT = rombankLUT_end - (256*4)
 
 ; Start of Game Boy HRAM region. 512 bytes in size, includes OAM and MMIO.
 hram_start = z80codebase + $FE00

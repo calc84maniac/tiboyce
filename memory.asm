@@ -71,6 +71,13 @@ rom_unbanked_base_for_read = $+2+z80codebase
 	ld.l a,(hl)
 	ret
 	
+rom_trimmed_read_any:
+	ex af,af'
+	ld a,0
+	ret
+	nop
+	nop
+	
 vram_banked_read_handler:
 	ex af,af'
 vram_banked_read_any:
@@ -280,7 +287,12 @@ rom_unbanked_base = $+2+z80codebase
 	nop
 	nop
 	
-	nop
+rom_trimmed_get_ptr:
+rom_trimmed_base = $+2+z80codebase
+	ld.lil hl,mpZeroPage
+	ex af,af'
+	ret
+	
 vram_banked_get_read_ptr:
 vram_bank_base = $+2+z80codebase
 	ld.lil hl,vram_base

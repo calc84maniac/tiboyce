@@ -2036,19 +2036,54 @@ _
 	xor h
 	ld h,a
 	push hl
-mbc_change_rom_bank_smc = $+1
-	ld sp,0
-	ld c,3
+	ld c,4
 	mlt bc
 	ld hl,rombankLUT
 	add hl,bc
+	ld a,(hl)
+	inc hl
 	ld hl,(hl)
 	ld (rom_bank_base),hl
 	ld (rom_bank_base_for_read),hl
+curr_rom_bank_trim_msb = $+1
+	ld c,0
+	cp c
+	jr nz,mbc_change_rom_bank_trim_msb
+mbc_change_rom_bank_smc = $+1
+	ld sp,0
 	ld a,(z80codebase+curr_gb_stack_region)
 	cp rom_bank_base & $FF
 	jp.sis nz,mbc_no_fix_sp
 	jp.sis mbc_fix_sp
+	
+mbc_change_rom_bank_trim_msb:
+	ld (curr_rom_bank_trim_msb),a
+	ld hl,z80codebase+mem_read_lut
+	jr nc,mbc_change_rom_bank_trim_less
+	ld l,c
+	sub c
+	ld bc,(rom_trimmed_get_ptr & $FF) * $010101
+	ld (hl),c
+	ld sp,hl
+	ld hl,rom_bank_fill_routines
+	ld l,a
+	ld l,(hl)
+	ld a,(z80codebase+curr_gb_stack_region)
+	cp rom_bank_base & $FF
+	jp (hl)
+	
+mbc_change_rom_bank_trim_less:
+	ld l,a
+	sub c
+	ld bc,(rom_banked_get_ptr & $FF) * $010101
+	ld (hl),c
+	ld sp,hl
+	ld hl,rom_bank_fill_routines
+	ld l,a
+	ld l,(hl)
+	ld a,(z80codebase+curr_gb_stack_region)
+	cp rom_bank_base & $FF
+	jp (hl)
 	
 update_rtc_helper:
 	ld ix,mpRtcSecondCount
