@@ -234,60 +234,59 @@ decode_rst_helper:
 	
 banked_jump_mismatch_helper:
 	push bc
-	 push hl
-	  ; Look up the old target
-	  ld.s de,(ix+6)
-	  ; Save the new bank index
-	  ld c,a
-	  ; Check the number of cycles taken by the jump
-	  ; -4 is JP, -3 is JR, -2 is untaken JP, -1 is untaken JR or RET, 0 is a bridge
-	  ld.s b,(ix+5)
-	  ld a,b
-	  or a
-	  jr z,banked_jump_mismatch_resolved
-	  add a,2
-	  jr c,banked_jump_mismatch_untaken
-	  inc de
-	  GET_BASE_ADDR_FAST
-	  add hl,de
-	  inc de
-	  ; Check whether it's JP or JR
-	  inc a
-	  jr z,banked_jump_mismatch_jr
-	  ld a,(hl)
-	  GET_BASE_ADDR_FAST
-	  add hl,de
-	  ld d,(hl)
-	  ld e,a
-	  jr banked_jump_mismatch_resolved
+	 push de
+	  push hl
+	   ex (sp),ix
+	   ; Look up the old target
+	   ld.s de,(ix+6)
+	   ; Check the number of cycles taken by the jump
+	   ; -4 is JP, -3 is JR, -2 is untaken JP, -1 is untaken JR or RET, 0 is a bridge
+	   ld.s b,(ix+2)
+	   ld a,b
+	   or a
+	   jr z,banked_jump_mismatch_resolved
+	   add a,2
+	   jr c,banked_jump_mismatch_untaken
+	   inc de
+	   GET_BASE_ADDR_FAST
+	   add hl,de
+	   inc de
+	   ; Check whether it's JP or JR
+	   inc a
+	   jr z,banked_jump_mismatch_jr
+	   ld a,(hl)
+	   GET_BASE_ADDR_FAST
+	   add hl,de
+	   ld d,(hl)
+	   ld e,a
+	   jr banked_jump_mismatch_resolved
 	  
 banked_jump_mismatch_untaken:
-	  ; Decrement to get the actual negative cycle count
-	  djnz banked_jump_mismatch_resolved
+	   ; Decrement to get the actual negative cycle count
+	   djnz banked_jump_mismatch_resolved
 	  
 banked_jump_mismatch_jr:
-	  ld a,(hl)
-	  ld l,a
-	  rla
-	  sbc a,a
-	  ld h,a
-	  add.s hl,de
-	  ex de,hl
+	   ld a,(hl)
+	   ld l,a
+	   rla
+	   sbc a,a
+	   ld h,a
+	   add.s hl,de
+	   ex de,hl
 banked_jump_mismatch_resolved:
-	  push ix
-	   push bc
-	    call.il lookup_code_cached
-	   pop de
-	   ; Calculate total cycles
-	   sub d
-	   ld d,a
-	   ex (sp),ix
-	   ; Save new bank index / cycles
-	   ld.s (ix+3),de
-	  pop hl
-	  ; Save new JIT target
-	  ld.s (ix+1),hl
-	 pop hl
+	   pea ix+4
+	    push bc
+	     call.il lookup_code_cached
+	    pop bc
+	   pop hl
+	   ; Save new JIT target
+	   ld.s (hl),ix
+	   dec hl \ dec hl \ dec hl
+	   ; Calculate and save new cycles
+	   sub b
+	   ld.s (hl),a
+	  pop ix
+	 pop de
 	pop bc
 	jp.sis banked_jump_mismatch_continue
 	

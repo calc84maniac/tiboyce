@@ -355,10 +355,10 @@ rom_bank_check_smc_1 = $+1
 	jr nz,banked_jump_mismatch
 	inc hl
 	ld a,(hl)
+banked_jump_mismatch_continue:
 	inc hl
 	inc hl
 	exx
-banked_jump_mismatch_continue:
 	add a,e
 	jr c,++_
 _
@@ -395,6 +395,8 @@ do_slow_jump_overflow_common:
 #endif
 	
 banked_jump_mismatch:
+	; Save the new bank index
+	ld (hl),a
 	jp.lil banked_jump_mismatch_helper
 	
 schedule_event_finish:
