@@ -503,6 +503,15 @@ _
 #ifdef DEBUG
 	APRINTF(StartText)
 #endif
+#ifdef FASTLOG
+	call fastlog_init
+	push de
+	pop hl
+	inc de
+	dec bc
+	ld (hl),0
+	ldir
+#endif
 	
 	ld iy,state_start+state_size
 	ld (saveSP),sp

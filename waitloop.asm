@@ -43,6 +43,12 @@ identify_waitloop:
 	 pop ix
 	pop de
 #endif
+#ifdef FASTLOG
+	push ix
+	push de
+	FASTLOG_EVENT(WAITLOOP_CHECK, 5)
+	inc sp
+#endif
 	
 	ld (waitloop_jp_smc),de
 	GET_BASE_ADDR_FAST
@@ -311,6 +317,13 @@ waitloop_identified:
 	  APRINTF(WaitLoopIdentifiedMessage)
 	 pop ix
 	pop bc
+#endif
+#ifdef FASTLOG
+	push ix
+	ld hl,2
+	add hl,sp
+	ld (hl),c
+	FASTLOG_EVENT(WAITLOOP_IDENTIFIED, 3)
 #endif
 	
 	; Get the end of the recompiled code to overwrite

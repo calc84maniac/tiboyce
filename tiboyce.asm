@@ -1,3 +1,39 @@
+#ifdef FASTLOG
+#define FASTLOG_EVENT_RUNTIME_ERROR $DE
+#define FASTLOG_EVENT_INVALID_OPCODE $AD
+#define FASTLOG_EVENT_JIT_FLUSH $BE
+#define FASTLOG_EVENT_CACHE_FLUSH $EF
+#define FASTLOG_EVENT_RECOMPILE 1
+#define FASTLOG_EVENT_RERECOMPILE 2
+#define FASTLOG_EVENT_CACHE_MISS 3
+#define FASTLOG_EVENT_PADDING_UPDATE 4
+#define FASTLOG_EVENT_LOOKUP_GB 5
+#define FASTLOG_EVENT_LOOKUP_GB_FOUND 6
+#define FASTLOG_EVENT_LOOKUP_JIT 7
+#define FASTLOG_EVENT_LOOKUP_JIT_INTERNAL 8
+#define FASTLOG_EVENT_WAITLOOP_CHECK 9
+#define FASTLOG_EVENT_WAITLOOP_IDENTIFIED 10
+#define FASTLOG_EVENT_TRIGGER_EVENT 11
+
+#macro FASTLOG_EVENT(type, length)
+	#define EVENT_TYPE concat("FASTLOG_EVENT_", type)
+	ld hl,(EVENT_TYPE << 16) | ((length+1) << 8)
+	#undef EVENT_TYPE
+	push hl
+	call fastlog
+	ld sp,hl
+#endmacro
+
+#macro FASTLOG_EVENT_Z80(type, length)
+	#define EVENT_TYPE concat("FASTLOG_EVENT_", type)
+	ld hl,(EVENT_TYPE << 8) | (length+1)
+	#undef EVENT_TYPE
+	push hl
+	call fastlog_z80
+	ld sp,hl
+#endmacro
+#endif
+
 #define CALL_STACK_DEPTH 32
 #define CALL_STACK_ENTRY_SIZE_Z80 4
 #define CALL_STACK_ENTRY_SIZE_ADL 3
@@ -285,6 +321,8 @@ penCol = $D008D2
 penRow = $D008D5
 asm_prgm_size = $D0118C
 tSymPtr1 = $D0257B
+FPS = $D0258D
+OPS = $D02593
 pTemp = $D0259A
 progPtr = $D0259D
 drawFGColor = $D026AC
@@ -1282,6 +1320,98 @@ _
 	ld l,mpSpiTransfer & $FF
 	ld (hl),b
 	ret
+	
+#ifdef FASTLOG
+fastlog_z80_helper:
+	or a
+	sbc hl,hl
+	add.s hl,sp
+	push de
+	 ld de,z80codebase+2
+	 add hl,de
+	pop de
+	call _
+	jp.sis z80_ret
+	
+fastlog:
+	ld hl,4
+	add hl,sp
+_
+	ld a,(hl)
+	inc hl
+	push bc
+	 push de
+fastlog_output_addr = $+1
+	  ld de,0
+fastlog_output_len = $+1
+	  ld bc,0
+fastlog_output_loop:
+	  ldi
+	  call po,fastlog_init
+	  dec a
+	  jr nz,fastlog_output_loop
+fastlog_init_finish:
+	  ld (fastlog_output_addr),de
+	  ld (fastlog_output_len),bc
+	 pop de
+	pop bc
+	ret
+	
+fastlog_init:
+	push hl
+	 ld hl,(OPS)
+	 ld de,(FPS)
+	 or a
+	 sbc hl,de
+	 ld (fastlog_output_len),hl
+	 ex (sp),hl
+	pop bc
+	ld (fastlog_output_addr),de
+	ret
+	
+fastlog_dump_to_save:
+	ld hl,(fastlog_output_addr)
+	ld de,(FPS)
+	or a
+	sbc hl,de
+	ex de,hl
+	ld hl,save_state_size_bytes
+	ld bc,(hl)
+	add hl,bc
+	inc hl
+	inc hl
+	ld bc,(hl)
+	add hl,bc
+	inc hl
+	ex de,hl
+	dec bc
+	jr z,++_
+	sbc hl,bc
+	jr c,_
+	ld hl,(fastlog_output_addr)
+	dec hl
+	lddr
+	ret
+_
+	push hl
+	 add hl,bc
+	 push hl
+	 pop bc
+	 ld hl,(fastlog_output_addr)
+	 dec hl
+	 lddr
+	pop bc
+	or a
+	sbc hl,hl
+	sbc hl,bc
+	push hl
+	pop bc
+_
+	ld hl,(OPS)
+	dec hl
+	lddr
+	ret
+#endif
 	
 ; The calculator type, 0=84+CE, 1=83PCE
 calcType:

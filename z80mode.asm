@@ -520,6 +520,23 @@ do_event_pushed:
 #ifdef SCHEDULER_LOG
 	 call.il scheduler_log
 #endif
+#ifdef 0
+	 push iy
+	 ex af,af'
+	 exx
+	 push af
+	 push bc
+	 push de
+	 push hl
+	 ex af,af'
+	 exx
+	 ld hl,(event_gb_address)
+	 push hl
+	 ld hl,i
+	 push hl
+	 FASTLOG_EVENT_Z80(TRIGGER_EVENT, 18)
+	 dec sp \ dec sp \ dec sp \ dec sp
+#endif
 event_expired_interrupt_loop:
 	 ; Check scheduled events
 	 ld (event_save_sp),sp
@@ -2825,6 +2842,11 @@ event_counter_checkers_ei_delay_2:
 	.dw event_counter_checkers_done
 	
 	CPU_SPEED_END()
+	
+#ifdef FASTLOG
+fastlog_z80:
+	jp.lil fastlog_z80_helper
+#endif
 	
 	.assume adl=1
 z80codesize = $-0

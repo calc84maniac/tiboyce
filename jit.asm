@@ -45,6 +45,9 @@ flush_code:
 #ifdef DEBUG
 	 APRINTF(FlushMessage)
 #endif
+#ifdef FASTLOG
+	 FASTLOG_EVENT(JIT_FLUSH, 0)
+#endif
 	 ; Empty recompiled code information struct
 	 ld hl,recompile_struct
 	 ld (hl),hl
@@ -222,28 +225,74 @@ Z80InvalidOpcode_helper:
 	ld (exitReason),a
 	ld a,2
 	ld ($FFFFFF),a
+	ld a,(exitReason)
+#endif
+#ifdef FASTLOG
+	exx
+	ex af,af'
+	push af
 	push bc
-	 APRINTF(InvalidOpcodeErrorMessage)
-	pop bc
+	push de
+	push hl
+	exx
+	ex af,af'
+	push af
+	push bc
+	push de
+	push hl
+	push ix
+	push iy
 #endif
 	call lookup_gb_code_address
 	call get_banked_address
 	ld (errorArg),de
+#ifdef FASTLOG
+	push de
+	FASTLOG_EVENT(INVALID_OPCODE, 33)
+#endif
+#ifdef DEBUG
+	push bc
+	 APRINTF(InvalidOpcodeErrorMessage)
+	pop bc
+#endif
 	ld a,(ERROR_INVALID_OPCODE << 2) + 5
-	jr _
+	jr runtime_error_finish
 runtime_error:
 #ifdef DEBUG
 	; Open debugger on CEmu
 	ld (exitReason),a
 	ld a,2
 	ld ($FFFFFF),a
+	ld a,(exitReason)
+#endif
+#ifdef FASTLOG
+	exx
+	ex af,af'
+	push af
+	push bc
+	push de
+	push hl
+	exx
+	ex af,af'
+	push af
+	push bc
+	push de
+	push hl
+	push ix
+	push iy
+	FASTLOG_EVENT(RUNTIME_ERROR, 30)
+#endif
+#ifdef DEBUG
 	APRINTF(RuntimeErrorMessage)
 #endif
 	ld a,(ERROR_RUNTIME << 2) + 5
-_
+runtime_error_finish:
 	ld (exitReason),a
 	; Temporarily prevent auto state saving because state is unrecoverable
 	xor a
+#ifdef FASTLOG
+	call fastlog_dump_to_save
+#endif
 	ld (should_auto_save),a
 	AJUMP(ExitEmulationWithoutState)
 	
@@ -281,7 +330,11 @@ lookup_gb_found_abs_read_write:
 	   bit.s 5,(hl)
 	  pop hl
 	  ld c,5
+#ifdef FASTLOG
+	  jp nz,lookup_gb_add
+#else
 	  jr nz,lookup_gb_add
+#endif
 	  ; Default to an 8-byte implementation
 	  ld c,8
 	  ; Decrement to the MSB of the accessed address
@@ -344,6 +397,11 @@ lookup_gb_code_address:
 	push bc
 	 APRINTF(LookupGBMessage)
 	pop bc
+#endif
+#ifdef FASTLOG
+	push bc
+	FASTLOG_EVENT(LOOKUP_GB, 2)
+	inc sp
 #endif
 	call lookup_code_block
 	ld a,ixh
@@ -419,12 +477,21 @@ lookup_gb_finish:
 	 pop de
 	pop af
 #endif
+#ifdef FASTLOG
+	push de
+	FASTLOG_EVENT(LOOKUP_GB_FOUND, 2)
+	inc sp
+#endif
 	ret
 
 lookup_gb_new_sub_block_end:
 	 dec ix
 	 add ix,bc
+#ifdef FASTLOG
+	 jp nc,runtime_error
+#else
 	 jr nc,runtime_error_trampoline
+#endif
 	 jr nz,_
 	 inc ix  ; For RET/JR/JP/RST, count is at -4 bytes
 _
@@ -520,7 +587,11 @@ lookup_gb_found_overlapped_or_halt:
 	 ld.s a,(bc)
 	 inc bc
 	 dec a
+#ifdef FASTLOG
+	 jp lookup_gb_finish
+#else
 	 jr lookup_gb_finish
+#endif
 _
 	  ; If not, determine the address after the bugged instruction
 	  ld a,(de)
@@ -587,6 +658,10 @@ lookup_code_cached_miss:
 	  push de
 	   APRINTF(CacheMissMessage)
 	  pop de
+#endif
+#ifdef FASTLOG
+	  push de
+	  FASTLOG_EVENT(CACHE_MISS, 3)
 #endif
 	  call lookup_code_with_bank
 	  ; Check if the cache needs to be flushed
@@ -833,6 +908,13 @@ lookup_code_link_internal_with_bank:
 	ld hl,(ix+2)
 	bit 7,h
 	jr z,lookup_code_with_bank
+#ifdef FASTLOG
+	push hl
+	push hl
+	push de
+	FASTLOG_EVENT(LOOKUP_JIT_INTERNAL, 6)
+	pop hl
+#endif
 	xor a
 	; We're running from RAM, check if destination is in running block
 	sbc hl,de
@@ -884,6 +966,10 @@ lookup_code:
 ;          Carry is reset if at the start of a newly recompiled or RAM block
 ; Destroys AF,BC,DE,HL
 lookup_code_with_bank:
+#ifdef FASTLOG
+	push de
+	FASTLOG_EVENT(LOOKUP_JIT, 3)
+#endif
 	ld bc,0
 	push iy
 #ifdef 0
@@ -937,6 +1023,14 @@ recompile_struct_end = $+2
 	 
 	 ld hl,(ix)
 	 ld (ix+2),de
+#ifdef FASTLOG
+	 push hl
+	 push de
+	 FASTLOG_EVENT(RECOMPILE, 5)
+	 dec sp
+	 dec sp
+	 pop hl
+#endif
 	 bit 7,d
 	 jp nz,recompile_ram
 	
@@ -1188,7 +1282,14 @@ rerecompile:
 	  pop hl
 	 pop hl
 	pop ix
-	or a
+#endif
+#ifdef FASTLOG
+	ld hl,(ix)
+	push hl
+	ld hl,(ix+2)
+	push hl
+	FASTLOG_EVENT(RERECOMPILE, 5)
+	inc sp
 #endif
 	
 	ld hl,(ix)
@@ -1250,7 +1351,11 @@ rerecompile:
 	; Get the number of used callstack entries
 	ld a,(myz80stack - 4 - 4) & $FF
 	sub l
+#ifdef FASTLOG
+	jp z,check_coherency_cycles
+#else
 	jr z,check_coherency_cycles
+#endif
 	rrca
 	rrca
 	push hl
@@ -1305,6 +1410,10 @@ coherency_flush:
 	  APRINTF(PaddingUpdateMessage)
 	 pop hl
 	pop ix
+#endif
+#ifdef FASTLOG
+	push hl
+	FASTLOG_EVENT(PADDING_UPDATE, 3)
 #endif
 	; Start at the very beginning
 	ld de,(ix+2)
