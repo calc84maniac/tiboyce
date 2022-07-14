@@ -1797,6 +1797,10 @@ SetupLoadStateNoGBC:
 	jp.sis start_emulation
 	
 ExitEmulation:
+	; Pop the BC register into HL'
+	exx
+	pop.s hl
+	exx
 	ld.sis sp,state_start-hram_base+STATE_FRAME_COUNTER
 	ld.sis hl,(event_gb_address)
 	push.s hl ;STATE_REG_PC
@@ -1809,7 +1813,7 @@ ExitEmulation:
 	exx
 	push.s de ;STATE_REG_HL
 	push.s bc ;STATE_REG_DE
-	push.s ix ;STATE_REG_BC
+	push.s hl ;STATE_REG_BC
 	
 	ex af,af'
 	push af
