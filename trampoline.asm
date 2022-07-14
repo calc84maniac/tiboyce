@@ -136,7 +136,7 @@ allocate_trampoline_low_pool:
 	;           Function does not return, JIT code is flushed
 	; Destroys: F
 lookup_gb_code_and_allocate_trampoline:
-	lea bc,ix+3
+	lea.s bc,ix+3
 lookup_gb_code_and_allocate_trampoline_any:
 	push de
 	 push ix
@@ -432,7 +432,7 @@ patch_bc_de_port_read_helper:
 	.db $D2 ;JP NC,
 patch_hl_port_direct_read_a_helper:
 	ld de,op_read_hl_port
-	lea bc,ix+3
+	lea.s bc,ix+3
 patch_port_direct_read_helper:
 	ld a,6
 	call lookup_gb_code_and_allocate_trampoline_any
@@ -457,7 +457,7 @@ patch_hl_port_read_helper:
 	jr z,patch_hl_port_direct_read_a_helper
 	cp $6E ;LD L,(HL)
 	; Get the byte after the JIT implementation
-	lea bc,ix+7
+	lea.s bc,ix+7
 	jr z,patch_port_direct_read_helper
 patch_hl_port_indirect_read_helper:
 	ld a,8
