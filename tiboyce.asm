@@ -1584,8 +1584,8 @@ originalLcdSettings:
 	
 	.echo "User RAM code size: ", $ - userMem
 	
-	; Pad to an odd number of bytes
-	.block (~$) & 1
+	; Pad to align vram_gbc_start
+	.block (7-$) & 15
 	
 ; Active configuration info:
 config_start:
@@ -1684,8 +1684,11 @@ cart_ram_checksum = regs_saved + state_size - 3
 
 ; Start of Game Boy VRAM. 8KB in size. Must be 2-byte aligned.
 vram_start = hram_saved + $0200
-; Start of Game Boy Color VRAM. 16KB in size. Must be 2-byte aligned.
+; Start of Game Boy Color VRAM. 16KB in size. Must be 16-byte aligned.
 vram_gbc_start = vram_start
+#if vram_gbc_start & $0F
+	.error "GBC VRAM is not 16-byte aligned!"
+#endif
 
 ; Start of Game Boy WRAM. 8KB in size.
 wram_start = vram_start + $2000

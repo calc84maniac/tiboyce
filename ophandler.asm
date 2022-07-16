@@ -1305,7 +1305,6 @@ hdma_single_transfer_pixel_loop:
 	  inc hl
 	  lea ix,ix+2
 	  ld a,l
-	  sub vram_gbc_start & $FF
 	  and $0F
 	  jr nz,hdma_single_transfer_pixel_loop
 	  jr hdma_single_transfer_finish
@@ -1322,7 +1321,6 @@ hdma_single_transfer_tilemap_loop:
 	  inc hl
 	  inc ix
 	  ld a,l
-	  sub vram_gbc_start & $FF
 	  and $0F
 	  jr nz,hdma_single_transfer_tilemap_loop
 hdma_single_transfer_finish:
