@@ -1504,6 +1504,17 @@ _
 	inc a
 	ld (z80codebase+audio_counter+1),a
 	
+	; Set palette auto-increment check SMC
+	ld hl,(iy-ioregs+BGPI)
+	add hl,hl
+	rla
+	and h
+	rra
+	jr c,_
+	ld hl,$18 | ((write_palette_data_check_autoinc - (write_palette_data_check_autoinc_smc+2)) << 8)
+	ld.sis (write_palette_data_check_autoinc_smc),hl
+_
+	
 	; Copy HDMA registers to internal variables
 	ld ix,z80codebase + audio_port_masks
 	lea hl,iy-ioregs+HDMA4

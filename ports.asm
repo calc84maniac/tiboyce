@@ -333,11 +333,11 @@ writeOPRI:
 writeFF75:
 	jr _writeFF75
 	
-write_palette_index:
-	jr _write_palette_index
-	
 write_palette_data:
 	djnz _write_palette_data
+	
+write_palette_index:
+	jr _write_palette_index
 	
 writeSVBKhandler:
 	ld e,a
@@ -422,35 +422,6 @@ _writeFF75:
 	or $8F
 	jr writeFF75_finish
 	
-write_palette_index_handler:
-	ex af,af'
-	ld e,a
-_write_palette_index:
-	ld l,b
-	ld h,$FF
-	ld a,b
-	add a,(gbc_bg_palette_data >> 8) - (BGPI & $FF)
-	ld b,a
-	exx
-	ld a,l
-	exx
-	ld c,a
-	set 6,c
-	ld (hl),c
-	set 7,c
-write_palette_data_inc:
-	ld a,(bc)
-write_palette_data_no_inc:
-	inc hl
-writeRP_finish:
-writeOPRI_finish:
-writeFF75_finish:
-	ld (hl),a
-	ld a,e
-	ex af,af'
-	exx
-	ret
-	
 write_palette_data_handler:
 	ex af,af'
 	ld e,a
@@ -464,16 +435,69 @@ _write_palette_data:
 	ld a,l
 	exx
 	ld c,(hl)
+write_palette_data_check_autoinc_smc = $
+	ld (bc),a
+	inc c
+	jr z,write_palette_data_autoinc_wrap
+write_palette_data_autoinc_finish:
+	ld (hl),c
+	ld a,(bc)
+write_palette_data_no_autoinc_finish:
+	inc hl
+writeRP_finish:
+writeOPRI_finish:
+writeFF75_finish:
+	ld (hl),a
+write_palette_index_finish:
+	ld a,e
+	ex af,af'
+	exx
+	ret
+	
+write_palette_index_handler:
+	ex af,af'
+	ld e,a
+_write_palette_index:
+	ld l,b
+	ld h,$FF
+	ld a,b
+	add a,(gbc_bg_palette_data >> 8) - (BGPI & $FF)
+	ld b,a
+	exx
+	ld a,l
+	exx
+	ld c,a
+	; Check for an auto-increment change
+	xor (hl)
+	set 6,c
+	ld (hl),c
+	set 7,c
+	ld a,(bc)
+	inc hl
+	ld (hl),a
+	jp p,write_palette_index_finish
+	; Disable auto-increment checks only if both BG and OBJ are auto-increment
+	ld l,BGPI & $FF
+	ld a,(hl)
+	ld l,OBPI & $FF
+	and (hl)
+	ld hl,$18 | ((write_palette_data_check_autoinc - (write_palette_data_check_autoinc_smc+2)) << 8)
+	jp p,_
+	ld hl,$0C02 ; LD (BC),A \ INC C
+_
+	ld (write_palette_data_check_autoinc_smc),hl
+	jr write_palette_index_finish
+	
+write_palette_data_check_autoinc:
 	bit 7,c
 	set 7,c
 	ld (bc),a
-	jr z,write_palette_data_no_inc
+	jr z,write_palette_data_no_autoinc_finish
 	inc c
-	ld (hl),c
-	jr nz,write_palette_data_inc
+	jr nz,write_palette_data_autoinc_finish
+write_palette_data_autoinc_wrap:
 	ld c,$C0
-	ld (hl),c
-	jr write_palette_data_inc
+	jr write_palette_data_autoinc_finish
 	
 writeSChandler:
 	ld e,a
