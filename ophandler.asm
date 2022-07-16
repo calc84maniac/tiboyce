@@ -894,6 +894,16 @@ _
 	ld a,(hl)
 	xor $08	;JR C vs JR NC
 	ld (hl),a
+	jp pe,_
+	; Check for window trigger after last rendered line
+	inc hl \ inc hl \ inc hl ;WY_smc
+	scf
+	ld a,(myLY)
+	sbc a,(hl) 
+	jr nz,_
+	jr c,_ ; Handle edge case of LY=0, WY=$FF
+	inc hl ;window_trigger_smc
+	ld (hl),$37 ;SCF
 _
 	bit 6,b
 	jr z,_
