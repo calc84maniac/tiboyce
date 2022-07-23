@@ -3297,18 +3297,20 @@ BackupHardwareSettings:
 	ret
 	
 SetCustomHardwareSettings:
-	di
 	ld a,$FB      ; EI
 	ld (z80codebase + wait_for_interrupt_stub),a
 	ld hl,$C94976 ; HALT \ RET.LIS
 	ld (z80codebase + wait_for_interrupt_stub + 1),hl
+SetCustomHardwareSettingsNoHalt:
+	di
 	APTR(customHardwareSettings)
 	push hl
 	pop ix
 	jr RestoreHardwareSettings
 	
 RestoreOriginalLcdSettings:
-	ACALL(SetCustomHardwareSettings)
+	; Don't overwrite any VRAM since we don't need a halt implementation
+	ACALL(SetCustomHardwareSettingsNoHalt)
 	ld hl,originalLcdSettings
 	ld de,vRam
 	ACALL(SetLcdSettings)
