@@ -660,10 +660,16 @@ gbc_obj_opaque_colors = gbc_bg_opaque_colors + (24*2)
 ; Conveniently this fits in a 256-byte space along with the BG palette colors.
 recompile_cycle_offset_stack = overlapped_bg_palette_colors + 256
 
+; LUT for color adjustment.
+; Input: Bits 5-7: B=Most significant bits of blue component
+;        Bits 0-2: G=Most significant bits of green component
+; Output: (B - G) << 4
+adjust_color_lut = recompile_cycle_offset_stack
+
 ; Two arrays of scanline information, one for each double buffer.
 ; Offset 0: Pointer to scanline sprite usage count.
 ; Offset 3: Pointer to the first pixel of the scanline in the frame buffer.
-scanlineLUT_1 = recompile_cycle_offset_stack
+scanlineLUT_1 = adjust_color_lut + 256
 scanlineLUT_2 = scanlineLUT_1 + (144*6)
 
 ; One byte for each scanline indicating the number of sprites remaining

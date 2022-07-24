@@ -435,7 +435,7 @@ frame_interrupt:
 ; and prepares the current palette pointers.
 ;
 ; Inputs:  None
-; Destroys: AF, BC, DE, HL
+; Destroys: AF, BC, DE, HL, IX
 prepare_next_frame:
 	; Swap buffers
 	ld de,(current_display)
@@ -495,7 +495,6 @@ prepare_next_frame_gbc_smc = $
 	ret
 	
 prepare_next_frame_gbc_no_adjust:
-prepare_next_frame_gbc_adjust:
 	; Fill the scanline usage LUT
 	or a
 	sbc hl,hl
@@ -543,6 +542,84 @@ _
 	ldir
 	cp l
 	jr c,-_
+	ret
+	
+prepare_next_frame_gbc_adjust:
+	; Fill the scanline usage LUT
+	or a
+	sbc hl,hl
+	add hl,sp
+	ld b,144/18
+	ld de,$0A0A0A
+	ld sp,scanline_sprite_counts + 144
+_
+	push de
+	push de
+	push de
+	push de
+	push de
+	push de
+	djnz -_
+	ld sp,hl
+	
+	; Copy current palette values to the internal palette buffer,
+	; adjusting colors
+	ld ix,z80codebase+gbc_bg_palette_data
+	ld de,gbc_bg_transparent_colors
+_
+	ld bc,(ix)
+	ld a,c
+	add a,a
+	ld a,b
+	rla
+	ld hl,adjust_color_lut
+	ld l,a
+	ld a,(hl)
+	add a,a
+	sbc hl,hl
+	ld l,a
+	add hl,bc
+	ex de,hl
+	ld (hl),e
+	inc hl
+	ld (hl),d
+	inc hl
+	ex de,hl
+	ld a,ixl
+	add a,8
+	ld ixl,a
+	jr nc,-_
+	call _
+	inc ixh ;gbc_obj_palette_data >> 8
+_
+	ld ixl,(gbc_bg_palette_data+2) & $FF
+_
+	lea ix,ix+2
+_
+	ld bc,(ix-2)
+	ld a,c
+	add a,a
+	ld a,b
+	rla
+	ld hl,adjust_color_lut
+	ld l,a
+	ld a,(hl)
+	add a,a
+	sbc hl,hl
+	ld l,a
+	add hl,bc
+	ex de,hl
+	ld (hl),e
+	inc hl
+	ld (hl),d
+	inc hl
+	ex de,hl
+	ld a,ixl
+	and 7
+	jr nz,--_
+	or ixl
+	lea ix,ix+4
+	jr nz,-_
 	ret
 	
 convert_palette_for_menu:
@@ -1071,7 +1148,7 @@ convert_palette_row_smc_1 = $+1
 	 jr convert_palette_loop_continue
 _
 	 ; Advance the scanline LUT pointer by the number of lines
-	 ld b,3
+	 ld b,6
 	 mlt bc
 	 add ix,bc
 	 jr convert_palette_loop_continue
@@ -1151,6 +1228,7 @@ setup_menu_palette:
 	ld (mpLcdPalette + (WHITE*2+1)),hl
 	AJUMP(SetMenuWindow)
 	
+#if 0
 ; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.
 ;
 ; Input:  HL = 15-bit color
@@ -1261,6 +1339,36 @@ _
 	; If so, clear the low bit of the blue component
 	res 2,h
 	ret
+#else
+; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.
+;
+; Input:  BC = 15-bit color
+; Output: BC = 15-bit color (adjusted)
+; Destroys: AF, HL
+;
+; Uses the following modification:
+;   G = (g * 3 + b) / 4
+;
+; To make the algorithm simpler, it is calculated as:
+;   G += (b / 4) - (g / 4)
+;
+adjust_color:
+adjust_color_enable_smc = $
+	ld a,c
+	add a,a
+	ld a,b
+	rla
+	ld hl,adjust_color_lut
+	ld l,a
+	ld a,(hl)
+	add a,a
+	sbc hl,hl
+	ld l,a
+	add hl,bc
+	ld b,h
+	ld c,l
+	ret
+#endif
 
 
 render_scanline_fill:

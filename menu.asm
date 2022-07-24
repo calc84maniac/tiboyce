@@ -128,14 +128,18 @@ _
 	 ; Message display
 	 inc ix
 	pop hl
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	or a
+	jr nz,_
 	; Disable color adjustment for classic palette
 	ld a,(hl)
 	sub $1D
+_
 	; Adjust colors
 	call nz,read_config_item
 	dec a
-	and $C9 - $7C
-	add a,$7C ;RET or LD A,L
+	and $C9 - $79
+	add a,$79 ;RET or LD A,C
 	ld (adjust_color_enable_smc),a
 	; Load palettes only after setting adjust color SMC
 	ld a,(hl)
@@ -246,18 +250,19 @@ ClearMenuBuffer:
 LoadPalettesGBC:
 	ld a,(adjust_color_enable_smc)
 	add a,a
-	ld a,$18 ;JR
-	ld (hl),a
-	inc hl
-	ld (hl),update_palettes_gbc - (update_palettes_gbc_smc+2)
-	ex de,hl
-	ld (hl),prepare_next_frame_gbc_no_adjust - (prepare_next_frame_gbc_smc+2)
-	jr c,_
-	ld (hl),prepare_next_frame_gbc_adjust - (prepare_next_frame_gbc_smc+2)
+	push hl
+	 ld a,$18 ;JR
+	 ld (hl),a
+	 inc hl
+	 ld (hl),update_palettes_gbc - (update_palettes_gbc_smc+2)
+	 ex de,hl
+	 ld (hl),prepare_next_frame_gbc_no_adjust - (prepare_next_frame_gbc_smc+2)
+	 jr c,_
+	 ld (hl),prepare_next_frame_gbc_adjust - (prepare_next_frame_gbc_smc+2)
 _
-	dec hl
-	ld (hl),a
-	jp (hl)
+	 dec hl
+	 ld (hl),a
+	 jp (hl)
 	
 	; Input: A = palette index
 	; Output: BC = 0
@@ -324,12 +329,9 @@ LoadSinglePalette:
 	  ld ix,overlapped_palette_index_lut
 load_single_palette_input_loop:
 	  push hl
-	   ld hl,(hl)
-	   push de
-	    call adjust_color
-	   pop de
-	   ld c,l
-	   ld b,h
+	   ld bc,(hl)
+	   call adjust_color
+	   or a
 load_single_palette_output_loop:
 	   sbc hl,hl
 	   ld l,(ix)

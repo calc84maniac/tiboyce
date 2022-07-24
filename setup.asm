@@ -867,6 +867,23 @@ SetupTilemapCacheDone:
 	ld a,z80codebase >> 16
 	ld mb,a
 	
+	ld hl,adjust_color_lut + $E0
+	ld d,l
+_
+	ld a,l
+	rrca
+	rrca
+	rrca
+	and d
+	ld e,a
+	ld a,l
+	and d
+	sub e
+	rra
+	ld (hl),a
+	inc l
+	djnz -_
+	
 	APTR(digits_encoded)
 	ex de,hl
 	ld hl,digits
