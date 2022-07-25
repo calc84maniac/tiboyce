@@ -1398,7 +1398,7 @@ _
 	 ; This should always reset carry
 	 add hl,hl
 _
-	 ld (lyc_cycle_offset),hl
+	 ld.sis (lyc_cycle_offset),hl
 	 ld (z80codebase+ppu_lyc_scanline_length_smc),a
 	
 	 ; Get the number of cycles from one cycle in the future until vblank
@@ -1571,16 +1571,14 @@ _
 	push hl
 	 ; Enable interrupt and rescheduling effects for LYC and STAT writes
 	 .db $21 ;ld hl,
-	  dec hl
 	  ld a,b
-	  cp (hl)
+	  cp.s (hl)
 	 ld (lyc_write_disable_smc), hl
 	 .db $21 ;ld hl,
 	  rrca
 	  rrca
 	  .db $C6 ;add a,
 	 ld (stat_write_disable_smc),hl
-	 
 	 call nc,do_lcd_disable
 	pop hl
 	

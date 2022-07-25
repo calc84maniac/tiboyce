@@ -275,6 +275,10 @@ gbc_scroll_write_SCX_smc = $
 ; Tracks a list of writes to the BGP register.
 ; Also tracks which value is held by BGP for the largest number of scanlines.
 BGP_write_helper:
+	exx
+	ld a,l
+	exx
+	ld b,a
 	ld hl,hram_base+STAT
 	; If rendering is caught up, query most recently rendered line
 	ld a,r
@@ -370,21 +374,16 @@ cpu_speed_ram_start = $
 ; Triggers a GB interrupt if LY already matches the new LYC value,
 ; but only if LYC is changing.
 ;
-; Inputs:  L' = value being written
+; Inputs:  A = new value of LYC, minus 1
+;          HL = LY
 ;          (LY), (STAT) = current PPU state
 ;          BC, DE, return address on Z80 stack
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
-	; Set the new value of LYC
-	exx
-	ld a,l
-	exx
-	ld hl,hram_base+LYC
-	ld (hl),a
 	; Calculate the new LYC cycle offset (from vblank)
+	inc a
 	ld b,a
-	or a
 	jr z,lyc_write_0
 	CPU_SPEED_IMM8($+1)
 	ld d,-CYCLES_PER_SCANLINE
@@ -411,22 +410,25 @@ _
 	add a,d
 	ld d,a
 lyc_write_continue:
-	ld (lyc_cycle_offset),de
+	ld.sis (lyc_cycle_offset),de
 lyc_write_disable_smc = $
 	; Check if LY=LYC
-	dec hl
 	ld a,b
-	cp (hl)
+	cp.s (hl)
 	; Set or reset the LYC coincidence bit in STAT
 	ld l,STAT & $FF
-	ld c,(hl)
-	res 2,c
+	ld.s c,(hl)
 	ld d,c
 	jr nz,_
+	; If LY was already equal to LYC, the interrupt is blocked and do no reschedule
+	bit 2,c
+	jr nz,stat_lyc_write_no_reschedule
+	; Set the LYC coincidence bit
 	set 2,c
+	ld.s (hl),c
 	; If LYC interrupts are enabled, handle interrupt blocking logic
 	bit 6,c
-	jr z,_
+	jr z,lyc_write_reschedule_full
 	; Transform mode into interrupt source mask:
 	; 0 -> $08, 1 -> $10, 2 -> $24, 3 -> $00
 	ld a,d
@@ -437,26 +439,25 @@ lyc_write_disable_smc = $
 	daa
 	add a,a
 	; Check if any enabled interrupt modes block the interrupt
-	; Note that bit 2 has been reset, so bit $04 will be ignored
+	; Note that bit 2 of D is 0, so bit $04 will be ignored
 	and d
-	jr nz,_
-	; Set the LYC coincidence bit
-	ld (hl),c
+	jr nz,lyc_write_reschedule_full
 	; Check if the IE STAT bit is set
 	ld l,h ;ld l,IE & $FF
-	bit 1,(hl)
+	bit.s 1,(hl)
 	inc hl ;ld hl,active_ints
 	; Set the STAT interrupt active bit
 	set.s 1,(hl)
-	jr z,++_
+	jr z,lyc_write_reschedule_full
 	; Perform STAT scheduling updates
 	call stat_setup
 	; Trigger a new event immediately
 	jp.sis trigger_event_pop
 _
-	ld (hl),c
-_
-	
+	; Reset the LYC coincidence bit
+	res 2,c
+	ld.s (hl),c
+lyc_write_reschedule_full:
 	; Perform STAT scheduling updates
 	call stat_setup
 	; Reschedule the current PPU event
@@ -550,11 +551,12 @@ _
 	; Disable interrupt and rescheduling effects for LYC and STAT writes
 	ld hl,(stat_lyc_write_no_reschedule - (lyc_write_disable_smc+2))<<8 | $18 ;JR
 	ld (lyc_write_disable_smc), hl
+	ld a,l ;JR
+	ld (z80codebase+lyc_write_disable_smc_2),a
 	ld h,stat_lyc_write_no_reschedule - (stat_write_disable_smc+2)
 	ld (stat_write_disable_smc),hl
 	
 	; Force scanline fill and set its color
-	ld a,l ;JR
 	ld (LCDC_0_7_smc),a
 scanline_off_color_smc = $+1
 	ld a,WHITE
@@ -687,7 +689,7 @@ _
 	ld a,l
 	; The next event from vblank is LYC (mode 2)
 	lea ix,ix-ppu_expired_vblank+ppu_expired_lyc_mode2
-	ld hl,(lyc_cycle_offset)
+	ld.sis hl,(lyc_cycle_offset)
 	jr nc,stat_setup_next_from_vblank_post_vblank
 	; Check if LY < 144
 	cp b ;144
@@ -764,8 +766,7 @@ stat_setup_lyc_mode1_filter:
 	; Record the filtered event handler and offset to follow LYC
 	ld.sis (ppu_post_mode1_lyc_event_handler),ix
 	push de
-lyc_cycle_offset = $+1
-	 ld de,0
+	 ld.sis de,(lyc_cycle_offset)
 	 ASSERT_NC
 	 sbc hl,de
 	 ld.sis (ppu_post_mode1_lyc_event_offset),hl
@@ -998,10 +999,11 @@ _
 	
 	; Enable interrupt and rescheduling effects for LYC and STAT writes
 	.db $21 ;ld hl,
-	 dec hl
 	 ld a,b
-	 cp (hl)
+	 cp.s (hl)
 	ld (lyc_write_disable_smc), hl
+	ld a,$30 ;JR NC,
+	ld (z80codebase+lyc_write_disable_smc_2),a
 	.db $21 ;ld hl,
 	 rrca
 	 rrca
@@ -1338,13 +1340,11 @@ set_cpu_speed:
 	ex de,hl
 	rla
 	jr nc,set_cpu_single_speed
-	ld hl,lyc_cycle_offset
-	sla (hl) \ inc hl \ rl (hl)
 	ld hl,z80codebase+ppu_lyc_scanline_length_smc
 	sla (hl)
 	ld hl,z80codebase+audio_counter+1
 	sla (hl)
-	ld b,6
+	ld b,7
 _
 	ex de,hl
 	ld e,(hl)
@@ -1365,13 +1365,11 @@ _
 	jr set_cpu_any_speed
 	
 set_cpu_single_speed:
-	ld hl,lyc_cycle_offset+1
-	scf \ rr (hl) \ dec hl \ rr (hl)
 	ld hl,z80codebase+ppu_lyc_scanline_length_smc
 	scf \ rr (hl)
 	ld hl,z80codebase+audio_counter+1
 	srl (hl)
-	ld b,6
+	ld b,7
 _
 	ex de,hl
 	ld e,(hl)

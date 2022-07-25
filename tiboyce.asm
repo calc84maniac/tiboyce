@@ -1784,6 +1784,7 @@ save_state_gbc_size = save_state_gbc_end - save_state_start
 CpuSpeedRelocs:
 	.dw vblank_counter
 	.dw persistent_vblank_counter
+	.dw lyc_cycle_offset
 	.dw ppu_counter
 	.dw nextupdatecycle_STAT
 	.dw nextupdatecycle_LY

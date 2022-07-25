@@ -203,7 +203,24 @@ writeSTAT:
 writeLYChandler:
 	ld e,a
 writeLYC:
-	call updateSTAT_if_changed_lyc
+	push de
+	 push bc
+	  call updateSTAT
+	  exx
+	  ld a,l
+	  exx
+	  ld hl,LYC
+	  ld (hl),a
+	  dec hl
+	  ; Check if LYC=0 or LYC>=144, which always need special handling
+	  dec a
+	  cp 143
+lyc_write_disable_smc_2 = $
+	  jr nc,_
+	  ; Check if LYC-1=LY, for a fast path
+	  cp (hl)
+	  jp z,lyc_write_next_line
+_
 	  jp.lil lyc_write_helper
 	
 writeDIVhandler:
@@ -294,9 +311,11 @@ writeBGPhandler:
 	ld e,a
 writeBGP:
 	ld a,(BGP)
-	call updateSTAT_if_changed_any
-	 pop bc
-	pop de
+	exx
+	cp l
+	exx
+	jr z,write_port_ignore
+	call updateSTAT
 	jp.lil BGP_write_helper
 	
 writeNR52:
@@ -321,8 +340,8 @@ writeSVBK_stack:
 	ld a,c
 	jr writeVBK_finish
 
-;writeP1:
-;	jr _writeP1
+writeP1:
+	jr _writeP1
 	
 writeRP:
 	jr _writeRP
@@ -368,7 +387,7 @@ writeVBK_finish:
 	
 writeP1handler:
 	ld e,a
-writeP1:
+_writeP1:
 	exx
 	ld a,l
 	exx
@@ -623,10 +642,26 @@ _writeNR52:
 writeNR52_enable:
 	ld (write_audio_disable_smc),hl
 writeNR52_finish:
+write_scroll_no_change:
 	ld a,e
 	ex af,af'
 	exx
 	ret
+	
+write_scroll_handler:
+	ex af,af'
+	ld e,a
+_write_scroll:
+	exx
+	ld a,l
+	exx
+	ld h,$FF
+	ld l,b
+	cp (hl)
+	jr z,write_scroll_no_change
+	push hl
+	 call updateSTAT
+	 jp.lil scroll_write_helper
 	
 writeKEY1handler:
 	ld e,a
@@ -1208,37 +1243,7 @@ readTIMAhandler:
 ;==============================================================================
 ; Lazy register update routines (STAT, LY, TIMA)
 ;==============================================================================
-	
-write_scroll_handler:
-	ex af,af'
-	ld e,a
-_write_scroll:
-	exx
-	ld a,l
-	exx
-	ld h,$FF
-	ld l,b
-	cp (hl)
-	jr z,updateSTAT_no_change_scroll
-	push hl
-	 call updateSTAT
-	 jp.lil scroll_write_helper
-	
-updateSTAT_if_changed_lyc:
-	ld a,(LYC)
-updateSTAT_if_changed_any:
-	exx
-	cp l
-	ld a,l
-	exx
-	pop hl   ; Pop return address
-	jr nz,updateSTAT_push
-updateSTAT_no_change_scroll:
-	ld a,e
-	exx
-	ex af,af'
-	ret
-	
+		
 	; Handle transition from fake mode 0 on LCD startup
 lcd_on_STAT_handler:
 	call lcd_on_STAT_restore
@@ -1267,12 +1272,6 @@ updateSTAT_mode1:
 	ld hl,(nextupdatecycle_LY)
 	ld (nextupdatecycle_STAT),hl
 	ret
-	
-updateSTAT_push:
-	push de
-	ld b,a
-	push bc
-	push hl ; Push return address
 	
 	; Input: BCDEHL' is swapped, DE=cycle count, C=cycle offset
 	; Output: (STAT) is updated if needed

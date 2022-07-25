@@ -2196,6 +2196,35 @@ enableHDMA:
 	ld (event_counter_checker_slot_HDMA),hl
 	jr trigger_event
 	
+lyc_write_next_line_reschedule_full:
+	  ld a,(STAT)
+	  ld c,a
+	  ld d,a
+	  jp.lil lyc_write_reschedule_full
+	
+lyc_write_next_line:
+	  ; Reset LY=LYC coincidence bit
+	  ld l,STAT & $FF
+	  ld a,(hl)
+	  res 2,a
+	  ld (hl),a
+	  ; Calculate new LYC cycle offset value
+	  ld hl,(vblank_counter)
+	  CPU_SPEED_IMM16($+1)
+	  ld de,CYCLES_PER_FRAME
+	  add hl,de
+	  ld de,(nextupdatecycle_LY)
+	  add hl,de
+	  ld (lyc_cycle_offset),hl
+	  ; Check if mode 0 or 2 interrupt are enabled
+	  and $28
+	  jr nz,lyc_write_next_line_reschedule_full
+	  ld (ppu_post_vblank_event_offset),hl
+	  ld hl,ppu_expired_lyc_mode2
+	  ld (ppu_post_vblank_event_handler),hl
+	  ld (event_counter_checker_slot_PPU),hl
+	  ex de,hl
+	  ld (ppu_counter),hl
 reschedule_event_PPU:
 	 pop bc
 	 ; Get the relative time of the event from the currently scheduled event
@@ -2821,6 +2850,8 @@ keys:
 trampoline_next:
 	.dl 0
 persistent_vblank_counter:
+	.dw 0
+lyc_cycle_offset:
 	.dw 0
 render_save_sps:
 	.dw 0
