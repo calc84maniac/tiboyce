@@ -203,12 +203,60 @@
 	SPI_PARAM(param & $FF)
 #endmacro
 
+#macro SPI_PARAM_CHECKED(param, limit)
+	#if (param < 0) || (param > limit)
+	.error "Parameter ", param, " not within limit ", limit
+	#endif
+	SPI_PARAM(param)
+#endmacro
+
+#macro SPI_PARAM2_CHECKED(param1, limit1, param2, limit2)
+	#if (param1 < 0) || (param1 > limit1)
+	.error "Parameter ", param1, " not within limit ", limit1
+	#endif
+	#if (param2 < 0) || (param2 > limit2)
+	.error "Parameter ", param2, " not within limit ", limit2
+	#endif
+	SPI_PARAM((param2 << 4) | param1)
+#endmacro
+
 #macro SPI_END
 	#if SPI_BIT != $80
 	.db SPI_VALUE
 	#endif
 	#undef SPI_VALUE
 	#undef SPI_BIT
+#endmacro
+
+; Gamma voltage levels are specified here.
+; V0-V2, V20, V43, V61-V63 are the main points, ranging from 129 to 0.
+; V4, V6, V13 are interpolated between V2 and V20, ranging from 60 to 0.
+; V27, V36 are interpolated between V20 and V43, ranging from 25 to 0.
+; V50, V57, V59 are interpolated between V43 and V61, ranging from 60 to 0.
+; J0 and J1 are values between 0 and 3 affecting interpolations for remaining voltages.
+#macro SPI_GAMMA(V0, V1, V2, V20, V43, V61, V62, V63, V4, V6, V13, V27, V36, V50, V57, V59)
+	SPI_PARAM2_CHECKED(129-V0, $0F, 23-V63, $0F)
+	SPI_PARAM_CHECKED(128-V1, $3F)
+	SPI_PARAM_CHECKED(128-V2, $3F)
+	SPI_PARAM_CHECKED(57-V4, $1F)
+	SPI_PARAM_CHECKED(47-V6, $1F)
+	SPI_PARAM2_CHECKED(21-V13, $0F, J0, $03)
+	SPI_PARAM_CHECKED(128-V20, $7F)
+	SPI_PARAM2_CHECKED(20-V27, $07, 11-V36, $07)
+	SPI_PARAM_CHECKED(128-V43, $7F)
+	SPI_PARAM2_CHECKED(54-V50, $0F, J1, $03)
+	SPI_PARAM_CHECKED(44-V57, $1F)
+	SPI_PARAM_CHECKED(34-V59, $1F)
+	SPI_PARAM_CHECKED(64-V61, $3F)
+	SPI_PARAM_CHECKED(64-V62, $3F)
+#endmacro
+
+; Sets both positive and negative gamma curves using the same parameters.
+#macro SPI_GAMMA_BOTH(V0, V1, V2, V20, V43, V61, V62, V63, V4, V6, V13, V27, V36, V50, V57, V59)
+	SPI_CMD($E0)
+	SPI_GAMMA(V0, V1, V2, V20, V43, V61, V62, V63, V4, V6, V13, V27, V36, V50, V57, V59)
+	SPI_CMD($E1)
+	SPI_GAMMA(V0, V1, V2, V20, V43, V61, V62, V63, V4, V6, V13, V27, V36, V50, V57, V59)
 #endmacro
 
 ; State variable indices
@@ -1260,6 +1308,11 @@ MulHLIXBy24:
 	add ix,ix \ adc hl,hl
 	ret
 	
+spiFastTransferArc:
+	ld hl,(ArcBase)
+	add hl,de
+spiFastTransferHL:
+	ex de,hl
 	; Input: DE=byte stream to transfer, B=byte count
 	; Output: DE follows byte stream, B=0
 	; Destroys: AF, HL

@@ -138,16 +138,27 @@ _
 	; Adjust colors
 	call nz,read_config_item
 	dec a
-	and $C9 - $79
-	add a,$79 ;RET or LD A,C
-	ld (adjust_color_enable_smc),a
-	; Load palettes only after setting adjust color SMC
-	ld a,(hl)
-	ACALL(LoadPalettes)
-	; BC=0
+	push af
+	 and $C9 - $79
+	 add a,$79 ;RET or LD A,C
+	 ld (adjust_color_enable_smc),a
+	 ; Load palettes only after setting adjust color SMC
+	 ld a,(hl)
+	 ACALL(LoadPalettes)
+	 ; BC=0
+	 ; Set gamma setting based on color adjustment
+	pop af
+	ld hl,spiGammaUniform
+	ld c,spiGammaSize
+	jr nz,_
+	add hl,bc ;spiGammaGBC
+_
+	ex de,hl
+	ld b,c
+	call spiFastTransferArc
 	
 	; Check for conflicting keys between configs
-	ld e,c
+	ld e,b
 key_conflict_retry:
 	ld ix,KeyConfig
 	ld d,key_config_count

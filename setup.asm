@@ -3328,6 +3328,9 @@ SetCustomHardwareSettingsNoHalt:
 RestoreOriginalLcdSettings:
 	; Don't overwrite any VRAM since we don't need a halt implementation
 	ACALL(SetCustomHardwareSettingsNoHalt)
+	ld de,spiGammaOriginal
+	ld b,spiGammaSize
+	call spiFastTransferArc
 	ld hl,originalLcdSettings
 	ld de,vRam
 	ACALL(SetLcdSettings)
@@ -3415,11 +3418,8 @@ _
 	; Get SPI settings address
 	ld de,(hl)
 	dec.s de
-	ld hl,(ArcBase)
-	add hl,de
-	ex de,hl
 	ld b,spiSetupSize
-	jp spiFastTransfer
+	jp spiFastTransferArc
 	
 GeneratePixelCache:
 	; Fill in the scanline sprite count pointers
@@ -4112,6 +4112,48 @@ spiSetupDoubleScale:
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($14)   ;  Interlace
+	SPI_END
+	
+spiGammaOriginal:
+	SPI_START
+	SPI_CMD($E0)
+	#define J0 1
+	#define J1 3
+	SPI_GAMMA(129, 128, 128, 83, 65, 45, 41, 10,  41, 32, 11,  16, 6,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 0
+	#define J1 3
+	SPI_GAMMA(129, 128, 128, 85, 64, 45, 41, 10,  41, 32, 12,  17, 7,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_END
+spiGammaSize = $ - spiGammaOriginal
+	
+spiGammaUniform:
+	SPI_START
+	SPI_CMD($E0)
+	#define J0 1
+	#define J1 3
+	SPI_GAMMA(129, 126, 121, 83, 65, 45, 41, 10,  49, 38, 13,  16, 6,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 0
+	#define J1 3
+	SPI_GAMMA(129, 126, 121, 85, 65, 45, 41, 10,  49, 38, 14,  17, 7,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_END
+	
+spiGammaGBC:
+	SPI_START
+	#define J0 0
+	#define J1 0
+	SPI_GAMMA_BOTH(129, 127, 125, 83, 59, 42, 41, 10,  50, 41, 13,  14, 6,  43, 15, 6)
+	#undef J1
+	#undef J0
 	SPI_END
 	
 hmem_init:
