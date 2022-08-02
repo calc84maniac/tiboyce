@@ -4134,22 +4134,45 @@ spiGammaUniform:
 	SPI_CMD($E0)
 	#define J0 1
 	#define J1 3
-	SPI_GAMMA(129, 126, 121, 83, 65, 45, 41, 10,  49, 38, 13,  16, 6,  43, 20, 11)
+	SPI_GAMMA(129, 125, 121, 83, 65, 45, 41, 10,  49, 38, 13,  16, 6,  43, 20, 11)
 	#undef J1
 	#undef J0
 	SPI_CMD($E1)
 	#define J0 0
 	#define J1 3
-	SPI_GAMMA(129, 126, 121, 85, 65, 45, 41, 10,  49, 38, 14,  17, 7,  43, 20, 11)
+	SPI_GAMMA(129, 125, 121, 85, 64, 45, 41, 10,  49, 38, 14,  17, 7,  43, 20, 11)
 	#undef J1
 	#undef J0
 	SPI_END
 	
 spiGammaGBC:
 	SPI_START
+	SPI_CMD($E0)
 	#define J0 0
-	#define J1 0
-	SPI_GAMMA_BOTH(129, 127, 125, 83, 59, 42, 41, 10,  50, 41, 13,  14, 6,  43, 15, 6)
+	#define J1 1
+	SPI_GAMMA(129, 124, 123, 83, 57, 24, 19, 10,  55, 42, 16,  16, 6,  50, 37, 25)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 2
+	#define J1 1
+	SPI_GAMMA(129, 124, 123, 83, 56, 23, 18, 10,  55, 42, 16,  16, 7,  51, 38, 27)
+	#undef J1
+	#undef J0
+	SPI_END
+	
+spiGammaGBA:
+	SPI_START
+	SPI_CMD($E0)
+	#define J0 0
+	#define J1 1
+	SPI_GAMMA(129, 127, 126, 90, 68, 46, 44, 10,  56, 44, 16,  16, 7,  43, 20, 10)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 2
+	#define J1 1
+	SPI_GAMMA(129, 126, 126, 89, 67, 46, 44, 10,  56, 45, 17,  17, 7,  44, 20, 11)
 	#undef J1
 	#undef J0
 	SPI_END
