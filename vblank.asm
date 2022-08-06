@@ -565,26 +565,27 @@ _
 	; Copy current palette values to the internal palette buffer,
 	; adjusting colors
 	ld ix,z80codebase+gbc_bg_palette_data
+	ld hl,adjust_color_lut
 	ld de,gbc_bg_transparent_colors
 _
 	ld bc,(ix)
-	ld a,c
-	add a,a
+	ld l,c
 	ld a,b
-	rla
-	ld hl,adjust_color_lut
+	and h ;$7C
+	or (hl)
 	ld l,a
+	dec h ;adjust_green_lsb_lut
 	ld a,(hl)
-	add a,a
-	sbc hl,hl
-	ld l,a
-	add hl,bc
-	ex de,hl
-	ld (hl),e
-	inc hl
-	ld (hl),d
-	inc hl
-	ex de,hl
+	add a,c
+	ld (de),a
+	inc de
+	inc h
+	inc h ;adjust_green_msb_lut
+	ld a,(hl)
+	adc a,b
+	ld (de),a
+	inc de
+	dec h ;adjust_color_lut
 	ld a,ixl
 	add a,8
 	ld ixl,a
@@ -597,23 +598,23 @@ _
 	lea ix,ix+2
 _
 	ld bc,(ix-2)
-	ld a,c
-	add a,a
+	ld l,c
 	ld a,b
-	rla
-	ld hl,adjust_color_lut
+	and h ;$7C
+	or (hl)
 	ld l,a
+	dec h ;adjust_green_lsb_lut
 	ld a,(hl)
-	add a,a
-	sbc hl,hl
-	ld l,a
-	add hl,bc
-	ex de,hl
-	ld (hl),e
-	inc hl
-	ld (hl),d
-	inc hl
-	ex de,hl
+	add a,c
+	ld (de),a
+	inc de
+	inc h
+	inc h ;adjust_green_msb_lut
+	ld a,(hl)
+	adc a,b
+	ld (de),a
+	inc de
+	dec h ;adjust_color_lut
 	ld a,ixl
 	and 7
 	jr nz,--_
@@ -1213,21 +1214,6 @@ _
 	ex de,hl
 	ret
 	
-setup_menu_palette:
-	; (MAG)ENTA | BLUE
-	ld hl,($EA56 << 16) | $1882
-	ld (mpLcdPalette + (BLUE*2)),hl
-	; OLIVE | MAG(ENTA)
-	ld hl,($CA8B << 8) | ($EA56 >> 8)
-	ld (mpLcdPalette + (MAGENTA*2+1)),hl
-	; (WH)ITE | BLACK
-	ld hl,($FFFF << 16) | $0000
-	ld (mpLcdPalette + (BLACK*2)),hl
-	; GRAY | WH(ITE)
-	ld hl,($4210 << 8) | ($FFFF >> 8)
-	ld (mpLcdPalette + (WHITE*2+1)),hl
-	AJUMP(SetMenuWindow)
-	
 #if 0
 ; Adjusts a 15-bit BGR color to more closely match a Game Boy Color screen.
 ;
@@ -1346,27 +1332,27 @@ _
 ; Output: BC = 15-bit color (adjusted)
 ; Destroys: AF, HL
 ;
-; Uses the following modification:
-;   G = (g * 3 + b) / 4
-;
-; To make the algorithm simpler, it is calculated as:
-;   G += (b / 4) - (g / 4)
+; Modifies the green component by an amount specified by the upper 3 bits
+; of blue and all 5 bits of green. The adjustment is gamma-aware,
+; using 3/4 green plus 1/4 blue for GBC and 5/6 green plus 1/6 blue for GBA.
 ;
 adjust_color:
 adjust_color_enable_smc = $
-	ld a,c
-	add a,a
-	ld a,b
-	rla
 	ld hl,adjust_color_lut
+	ld l,c
+	ld a,b
+	and h ;$7C
+	or (hl)
 	ld l,a
+	dec h
 	ld a,(hl)
-	add a,a
-	sbc hl,hl
-	ld l,a
-	add hl,bc
-	ld b,h
-	ld c,l
+	add a,c
+	ld c,a
+	inc h
+	inc h
+	ld a,(hl)
+	adc a,b
+	ld b,a
 	ret
 #endif
 

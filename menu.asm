@@ -137,25 +137,15 @@ _
 _
 	; Adjust colors
 	call nz,read_config_item
-	dec a
 	push af
-	 and $C9 - $79
-	 add a,$79 ;RET or LD A,C
-	 ld (adjust_color_enable_smc),a
-	 ; Load palettes only after setting adjust color SMC
-	 ld a,(hl)
+	 ; Load palettes and setup color adjustment tables
+	 ld c,(hl)
 	 ACALL(LoadPalettes)
 	 ; BC=0
-	 ; Set gamma setting based on color adjustment
-	pop af
-	ld hl,spiGammaUniform
-	ld c,spiGammaSize
-	jr nz,_
-	add hl,bc ;spiGammaGBC
-_
-	ex de,hl
-	ld b,c
-	call spiFastTransferArc
+	pop bc
+	; Set gamma setting based on color adjustment
+	ACALL(SetupGamma)
+	inc bc ;BC=0
 	
 	; Check for conflicting keys between configs
 	ld e,b
@@ -258,9 +248,94 @@ ClearMenuBuffer:
 	ldir
 	ret
 	
-LoadPalettesGBC:
-	ld a,(adjust_color_enable_smc)
-	add a,a
+	; Input: C = palette index, A = color adjust mode
+	; Output: BC = 0
+	; Destroys: AF,DE,HL,IX
+LoadPalettes:
+	ld d,$C9 ;RET
+	or a
+	jr z,LoadPalettesNoColorAdjust
+	ld d,a
+	ld e,40
+	mlt de
+	ld hl,GreenAdjustOffsetsGBC-40
+	add hl,de
+	ex de,hl
+	ld ix,(ArcBase)
+	add ix,de
+	ld de,adjust_color_lut
+LoadPaletteColorAdjustRowLoop:
+	ld a,e
+	and 3
+	jr nz,LoadPaletteColorAdjustNextByte
+	ld l,(ix)
+	inc ix
+	ld h,a
+	add hl,hl
+LoadPaletteColorAdjustNextByte:
+	ld b,(ix)
+	inc ix
+LoadPaletteColorAdjustNextBit:
+	; Assign new value of low 3 green bits (mask $8C)
+	xor e
+	and $8C
+	xor e
+	ld e,a
+	; Conditionally decrement green offset
+	sla b
+	ld a,l
+	jr nc,_
+	sub $20
+	ld l,a
+	jr nc,_
+	dec h
+_
+	; Write green offset to LUT
+	dec d ;adjust_green_lsb_lut
+	ld (de),a
+	ld a,h
+	inc d
+	inc d ;adjust_green_msb_lut
+	ld (de),a
+	; Fill low byte conversion LUT as well
+	ld a,e
+	sra a \ sra a \ sra a
+	and $8C
+	dec d ;adjust_color_lut
+	ld (de),a
+	; Increment low 3 green bits (mask $8C)
+	ld a,e
+	or d ;$73
+	inc a
+	jr nz,LoadPaletteColorAdjustNextBit
+	; Increment upper 2 green bits and 3 blue bits (mask $73)
+	; This works because the $8C bits are already set in E
+	inc e
+	jr nz,LoadPaletteColorAdjustRowLoop
+	ld d,$21 ;LD HL,
+LoadPalettesNoColorAdjust:
+	ld a,d
+	ld (adjust_color_enable_smc),a
+	ld a,c
+
+	ld ix,(ArcBase)
+	ld bc,PaletteIndex
+	add ix,bc
+	ld e,a
+	and $1F
+	ld c,a
+	ld b,3
+	mlt bc
+	add ix,bc
+	
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	or a
+	ld a,d
+	rla
+	ld a,e
+	ld hl,update_palettes_gbc_smc
+	ld de,prepare_next_frame_gbc_smc+1
+	jr z,LoadPalettesGB
 	push hl
 	 ld a,$18 ;JR
 	 ld (hl),a
@@ -275,26 +350,7 @@ _
 	 ld (hl),a
 	 jp (hl)
 	
-	; Input: A = palette index
-	; Output: BC = 0
-	; Destroys: AF,DE,HL,IX
-LoadPalettes:
-	ld ix,(ArcBase)
-	ld bc,PaletteIndex
-	add ix,bc
-	ld e,a
-	and $1F
-	ld c,a
-	ld b,3
-	mlt bc
-	add ix,bc
-	
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
-	or a
-	ld a,e
-	ld hl,update_palettes_gbc_smc
-	ld de,prepare_next_frame_gbc_smc+1
-	jr nz,LoadPalettesGBC
+LoadPalettesGB:
 	ld (hl),$21 ;LD HL,
 	ex de,hl
 	ld (hl),BGP_max_value & $FF
@@ -371,6 +427,29 @@ load_single_palette_output_loop:
 	pop af
 	ret
 	
+SetupOriginalGamma:
+	ld b,3
+SetupGamma:
+	ld c,spiGammaConfigSize
+	mlt bc
+	ld hl,spiGammaUniform
+	add hl,bc
+	ex de,hl
+	ld b,spiGammaCmdSize
+	call spiFastTransferArc
+	ex de,hl
+	ld de,mpLcdPalette + (BLUE * 2)
+	ld c,menuPaletteSize
+	ldir
+	; Write black and white to the palette
+	ex de,hl
+	ld (hl),c
+	inc hl
+	dec bc
+	ld (hl),bc
+	inc (hl)
+	ret
+	
 ShowConfirmStateOperation:
 	; Just return NZ if the state does not exist
 	call check_valid_state
@@ -388,7 +467,7 @@ ShowConfirmStateOperation:
 	ld de,ConfirmSaveState
 _
 	push de
-	 call setup_menu_palette
+	 ACALL(SetMenuWindow)
 	pop de
 	ld hl,(current_state)
 ShowConfirmationDialog:
@@ -564,7 +643,7 @@ emulator_menu_ingame:
 	xor a
 emulator_menu:
 	push af
-	 call setup_menu_palette
+	 ACALL(SetMenuWindow)
 	 ; If the state slot was changed, verify load state is valid
 	 ld hl,main_menu_selection
 	 ld b,(hl)
@@ -1360,7 +1439,7 @@ GraphicsMenu:
 	.db ITEM_OPTION,10, 140,1,"Message display: %-3s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
 	.db ITEM_OPTION,3, 160,1,"Palette selection: %-10s",0
-	.db "Off: Use specified colors directly.\n On: Adjust to emulate a GBC display.",0
+	.db "Off: Use specified colors directly.\n GBC: Adjust to emulate a GBC display.\n GBA: Adjust to emulate a GBA display.",0
 	.db ITEM_OPTION,11, 170,1,"Adjust colors: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 190,1,"Back",0
@@ -1444,10 +1523,15 @@ OptionAutoSaveState:
 OptionDST:
 OptionSkinDisplay:
 OptionMessageDisplay:
-OptionAdjustColors:
 	.db 2
 	.db "off",0
 	.db "on",0
+	
+OptionAdjustColors:
+	.db 3
+	.db "off",0
+	.db "GBC",0
+	.db "GBA",0
 	
 OptionConfirmState:
 	.db 4
@@ -1703,3 +1787,115 @@ PaletteDictionary:
 	.dw $7FFF,$7E8C,$7C00,$0000
 	.dw $7FFF,$1BEF,$6180,$0000
 	.dw $4778,$3290,$1D87,$0861 ; Classic
+	
+	; Green adjustment offset generation data
+	; Each row corresponds to the three upper bits of the blue component,
+	; and contains a starting green offset followed by a bitmap, where
+	; each 1 in the bitmap means subtracting one from the offset.
+GreenAdjustOffsetsGBC:
+	.db  0 << 4, %00001000, %00000100, %00100100, %10101111
+	.db  3 << 4, %01101000, %10000010, %00010010, %10101101
+	.db  5 << 4, %01101100, %10001000, %01001001, %00110111
+	.db  7 << 4, %01110101, %01001000, %10001001, %00101111
+	.db  9 << 4, %01111010, %10101000, %10001001, %00101101
+	.db 10 << 4, %01110110, %10101000, %10001000, %10010111
+	.db 11 << 4, %01110111, %01010001, %00010000, %10001010
+	.db 12 << 4, %01111110, %10101000, %10000100, %00010000
+	
+GreenAdjustOffsetsGBA:
+	.db  0 << 4, %00000001, %00000000, %00100000, %00000100
+	.db  2 << 4, %01001000, %00100000, %00010000, %00000010
+	.db  4 << 4, %01101001, %00000100, %00000010, %00000000
+	.db  5 << 4, %00110101, %00010000, %01000000, %01000000
+	.db  7 << 4, %01101100, %10010001, %00000100, %00000100
+	.db  9 << 4, %01110110, %10010010, %00010000, %01000000
+	.db 10 << 4, %01011101, %01010010, %00100001, %00000100
+	.db 12 << 4, %01110110, %10101001, %00100010, %00010000
+	
+spiGammaUniform:
+	SPI_START
+	SPI_CMD($E0)
+	#define J0 1
+	#define J1 3
+	SPI_GAMMA(129, 125, 121, 83, 65, 45, 41, 10,  49, 38, 13,  16, 6,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 0
+	#define J1 3
+	SPI_GAMMA(129, 125, 121, 85, 64, 45, 41, 10,  49, 38, 14,  17, 7,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_END
+spiGammaCmdSize = $ - spiGammaUniform
+	; Menu colors
+	.dw $1882 ;BLUE
+	.dw $EA56 ;MAGENTA
+	.dw $CA8B ;OLIVE
+	.dw $4210 ;GRAY
+spiGammaConfigSize = $ - spiGammaUniform
+menuPaletteSize = spiGammaConfigSize - spiGammaCmdSize
+	
+spiGammaGBC:
+	SPI_START
+	SPI_CMD($E0)
+	#define J0 0
+	#define J1 1
+	SPI_GAMMA(129, 124, 123, 83, 57, 24, 19, 10,  55, 42, 16,  16, 6,  50, 37, 25)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 2
+	#define J1 1
+	SPI_GAMMA(129, 124, 123, 83, 56, 23, 18, 10,  55, 42, 16,  16, 7,  51, 38, 27)
+	#undef J1
+	#undef J0
+	SPI_END
+	; Menu colors
+	.dw $1CA3 ;BLUE
+	.dw $55F1 ;MAGENTA
+	.dw $BE0A ;OLIVE
+	.dw $35AD ;GRAY
+	
+spiGammaGBA:
+	SPI_START
+	SPI_CMD($E0)
+	#define J0 0
+	#define J1 1
+	SPI_GAMMA(129, 127, 126, 90, 68, 46, 44, 10,  56, 44, 16,  16, 7,  43, 20, 10)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 2
+	#define J1 1
+	SPI_GAMMA(129, 126, 126, 89, 67, 46, 44, 10,  56, 45, 17,  17, 7,  44, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_END
+	; Menu colors
+	.dw $24C4 ;BLUE
+	.dw $EE98 ;MAGENTA
+	.dw $56CE ;OLIVE
+	.dw $4A52 ;GRAY
+	
+spiGammaOriginal:
+	SPI_START
+	SPI_CMD($E0)
+	#define J0 1
+	#define J1 3
+	SPI_GAMMA(129, 128, 128, 83, 65, 45, 41, 10,  41, 32, 11,  16, 6,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_CMD($E1)
+	#define J0 0
+	#define J1 3
+	SPI_GAMMA(129, 128, 128, 85, 64, 45, 41, 10,  41, 32, 12,  17, 7,  43, 20, 11)
+	#undef J1
+	#undef J0
+	SPI_END
+	; Menu colors
+	.dw $1882 ;BLUE
+	.dw $EA56 ;MAGENTA
+	.dw $CA8B ;OLIVE
+	.dw $4210 ;GRAY
+	

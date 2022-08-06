@@ -286,9 +286,9 @@ BG_PALETTE_COLOR_3 = 2
 BLUE = 9
 MAGENTA = 10
 OLIVE = 11
-BLACK = 12
-WHITE = 13
-GRAY = 14
+GRAY = 12
+BLACK = 13
+WHITE = 14
 ; Palette entries representing the raw BGP colors. Must precede OBP0 colors.
 BG_COLOR_0 = 15
 BG_COLOR_1 = 16
@@ -587,6 +587,26 @@ myADLstack = usbArea - 3
 vram_tiles_start = (pixelShadow | $FF) + 1
 decompress_buffer = vram_tiles_start
 
+; LUT for LSB of green component adjustment.
+; Input: Bit 7: Bit 2 of G
+;        Bits 6-4: Bits 5-3 of B
+;        Bits 3-2: Bits 1-0 of G
+;        Bits 1-0: Bits 5-4 of G
+; Must be 256-byte aligned and precede adjust_color_lut.
+adjust_green_lsb_lut = vram_tiles_start + $4000
+
+; LUT to remap the color's low byte for color adjustment.
+; Input: Bits 5-7: Bits 2-0 of G
+; Output: Bit 7: Bit 2 of G
+;         Bits 3-2: Bits 1-0 of G
+; Must be 256-byte aligned, and middle byte must equal $73 for optimization.
+adjust_color_lut = adjust_green_lsb_lut + 256
+
+; LUT for MSB of green component adjustment.
+; Same input format as the LSB LUT.
+; Must be 256-byte aligned and follow adjust_color_lut.
+adjust_green_msb_lut = adjust_color_lut + 256
+
 ; Preprocessed Game Boy tile pixel entries. 24KB in size.
 ; Game Boy only:
 ;   Each tile is converted into one byte per pixel, for 64 bytes per tile.
@@ -600,7 +620,7 @@ decompress_buffer = vram_tiles_start
 ;   which makes it simpler to represent the bank in the tile attributes.
 ;   This also effectively keeps tile lookups at a scale of 64.
 ; Buffer must be 256-byte aligned.
-vram_pixels_start = vram_tiles_start + $4000
+vram_pixels_start = adjust_green_msb_lut + 256
 ; The mini frame backup in the menu is temporarily stored in this area.
 ; 160 * 144 = 22.5 KB in size.
 mini_frame_backup = vram_pixels_start
@@ -708,16 +728,10 @@ gbc_obj_opaque_colors = gbc_bg_opaque_colors + (24*2)
 ; Conveniently this fits in a 256-byte space along with the BG palette colors.
 recompile_cycle_offset_stack = overlapped_bg_palette_colors + 256
 
-; LUT for color adjustment.
-; Input: Bits 5-7: B=Most significant bits of blue component
-;        Bits 0-2: G=Most significant bits of green component
-; Output: (B - G) << 4
-adjust_color_lut = recompile_cycle_offset_stack
-
 ; Two arrays of scanline information, one for each double buffer.
 ; Offset 0: Pointer to scanline sprite usage count.
 ; Offset 3: Pointer to the first pixel of the scanline in the frame buffer.
-scanlineLUT_1 = adjust_color_lut + 256
+scanlineLUT_1 = recompile_cycle_offset_stack
 scanlineLUT_2 = scanlineLUT_1 + (144*6)
 
 ; One byte for each scanline indicating the number of sprites remaining

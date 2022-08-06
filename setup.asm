@@ -118,6 +118,8 @@ _
 NoRomMenuLoop:
 	; Set custom hardware settings
 	ACALL(SetCustomHardwareSettings)
+	; Set original gamma settings and initialize menu palette
+	ACALL(SetupOriginalGamma)
 	
 	; Set current description and main menu selection
 	APTR(NoRomLoadedDescription)
@@ -866,23 +868,6 @@ SetupTilemapAttributesInnerLoop:
 SetupTilemapCacheDone:
 	ld a,z80codebase >> 16
 	ld mb,a
-	
-	ld hl,adjust_color_lut + $E0
-	ld d,l
-_
-	ld a,l
-	rrca
-	rrca
-	rrca
-	and d
-	ld e,a
-	ld a,l
-	and d
-	sub e
-	rra
-	ld (hl),a
-	inc l
-	djnz -_
 	
 	APTR(digits_encoded)
 	ex de,hl
@@ -2895,7 +2880,7 @@ _
 	 
 	 ; Otherwise, switch to the menu state and back
 	 ACALL(SetCustomHardwareSettings)
-	 call setup_menu_palette
+	 ACALL(SetMenuWindow)
 	pop hl
 	call CallHL
 	push af
@@ -3326,9 +3311,7 @@ SetCustomHardwareSettingsNoHalt:
 RestoreOriginalLcdSettings:
 	; Don't overwrite any VRAM since we don't need a halt implementation
 	ACALL(SetCustomHardwareSettingsNoHalt)
-	ld de,spiGammaOriginal
-	ld b,spiGammaSize
-	call spiFastTransferArc
+	ACALL(SetupOriginalGamma)
 	ld hl,originalLcdSettings
 	ld de,vRam
 	ACALL(SetLcdSettings)
@@ -4110,71 +4093,6 @@ spiSetupDoubleScale:
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($14)   ;  Interlace
-	SPI_END
-	
-spiGammaOriginal:
-	SPI_START
-	SPI_CMD($E0)
-	#define J0 1
-	#define J1 3
-	SPI_GAMMA(129, 128, 128, 83, 65, 45, 41, 10,  41, 32, 11,  16, 6,  43, 20, 11)
-	#undef J1
-	#undef J0
-	SPI_CMD($E1)
-	#define J0 0
-	#define J1 3
-	SPI_GAMMA(129, 128, 128, 85, 64, 45, 41, 10,  41, 32, 12,  17, 7,  43, 20, 11)
-	#undef J1
-	#undef J0
-	SPI_END
-spiGammaSize = $ - spiGammaOriginal
-	
-spiGammaUniform:
-	SPI_START
-	SPI_CMD($E0)
-	#define J0 1
-	#define J1 3
-	SPI_GAMMA(129, 125, 121, 83, 65, 45, 41, 10,  49, 38, 13,  16, 6,  43, 20, 11)
-	#undef J1
-	#undef J0
-	SPI_CMD($E1)
-	#define J0 0
-	#define J1 3
-	SPI_GAMMA(129, 125, 121, 85, 64, 45, 41, 10,  49, 38, 14,  17, 7,  43, 20, 11)
-	#undef J1
-	#undef J0
-	SPI_END
-	
-spiGammaGBC:
-	SPI_START
-	SPI_CMD($E0)
-	#define J0 0
-	#define J1 1
-	SPI_GAMMA(129, 124, 123, 83, 57, 24, 19, 10,  55, 42, 16,  16, 6,  50, 37, 25)
-	#undef J1
-	#undef J0
-	SPI_CMD($E1)
-	#define J0 2
-	#define J1 1
-	SPI_GAMMA(129, 124, 123, 83, 56, 23, 18, 10,  55, 42, 16,  16, 7,  51, 38, 27)
-	#undef J1
-	#undef J0
-	SPI_END
-	
-spiGammaGBA:
-	SPI_START
-	SPI_CMD($E0)
-	#define J0 0
-	#define J1 1
-	SPI_GAMMA(129, 127, 126, 90, 68, 46, 44, 10,  56, 44, 16,  16, 7,  43, 20, 10)
-	#undef J1
-	#undef J0
-	SPI_CMD($E1)
-	#define J0 2
-	#define J1 1
-	SPI_GAMMA(129, 126, 126, 89, 67, 46, 44, 10,  56, 45, 17,  17, 7,  44, 20, 11)
-	#undef J1
-	#undef J0
 	SPI_END
 	
 hmem_init:
