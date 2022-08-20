@@ -279,7 +279,7 @@ key_smc_load_state = $+2
 	    jr z,load_state_not_found
 _
 	    ld (main_menu_selection),a
-	    ACALL(ShowConfirmStateOperation)
+	    ACALL(BackupAndShowConfirmStateOperation)
 	    jr z,state_operation_denied
 	    ld a,4
 	    ld (exitReason),a

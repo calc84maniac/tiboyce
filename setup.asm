@@ -3340,7 +3340,7 @@ RestoreHardwareSettings:
 	ei
 	ret
 	
-SetMenuWindow:
+BackupMiniScreen:
 	ld ix,scanlineLUT_1
 	ld a,(current_buffer+1)
 	cp (gb_frame_buffer_1 >> 8) & $FF
@@ -3356,7 +3356,9 @@ backup_mini_screen_row_loop:
 	lea ix,ix+6
 	dec a
 	jr nz,backup_mini_screen_row_loop
+	ret
 	
+SetMenuWindow:
 	APTR(lcdSettingsMenu)
 SetLcdSettingsFirstBuffer:
 	ld de,menu_frame_buffer

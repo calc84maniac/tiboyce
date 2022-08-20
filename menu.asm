@@ -450,6 +450,8 @@ SetupGamma:
 	inc (hl)
 	ret
 	
+BackupAndShowConfirmStateOperation:
+	ACALL(BackupMiniScreen)
 ShowConfirmStateOperation:
 	; Just return NZ if the state does not exist
 	call check_valid_state
@@ -643,6 +645,7 @@ emulator_menu_ingame:
 	xor a
 emulator_menu:
 	push af
+	 ACALL(BackupMiniScreen)
 	 ACALL(SetMenuWindow)
 	 ; If the state slot was changed, verify load state is valid
 	 ld hl,main_menu_selection
