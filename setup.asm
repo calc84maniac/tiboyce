@@ -1032,6 +1032,16 @@ _
 	ld c,$FF80 - (WX+2)
 	ldir
 	
+	; Fill these ports with $FF in case of old save states,
+	; preventing GBC features from accidentally being activated
+	ld h,$FF
+	ld (hl),h
+	ld d,h
+	dec de
+	dec de
+	ld c,$FF80 - (WX+2)
+	lddr
+	
 SetupNoGBMemoryMap:
 	; Handle MBC-specific mapping
 	ld hl,z80codebase+mem_write_lut+$01
