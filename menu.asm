@@ -735,13 +735,9 @@ ItemDeleteKeyUnmapFinish:
 	jr draw_current_menu_trampoline
 	
 ItemDeleteOption:
-	or a
-	ret m
 	ACALL(GetOption)
-	ld a,(current_config)
-	dec a
-	ret nz
-	dec a
+	ret z
+	ld a,-1
 	ld (bc),a
 	jr draw_current_menu_trampoline
 	
@@ -845,6 +841,7 @@ draw_menu:
 	  call SetStringColor
 	  ex de,hl
 	  ld hl,$FF00
+	  ld c,l
 	  push hl
 	   jr draw_menu_title
 draw_menu_loop:
@@ -893,7 +890,7 @@ draw_menu_item_push:
 	  push de
 draw_menu_item:
 	   call SetStringColor
-	 
+
 	   ld de,ItemDisplayCallbacks
 	   ACALL(DoItemCallback)
 	   inc de
@@ -908,8 +905,9 @@ draw_menu_title:
 	   push hl
 	    push de
 	     inc c
+	     dec c
 	     ld a,' '
-	     jr nz,_
+	     jr z,_
 	     ld a,'*'
 _
 	     call PutChar
@@ -1059,33 +1057,38 @@ _
 	djnz GetKeyCodeLoop
 	ld a,c
 	ret
-	
+
+; @param[in] a option index
+; @param[out] a option value
+; @param[out] ubc pointer to option value in current config
+; @param[out] uhl pointer to length-prefixed sequence of display strings for
+;                 option values
+; @param[out] zf option value not game-specific
 GetOption:
 	ld hl,current_config
 	ld bc,0
+	inc a
 	ld c,a
-	add a,a
 	ld a,(hl)
-	jr c,++_
-	dec a
-	ld hl,OptionConfig
-	jr nz,_
-	ld hl,GameOptionConfig
-_
+	jr z,++_
+	or a
+	ld hl,OptionConfig-1
 	add hl,bc
 	ld a,(hl)
-	cp $FF
+	jr z,++_
+	ld hl,GameOptionConfig-1
+	add hl,bc
+	ld b,a
+	ld a,(hl)
+	cp -1
 	jr nz,_
-	push bc
-	 ld c,game_config_start - config_start
-	 sbc hl,bc
-	 ld a,(hl)
-	 add hl,bc
-	pop bc
+	ld a,b
+_
+	ld b,0
 _
 	push hl
-	 ld hl,OptionList
-	 sla c
+	 ld hl,OptionList-2
+	 add hl,bc
 	 add hl,bc
 	 ld bc,(ArcBase)
 	 add hl,bc
@@ -1095,7 +1098,7 @@ _
 	pop bc
 	ret
 	
-	; Returns config pointer in HL, start pointer in BC
+	; Returns config pointer in HL, start pointer in BC, zf = global config
 GetKeyConfig:
 	or a
 	sbc hl,hl
@@ -1110,21 +1113,23 @@ _
 	ret
 	
 ItemDisplayDigit:
-	or a
-	sbc hl,hl
-	cp 2
-	ld a,(current_state)
-	jr nz,++_
-	ld a,(current_config)
-	or a
-	ld a,(GameFrameskipValue)
+	ld hl,current_state
+	add a,-2
+	jr nc,++_
+					; a = 0
+	dec hl				; hl = current_config
+	sub (hl)
 	jr z,_
-	cp $FF
-	jr nz,++_
+					; a = -1
+	ld hl,GameFrameskipValue
+	sub (hl)
 	ld c,a
+	jr nz,++_
 _
-	ld a,(FrameskipValue)
+	ld hl,FrameskipValue
 _
+	ld a,(hl)
+	sbc hl,hl
 	ld l,a
 ItemDisplayLink:
 ItemDisplayCmd:
@@ -1137,32 +1142,42 @@ ItemDeleteCmd:
 	
 ItemDisplayKey:
 	ACALL(GetKeyConfig)
-	ld a,(calcType)
-	or a
 	jr z,_
-	ld a,57
-_
 	ld c,(hl)
 	inc c
-	jr nz,_
-	ld bc,game_config_start - config_start
-	sbc hl,bc
-	ld c,b
+	jr nz,++_
+	ld bc,config_start - game_config_start
+	add hl,bc
 _
-	dec c
+	ld c,0
+_
+	ld a,(calcType)
+	dec a
+	and 57
 	add a,(hl)
 	push de
 	 APTR(KeyNames)
 	pop de
 	jr ItemDisplayKeyEntry
-	
+
+; @param[in] a option index
+; @param[out] a 0
+; @param[out] b 0
+; @param[out] c nonzero iff option value is game-specific
+; @param[out] uhl pointer to display string for option value
 ItemDisplayOption:
 	ACALL(GetOption)
 	inc hl
-	push af
-	 ld a,(bc)
-	 ld c,a
-	pop af
+	ld c,0
+	jr z,_
+	inc c
+_
+
+; @param[in] a option value
+; @param[in] uhl pointer to sequence of display strings for option values
+; @param[out] a 0
+; @param[out] b 0
+; @param[out] uhl pointer to display string for option value
 ItemDisplayKeyEntry:
 	ld b,a
 	or a
@@ -1201,6 +1216,7 @@ MenuList:
 	.dw ControlsMenu+1
 	.dw EmulationMenu+1
 	
+	.dw OptionConfigSelect+1
 OptionList:
 	.dw OptionFrameskipType+1
 	.dw OptionSpeedDisplay+1
@@ -1215,7 +1231,6 @@ OptionList:
 	.dw OptionMessageDisplay+1
 	.dw OptionAdjustColors+1
 	.dw OptionConfirmState+1
-	.dw OptionConfigSelect+1
 	
 CmdList:
 	.dw CmdExit+1
@@ -1263,8 +1278,8 @@ MainMenu:
 	.db ITEM_DIGIT | ITEM_ROMONLY,0, 55,0,"Load State Slot %c",0
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
 	.db ITEM_DIGIT | ITEM_ROMONLY,1, 65,0,"Save State Slot %c",0
-	.db "Choose configuration options to edit.\n Inherited global options show a '*'.\n Press DEL to delete a per-game option.",0
-	.db ITEM_OPTION | ITEM_ROMONLY,option_config_count-$81, 85,0,"Config: %-8s",0
+	.db "Choose configuration options to edit.\n Game-specific options show a '*'.\n Press DEL to revert an option.",0
+	.db ITEM_OPTION | ITEM_ROMONLY,-1, 85,0,"Config: %-8s",0
 	.db "Select to set appearance and\n frameskip behavior.",0
 	.db ITEM_LINK,2, 105,0,"Graphics Options",0
 	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
@@ -1475,61 +1490,6 @@ OptionTimeZone:
 	.db "-1:00",0
 	
 KeyNames:
-	; 84 Plus CE keys
-	.db "(press)",0
-	.db "down",0
-	.db "left",0
-	.db "right",0
-	.db "up",0
-	.db 0,0,0,0
-	.db "enter",0
-	.db "+",0
-	.db "-",0
-	.db "x",0
-	.db "div",0
-	.db "^",0
-	.db "clear",0
-	.db 0
-	.db "(-)",0
-	.db "3",0
-	.db "6",0
-	.db "9",0
-	.db ")",0
-	.db "tan",0
-	.db "vars",0
-	.db 0
-	.db ".",0
-	.db "2",0
-	.db "5",0
-	.db "8",0
-	.db "(",0
-	.db "cos",0
-	.db "prgm",0
-	.db "stat",0
-	.db "0",0
-	.db "1",0
-	.db "4",0
-	.db "7",0
-	.db ",",0
-	.db "sin",0
-	.db "apps",0
-	.db "XT0n",0
-	.db "(none)",0
-	.db "sto>",0
-	.db "ln",0
-	.db "log",0
-	.db "x^2",0
-	.db "x^-1",0
-	.db "math",0
-	.db "alpha",0
-	.db "graph",0
-	.db "trace",0
-	.db "zoom",0
-	.db "window",0
-	.db "y=",0
-	.db "2nd",0
-	.db "mode",0
-	.db "del",0
 	; 83 Premium CE keys
 	.db "(appuyer)",0
 	.db "bas",0
@@ -1585,6 +1545,61 @@ KeyNames:
 	.db "2nde",0
 	.db "mode",0
 	.db "suppr",0
+	; 84 Plus CE keys
+	.db "(press)",0
+	.db "down",0
+	.db "left",0
+	.db "right",0
+	.db "up",0
+	.db 0,0,0,0
+	.db "enter",0
+	.db "+",0
+	.db "-",0
+	.db "x",0
+	.db "div",0
+	.db "^",0
+	.db "clear",0
+	.db 0
+	.db "(-)",0
+	.db "3",0
+	.db "6",0
+	.db "9",0
+	.db ")",0
+	.db "tan",0
+	.db "vars",0
+	.db 0
+	.db ".",0
+	.db "2",0
+	.db "5",0
+	.db "8",0
+	.db "(",0
+	.db "cos",0
+	.db "prgm",0
+	.db "stat",0
+	.db "0",0
+	.db "1",0
+	.db "4",0
+	.db "7",0
+	.db ",",0
+	.db "sin",0
+	.db "apps",0
+	.db "XT0n",0
+	.db "(none)",0
+	.db "sto>",0
+	.db "ln",0
+	.db "log",0
+	.db "x^2",0
+	.db "x^-1",0
+	.db "math",0
+	.db "alpha",0
+	.db "graph",0
+	.db "trace",0
+	.db "zoom",0
+	.db "window",0
+	.db "y=",0
+	.db "2nd",0
+	.db "mode",0
+	.db "del",0
 	
 KeySMCList:
 	.db key_smc_right - key_smc_turbo - 1
