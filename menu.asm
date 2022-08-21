@@ -1268,31 +1268,90 @@ ItemDeleteCallbacks:
 	.dw ItemDeleteOption+1
 	.dw ItemDeleteKey+1
 	.dw ItemDeleteRom+1
-	
+
+
+#if 0
+MenuTemplate:
+	.db item_count
+
+	.db title_x,title_y
+	.db title_text,0
+
+	.db item_0_help_text
+	.db item_0_type
+	.db item_0_type_data
+	.db item_0_x,item_0_y
+	.db item_0_text,0
+
+	.db item_1_help_text
+; ...
+#endif
+
 MainMenu:
 	.db 10
+
 	.db 5,8
 	.db "TI-Boy CE Alpha v0.2.1\n https://calc84maniac.github.io/tiboyce",0
+
 	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT | ITEM_ROMONLY,0, 55,0,"Load State Slot %c",0
+	.db ITEM_DIGIT | ITEM_ROMONLY
+	.db 0
+	.db 55,0
+	.db "Load State Slot %c",0
+
 	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT | ITEM_ROMONLY,1, 65,0,"Save State Slot %c",0
+	.db ITEM_DIGIT | ITEM_ROMONLY
+	.db 1
+	.db 65,0
+	.db "Save State Slot %c",0
+
 	.db "Choose configuration options to edit.\n Game-specific options show a '*'.\n Press DEL to revert an option.",0
-	.db ITEM_OPTION | ITEM_ROMONLY,-1, 85,0,"Config: %-8s",0
+	.db ITEM_OPTION | ITEM_ROMONLY
+	.db -1
+	.db 85,0
+	.db "Config: %-8s",0
+
 	.db "Select to set appearance and\n frameskip behavior.",0
-	.db ITEM_LINK,2, 105,0,"Graphics Options",0
+	.db ITEM_LINK
+	.db 2
+	.db 105,0
+	.db "Graphics Options",0
+
 	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
-	.db ITEM_LINK,3, 115,0,"Control Options",0
+	.db ITEM_LINK
+	.db 3
+	.db 115,0
+	.db "Control Options",0
+
 	.db "Select to manage miscellaneous options.",0
-	.db ITEM_LINK,4, 125,0,"Emulation Options",0
+	.db ITEM_LINK
+	.db 4
+	.db 125,0
+	.db "Emulation Options",0
+
 	.db "Select to load a new game\n (will exit a currently playing game).",0
-	.db ITEM_LINK,1, 145,0,"Load new game",0
+	.db ITEM_LINK
+	.db 1
+	.db 145,0
+	.db "Load new game",0
+
 	.db "Select to reset the Game Boy\n with the current game loaded.",0
-	.db ITEM_CMD | ITEM_ROMONLY,3, 155,0,"Restart game",0
+	.db ITEM_CMD | ITEM_ROMONLY
+	.db 3
+	.db 155,0
+	.db "Restart game",0
+
 	.db "Select to exit this menu and\n resume gameplay.",0
-	.db ITEM_CMD | ITEM_ROMONLY,0, 165,0,"Return to game",0
+	.db ITEM_CMD | ITEM_ROMONLY
+	.db 0
+	.db 165,0
+	.db "Return to game",0
+
 	.db "Select to exit the emulator and\n return to TI-OS.",0
-	.db ITEM_CMD,2, 185,0,"Exit TI-Boy CE",0
+	.db ITEM_CMD
+	.db 2
+	.db 185,0
+	.db "Exit TI-Boy CE",0
 	
 NoRomLoadedDescription:
 	.db _-$-1,"No ROM currently loaded"
@@ -1300,10 +1359,15 @@ _
 	
 LoadGameMenu:
 	.db 1
+
 	.db 10,14
 	.db "Load New ROM",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 185,0,"Back",0
+	.db ITEM_LINK
+	.db 0
+	.db 185,0
+	.db "Back",0
 	
 LoadRomHelpText:
 	.db "Press 2nd/Enter to start the game.\n Press left/right to scroll pages.\n Press DEL to delete ROM files.",0
@@ -1313,79 +1377,213 @@ LoadRomNoRomsText:
 	
 GraphicsMenu:
 	.db 10
-	.db 10,12,"Graphics Options",0
+
+	.db 10,12
+	.db "Graphics Options",0
+
 	.db "",0
-	.db ITEM_OPTION,ScalingMode-OptionConfig, 55,0,"Scaling mode: %-10s",0
+	.db ITEM_OPTION
+	.db ScalingMode-OptionConfig
+	.db 55,0
+	.db "Scaling mode: %-10s",0
+
 	.db "Static: Scale absolutely.\n Scrolling: Scale relative to tilemap.",0
-	.db ITEM_OPTION,ScalingType-OptionConfig, 65,0,"Scaling type: %-9s",0
+	.db ITEM_OPTION
+	.db ScalingType-OptionConfig
+	.db 65,0
+	.db "Scaling type: %-9s",0
+
 	.db "Display a skin in \"no scaling\" mode.\n Requires the TIBoySkn.8xv AppVar.",0
-	.db ITEM_OPTION,SkinDisplay-OptionConfig, 75,0,"Skin display: %-3s",0
+	.db ITEM_OPTION
+	.db SkinDisplay-OptionConfig
+	.db 75,0
+	.db "Skin display: %-3s",0
+
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,FrameskipType-OptionConfig, 95,0,"Frameskip type: %-6s",0
+	.db ITEM_OPTION
+	.db FrameskipType-OptionConfig
+	.db 95,0
+	.db "Frameskip type: %-6s",0
+
 	.db "",0
-	.db ITEM_DIGIT,2, 105,0,"Frameskip value: %u",0
+	.db ITEM_DIGIT
+	.db 2
+	.db 105,0
+	.db "Frameskip value: %u",0
+
 	.db "Show percentage of real GB performance.\n Turbo: Display when turbo is activated.\n Slowdown: Display when below fullspeed.",0
-	.db ITEM_OPTION,SpeedDisplay-OptionConfig, 125,0,"Speed display: %-8s",0
+	.db ITEM_OPTION
+	.db SpeedDisplay-OptionConfig
+	.db 125,0
+	.db "Speed display: %-8s",0
+
 	.db "Display emulator message overlays.",0
-	.db ITEM_OPTION,MessageDisplay-OptionConfig, 135,0,"Message display: %-3s",0
+	.db ITEM_OPTION
+	.db MessageDisplay-OptionConfig
+	.db 135,0
+	.db "Message display: %-3s",0
+
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
-	.db ITEM_OPTION,PaletteSelection-OptionConfig, 155,0,"Palette selection: %-10s",0
+	.db ITEM_OPTION
+	.db PaletteSelection-OptionConfig
+	.db 155,0
+	.db "Palette selection: %-10s",0
+
 	.db "Off: Use specified colors directly.\n On: Adjust to emulate a GBC display.",0
-	.db ITEM_OPTION,AdjustColors-OptionConfig, 165,0,"Adjust colors: %-3s",0
+	.db ITEM_OPTION
+	.db AdjustColors-OptionConfig
+	.db 165,0
+	.db "Adjust colors: %-3s",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 185,0,"Back",0
+	.db ITEM_LINK
+	.db 0
+	.db 185,0
+	.db "Back",0
 	
 ControlsMenu:
 	.db 16
-	.db 10,12,"Control Options",0
+
+	.db 10,12
+	.db "Control Options",0
+
 	.db "",0
-	.db ITEM_KEY,1,  55,0,"Right: %-9s",0
+	.db ITEM_KEY
+	.db 1
+	.db  55,0
+	.db "Right: %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,2,  65,0,"Left:  %-9s",0
+	.db ITEM_KEY
+	.db 2
+	.db  65,0
+	.db "Left:  %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,3,  75,0,"Up:    %-9s",0
+	.db ITEM_KEY
+	.db 3
+	.db  75,0
+	.db "Up:    %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,4,  85,0,"Down:  %-9s",0
+	.db ITEM_KEY
+	.db 4
+	.db  85,0
+	.db "Down:  %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,5, 55,20,"A:      %-9s",0
+	.db ITEM_KEY
+	.db 5
+	.db 55,20
+	.db "A:      %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,6, 65,20,"B:      %-9s",0
+	.db ITEM_KEY
+	.db 6
+	.db 65,20
+	.db "B:      %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,7, 75,20,"Select: %-9s",0
+	.db ITEM_KEY
+	.db 7
+	.db 75,20
+	.db "Select: %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,8, 85,20,"Start:  %-9s",0
+	.db ITEM_KEY
+	.db 8
+	.db 85,20
+	.db "Start:  %-9s",0
+
 	.db "Open the emulator menu.",0
-	.db ITEM_KEY,9, 105,0,"Open menu:       %-9s",0
+	.db ITEM_KEY
+	.db 9
+	.db 105,0
+	.db "Open menu:       %-9s",0
+
 	.db "Enable or toggle turbo mode.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,0, 115,0,"Turbo mode:      %-9s",0
+	.db ITEM_KEY
+	.db 0
+	.db 115,0
+	.db "Turbo mode:      %-9s",0
+
 	.db "Save state to the current slot.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,10, 125,0,"Save state:      %-9s",0
+	.db ITEM_KEY
+	.db 10
+	.db 125,0
+	.db "Save state:      %-9s",0
+
 	.db "Load state from the current slot.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,11, 135,0,"Load state:      %-9s",0
+	.db ITEM_KEY
+	.db 11
+	.db 135,0
+	.db "Load state:      %-9s",0
+
 	.db "Show or select the current state slot.\n Press a number while holding to select.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,12, 145,0,"State slot:      %-9s",0
+	.db ITEM_KEY
+	.db 12
+	.db 145,0
+	.db "State slot:      %-9s",0
+
 	.db "Turn screen brightness up.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,13, 155,0,"Brightness up:   %-9s",0
+	.db ITEM_KEY
+	.db 13
+	.db 155,0
+	.db "Brightness up:   %-9s",0
+
 	.db "Turn screen brightness down.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,14, 165,0,"Brightness down: %-9s",0
+	.db ITEM_KEY
+	.db 14
+	.db 165,0
+	.db "Brightness down: %-9s",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 185,0,"Back",0
+	.db ITEM_LINK
+	.db 0
+	.db 185,0
+	.db "Back",0
 	
 EmulationMenu:
 	.db 6
-	.db 10,11,"Emulation Options",0
+
+	.db 10,11
+	.db "Emulation Options",0
+
 	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
-	.db ITEM_OPTION,AutoSaveState-OptionConfig, 55,0,"Auto save state: %-3s",0
+	.db ITEM_OPTION
+	.db AutoSaveState-OptionConfig
+	.db 55,0
+	.db "Auto save state: %-3s",0
+
 	.db "",0
-	.db ITEM_OPTION,ConfirmStateOperation-OptionConfig, 65,0,"Confirm state save/load: %-9s",0
+	.db ITEM_OPTION
+	.db ConfirmStateOperation-OptionConfig
+	.db 65,0
+	.db "Confirm state save/load: %-9s",0
+
 	.db "",0
-	.db ITEM_OPTION,TurboMode-OptionConfig, 75,0,"Turbo mode: %-6s",0
+	.db ITEM_OPTION
+	.db TurboMode-OptionConfig
+	.db 75,0
+	.db "Turbo mode: %-6s",0
+
 	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
-	.db ITEM_OPTION,TimeZone-OptionConfig, 95,0,"Time zone: UTC%-6s",0
+	.db ITEM_OPTION
+	.db TimeZone-OptionConfig
+	.db 95,0
+	.db "Time zone: UTC%-6s",0
+
 	.db "Set to on if DST is currently active.",0
-	.db ITEM_OPTION,DaylightSavingTime-OptionConfig, 105,0,"Daylight Saving Time: %-3s",0
+	.db ITEM_OPTION
+	.db DaylightSavingTime-OptionConfig
+	.db 105,0
+	.db "Daylight Saving Time: %-3s",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 185,0,"Back",0
+	.db ITEM_LINK
+	.db 0
+	.db 185,0
+	.db "Back",0
 	
 OptionConfigSelect:
 	.db 2
