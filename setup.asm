@@ -1,7 +1,8 @@
 MENU_ITEM_COUNT = 15
 	
-	.org 0
 Startup:
+	ld bc,-arc_start
+	add hl,bc
 	ld (ArcBase),hl
 	
 	; Get the calculator type from the OS header

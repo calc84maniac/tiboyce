@@ -532,9 +532,10 @@ recompile_struct = z80codebase + $010000
 ; and jumps/calls to banked regions use the cache upon a bank mismatch.
 ; Buffer end must be 256-byte aligned.
 recompile_cache_end = gb_frame_buffer_1
-	
+
 	.db "TIBoyEXE",$01
 	.dw program_size
+header_size = $
 	
 	.org userMem
 	
@@ -1340,12 +1341,17 @@ wram_base = wram_start - $C000
 ; The size of the inserted cartridge RAM is located at the end of the main save state.
 save_state_end = wram_start + $2000
 save_state_size = save_state_end - save_state_start
-	
+
+arc_offset = $15
+	.org arc_offset+header_size+program_size
+arc_start:
 ; These files remain in the archived appvar.
 	#include "setup.asm"
 	#include "text.asm"
 	#include "menu.asm"
 	#include "z80mode.asm"
 	#include "render.asm"
+arc_end:
+arc_size = arc_end - arc_start
 
-	.echo "Total size: ", program_size + $
+	.echo "Total size: ", arc_end-arc_offset
