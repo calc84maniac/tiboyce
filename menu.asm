@@ -745,12 +745,11 @@ ItemChangeOption:
 	ld d,b
 	ACALL(GetOption)
 	add a,d
-	cp (hl)
-	jr c,_
 	add a,(hl)
-	jr c,_
-	xor a
 _
+	sub (hl)
+	jr nc,-_
+	add a,(hl)
 	ld (bc),a
 draw_current_menu_trampoline:
 	jr draw_current_menu
