@@ -1315,23 +1315,23 @@ GraphicsMenu:
 	.db 10
 	.db 10,12,"Graphics Options",0
 	.db "",0
-	.db ITEM_OPTION,6, 55,0,"Scaling mode: %-10s",0
+	.db ITEM_OPTION,ScalingMode-OptionConfig, 55,0,"Scaling mode: %-10s",0
 	.db "Static: Scale absolutely.\n Scrolling: Scale relative to tilemap.",0
-	.db ITEM_OPTION,9, 65,0,"Scaling type: %-9s",0
+	.db ITEM_OPTION,ScalingType-OptionConfig, 65,0,"Scaling type: %-9s",0
 	.db "Display a skin in \"no scaling\" mode.\n Requires the TIBoySkn.8xv AppVar.",0
-	.db ITEM_OPTION,7, 75,0,"Skin display: %-3s",0
+	.db ITEM_OPTION,SkinDisplay-OptionConfig, 75,0,"Skin display: %-3s",0
 	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,0, 95,0,"Frameskip type: %-6s",0
+	.db ITEM_OPTION,FrameskipType-OptionConfig, 95,0,"Frameskip type: %-6s",0
 	.db "",0
 	.db ITEM_DIGIT,2, 105,0,"Frameskip value: %u",0
 	.db "Show percentage of real GB performance.\n Turbo: Display when turbo is activated.\n Slowdown: Display when below fullspeed.",0
-	.db ITEM_OPTION,1, 125,0,"Speed display: %-8s",0
+	.db ITEM_OPTION,SpeedDisplay-OptionConfig, 125,0,"Speed display: %-8s",0
 	.db "Display emulator message overlays.",0
-	.db ITEM_OPTION,10, 135,0,"Message display: %-3s",0
+	.db ITEM_OPTION,MessageDisplay-OptionConfig, 135,0,"Message display: %-3s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
-	.db ITEM_OPTION,3, 155,0,"Palette selection: %-10s",0
+	.db ITEM_OPTION,PaletteSelection-OptionConfig, 155,0,"Palette selection: %-10s",0
 	.db "Off: Use specified colors directly.\n On: Adjust to emulate a GBC display.",0
-	.db ITEM_OPTION,11, 165,0,"Adjust colors: %-3s",0
+	.db ITEM_OPTION,AdjustColors-OptionConfig, 165,0,"Adjust colors: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 185,0,"Back",0
 	
@@ -1375,15 +1375,15 @@ EmulationMenu:
 	.db 6
 	.db 10,11,"Emulation Options",0
 	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
-	.db ITEM_OPTION,2, 55,0,"Auto save state: %-3s",0
+	.db ITEM_OPTION,AutoSaveState-OptionConfig, 55,0,"Auto save state: %-3s",0
 	.db "",0
-	.db ITEM_OPTION,12, 65,0,"Confirm state save/load: %-9s",0
+	.db ITEM_OPTION,ConfirmStateOperation-OptionConfig, 65,0,"Confirm state save/load: %-9s",0
 	.db "",0
-	.db ITEM_OPTION,8, 75,0,"Turbo mode: %-6s",0
+	.db ITEM_OPTION,TurboMode-OptionConfig, 75,0,"Turbo mode: %-6s",0
 	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
-	.db ITEM_OPTION,4, 95,0,"Time zone: UTC%-6s",0
+	.db ITEM_OPTION,TimeZone-OptionConfig, 95,0,"Time zone: UTC%-6s",0
 	.db "Set to on if DST is currently active.",0
-	.db ITEM_OPTION,5, 105,0,"Daylight Saving Time: %-3s",0
+	.db ITEM_OPTION,DaylightSavingTime-OptionConfig, 105,0,"Daylight Saving Time: %-3s",0
 	.db "Return to the main menu.",0
 	.db ITEM_LINK,0, 185,0,"Back",0
 	
