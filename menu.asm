@@ -1184,10 +1184,15 @@ TitleChecksumFormat:
 	.db "%.16s  %04X",0
 	
 MenuList:
+MainMenuIndex = ($-MenuList)/2
 	.dw MainMenu+1
+LoadGameMenuIndex = ($-MenuList)/2
 	.dw LoadGameMenu+1
+GraphicsMenuIndex = ($-MenuList)/2
 	.dw GraphicsMenu+1
+ControlsMenuIndex = ($-MenuList)/2
 	.dw ControlsMenu+1
+EmulationMenuIndex = ($-MenuList)/2
 	.dw EmulationMenu+1
 	
 	.dw OptionConfigSelect+1
@@ -1288,25 +1293,25 @@ MainMenu:
 
 	.db "Select to set appearance and\nframeskip behavior.",0
 	.db ITEM_LINK
-	.db 2
+	.db GraphicsMenuIndex
 	.db 105,0
 	.db "Graphics Options",0
 
 	.db "Select to change the in-game behavior\nof buttons and arrow keys.",0
 	.db ITEM_LINK
-	.db 3
+	.db ControlsMenuIndex
 	.db 115,0
 	.db "Control Options",0
 
 	.db "Select to manage miscellaneous options.",0
 	.db ITEM_LINK
-	.db 4
+	.db EmulationMenuIndex
 	.db 125,0
 	.db "Emulation Options",0
 
 	.db "Select to load a new game\n(will exit a currently playing game).",0
 	.db ITEM_LINK
-	.db 1
+	.db LoadGameMenuIndex
 	.db 145,0
 	.db "Load new game",0
 
@@ -1340,7 +1345,7 @@ LoadGameMenu:
 
 	.db "Return to the main menu.",0
 	.db ITEM_LINK
-	.db 0
+	.db MainMenuIndex
 	.db 185,0
 	.db "Back",0
 	
@@ -1412,7 +1417,7 @@ GraphicsMenu:
 
 	.db "Return to the main menu.",0
 	.db ITEM_LINK
-	.db 0
+	.db MainMenuIndex
 	.db 185,0
 	.db "Back",0
 	
@@ -1514,7 +1519,7 @@ ControlsMenu:
 
 	.db "Return to the main menu.",0
 	.db ITEM_LINK
-	.db 0
+	.db MainMenuIndex
 	.db 185,0
 	.db "Back",0
 	
@@ -1556,7 +1561,7 @@ EmulationMenu:
 
 	.db "Return to the main menu.",0
 	.db ITEM_LINK
-	.db 0
+	.db MainMenuIndex
 	.db 185,0
 	.db "Back",0
 	
