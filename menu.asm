@@ -732,7 +732,8 @@ ItemRevertGameSpecific:
 	ld a,-1
 ItemDeleteKeyUnmapFinish:
 	ld (bc),a
-	jr draw_current_menu_trampoline
+draw_current_menu_trampoline:
+	jr draw_current_menu
 	
 ItemChangeOption:
 	ld d,b
@@ -744,7 +745,6 @@ _
 	jr nc,-_
 	add a,(hl)
 	ld (bc),a
-draw_current_menu_trampoline:
 	jr draw_current_menu
 	
 redraw_current_menu:
