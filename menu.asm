@@ -357,14 +357,9 @@ ShowConfirmationDialog:
 	 add hl,de
 	 push hl
 	  ACALL(ClearMenuBuffer)
-	
-	  ld a,5
-	  ld (cursorRow),a
-	  ld a,1
-	  ld (cursorCol),a
-	
 	  ld a,WHITE
-	  ACALL(PutStringFormatColor)
+	  ld hl,1<<8|5
+	  ACALL(PutStringFormatColorXY)
 	 pop hl
 	pop hl
 	
@@ -775,7 +770,7 @@ _
 	
 	; Display only description if no ROM is loaded
 	or a
-	ld a,35
+	ld c,35
 	jr z,draw_current_description
 	
 	; Draw mini screen if on main menu
@@ -788,10 +783,6 @@ _
 	ld ix,(rom_start)
 	ld bc,$0134
 	add ix,bc
-	ld a,40
-	ld (cursorRow),a
-	ld a,b
-	ld (cursorCol),a
 	ld b,(ix+$014E-$0134)
 	ld c,(ix+$014F-$0134)
 	push bc
@@ -799,19 +790,18 @@ _
 	  APTR(TitleChecksumFormat)
 	  push hl
 	   ld a,MAGENTA
-	   ACALL(PutStringFormatColor)
+	   ld hl,1<<8|40
+	   ACALL(PutStringFormatColorXY)
 	  pop hl
 	 pop hl
 	pop hl
 	
-	ld a,30
+	ld c,30
 draw_current_description:
-	ld (cursorRow),a
-	ld a,1
-	ld (cursorCol),a
+	ld b,1
 	ld hl,(current_description)
 	ld a,MAGENTA
-	ACALL(PutNStringColor)
+	ACALL(PutNStringColorXY)
 	
 draw_current_menu:
 	; Erase the help text
@@ -847,13 +837,10 @@ draw_menu_loop:
 	 dec c
 	 push bc
 	  jr nz,_
-	  ld a,205
-	  ld (cursorRow),a
-	  ld a,1
-	  ld (cursorCol),a
-	  ld a,MAGENTA
 	  push de
-	   ACALL(PutStringColor)
+	   ld a,MAGENTA
+	   ld bc,1<<8|205
+	   ACALL(PutStringColorXY)
 	   ld (current_item_ptr),hl
 	   ld a,WHITE
 	   jr draw_menu_item
@@ -895,21 +882,20 @@ draw_menu_item:
 	   inc de
 	   
 draw_menu_title:
-	   ld a,(de)
-	   inc de
-	   ld (cursorRow),a
-	   ld a,(de)
-	   inc de
-	   ld (cursorCol),a
 	   push hl
-	    push de
-	     inc c
-	     dec c
+	    ex de,hl
+	    ld a,c
+	    ld c,(hl)
+	    inc hl
+	    ld b,(hl)
+	    inc hl
+	    push hl
+	     or a
 	     ld a,' '
 	     jr z,_
 	     ld a,'*'
 _
-	     call PutChar
+	     call PutCharXY
 	     ACALL(PutStringFormat)
 	    pop hl
 	   pop de
@@ -938,23 +924,17 @@ _
 	push bc
 	 ld hl,romListItem
 	 ld (current_item_ptr),hl
-	 ld a,205
-	 ld (cursorRow),a
-	 ld a,1
-	 ld (cursorCol),a
 	 APTR(LoadRomHelpText)
 	 ld a,MAGENTA
-	 ACALL(PutStringColor)
+	 ld bc,1<<8|205
+	 ACALL(PutStringColorXY)
 	pop bc
 	ld a,c
 _
 	ld (menuPrevItem),a
-	
-	ld a,25
-	ld (cursorRow),a
-	ld a,1
-	ld (cursorCol),a
-	add a,c
+
+	ld a,c
+	inc a
 	cp b
 	jr nz,_
 	xor a
@@ -971,6 +951,8 @@ _
 	mlt de
 	ld iy,romListStart
 	add iy,de
+	ld hl,1<<8|25
+	ld (cursorRowCol),hl
 	djnz draw_rom_list_loop
 	APTR(LoadRomNoRomsText)
 	ld a,GRAY
@@ -985,14 +967,7 @@ draw_rom_list_loop:
 _
 	 call GetRomDescription
 	 ACALL(PutNStringColor)
-	
-	 ld hl,cursorCol
-	 ld (hl),1
-	 inc hl
-	 ld a,(hl)
-	 add a,10
-	 ld (hl),a
-	  
+	 ACALL(PutNewLine)
 	pop bc
 	lea iy,iy+3
 	djnz draw_rom_list_loop
@@ -1291,33 +1266,33 @@ MainMenu:
 	.db 10
 
 	.db 5,8
-	.db "TI-Boy CE Alpha v0.2.1\n https://calc84maniac.github.io/tiboyce",0
+	.db "TI-Boy CE Alpha v0.2.1\nhttps://calc84maniac.github.io/tiboyce",0
 
-	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
+	.db "Select to load the game state from the\ncurrent slot for this game.\nPress left/right to change the slot.",0
 	.db ITEM_DIGIT | ITEM_ROMONLY
 	.db 0
 	.db 55,0
 	.db "Load State Slot %c",0
 
-	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
+	.db "Select to save the game state to the\ncurrent slot for this game.\nPress left/right to change the slot.",0
 	.db ITEM_DIGIT | ITEM_ROMONLY
 	.db 1
 	.db 65,0
 	.db "Save State Slot %c",0
 
-	.db "Choose configuration options to edit.\n Game-specific options show a '*'.\n Press DEL to revert an option.",0
+	.db "Choose configuration options to edit.\nGame-specific options show a '*'.\nPress DEL to revert an option.",0
 	.db ITEM_OPTION | ITEM_ROMONLY
 	.db -1
 	.db 85,0
 	.db "Config: %-8s",0
 
-	.db "Select to set appearance and\n frameskip behavior.",0
+	.db "Select to set appearance and\nframeskip behavior.",0
 	.db ITEM_LINK
 	.db 2
 	.db 105,0
 	.db "Graphics Options",0
 
-	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
+	.db "Select to change the in-game behavior\nof buttons and arrow keys.",0
 	.db ITEM_LINK
 	.db 3
 	.db 115,0
@@ -1329,25 +1304,25 @@ MainMenu:
 	.db 125,0
 	.db "Emulation Options",0
 
-	.db "Select to load a new game\n (will exit a currently playing game).",0
+	.db "Select to load a new game\n(will exit a currently playing game).",0
 	.db ITEM_LINK
 	.db 1
 	.db 145,0
 	.db "Load new game",0
 
-	.db "Select to reset the Game Boy\n with the current game loaded.",0
+	.db "Select to reset the Game Boy\nwith the current game loaded.",0
 	.db ITEM_CMD | ITEM_ROMONLY
 	.db 3
 	.db 155,0
 	.db "Restart game",0
 
-	.db "Select to exit this menu and\n resume gameplay.",0
+	.db "Select to exit this menu and\nresume gameplay.",0
 	.db ITEM_CMD | ITEM_ROMONLY
 	.db 0
 	.db 165,0
 	.db "Return to game",0
 
-	.db "Select to exit the emulator and\n return to TI-OS.",0
+	.db "Select to exit the emulator and\nreturn to TI-OS.",0
 	.db ITEM_CMD
 	.db 2
 	.db 185,0
@@ -1370,7 +1345,7 @@ LoadGameMenu:
 	.db "Back",0
 	
 LoadRomHelpText:
-	.db "Press 2nd/Enter to start the game.\n Press left/right to scroll pages.\n Press DEL to delete ROM files.",0
+	.db "Press 2nd/Enter to start the game.\nPress left/right to scroll pages.\nPress DEL to delete ROM files.",0
 	
 LoadRomNoRomsText:
 	.db "No ROMs found!",0
@@ -1387,19 +1362,19 @@ GraphicsMenu:
 	.db 55,0
 	.db "Scaling mode: %-10s",0
 
-	.db "Static: Scale absolutely.\n Scrolling: Scale relative to tilemap.",0
+	.db "Static: Scale absolutely.\nScrolling: Scale relative to tilemap.",0
 	.db ITEM_OPTION
 	.db ScalingType-OptionConfig
 	.db 65,0
 	.db "Scaling type: %-9s",0
 
-	.db "Display a skin in \"no scaling\" mode.\n Requires the TIBoySkn.8xv AppVar.",0
+	.db "Display a skin in \"no scaling\" mode.\nRequires the TIBoySkn.8xv AppVar.",0
 	.db ITEM_OPTION
 	.db SkinDisplay-OptionConfig
 	.db 75,0
 	.db "Skin display: %-3s",0
 
-	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
+	.db "Off: Do not skip any frames.\nAuto: Skip up to N frames as needed.\nManual: Render 1 of each N+1 frames.",0
 	.db ITEM_OPTION
 	.db FrameskipType-OptionConfig
 	.db 95,0
@@ -1411,7 +1386,7 @@ GraphicsMenu:
 	.db 105,0
 	.db "Frameskip value: %u",0
 
-	.db "Show percentage of real GB performance.\n Turbo: Display when turbo is activated.\n Slowdown: Display when below fullspeed.",0
+	.db "Show percentage of real GB performance.\nTurbo: Display when turbo is activated.\nSlowdown: Display when below fullspeed.",0
 	.db ITEM_OPTION
 	.db SpeedDisplay-OptionConfig
 	.db 125,0
@@ -1423,13 +1398,13 @@ GraphicsMenu:
 	.db 135,0
 	.db "Message display: %-3s",0
 
-	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
+	.db "Default: Use GBC game-specific palette.\nOthers: Use GBC manual palette.",0
 	.db ITEM_OPTION
 	.db PaletteSelection-OptionConfig
 	.db 155,0
 	.db "Palette selection: %-10s",0
 
-	.db "Off: Use specified colors directly.\n On: Adjust to emulate a GBC display.",0
+	.db "Off: Use specified colors directly.\nOn: Adjust to emulate a GBC display.",0
 	.db ITEM_OPTION
 	.db AdjustColors-OptionConfig
 	.db 165,0
@@ -1501,37 +1476,37 @@ ControlsMenu:
 	.db 105,0
 	.db "Open menu:       %-9s",0
 
-	.db "Enable or toggle turbo mode.\n Press DEL to unmap this key.",0
+	.db "Enable or toggle turbo mode.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
 	.db 0
 	.db 115,0
 	.db "Turbo mode:      %-9s",0
 
-	.db "Save state to the current slot.\n Press DEL to unmap this key.",0
+	.db "Save state to the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
 	.db 10
 	.db 125,0
 	.db "Save state:      %-9s",0
 
-	.db "Load state from the current slot.\n Press DEL to unmap this key.",0
+	.db "Load state from the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
 	.db 11
 	.db 135,0
 	.db "Load state:      %-9s",0
 
-	.db "Show or select the current state slot.\n Press a number while holding to select.\n Press DEL to unmap this key.",0
+	.db "Show or select the current state slot.\nPress a number while holding to select.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
 	.db 12
 	.db 145,0
 	.db "State slot:      %-9s",0
 
-	.db "Turn screen brightness up.\n Press DEL to unmap this key.",0
+	.db "Turn screen brightness up.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
 	.db 13
 	.db 155,0
 	.db "Brightness up:   %-9s",0
 
-	.db "Turn screen brightness down.\n Press DEL to unmap this key.",0
+	.db "Turn screen brightness down.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
 	.db 14
 	.db 165,0
@@ -1549,7 +1524,7 @@ EmulationMenu:
 	.db 10,11
 	.db "Emulation Options",0
 
-	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
+	.db "Automatically save state on ROM exit.\nState will be resumed upon next load.",0
 	.db ITEM_OPTION
 	.db AutoSaveState-OptionConfig
 	.db 55,0
@@ -1567,7 +1542,7 @@ EmulationMenu:
 	.db 75,0
 	.db "Turbo mode: %-6s",0
 
-	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
+	.db "The time offset for games with clocks.\nShould match the time set in the OS.\nRelevant when sharing save files.",0
 	.db ITEM_OPTION
 	.db TimeZone-OptionConfig
 	.db 95,0

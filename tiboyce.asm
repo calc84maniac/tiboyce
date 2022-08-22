@@ -905,9 +905,20 @@ PutChar_BgColorSMC1 = $+1
 	xor BLUE
 	ld (PutChar_ColorSMC),a
 	ret
-	
-; Renders the character in A on the current buffer at (cursorRow), (cursorCol).
+
+; Renders the character in A on the current buffer at (*B, *C) and updates the
+; cursor location.
+PutCharXY:
+	ld (cursorRowCol),bc
+
+; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
 PutChar:
+	ld bc,0
+cursorRowCol = $-3
+; The current text output row, in pixels (0-230).
+cursorRow = cursorRowCol
+; The current text output column, in characters (0-39).
+cursorCol = cursorRow+1
 	; Convert to font index. 0 is treated as a space, and 1-31 as newline.
 	or a
 	jr z,_
@@ -916,24 +927,24 @@ PutChar:
 	AJUMP(PutNewLine)
 _
 	; Put pointer to character data in appvar in DE.
-	ld c,a
-	ld b,10
-	mlt bc
-	APTR_INLINE(font)
-	add hl,bc
+	ld hl,(ArcBase)
+	ld de,font
+	add hl,de
+	ld e,a
+	ld d,10
+	mlt de
+	add hl,de
 	ex de,hl
-	
 	; Get pointer to buffer output location in HL.
-	ld hl,(cursorCol)
 	; Refuse to draw past the right side of the screen.
-	ld a,l
+	ld a,b
 	cp 40
 	ret nc
-	ld l,160
-	mlt hl
+	ld b,160
+	mlt bc
+	ld hl,(current_buffer)
+	add hl,bc
 PutChar_SmallBufferSMC1 = $
-	add hl,hl
-	ld bc,(current_buffer)
 	add hl,bc
 	ld c,a
 	ld b,8
@@ -1150,13 +1161,7 @@ default_palette:
 ; The digits for performance display.
 perf_digits:
 	.db 0,0,0,0,10
-	
-; The current text output column, in characters (0-39).
-cursorCol:
-	.db 0
-; The current text output row, in pixels (0-230).
-cursorRow:
-	.db 0
+
 ; The output buffer for printf, large enough for two rows of text.
 text_buffer:
 	.block 83
