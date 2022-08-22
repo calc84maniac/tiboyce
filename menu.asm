@@ -1212,9 +1212,13 @@ OptionList:
 	.dw OptionConfirmState+1
 	
 CmdList:
+ReturnExitReason = ($-CmdList)/2
 	.dw CmdExit+1
+; SelectRomExitReason = ($-CmdList)/2
 	.dw CmdExit+1
+ExitExitReason = ($-CmdList)/2
 	.dw CmdExit+1
+RestartExitReason = ($-CmdList)/2
 	.dw CmdExit+1
 	
 ItemDisplayCallbacks:
@@ -1317,19 +1321,19 @@ MainMenu:
 
 	.db "Select to reset the Game Boy\nwith the current game loaded.",0
 	.db ITEM_CMD | ITEM_ROMONLY
-	.db 3
+	.db RestartExitReason
 	.db 155,0
 	.db "Restart game",0
 
 	.db "Select to exit this menu and\nresume gameplay.",0
 	.db ITEM_CMD | ITEM_ROMONLY
-	.db 0
+	.db ReturnExitReason
 	.db 165,0
 	.db "Return to game",0
 
 	.db "Select to exit the emulator and\nreturn to TI-OS.",0
 	.db ITEM_CMD
-	.db 2
+	.db ExitExitReason
 	.db 185,0
 	.db "Exit TI-Boy CE",0
 	
