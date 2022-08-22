@@ -1424,91 +1424,91 @@ ControlsMenu:
 
 	.db "",0
 	.db ITEM_KEY
-	.db 1
+	.db RightKey-KeyConfig
 	.db  55,0
 	.db "Right: %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db 2
+	.db LeftKey-KeyConfig
 	.db  65,0
 	.db "Left:  %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db 3
+	.db UpKey-KeyConfig
 	.db  75,0
 	.db "Up:    %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db 4
+	.db DownKey-KeyConfig
 	.db  85,0
 	.db "Down:  %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db 5
+	.db AKey-KeyConfig
 	.db 55,20
 	.db "A:      %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db 6
+	.db BKey-KeyConfig
 	.db 65,20
 	.db "B:      %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db 7
+	.db SelectKey-KeyConfig
 	.db 75,20
 	.db "Select: %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db 8
+	.db StartKey-KeyConfig
 	.db 85,20
 	.db "Start:  %-9s",0
 
 	.db "Open the emulator menu.",0
 	.db ITEM_KEY
-	.db 9
+	.db MenuKey-KeyConfig
 	.db 105,0
 	.db "Open menu:       %-9s",0
 
 	.db "Enable or toggle turbo mode.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db 0
+	.db TurboKey-KeyConfig
 	.db 115,0
 	.db "Turbo mode:      %-9s",0
 
 	.db "Save state to the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db 10
+	.db SaveStateKey-KeyConfig
 	.db 125,0
 	.db "Save state:      %-9s",0
 
 	.db "Load state from the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db 11
+	.db LoadStateKey-KeyConfig
 	.db 135,0
 	.db "Load state:      %-9s",0
 
 	.db "Show or select the current state slot.\nPress a number while holding to select.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db 12
+	.db StateKey-KeyConfig
 	.db 145,0
 	.db "State slot:      %-9s",0
 
 	.db "Turn screen brightness up.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db 13
+	.db BrightnessUpKey-KeyConfig
 	.db 155,0
 	.db "Brightness up:   %-9s",0
 
 	.db "Turn screen brightness down.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db 14
+	.db BrightnessDownKey-KeyConfig
 	.db 165,0
 	.db "Brightness down: %-9s",0
 

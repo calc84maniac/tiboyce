@@ -1300,7 +1300,36 @@ ConfirmStateOperation:
 	.db key_config_count
 ; Key configuration. Each is a GetCSC scan code.
 KeyConfig:
-	.db 51,3,2,4,1,54,48,40,55,15,42,43,44,10,11
+TurboKey:
+	.db 51
+RightKey:
+	.db 3
+LeftKey:
+	.db 2
+UpKey:
+	.db 4
+DownKey:
+	.db 1
+AKey:
+	.db 54
+BKey:
+	.db 48
+SelectKey:
+	.db 40
+StartKey:
+	.db 55
+MenuKey:
+	.db 15
+SaveStateKey:
+	.db 42
+LoadStateKey:
+	.db 43
+StateKey:
+	.db 44
+BrightnessUpKey:
+	.db 10
+BrightnessDownKey:
+	.db 11
 	
 config_end:
 option_config_count = (KeyConfig-1) - FrameskipValue
