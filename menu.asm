@@ -464,7 +464,16 @@ _
 	jp GetRomDescriptionFromVAT
 	
 ItemSelectKey:
-	ACALL(GetKeyConfig)
+	sub KeyConfig-OptionConfig
+	sbc hl,hl
+	ld l,a
+	ld a,(current_config)
+	or a
+	ld bc,KeyConfig
+	jr z,_
+	ld bc,GameKeyConfig
+_
+	add hl,bc
 	push bc
 	 ld c,(hl)
 	 ld (hl),0
@@ -648,17 +657,6 @@ ItemDeleteState:
 	ld hl,(current_state)
 	jr ItemDeleteStateFinish
 	
-ItemDeleteKeyUnmap:
-	; Don't allow unmapping in-game buttons or menu
-	ld a,d
-	dec a
-	cp 9
-	ret c
-	ld a,UNMAPPED_KEY
-	cp (hl)
-	jr nz,ItemDeleteKeyUnmapFinish
-	ret
-	
 ItemChangeRom:
 	ld hl,romListFrameStart
 	ld a,(hl)
@@ -714,25 +712,25 @@ ItemDeleteDigit:
 	jr draw_current_menu_trampoline
 	
 ItemDeleteKey:
-	ld d,a
-	ACALL(GetKeyConfig)
-	; If already inheriting from global, unmap instead
-	ld a,(hl)
-	inc a
-	jr z,ItemDeleteKeyUnmap
-	; If global config is selected, unmap
-	ld a,(current_config)
-	dec a
-	jr nz,ItemDeleteKeyUnmap
-	dec a
-ItemDeleteKeyUnmapFinish:
-	ld (hl),a
-	jr draw_current_menu_trampoline
-	
 ItemDeleteOption:
+	ld d,a
 	ACALL(GetOption)
+	jr nz,ItemRevertGameSpecific
+	ld a,d
+	sub KeyConfig-OptionConfig
+	ret c
+	; Don't allow unmapping in-game buttons or menu
+	dec a
+	cp UndeletableKeysEnd-UndeletableKeysStart
+	ret c
+	ld a,(bc)
+	cp UNMAPPED_KEY
 	ret z
+	ld a,UNMAPPED_KEY
+	jr ItemDeleteKeyUnmapFinish
+ItemRevertGameSpecific:
 	ld a,-1
+ItemDeleteKeyUnmapFinish:
 	ld (bc),a
 	jr draw_current_menu_trampoline
 	
@@ -1071,21 +1069,7 @@ _
 	 add hl,bc
 	pop bc
 	ret
-	
-	; Returns config pointer in HL, start pointer in BC, zf = global config
-GetKeyConfig:
-	or a
-	sbc hl,hl
-	ld l,a
-	ld a,(current_config)
-	or a
-	ld bc,KeyConfig
-	jr z,_
-	ld bc,GameKeyConfig
-_
-	add hl,bc
-	ret
-	
+
 ItemDisplayDigit:
 	ld hl,current_state
 	add a,-2
@@ -1115,20 +1099,16 @@ ItemDeleteCmd:
 	ret
 	
 ItemDisplayKey:
-	ACALL(GetKeyConfig)
-	jr z,_
-	ld c,(hl)
-	inc c
-	jr nz,++_
-	ld bc,config_start - game_config_start
-	add hl,bc
-_
+	ACALL(GetOption)
 	ld c,0
+	jr z,_
+	inc c
 _
-	ld a,(calcType)
-	dec a
-	and 57
-	add a,(hl)
+	ld hl,(calcType)
+	dec l
+	jr z,_
+	add a,57
+_
 	push de
 	 APTR(KeyNames)
 	pop de
@@ -1141,11 +1121,11 @@ _
 ; @param[out] uhl pointer to display string for option value
 ItemDisplayOption:
 	ACALL(GetOption)
-	inc hl
 	ld c,0
 	jr z,_
 	inc c
 _
+	inc hl
 
 ; @param[in] a option value
 ; @param[in] uhl pointer to sequence of display strings for option values
@@ -1433,91 +1413,91 @@ ControlsMenu:
 
 	.db "",0
 	.db ITEM_KEY
-	.db RightKey-KeyConfig
+	.db RightKey-OptionConfig
 	.db  55,0
 	.db "Right: %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db LeftKey-KeyConfig
+	.db LeftKey-OptionConfig
 	.db  65,0
 	.db "Left:  %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db UpKey-KeyConfig
+	.db UpKey-OptionConfig
 	.db  75,0
 	.db "Up:    %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db DownKey-KeyConfig
+	.db DownKey-OptionConfig
 	.db  85,0
 	.db "Down:  %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db AKey-KeyConfig
+	.db AKey-OptionConfig
 	.db 55,20
 	.db "A:      %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db BKey-KeyConfig
+	.db BKey-OptionConfig
 	.db 65,20
 	.db "B:      %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db SelectKey-KeyConfig
+	.db SelectKey-OptionConfig
 	.db 75,20
 	.db "Select: %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db StartKey-KeyConfig
+	.db StartKey-OptionConfig
 	.db 85,20
 	.db "Start:  %-9s",0
 
 	.db "Open the emulator menu.",0
 	.db ITEM_KEY
-	.db MenuKey-KeyConfig
+	.db MenuKey-OptionConfig
 	.db 105,0
 	.db "Open menu:       %-9s",0
 
 	.db "Enable or toggle turbo mode.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db TurboKey-KeyConfig
+	.db TurboKey-OptionConfig
 	.db 115,0
 	.db "Turbo mode:      %-9s",0
 
 	.db "Save state to the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db SaveStateKey-KeyConfig
+	.db SaveStateKey-OptionConfig
 	.db 125,0
 	.db "Save state:      %-9s",0
 
 	.db "Load state from the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db LoadStateKey-KeyConfig
+	.db LoadStateKey-OptionConfig
 	.db 135,0
 	.db "Load state:      %-9s",0
 
 	.db "Show or select the current state slot.\nPress a number while holding to select.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db StateKey-KeyConfig
+	.db StateKey-OptionConfig
 	.db 145,0
 	.db "State slot:      %-9s",0
 
 	.db "Turn screen brightness up.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db BrightnessUpKey-KeyConfig
+	.db BrightnessUpKey-OptionConfig
 	.db 155,0
 	.db "Brightness up:   %-9s",0
 
 	.db "Turn screen brightness down.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db BrightnessDownKey-KeyConfig
+	.db BrightnessDownKey-OptionConfig
 	.db 165,0
 	.db "Brightness down: %-9s",0
 

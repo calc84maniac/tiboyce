@@ -1302,6 +1302,7 @@ ConfirmStateOperation:
 KeyConfig:
 TurboKey:
 	.db 51
+UndeletableKeysStart:
 RightKey:
 	.db 3
 LeftKey:
@@ -1320,6 +1321,7 @@ StartKey:
 	.db 55
 MenuKey:
 	.db 15
+UndeletableKeysEnd:
 SaveStateKey:
 	.db 42
 LoadStateKey:
