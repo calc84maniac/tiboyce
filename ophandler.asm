@@ -419,18 +419,16 @@ lyc_write_set_cycle_offset:
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
-	; Compare to the old LYC value
 	exx
 	ld a,l
 	exx
 	ld hl,hram_base + LYC
 	ld bc,lyc_prediction_list
 	ld c,(hl)
-	cp c
-	jr z,stat_lyc_write_no_reschedule
 	; Set the new LYC value
 	ld (hl),a
 	; If the new LYC value is smaller, clear the prediction
+	cp c
 	jr c,lyc_write_clear_prediction
 	; If the new LYC value is after vblank, clear the prediction
 	cp 144
@@ -448,9 +446,6 @@ lyc_write_disable_smc = $
 	ld c,(hl)
 	ld d,c
 	jr nz,_
-	; If LY was already equal to LYC, the interrupt is blocked and do no reschedule
-	bit 2,c
-	jr nz,stat_lyc_write_no_reschedule
 	; Set the LYC coincidence bit
 	set 2,c
 	ld (hl),c
@@ -491,7 +486,10 @@ lyc_write_reschedule_full:
 	; Reschedule the current PPU event
 	jp.sis reschedule_event_PPU
 	
-stat_lyc_write_no_reschedule:
+lyc_write_no_reschedule:
+	; Disable predicted LYC write behavior by predicting the current LYC
+	ld (z80codebase+writeLYC_prediction_smc),a
+stat_write_no_reschedule:
 	jp.sis z80_pop_restore_swap_ret
 	
 stat_write_helper:
@@ -543,14 +541,18 @@ _
 	; Handle changes to mode 0 and mode 2 interrupt bits
 	ld a,e
 	and $28
-	jr z,stat_lyc_write_no_reschedule
+	jr z,stat_write_no_reschedule
 	call stat_setup
 	; Reschedule the current PPU event
 	jp.sis reschedule_event_PPU
 	
 do_lcd_disable:
+	; Disable predicted LYC write behavior by predicting the current LYC
+	ld hl,hram_base+LYC
+	ld a,(hl)
+	ld (z80codebase+writeLYC_prediction_smc),a
 	; Set STAT mode 0 and LY=0
-	ld hl,hram_base+STAT
+	ld l,STAT & $FF
 	ld a,(hl)
 	ld c,a
 	and $FC
@@ -577,15 +579,13 @@ _
 	ld (z80codebase+updateLY_disable_smc),a
 	
 	; Disable interrupt and rescheduling effects for LYC and STAT writes
-	ld hl,(stat_lyc_write_no_reschedule - (lyc_write_disable_smc+2))<<8 | $18 ;JR
+	ld hl,(lyc_write_no_reschedule - (lyc_write_disable_smc+2))<<8 | $18 ;JR
 	ld (lyc_write_disable_smc),hl
-	ld h,stat_lyc_write_no_reschedule - (stat_write_disable_smc+2)
+	ld h,stat_write_no_reschedule - (stat_write_disable_smc+2)
 	ld (stat_write_disable_smc),hl
-	; Disable predicted LYC write behavior
-	ld a,l ;JR
-	ld (z80codebase+lyc_prediction_enable_smc),a
 	
 	; Force scanline fill and set its color
+	ld a,l ;JR
 	ld (LCDC_0_7_smc),a
 scanline_off_color_smc = $+1
 	ld a,WHITE
@@ -601,9 +601,6 @@ scanline_off_color_smc = $+1
 	jr stat_setup_next_vblank_lcd_off
 	
 stat_setup_hblank:
-	; Disable predicted LYC write behavior
-	ld hl,z80codebase+lyc_prediction_enable_smc
-	ld (hl),$18 ;JR
 	ld ix,z80codebase+ppu_expired_mode0_line_0
 	ld (ix-ppu_expired_mode0_line_0+ppu_mode0_event_line),b ;144
 	CPU_SPEED_IMM16($+1)
@@ -667,9 +664,6 @@ stat_setup_hblank_trampoline:
 	
 stat_setup_lyc_vblank:
 	; The next event from vblank is vblank, unless LYC is during mode 1
-	; Disable predicted LYC write behavior
-	ld hl,z80codebase+lyc_prediction_enable_smc
-	ld (hl),$18 ;JR
 	CPU_SPEED_IMM16($+1)
 	ld hl,-CYCLES_PER_FRAME
 	call nz,stat_setup_lyc_mode1_filter
@@ -702,6 +696,8 @@ stat_setup:
 	; Get the line to match, but treat offscreen lines as vblank match
 	ld.sis hl,(LY)
 	ld a,h
+	; Disable predicted LYC write behavior by predicting the current LYC
+	ld (z80codebase+writeLYC_prediction_smc),a
 	cp 154
 	jr c,_
 	ld h,b ;144
@@ -720,9 +716,6 @@ _
 	jr nc,stat_setup_lyc_vblank
 	; The next event from vblank is LYC (mode 2)
 	lea ix,ix-ppu_expired_vblank+ppu_expired_lyc_mode2
-	; Allow predicted LYC write behavior
-	ld hl,z80codebase+lyc_prediction_enable_smc
-	ld (hl),$20 ;JR NZ,
 	; Set current and initial LYC predictions
 	inc a
 	ld (ix-ppu_expired_lyc_mode2+lyc_curr_prediction),a
@@ -763,9 +756,6 @@ lcd_on_stat_setup_event_smc = $+3
 	ret
 	
 stat_setup_oam:
-	; Disable predicted LYC write behavior
-	ld hl,z80codebase+lyc_prediction_enable_smc
-	ld (hl),$18 ;JR
 	ld ix,z80codebase+ppu_expired_mode2_line_0
 	ld (ix-ppu_expired_mode2_line_0+ppu_mode2_event_line),143
 	CPU_SPEED_IMM16($+1)

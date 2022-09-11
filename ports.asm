@@ -203,23 +203,28 @@ writeSTAT:
 writeLYChandler:
 	ld e,a
 writeLYC:
+	exx
+	ld a,l
+	exx
+	; Check for a matching write
+	ld hl,LYC
+	cp (hl)
+	jr z,writeLYC_same
 	; Check for a predicted LYC write
-	ld a,(lyc_curr_prediction)
-	exx
-	cp l
-	exx
-lyc_prediction_enable_smc = $
-	jr nz,lyc_write_nonpredicted ;JR when disabled
-	ld (LYC),a
+writeLYC_prediction_smc = $+1
+	cp 0
+	jr nz,writeLYC_nonpredicted
+	ld (hl),a
 	; Reset the LY=LYC coincidence bit
-	ld hl,STAT
+	ld l,STAT & $FF
 	res 2,(hl)
+writeLYC_same:
 	ld a,e
 	exx
 	ex af,af'
 	ret
 	
-lyc_write_nonpredicted:
+writeLYC_nonpredicted:
 	push de
 	 push bc
 	  call updateSTAT

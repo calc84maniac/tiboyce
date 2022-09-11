@@ -1007,7 +1007,7 @@ ppu_mode2_prepare_vblank:
 _
 	; Set next line event to LYC
 	ld (ppu_mode2_event_line),a
-	jr ppu_expired_pre_vblank
+	jp ppu_expired_pre_vblank
 	
 ppu_mode0_prepare_vblank:
 	; Reset scheduled time and offset
@@ -1047,6 +1047,7 @@ ppu_lyc_enable_catchup_smc = $+1
 	; Get the next prediction and advance to it
 	ld.l a,(hl)
 	ld (lyc_curr_prediction),a
+	ld (writeLYC_prediction_smc),a
 	; Set interrupt bit, if LYC interrupt is enabled
 	jr z,_
 	; Get the number of scanlines until the next prediction
@@ -1098,6 +1099,7 @@ ppu_lyc_mode2_prepare_vblank:
 lyc_initial_prediction = $+1
 	ld a,0
 	ld (lyc_curr_prediction),a
+	ld (writeLYC_prediction_smc),a
 	; Set next scheduled time to vblank
 	ld hl,(vblank_counter)
 	add hl,de
@@ -1162,6 +1164,7 @@ ppu_post_vblank_event_handler = $+1
 ppu_lyc_initial_prediction_mismatch:
 	; Set both the initial and current prediction to actual LYC
 	ld (lyc_curr_prediction),a
+	ld (writeLYC_prediction_smc),a
 	ld (lyc_initial_prediction),a
 	; Calculate the LYC event offset from vblank
 	add a,10
