@@ -203,24 +203,26 @@ writeSTAT:
 writeLYChandler:
 	ld e,a
 writeLYC:
+	; Check for a predicted LYC write
+	ld a,(lyc_curr_prediction)
+	exx
+	cp l
+	exx
+lyc_prediction_enable_smc = $
+	jr nz,lyc_write_nonpredicted ;JR when disabled
+	ld (LYC),a
+	; Reset the LY=LYC coincidence bit
+	ld hl,STAT
+	res 2,(hl)
+	ld a,e
+	exx
+	ex af,af'
+	ret
+	
+lyc_write_nonpredicted:
 	push de
 	 push bc
 	  call updateSTAT
-	  exx
-	  ld a,l
-	  exx
-	  ld hl,LYC
-	  ld (hl),a
-	  dec hl
-	  ; Check if LYC=0 or LYC>=144, which always need special handling
-	  dec a
-	  cp 143
-lyc_write_disable_smc_2 = $
-	  jr nc,_
-	  ; Check if LYC-1=LY, for a fast path
-	  cp (hl)
-	  jp z,lyc_write_next_line
-_
 	  jp.lil lyc_write_helper
 	
 writeDIVhandler:

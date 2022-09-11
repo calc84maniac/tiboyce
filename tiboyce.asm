@@ -728,10 +728,18 @@ gbc_obj_opaque_colors = gbc_bg_opaque_colors + (24*2)
 ; Conveniently this fits in a 256-byte space along with the BG palette colors.
 recompile_cycle_offset_stack = overlapped_bg_palette_colors + 256
 
+; List of LYC write predictions, based on writes in previous frames.
+; The values in indices 1 to 143 correspond to the last value written to LYC
+; while LYC was the value in that index, only if the new value is between
+; the old value and 143. Otherwise, the value in the index equals the index.
+; The remaining indices may be written to, but are not used by the scheduler.
+; This table must be 256-byte aligned.
+lyc_prediction_list = recompile_cycle_offset_stack
+
 ; Two arrays of scanline information, one for each double buffer.
 ; Offset 0: Pointer to scanline sprite usage count.
 ; Offset 3: Pointer to the first pixel of the scanline in the frame buffer.
-scanlineLUT_1 = recompile_cycle_offset_stack
+scanlineLUT_1 = lyc_prediction_list + 256
 scanlineLUT_2 = scanlineLUT_1 + (144*6)
 
 ; One byte for each scanline indicating the number of sprites remaining
@@ -1798,7 +1806,6 @@ save_state_gbc_size = save_state_gbc_end - save_state_start
 CpuSpeedRelocs:
 	.dw vblank_counter
 	.dw persistent_vblank_counter
-	.dw lyc_cycle_offset
 	.dw ppu_counter
 	.dw nextupdatecycle_STAT
 	.dw nextupdatecycle_LY

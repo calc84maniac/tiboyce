@@ -740,6 +740,13 @@ SetupOverlappedPixelsDone:
 	ld (hl),a
 	ldir
 	
+	; Fill the LYC write prediction list with disabled predictions
+	ld h,(lyc_prediction_list >> 8) & $FF
+_
+	ld (hl),l
+	inc l
+	djnz -_
+	
 	ld a,vram_tiles_start >> 16
 	ld mb,a
 	
@@ -1362,20 +1369,15 @@ _
 	 ld hl,(-(CYCLES_PER_SCANLINE * 9 + 1)) & $FFFF
 	 ld c,1-CYCLES_PER_SCANLINE
 	 or a
-	 jr z,++_
+	 jr z,_
 	 ld h,-CYCLES_PER_SCANLINE
-	 add a,10
-	 ld l,a
-	 ; Wrap vblank lines to the 0-9 range
-	 daa
-	 jr nc,_
+	 sub 144
 	 ld l,a
 	 ; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
 	 add a,-9
 	 sbc a,a
 	 or h
 	 ld c,a
-_
 	 ; Multiply by -CYCLES_PER_SCANLINE
 	 ; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
 	 ; in that particular case (vblank collision is special-cased)
@@ -1393,7 +1395,7 @@ _
 	 ; This should always reset carry
 	 add hl,hl
 _
-	 ld.sis (lyc_cycle_offset),hl
+	 ld (lyc_cycle_offset),hl
 	 ld (z80codebase+ppu_lyc_scanline_length_smc),a
 	
 	 ; Get the number of cycles from one cycle in the future until vblank
@@ -1566,8 +1568,9 @@ _
 	push hl
 	 ; Enable interrupt and rescheduling effects for LYC and STAT writes
 	 .db $21 ;ld hl,
-	  ld a,b
-	  cp.s (hl)
+	  dec hl
+	  cp (hl)
+	  .db $2E ;ld l,
 	 ld (lyc_write_disable_smc), hl
 	 .db $21 ;ld hl,
 	  rrca

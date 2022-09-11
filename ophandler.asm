@@ -356,15 +356,54 @@ BGP_max_frequency = $+1
 BGP_write_done:
 	jp.sis z80_restore_swap_ret
 	
-lyc_write_0:
+lyc_write_mode1_nonzero:
 cpu_speed_ram_start = $
 	CPU_SPEED_START()
+	; Calculate the new LYC cycle offset (from vblank)
+	CPU_SPEED_IMM8($+1)
+	ld d,-CYCLES_PER_SCANLINE
+	sub 144
+	ld e,a
+	; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
+	add a,-9
+	sbc a,a
+ppu_lyc_scanline_length_speed_smc = $
+	nop ; Replace with ADD A,A in double-speed mode
+	or d
+	ld c,a
+	; Multiply by -CYCLES_PER_SCANLINE
+	; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
+	; in that particular case (vblank collision is special-cased)
+	xor a
+	sub e
+	mlt de
+	add a,d
+	ld d,a
+	ld a,c
+	jr lyc_write_set_cycle_offset
+
+lyc_write_clear_prediction:
+	; Clear the prediction for the old LYC
+	ld a,c
+	ld (bc),a
+	; Check if the new LYC is during active video
+	ld a,(hl)
+	dec a
+	cp 143
+	inc a
+	jr c,lyc_write_continue
+lyc_write_mode1:
+	ld b,a
+	jr nz,lyc_write_mode1_nonzero
 	; Special case for line 0, thanks silly PPU hardware
 	CPU_SPEED_IMM16($+1)
 	ld de,-(CYCLES_PER_SCANLINE * 9 + 1)
 	CPU_SPEED_IMM8($+1)
 	ld a,1-CYCLES_PER_SCANLINE
+lyc_write_set_cycle_offset:
+	ld (lyc_cycle_offset),de
 	ld (z80codebase+ppu_lyc_scanline_length_smc),a
+	ld a,b
 	jr lyc_write_continue
 	
 ; Writes to the LY compare register (LYC).
@@ -374,50 +413,39 @@ cpu_speed_ram_start = $
 ; Triggers a GB interrupt if LY already matches the new LYC value,
 ; but only if LYC is changing.
 ;
-; Inputs:  A = new value of LYC, minus 1
-;          HL = LY
+; Inputs:  L' = new value of LYC
 ;          (LY), (STAT) = current PPU state
 ;          BC, DE, return address on Z80 stack
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
-	; Calculate the new LYC cycle offset (from vblank)
-	inc a
-	ld b,a
-	jr z,lyc_write_0
-	CPU_SPEED_IMM8($+1)
-	ld d,-CYCLES_PER_SCANLINE
-	add a,10
-	ld e,a
-	; Wrap vblank lines to the 0-9 range
-	daa
-	jr nc,_
-	ld e,a
-	; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
-	add a,-9
-	sbc a,a
-ppu_lyc_scanline_length_speed_smc = $
-	nop ; Replace with ADD A,A in double-speed mode
-	or d
-	ld (z80codebase+ppu_lyc_scanline_length_smc),a
-_
-	; Multiply by -CYCLES_PER_SCANLINE
-	; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
-	; in that particular case (vblank collision is special-cased)
-	xor a
-	sub e
-	mlt de
-	add a,d
-	ld d,a
+	; Compare to the old LYC value
+	exx
+	ld a,l
+	exx
+	ld hl,hram_base + LYC
+	ld bc,lyc_prediction_list
+	ld c,(hl)
+	cp c
+	jr z,stat_lyc_write_no_reschedule
+	; Set the new LYC value
+	ld (hl),a
+	; If the new LYC value is smaller, clear the prediction
+	jr c,lyc_write_clear_prediction
+	; If the new LYC value is after vblank, clear the prediction
+	cp 144
+	jr nc,lyc_write_clear_prediction
+	; Set the new prediction for the old LYC
+	ld (bc),a
+	; The new LYC is during active video, so skip vblank checks
 lyc_write_continue:
-	ld.sis (lyc_cycle_offset),de
 lyc_write_disable_smc = $
 	; Check if LY=LYC
-	ld a,b
-	cp.s (hl)
+	dec hl
+	cp (hl)
 	; Set or reset the LYC coincidence bit in STAT
 	ld l,STAT & $FF
-	ld.s c,(hl)
+	ld c,(hl)
 	ld d,c
 	jr nz,_
 	; If LY was already equal to LYC, the interrupt is blocked and do no reschedule
@@ -425,7 +453,7 @@ lyc_write_disable_smc = $
 	jr nz,stat_lyc_write_no_reschedule
 	; Set the LYC coincidence bit
 	set 2,c
-	ld.s (hl),c
+	ld (hl),c
 	; If LYC interrupts are enabled, handle interrupt blocking logic
 	bit 6,c
 	jr z,lyc_write_reschedule_full
@@ -444,10 +472,10 @@ lyc_write_disable_smc = $
 	jr nz,lyc_write_reschedule_full
 	; Check if the IE STAT bit is set
 	ld l,h ;ld l,IE & $FF
-	bit.s 1,(hl)
+	bit 1,(hl)
 	inc hl ;ld hl,active_ints
 	; Set the STAT interrupt active bit
-	set.s 1,(hl)
+	set 1,(hl)
 	jr z,lyc_write_reschedule_full
 	; Perform STAT scheduling updates
 	call stat_setup
@@ -456,7 +484,7 @@ lyc_write_disable_smc = $
 _
 	; Reset the LYC coincidence bit
 	res 2,c
-	ld.s (hl),c
+	ld (hl),c
 lyc_write_reschedule_full:
 	; Perform STAT scheduling updates
 	call stat_setup
@@ -550,11 +578,12 @@ _
 	
 	; Disable interrupt and rescheduling effects for LYC and STAT writes
 	ld hl,(stat_lyc_write_no_reschedule - (lyc_write_disable_smc+2))<<8 | $18 ;JR
-	ld (lyc_write_disable_smc), hl
-	ld a,l ;JR
-	ld (z80codebase+lyc_write_disable_smc_2),a
+	ld (lyc_write_disable_smc),hl
 	ld h,stat_lyc_write_no_reschedule - (stat_write_disable_smc+2)
 	ld (stat_write_disable_smc),hl
+	; Disable predicted LYC write behavior
+	ld a,l ;JR
+	ld (z80codebase+lyc_prediction_enable_smc),a
 	
 	; Force scanline fill and set its color
 	ld (LCDC_0_7_smc),a
@@ -572,9 +601,11 @@ scanline_off_color_smc = $+1
 	jr stat_setup_next_vblank_lcd_off
 	
 stat_setup_hblank:
+	; Disable predicted LYC write behavior
+	ld hl,z80codebase+lyc_prediction_enable_smc
+	ld (hl),$18 ;JR
 	ld ix,z80codebase+ppu_expired_mode0_line_0
 	ld (ix-ppu_expired_mode0_line_0+ppu_mode0_event_line),b ;144
-	ex de,hl
 	CPU_SPEED_IMM16($+1)
 	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
 	; Check if LYC match is during vblank
@@ -621,9 +652,9 @@ _
 	jr z,stat_setup_hblank_lyc_match
 	; If LYC > adjusted LY and LYC < 144. update the event line
 	cp b ;144
-	jr nc,stat_setup_done
+	jr nc,stat_setup_done_trampoline
 	ld (ix-ppu_expired_mode0+ppu_mode0_event_line),a
-	jr stat_setup_done
+	jr stat_setup_done_trampoline
 	
 stat_setup_hblank_post_vblank:
 	ld ix,z80codebase+ppu_expired_mode0_line_0
@@ -634,13 +665,11 @@ stat_setup_hblank_post_vblank:
 stat_setup_hblank_trampoline:
 	jr stat_setup_hblank
 	
-stat_setup_hblank_lyc_match:
-	lea ix,ix-ppu_expired_mode0+ppu_expired_mode0_lyc_match
-	jr stat_setup_done
-	
 stat_setup_lyc_vblank:
 	; The next event from vblank is vblank, unless LYC is during mode 1
-	ex de,hl
+	; Disable predicted LYC write behavior
+	ld hl,z80codebase+lyc_prediction_enable_smc
+	ld (hl),$18 ;JR
 	CPU_SPEED_IMM16($+1)
 	ld hl,-CYCLES_PER_FRAME
 	call nz,stat_setup_lyc_mode1_filter
@@ -655,6 +684,10 @@ stat_setup_next_vblank_lcd_off:
 	sbc hl,hl
 	ld.sis de,(vblank_counter)
 	sbc hl,de
+	jr stat_setup_done
+	
+stat_setup_hblank_lyc_match:
+	lea ix,ix-ppu_expired_mode0+ppu_expired_mode0_lyc_match
 stat_setup_done_trampoline:
 	jr stat_setup_done
 	
@@ -675,22 +708,39 @@ stat_setup:
 	ld a,h
 _
 	dec a
+	ex de,hl
 	; Check if hblank interrupt is enabled (blocks OAM)
-	bit 3,d
+	bit 3,h
 	jr nz,stat_setup_hblank_trampoline
 	; Check if OAM interrupt is enabled
-	bit 5,d
+	bit 5,h
 	jr nz,stat_setup_oam
 	; Check if LYC match is at or during vblank
 	cp 143
 	jr nc,stat_setup_lyc_vblank
-	; Check if LY >= LYC
-	cp l
-	ld a,l
 	; The next event from vblank is LYC (mode 2)
 	lea ix,ix-ppu_expired_vblank+ppu_expired_lyc_mode2
-	ld.sis hl,(lyc_cycle_offset)
-	jr nc,stat_setup_next_from_vblank_post_vblank
+	; Allow predicted LYC write behavior
+	ld hl,z80codebase+lyc_prediction_enable_smc
+	ld (hl),$20 ;JR NZ,
+	; Set current and initial LYC predictions
+	inc a
+	ld (ix-ppu_expired_lyc_mode2+lyc_curr_prediction),a
+	ld (ix-ppu_expired_lyc_mode2+lyc_initial_prediction),a
+	; Calculate cycle offset from vblank
+	add a,10
+	ld l,a
+	CPU_SPEED_IMM8($+1)
+	ld h,-CYCLES_PER_SCANLINE
+	xor a
+	sub l
+	mlt hl
+	add a,h
+	ld h,a
+	; Check if LY >= LYC
+	ld a,e
+	cp d
+	jr c,stat_setup_next_from_vblank_post_vblank
 	; Check if LY < 144
 	cp b ;144
 	jr c,stat_setup_next_vblank_post_vblank
@@ -713,9 +763,11 @@ lcd_on_stat_setup_event_smc = $+3
 	ret
 	
 stat_setup_oam:
+	; Disable predicted LYC write behavior
+	ld hl,z80codebase+lyc_prediction_enable_smc
+	ld (hl),$18 ;JR
 	ld ix,z80codebase+ppu_expired_mode2_line_0
 	ld (ix-ppu_expired_mode2_line_0+ppu_mode2_event_line),143
-	ex de,hl
 	CPU_SPEED_IMM16($+1)
 	ld hl,-(CYCLES_PER_SCANLINE * 10)
 	; Check if LYC match is during vblank
@@ -766,7 +818,8 @@ stat_setup_lyc_mode1_filter:
 	; Record the filtered event handler and offset to follow LYC
 	ld.sis (ppu_post_mode1_lyc_event_handler),ix
 	push de
-	 ld.sis de,(lyc_cycle_offset)
+lyc_cycle_offset = $+1
+	 ld de,0
 	 ASSERT_NC
 	 sbc hl,de
 	 ld.sis (ppu_post_mode1_lyc_event_offset),hl
@@ -999,11 +1052,10 @@ _
 	
 	; Enable interrupt and rescheduling effects for LYC and STAT writes
 	.db $21 ;ld hl,
-	 ld a,b
-	 cp.s (hl)
+	 dec hl
+	 cp (hl)
+	 .db $2E ;ld l,
 	ld (lyc_write_disable_smc), hl
-	ld a,$30 ;JR NC,
-	ld (z80codebase+lyc_write_disable_smc_2),a
 	.db $21 ;ld hl,
 	 rrca
 	 rrca
@@ -1339,12 +1391,14 @@ set_cpu_speed:
 	APTR(CpuSpeedRelocs)
 	ex de,hl
 	rla
+	ld hl,lyc_cycle_offset
 	jr nc,set_cpu_single_speed
+	sla (hl) \ inc hl \ rl (hl)
 	ld hl,z80codebase+ppu_lyc_scanline_length_smc
 	sla (hl)
 	ld hl,z80codebase+audio_counter+1
 	sla (hl)
-	ld b,7
+	ld b,6
 _
 	ex de,hl
 	ld e,(hl)
@@ -1365,11 +1419,12 @@ _
 	jr set_cpu_any_speed
 	
 set_cpu_single_speed:
+	inc hl \ sra (hl) \ dec hl \ rr (hl)
 	ld hl,z80codebase+ppu_lyc_scanline_length_smc
 	scf \ rr (hl)
 	ld hl,z80codebase+audio_counter+1
 	srl (hl)
-	ld b,7
+	ld b,6
 _
 	ex de,hl
 	ld e,(hl)

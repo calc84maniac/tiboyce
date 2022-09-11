@@ -1007,7 +1007,7 @@ ppu_mode2_prepare_vblank:
 _
 	; Set next line event to LYC
 	ld (ppu_mode2_event_line),a
-	jp ppu_expired_pre_vblank
+	jr ppu_expired_pre_vblank
 	
 ppu_mode0_prepare_vblank:
 	; Reset scheduled time and offset
@@ -1025,36 +1025,79 @@ ppu_mode0_prepare_vblank:
 	jr ppu_expired_pre_vblank
 	
 ppu_expired_lyc_mode2:
-	; Set LY to LYC
-	ld hl,LYC
-	ld a,(hl)
-	dec hl
-	ld (hl),a
-	; Set STAT to mode 2 with LY=LYC bit set
-	ld l,STAT & $FF
-	ld a,(hl)
+	; Get the current LYC prediction in L
+lyc_curr_prediction = $+2
+	ld.lil hl,lyc_prediction_list
+	; Check if the current prediction equals LYC
+	ld a,(LYC)
+	cp l
+	jr nz,ppu_lyc_prediction_mismatch
+	; Set LY to the current value of LYC since it matched
+	ld (LY),a
+	; Set STAT to mode 2 with LY=LYC set
+	ld a,(STAT)
 	or $07
 	dec a
-	ld (hl),a
+	ld (STAT),a
 	; Allow catch-up rendering if this frame is not skipped
 ppu_lyc_enable_catchup_smc = $+1
 	ld r,a
-	; Set interrupt bit, if LYC interrupt is enabled
+	; Check for LYC interrupt
 	bit 6,a
+	; Get the next prediction and advance to it
+	ld.l a,(hl)
+	ld (lyc_curr_prediction),a
+	; Set interrupt bit, if LYC interrupt is enabled
 	jr z,_
+	; Get the number of scanlines until the next prediction
+	sub l
 	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
-	dec h
 _
+	; Get the number of scanlines until the next prediction (or subtract 0)
+	sub l
 	; Set LY/STAT caches
 	CPU_SPEED_IMM8($+1)
-	ld l,-MODE_2_CYCLES
+	ld hl,-MODE_2_CYCLES
 	add hl,de
 	ld (nextupdatecycle_STAT),hl
+	ex de,hl
 	CPU_SPEED_IMM8($+1)
-	ld hl,-CYCLES_PER_SCANLINE
+	ld de,-CYCLES_PER_SCANLINE
 	add hl,de
 	ld (nextupdatecycle_LY),hl
+	; Fast path for difference of 1
+	ld (ppu_counter),hl
+	add a,d ;$FF
+	jp z,audio_counter_checker
+	; Check for difference of 0, which terminates
+	jr nc,ppu_lyc_mode2_prepare_vblank
+	; Adjust time for the remaining scanlines
+	ld d,a
+	xor a
+	sub d
+	mlt de
+	add a,d
+	ld d,a
+ppu_lyc_initial_prediction_finish:
+	add hl,de
+	ld (ppu_counter),hl
+	add hl,bc
+	ex de,hl
+	jp audio_counter_checker
+	
+ppu_lyc_prediction_mismatch:
+	; LYC was not written as expected, so the current value of LYC
+	; is the last value predicted from
+	; If LYC is later in the same frame, this was the initial prediction
+	jr nc,ppu_lyc_initial_prediction_mismatch
+	; Otherwise, clear the failed prediction and schedule vblank
+	ld l,a
+	ld.l (hl),a
+ppu_lyc_mode2_prepare_vblank:
+lyc_initial_prediction = $+1
+	ld a,0
+	ld (lyc_curr_prediction),a
 	; Set next scheduled time to vblank
 	ld hl,(vblank_counter)
 	add hl,de
@@ -1115,6 +1158,29 @@ ppu_post_vblank_event_handler = $+1
 	ld hl,ppu_expired_vblank
 	push hl
 	jp.lil vblank_helper
+	
+ppu_lyc_initial_prediction_mismatch:
+	; Set both the initial and current prediction to actual LYC
+	ld (lyc_curr_prediction),a
+	ld (lyc_initial_prediction),a
+	; Calculate the LYC event offset from vblank
+	add a,10
+	ld l,a
+	CPU_SPEED_IMM8($+1)
+	ld h,-CYCLES_PER_SCANLINE
+	xor a
+	sub l
+	mlt hl
+	; This should always reset carry
+	add a,h
+	ld h,a
+	ld (ppu_post_vblank_event_offset),hl
+	; Schedule the LYC event this frame
+	ld de,(vblank_counter)
+	sbc hl,de
+	CPU_SPEED_IMM16($+1)
+	ld de,CYCLES_PER_FRAME
+	jp ppu_lyc_initial_prediction_finish
 	
 ppu_vblank_lyc_close_match:
 	jr nz,ppu_vblank_lyc_match
@@ -2196,35 +2262,6 @@ enableHDMA:
 	ld (event_counter_checker_slot_HDMA),hl
 	jr trigger_event
 	
-lyc_write_next_line_reschedule_full:
-	  ld a,(STAT)
-	  ld c,a
-	  ld d,a
-	  jp.lil lyc_write_reschedule_full
-	
-lyc_write_next_line:
-	  ; Reset LY=LYC coincidence bit
-	  ld l,STAT & $FF
-	  ld a,(hl)
-	  res 2,a
-	  ld (hl),a
-	  ; Calculate new LYC cycle offset value
-	  ld hl,(vblank_counter)
-	  CPU_SPEED_IMM16($+1)
-	  ld de,CYCLES_PER_FRAME
-	  add hl,de
-	  ld de,(nextupdatecycle_LY)
-	  add hl,de
-	  ld (lyc_cycle_offset),hl
-	  ; Check if mode 0 or 2 interrupt are enabled
-	  and $28
-	  jr nz,lyc_write_next_line_reschedule_full
-	  ld (ppu_post_vblank_event_offset),hl
-	  ld hl,ppu_expired_lyc_mode2
-	  ld (ppu_post_vblank_event_handler),hl
-	  ld (event_counter_checker_slot_PPU),hl
-	  ex de,hl
-	  ld (ppu_counter),hl
 reschedule_event_PPU:
 	 pop bc
 	 ; Get the relative time of the event from the currently scheduled event
@@ -2850,8 +2887,6 @@ keys:
 trampoline_next:
 	.dl 0
 persistent_vblank_counter:
-	.dw 0
-lyc_cycle_offset:
 	.dw 0
 render_save_sps:
 	.dw 0
