@@ -284,7 +284,7 @@ write_audio_disable_smc = $
 	ld a,(hl)
 	; Handle writes to enable bits specially
 	or a
-	jp po,write_audio_finish_fast
+	jp pe,write_audio_finish_fast
 	; For NR30, leave the high bit the same
 	; For NRx4, invert the high bit
 	xor b
