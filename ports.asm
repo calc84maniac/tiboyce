@@ -1252,7 +1252,15 @@ readTIMAhandler:
 ;==============================================================================
 ; Lazy register update routines (STAT, LY, TIMA)
 ;==============================================================================
-		
+	
+updateSTAT_mode1_enter:
+	; Change from mode 0 to mode 1
+	inc b
+	; Disable event rescheduling when overflowing to vblank
+	ld a,$C9 ;RET
+	ld.lil (stat_setup_impending_vblank_smc),a
+	jr updateSTAT_mode1
+	
 	; Handle transition from fake mode 0 on LCD startup
 lcd_on_STAT_handler:
 	call lcd_on_STAT_restore
@@ -1262,6 +1270,8 @@ lcd_on_STAT_handler:
 	jr updateSTAT_mode2
 	
 updateSTAT_maybe_mode1:
+	; Special-case line 144 to change to mode 1 and disable rescheduling
+	jr z,updateSTAT_mode1_enter
 	; Special-case line 0 to see if vblank was exited
 	inc a
 	jr nz,updateSTAT_mode1
@@ -1273,9 +1283,8 @@ updateSTAT_mode1:
 	; Disable catch-up rendering in case of vblank overflow
 	xor a
 	ld r,a
-	; Save LYC coincidence bit and ensure mode 1 is set
-	inc a
-	or b
+	; Save LYC coincidence bit
+	ld a,b
 	ld (STAT),a
 	; Set STAT update time to LY update time
 	ld hl,(nextupdatecycle_LY)
@@ -1506,6 +1515,9 @@ updateSTAT_full_for_LY_trampoline:
 	
 updateSTAT_full_past_vblank:
 	 ld b,a ;144
+	 ; Disable event rescheduling when overflowing to vblank
+	 ld a,$C9 ;RET
+	 ld.lil (stat_setup_impending_vblank_smc),a
 	 ; Disable catchup rendering when overflowing to vblank
 	 xor a
 	 ld r,a

@@ -1214,6 +1214,9 @@ ppu_expired_vblank_continue:
 	; Only allow LYC writes outside of valid lines
 	ld a,SCANLINES_PER_FRAME
 	ld (writeLYC_event_line_smc),a
+	; Re-enable rescheduling if it was disabled
+	ld a,$40 ;.SIS
+	ld.lil (stat_setup_impending_vblank_smc),a
 	; Set LY to 144
 	ld hl,LY
 	ld a,VBLANK_SCANLINE

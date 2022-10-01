@@ -208,7 +208,6 @@ scroll_write_helper:
 	ld (hl),a
 	; Check for window trigger after last rendered line
 	ld a,(myLY)
-	ASSERT_C
 	sbc a,(hl)
 	jp.sis nz,z80_restore_swap_ret
 	jr c,_ ; Handle edge case of LY=0, WY=$FF
@@ -592,12 +591,35 @@ stat_setup_hblank_this_line:
 	jr stat_setup_done_add
 	
 	; Input: C = current value of STAT
+	; Output: HL = (ppu_counter) = new PPU event time
+	;         (event_counter_checker_slot_PPU) = new PPU event handler
+	; Ensures rescheduling is enabled
+stat_setup_c_forced:
+	; Enable rescheduling which may have been disabled by vblank
+	ld a,$40 ;.SIS
+	ld (stat_setup_impending_vblank_smc),a
+	; Enable interrupt and rescheduling effects for STAT writes
+	.db $21 ;ld hl,
+	 rrca
+	 rrca
+	 .db $C6 ;add a,
+	ld (stat_write_disable_smc),hl
+	
+	; Input: C = current value of STAT
+	; Output: HL = (ppu_counter) = new PPU event time
+	;         (event_counter_checker_slot_PPU) = new PPU event handler
 stat_setup_c:
 	ld d,c
 	; Input: D = current writable bits of STAT, C = current read-only bits of STAT
+	; Output: HL = (ppu_counter) = new PPU event time
+	;         (event_counter_checker_slot_PPU) = new PPU event handler
 stat_setup:
+	; If vblank was crossed in this instruction, don't reschedule
+	; The vblank event handler does its own equivalent rescheduling
+	; Note that the impending vblank event means the return event time is ignored
+stat_setup_impending_vblank_smc = $
 	; Get LY and LYC
-	ld.sis hl,(LY)
+	ld.sis hl,(LY) ; Replaced with RET
 	; Get the currently scheduled line event
 	ld a,(z80codebase+writeLYC_event_line_smc)
 	; Check if in post-vblank state
@@ -920,16 +942,11 @@ _
 	ld (z80codebase+updateSTAT_disable_smc),a
 	ld (z80codebase+updateLY_disable_smc),a
 	
-	; Enable interrupt and rescheduling effects for LYC and STAT writes
+	; Enable interrupt and rescheduling effects for LYC writes
 	.db $21 ;ld hl,
 	 cp SCANLINES_PER_FRAME
 	 .db $38 ;jr c,
 	ld (z80codebase+writeLYC_disable_smc),hl
-	.db $21 ;ld hl,
-	 rrca
-	 rrca
-	 .db $C6 ;add a,
-	ld (stat_write_disable_smc),hl
 	
 	; Set up special handling for transitioning from fake mode 0
 	ld a,$5B ;.LIL prefix
@@ -1010,7 +1027,7 @@ _
 	ld.sis (nextupdatecycle_STAT),hl
 	
 	; Update PPU scheduler based on current value of STAT
-	call stat_setup_c
+	call stat_setup_c_forced
 	; We didn't track whether an interrupt was requested, so just
 	; trigger an event unconditionally
 	jp.sis trigger_event_pop

@@ -1413,14 +1413,13 @@ _
 _
 	 
 	 ; Update PPU scheduler state based on LY and STAT caches
-	 call stat_setup_c
+	 call stat_setup_c_forced
 	 
 	 ; Check if HDMA is enabled
 	 bit 7,(iy-ioregs+HDMA5)
-	 jr nz,_
 	 ; If so, enable its event
-	 call.is schedule_hdma_for_setup
-_
+	 call.is z,schedule_hdma_for_setup
+	
 	; Restore original DIV counter
 	pop bc
 	
@@ -1542,12 +1541,6 @@ _
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
 	push hl
-	 ; Enable interrupt and rescheduling effects for STAT writes
-	 .db $21 ;ld hl,
-	  rrca
-	  rrca
-	  .db $C6 ;add a,
-	 ld (stat_write_disable_smc),hl
 	 call nc,do_lcd_disable
 	pop hl
 	
