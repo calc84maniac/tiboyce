@@ -197,14 +197,28 @@ scroll_write_helper:
 	sub SCX - ioregs
 	jr c,scroll_write_SCY
 	jr z,scroll_write_SCX
-	sub WY - SCX
-	jr c,scroll_write_OBP
+	add a,SCX - WY
+	jr nc,scroll_write_OBP
 	exx
 	ld a,l
 	exx
 	ld.s (hl),a
 	jr nz,scroll_write_WX
-	ld (WY_smc),a
+	ld hl,WY_smc
+	ld (hl),a
+	; Check for window trigger after last rendered line
+	ld a,(myLY)
+	ASSERT_C
+	sbc a,(hl)
+	jp.sis nz,z80_restore_swap_ret
+	jr c,_ ; Handle edge case of LY=0, WY=$FF
+	; Check if window is currently enabled
+	ld a,(hram_base+LCDC)
+	bit 5,a
+	jr z,_
+	inc hl ;window_trigger_smc
+	ld (hl),$37 ;SCF
+_
 	jp.sis z80_restore_swap_ret
 	
 scroll_write_SCY:
