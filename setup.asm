@@ -740,10 +740,10 @@ SetupOverlappedPixelsDone:
 	ld (hl),a
 	ldir
 	
-	; Fill the LYC write prediction list with disabled predictions
+	; Fill the LYC write prediction list with vblank predictions
 	ld h,(lyc_prediction_list >> 8) & $FF
 _
-	ld (hl),l
+	ld (hl),VBLANK_SCANLINE
 	inc l
 	djnz -_
 	
@@ -1362,53 +1362,19 @@ _
 	 inc hl
 	 ld i,hl
 	 ex de,hl
-	
-	 ; Calculate the LYC cycle offset (from vblank)
-	 ld a,(iy-ioregs+LYC)
-	 ; Special case for line 0, thanks silly PPU hardware
-	 ld hl,(-(CYCLES_PER_SCANLINE * 9 + 1)) & $FFFF
-	 ld c,1-CYCLES_PER_SCANLINE
-	 or a
-	 jr z,_
-	 ld h,-CYCLES_PER_SCANLINE
-	 sub 144
-	 ld l,a
-	 ; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
-	 add a,-9
-	 sbc a,a
-	 or h
-	 ld c,a
-	 ; Multiply by -CYCLES_PER_SCANLINE
-	 ; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
-	 ; in that particular case (vblank collision is special-cased)
-	 xor a
-	 sub l
-	 mlt hl
-	 ; This should always reset carry
-	 add a,h
-	 ld h,a
-_
-	 ld a,c
-	 bit 7,b
-	 jr z,_
-	 add a,a
-	 ; This should always reset carry
-	 add hl,hl
-_
-	 ld (lyc_cycle_offset),hl
-	 ld (z80codebase+ppu_lyc_scanline_length_smc),a
-	
-	 ; Get the number of cycles from one cycle in the future until vblank
+	 
+	 ; Get the number of cycles from the previous vblank until now
 	 ld a,b
 	 rlca
-	 ld hl,CYCLES_PER_SCANLINE * 144
+	 ld hl,CYCLES_PER_SCANLINE * VBLANK_SCANLINE
 	 jr nc,_
 	 add hl,hl
 _
-	 ld bc,(iy-state_size+STATE_FRAME_COUNTER)
-	 inc.s bc
+	 ld b,h
+	 ld c,l
+	 ld hl,(iy-state_size+STATE_FRAME_COUNTER)
 	 ASSERT_NC
-	 sbc hl,bc
+	 sbc.s hl,bc
 	 jr nc,_
 	 ld bc,CYCLES_PER_FRAME
 	 add hl,bc
@@ -1417,10 +1383,11 @@ _
 	 jr nc,_
 	 add hl,bc
 _
-	 ; Add to the DIV counter
-	 ld b,h
-	 ld c,l
-	 add hl,de
+	 ; Adjust for one cycle in the future
+	 inc hl
+	 ; Subtract the DIV counter
+	 ASSERT_NC
+	 sbc hl,de
 	 ld.sis (vblank_counter),hl
 	 ld.sis (persistent_vblank_counter),hl
 	
@@ -1435,6 +1402,15 @@ _
 _
 	 ld.s (hl),a
 	 ld c,a
+	 
+	 ; Set the initial LYC prediction if it's during active video
+	 ld a,(iy-ioregs+LYC)
+	 dec a
+	 cp VBLANK_SCANLINE
+	 jr nc,_
+	 inc a
+	 ld (lyc_prediction_list+0),a
+_
 	 
 	 ; Update PPU scheduler state based on LY and STAT caches
 	 call stat_setup_c
@@ -1566,12 +1542,7 @@ _
 	ld hl,(iy-ioregs+LCDC-2)
 	add hl,hl
 	push hl
-	 ; Enable interrupt and rescheduling effects for LYC and STAT writes
-	 .db $21 ;ld hl,
-	  dec hl
-	  cp (hl)
-	  .db $2E ;ld l,
-	 ld (lyc_write_disable_smc), hl
+	 ; Enable interrupt and rescheduling effects for STAT writes
 	 .db $21 ;ld hl,
 	  rrca
 	  rrca
@@ -1865,13 +1836,8 @@ ExitEmulation:
 	; Save the frame-relative cycle count
 	ld ix,state_start+state_size
 	ld.sis hl,(vblank_counter)
-	ld a,e
-	sub l
-	ld l,a
-	ld a,d
-	sbc a,h
-	ld h,a
-	ld bc,CYCLES_PER_SCANLINE * 144 + $FF0000
+	add.s hl,de
+	ld bc,-CYCLES_PER_VBLANK
 	; Double the offset amount in double speed
 	ld a,(regs_saved + STATE_SYSTEM_TYPE)
 	rrca

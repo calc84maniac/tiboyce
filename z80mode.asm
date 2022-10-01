@@ -872,13 +872,14 @@ ppu_expired_mode2_line_0:
 	; Check for mode 1 blocking
 	bit 4,a
 	jr nz,ppu_mode2_blocked_fast
+ppu_mode2_not_blocked:
 	sbc hl,hl ;ld hl,active_ints
 ppu_expired_mode2:
 	; Request STAT interrupt
 	set 1,(hl) ;active_ints
-ppu_mode2_blocked:
 	; Set mode 2
 	ld hl,STAT
+ppu_mode2_blocked:
 	ld a,(hl)
 ppu_mode2_blocked_fast:
 	and $F8
@@ -906,33 +907,73 @@ ppu_mode2_LY = $+1
 ppu_mode2_event_line = $+1
 	cp 0
 	jp nz,audio_counter_checker
-	ld hl,STAT
-	; Check whether vblank should be scheduled immediately
-	cp 143
-	jr z,ppu_mode2_prepare_vblank
-	; Set next line event to vblank
-	ld a,143
-	ld (ppu_mode2_event_line),a
+	; Check whether vblank should be handled immediately
+	cp VBLANK_SCANLINE
+	jr z,ppu_mode2_handle_vblank
+	; Check whether LYC actually matched this line
+	ld hl,LYC
+	cp (hl)
+	jr nz,ppu_mode2_lyc_mismatch
 	; Set LYC coincidence bit
+	ld l,STAT & $FF
 	set 2,(hl)
-	; Block mode 2 interrupt after LYC coincidence, if enabled
-	bit 6,(hl)
-	jp z,audio_counter_checker
+	; Record the successful LYC match
+	ld (last_lyc_match),a
+	; Get the next prediction and set the event line
+	ld.lil hl,lyc_prediction_list
+	ld l,a
+	ld.l a,(hl)
+	ld (ppu_mode2_event_line),a
+	ld (writeLYC_event_line_smc),a
 	call ppu_scheduled
 	
-ppu_expired_mode2_lyc_blocking:
+ppu_expired_mode2_maybe_lyc_block:
 	ld hl,ppu_expired_mode2
 	push hl
 	inc sp
 	inc sp
+	; Check if LYC is still blocking
+	ld a,(last_lyc_match)
+	ld hl,LYC
+	xor (hl)
+	jr nz,ppu_mode2_not_blocked
+	ld l,STAT & $FF
+	bit 6,(hl)
+	jr z,ppu_mode2_not_blocked
 	jr ppu_mode2_blocked
+	
+ppu_mode2_handle_vblank:
+	; Trigger vblank interrupt, STAT interrupt is blocked
+	sbc hl,hl ;ld hl,active_ints
+	set 0,(hl)
+	sbc hl,bc
+	ex de,hl
+	jp ppu_expired_vblank_continue
+	
+ppu_mode2_lyc_mismatch:
+	; Set the new event line to either LYC or vblank, whichever is sooner
+	ld a,VBLANK_SCANLINE
+	jr nc,_
+	cp (hl)
+	jr c,_
+	ld a,(hl)
+_
+	ld (ppu_mode2_event_line),a
+	ld (writeLYC_event_line_smc),a
+	; Reset the prediction for the last successful LYC match
+	ld.lil hl,(z80codebase+last_lyc_match)
+	ld.l (hl),a
+	; Schedule non-blocked mode 2 event
+	ld hl,ppu_expired_mode2
+	push hl
+	jp ppu_scheduled
 	
 ppu_expired_mode0_line_0:
 	xor a
 	ld (ppu_mode0_LY),a
 	ld hl,LYC
 	or (hl)
-	jr z,ppu_expired_mode0_lyc_match
+	jr z,ppu_expired_mode0_maybe_lyc_block
 	ld hl,ppu_expired_mode0
 	push hl
 	inc sp
@@ -968,94 +1009,139 @@ ppu_mode0_LY = $+1
 ppu_mode0_event_line = $+1
 	cp 0
 	jp nz,audio_counter_checker
-	; Check whether vblank should be scheduled immediately
-	cp 144
-	jr z,ppu_mode0_prepare_vblank
+	
+	; Schedule at the start of the next line instead
+	sbc hl,de
+	CPU_SPEED_IMM8($+1)
+	ld e,-MODE_0_CYCLES
+	add hl,de
+	ld (ppu_counter),hl
+	; Check whether vblank should be scheduled
+	cp VBLANK_SCANLINE
+	jr z,ppu_mode0_schedule_vblank
 	call ppu_scheduled
 	
-ppu_expired_mode0_lyc_match:
+ppu_expired_mode0_maybe_lyc_match:
+	; Schedule the mode 0 event
+	ex de,hl
+	CPU_SPEED_IMM8($+1)
+	ld de,-(MODE_2_CYCLES + MODE_3_CYCLES)
+	add hl,de
+	ld (ppu_counter),hl
+	; Check if LYC matches the prediction
+	ld hl,LYC
+	ld a,(ppu_mode0_event_line)
+	cp (hl)
+	jr nz,ppu_mode0_lyc_mismatch
+	; Record the successful LYC match and get the next prediction
+	ld (last_lyc_match),a
+	ld.lil hl,lyc_prediction_list
+	ld l,a
+	ld.l a,(hl)
+	ld (ppu_mode0_event_line),a
+	ld (writeLYC_event_line_smc),a
+	; Set the LY=LYC bit (all we care about for STAT blocking)
+	ld hl,STAT
+	ld a,(hl)
+	set 2,a
+	ld (hl),a
+	; Check if LYC interrupt is enabled and mode 2 doesn't block
+	add a,a
+	cp $40
+	jp po,_
+	; Request STAT interrupt
+	sbc hl,hl ;ld hl,active_ints
+	set 1,(hl)
+_
+	call ppu_scheduled
+	
+ppu_expired_mode0_maybe_lyc_block:
 	ld hl,ppu_expired_mode0
 	push hl
 	inc sp
 	inc sp
-	; Set next line event to vblank
-	ld a,144
-	ld (ppu_mode0_event_line),a
-	; Set mode 0 and LYC coincidence bit
+	; Set STAT mode 0, preserving LY=LYC bit
 	ld hl,STAT
 	ld a,(hl)
-	and $F8
-	or 4
+	and $FC
 	ld (hl),a
-	; Block mode 0 interrupt during LYC coincidence, if enabled
-	bit 6,a
-	jr nz,ppu_mode0_blocked
+	; Check if LYC interrupt is blocking hblank interrupt
+	cpl
+	and $44
+	cpl
+	jr z,ppu_mode0_blocked
 	; Request STAT interrupt
 	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
 	dec h
 	jr ppu_mode0_blocked
 	
-ppu_mode2_prepare_vblank:
-	; Check if LYC matches during active video
-	ld a,(LYC)
-	cp 143
+ppu_mode0_schedule_vblank:
+	ld hl,ppu_expired_vblank
+	push hl
+	jp ppu_scheduled
+	
+ppu_mode0_lyc_mismatch:
+	; Set the new event line to either LYC or vblank, whichever is sooner
+	ld a,VBLANK_SCANLINE
+	jr nc,_
+	cp (hl)
 	jr c,_
-	jp nz,ppu_expired_pre_vblank
-	; If LYC is on line 143, set coincidence bit
-	set 2,(hl)
+	ld a,(hl)
 _
-	; Set next line event to LYC
-	ld (ppu_mode2_event_line),a
-	jp ppu_expired_pre_vblank
-	
-ppu_mode0_prepare_vblank:
-	; Reset scheduled time and offset
-	sbc hl,de
-	CPU_SPEED_IMM8($+1)
-	ld e,-MODE_0_CYCLES
-	add hl,de
-	ld (ppu_counter),hl
-	; Check if LYC matches during active video
-	ld a,(LYC)
-	cp 144
-	jr nc,ppu_expired_pre_vblank
-	; Set next line event to LYC
 	ld (ppu_mode0_event_line),a
-	jr ppu_expired_pre_vblank
+	ld (writeLYC_event_line_smc),a
+	; Reset the prediction for the last successful LYC match
+	ld.lil hl,(z80codebase+last_lyc_match)
+	ld.l (hl),a
+	; Schedule non-blocked mode 0 event
+	ld hl,ppu_expired_mode0
+	push hl
+	jp ppu_scheduled
 	
-ppu_expired_lyc_mode2:
-	; Get the current LYC prediction in L
-lyc_curr_prediction = $+2
-	ld.lil hl,lyc_prediction_list
+_
+	inc sp
+	inc sp
+	ld.lil a,(lyc_prediction_list+0)
+	jr _	
+	
+ppu_expired_active_lyc_post_vblank:
+	call -_
+	
+ppu_expired_active_lyc:
 	; Check if the current prediction equals LYC
-	ld a,(LYC)
-	cp l
-	jr nz,ppu_lyc_prediction_mismatch
+	ld a,(writeLYC_event_line_smc)
+_
+	ld hl,LYC
+	cp (hl)
+	jr nz,ppu_active_lyc_mismatch
 	; Set LY to the current value of LYC since it matched
-	ld (LY),a
+	dec hl
+	ld (hl),a
+	; Update the last recorded match as well
+	ld (last_lyc_match),a
 	; Set STAT to mode 2 with LY=LYC set
-	ld a,(STAT)
+	ld l,STAT & $FF
+	ld a,(hl)
 	or $07
 	dec a
-	ld (STAT),a
+	ld (hl),a
 	; Allow catch-up rendering if this frame is not skipped
 ppu_lyc_enable_catchup_smc = $+1
 	ld r,a
-	; Check for LYC interrupt
+	; Check for LYC interrupt enable
 	bit 6,a
-	; Get the next prediction and advance to it
-	ld.l a,(hl)
-	ld (lyc_curr_prediction),a
-	ld (writeLYC_prediction_smc),a
-	; Set interrupt bit, if LYC interrupt is enabled
 	jr z,_
-	; Get the number of scanlines until the next prediction
-	sub l
+	; Request STAT interrupt
 	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
 _
-	; Get the number of scanlines until the next prediction (or subtract 0)
+	; Get the next prediction
+last_lyc_match = $+2
+	ld.lil hl,lyc_prediction_list + 0
+	ld.l a,(hl)
+	ld (writeLYC_event_line_smc),a
+	; Get the number of scanlines until the next prediction
 	sub l
 	; Set LY/STAT caches
 	CPU_SPEED_IMM8($+1)
@@ -1071,8 +1157,9 @@ _
 	ld (ppu_counter),hl
 	add a,d ;$FF
 	jp z,audio_counter_checker
-	; Check for difference of 0, which terminates
-	jr nc,ppu_lyc_mode2_prepare_vblank
+	; Check for difference of 0, which means vblank has been reached
+	jr nc,ppu_active_lyc_handle_vblank
+ppu_active_lyc_mismatch_finish:
 	; Adjust time for the remaining scanlines
 	ld d,a
 	xor a
@@ -1080,44 +1167,56 @@ _
 	mlt de
 	add a,d
 	ld d,a
-ppu_lyc_initial_prediction_finish:
 	add hl,de
 	ld (ppu_counter),hl
 	add hl,bc
 	ex de,hl
 	jp audio_counter_checker
 	
-ppu_lyc_prediction_mismatch:
-	; LYC was not written as expected, so the current value of LYC
-	; is the last value predicted from
-	; If LYC is later in the same frame, this was the initial prediction
-	jr nc,ppu_lyc_initial_prediction_mismatch
-	; Otherwise, clear the failed prediction and schedule vblank
-	ld l,a
+ppu_active_lyc_mismatch:
+	; Check if vblank was the prediction
+	cp VBLANK_SCANLINE
+	jr z,ppu_active_lyc_handle_vblank_fast
+	; Set the new event line to either LYC or vblank, whichever is sooner
+	cp (hl)
+	ld a,VBLANK_SCANLINE
+	jr nc,_
+	cp (hl)
+	jr c,_
+	ld a,(hl)
+_
+	ld (writeLYC_event_line_smc),a
+	; Update the prediction for the last successful LYC match
+	ld.lil hl,(z80codebase+last_lyc_match)
 	ld.l (hl),a
-ppu_lyc_mode2_prepare_vblank:
-lyc_initial_prediction = $+1
-	ld a,0
-	ld (lyc_curr_prediction),a
-	ld (writeLYC_prediction_smc),a
-	; Set next scheduled time to vblank
+	; Calculate the offset from vblank
+	add a,SCANLINES_PER_VBLANK
+	; Schedule using the LYC event offset from vblank
 	ld hl,(vblank_counter)
-	add hl,de
+	CPU_SPEED_IMM8($+1)
+	ld e,-CYCLES_PER_SCANLINE
+	jr ppu_active_lyc_mismatch_finish
+
+ppu_active_lyc_handle_vblank:
+	sbc hl,de
 	ex de,hl
 	or a
-	sbc hl,de
-	ld (ppu_counter),hl
-	add hl,bc
-	ex de,hl
-ppu_expired_pre_vblank:
-	call ppu_scheduled
+ppu_active_lyc_handle_vblank_fast:
+	sbc hl,hl ;ld hl,active_ints
 	
 ppu_expired_vblank:
 	; Always trigger vblank interrupt
 	set 0,(hl) ;active_ints
+ppu_expired_vblank_continue:
+	; Reset last LYC match
+	xor a
+	ld (last_lyc_match),a
+	; Only allow LYC writes outside of valid lines
+	ld a,SCANLINES_PER_FRAME
+	ld (writeLYC_event_line_smc),a
 	; Set LY to 144
 	ld hl,LY
-	ld a,144
+	ld a,VBLANK_SCANLINE
 	ld (hl),a
 	; Check for either a LYC match or an LYC block
 	inc hl
@@ -1127,12 +1226,12 @@ ppu_expired_vblank:
 	ld l,STAT & $FF
 	ld a,(hl)
 	jr c,ppu_vblank_lyc_close_match
-	; Set mode 1
+	; Set mode 1, LYC not matching
 	and $F8
 	inc a
 	ld (hl),a
-	; Check for mode 1 or mode 2 interrupt enable
-	tst a,$30
+	; Check for mode 1 interrupt enable
+	bit 4,a
 	jr nz,ppu_vblank_mode1_int
 ppu_vblank_stat_int_continue:
 	; Set next LY/STAT update to scanline 145
@@ -1141,49 +1240,31 @@ ppu_vblank_stat_int_continue:
 	add hl,de
 	ld (nextupdatecycle_LY),hl
 	ld (nextupdatecycle_STAT),hl
-ppu_expired_lcd_off:
-	; Set the next vblank start time
-	CPU_SPEED_IMM16($+1)
-	ld hl,CYCLES_PER_FRAME
-	add hl,bc
+	; Set the current vblank start time
+	ex de,hl
 	ld (vblank_counter),hl
-	; Save a persistent time by which the next vblank must occur,
+	; Save a persistent time relative to which the next vblank must occur,
 	; in case the LCD is toggled on and off
 	ld (persistent_vblank_counter),hl
+	; Check for LYC value during vblank
+	ld a,(LYC)
+	or a
+	jr z,ppu_vblank_schedule_lyc_0
+	ld e,a
+	sub VBLANK_SCANLINE+1
+	cp SCANLINES_PER_VBLANK-1
+	jr c,ppu_vblank_schedule_lyc_mode1
+	ld.lil a,(lyc_prediction_list+0)
+	cp e
+	jr z,_
+	jr c,_
+	ld a,e
+	ld.lil (lyc_prediction_list+0),a
+_
 	; Set the next event time and handler
-ppu_post_vblank_event_offset = $+1
-	ld hl,-CYCLES_PER_FRAME
-	ex de,hl
-	add hl,de
-	ld (ppu_counter),hl
-ppu_post_vblank_event_handler = $+1
-	ld hl,ppu_expired_vblank
-	push hl
+	call ppu_schedule_post_vblank_event
+ppu_vblank_finish:
 	jp.lil vblank_helper
-	
-ppu_lyc_initial_prediction_mismatch:
-	; Set both the initial and current prediction to actual LYC
-	ld (lyc_curr_prediction),a
-	ld (writeLYC_prediction_smc),a
-	ld (lyc_initial_prediction),a
-	; Calculate the LYC event offset from vblank
-	add a,10
-	ld l,a
-	CPU_SPEED_IMM8($+1)
-	ld h,-CYCLES_PER_SCANLINE
-	xor a
-	sub l
-	mlt hl
-	; This should always reset carry
-	add a,h
-	ld h,a
-	ld (ppu_post_vblank_event_offset),hl
-	; Schedule the LYC event this frame
-	ld de,(vblank_counter)
-	sbc hl,de
-	CPU_SPEED_IMM16($+1)
-	ld de,CYCLES_PER_FRAME
-	jp ppu_lyc_initial_prediction_finish
 	
 ppu_vblank_lyc_close_match:
 	jr nz,ppu_vblank_lyc_match
@@ -1226,43 +1307,130 @@ ppu_vblank_lyc_match:
 	dec h
 	jr ppu_vblank_stat_int_continue
 	
+ppu_vblank_schedule_lyc_0:
+	CPU_SPEED_IMM16($+1)
+	ld de,-(CYCLES_PER_SCANLINE * 9 + 1)
+	jr ppu_vblank_schedule_lyc_finish
+	
+ppu_vblank_schedule_lyc_mode1:
+	ld d,a
+	inc d
+	CPU_SPEED_IMM8($+1)
+	ld e,-CYCLES_PER_SCANLINE
+	mlt de
+	cpl
+	add a,d
+	ld d,a
+ppu_vblank_schedule_lyc_finish:
+	add hl,de
+	ld (ppu_counter),hl
+	call ppu_vblank_finish
+	
 ppu_expired_lyc_mode1:
-	; Set LY to LYC
+	; Make sure LYC wasn't written since this event was scheduled
 	ld hl,LYC
 	ld a,(hl)
+	cp SCANLINES_PER_FRAME
+	jr nc,ppu_lyc_mode1_mismatch
+	; Set LY to LYC
 	dec hl
 	ld (hl),a
-	; Set STAT to mode 1 with LY=LYC bit set
-	ld l,STAT & $FF
-	ld a,(hl)
-	and $F8
-	or $05
-	ld (hl),a
+	; Calculate scanline length depending on LY value
+	or a
+	jr z,_
+	cp 153
+	CPU_SPEED_IMM8($+1)
+	ld a,-1
+	jr z,++_
+_
+	CPU_SPEED_IMM8($+1)
+	add a,1-CYCLES_PER_SCANLINE
+_
 	; Set LY/STAT caches
-ppu_lyc_scanline_length_smc = $+1
-	ld l,-CYCLES_PER_SCANLINE
+	ld l,a
 	add hl,de
 	ld (nextupdatecycle_LY),hl
 	ld (nextupdatecycle_STAT),hl
-	; Prepare next event
-ppu_post_mode1_lyc_event_handler = $+1
-	ld hl,0
-	push hl
-	inc sp
-	inc sp
-ppu_post_mode1_lyc_event_offset = $+1
-	ld hl,0
-	ex de,hl
-	add hl,de
-	ld (ppu_counter),hl
+	; Mode is already 1 from the vblank event, so simply set LY=LYC bit
+	ld hl,STAT
+	ld a,(hl)
+	set 2,a
+	ld (hl),a
 	; Check if LY=LYC interrupt is enabled and not blocked by mode 1 interrupt
 	xor $40
 	and $50
-	jp nz,audio_counter_checker
+	jr nz,_
 	; If so, trigger LYC interrupt
 	sbc hl,hl ;ld hl,active_ints
 	set 1,(hl)
-	jp audio_counter_checker
+_
+ppu_lyc_mode1_mismatch:
+	ld hl,(vblank_counter)
+	ld.lil a,(lyc_prediction_list+0)
+	call ppu_schedule_post_vblank_event
+	jp ppu_scheduled
+	
+ppu_schedule_post_vblank_event:
+	ld d,a
+	ld a,(STAT)
+	and $28
+	jr nz,ppu_schedule_post_vblank_mode0_mode2
+	ld a,d
+	add a,SCANLINES_PER_VBLANK
+	ld d,a
+	CPU_SPEED_IMM8($+1)
+	ld e,CYCLES_PER_SCANLINE
+	mlt de
+	sbc hl,de
+	ld (ppu_counter),hl
+	add hl,bc
+	ex de,hl
+	ld hl,ppu_expired_active_lyc_post_vblank
+	ex (sp),hl
+	jp (hl)
+	
+ppu_schedule_post_vblank_mode0_mode2:
+	bit 3,a
+	ld a,d
+	jr z,ppu_schedule_post_vblank_mode2
+	ld (ppu_mode0_event_line),a
+	CPU_SPEED_IMM16($+1)
+	ld de,-((CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK) + MODE_2_CYCLES + MODE_3_CYCLES)
+	add hl,de
+	ld (ppu_counter),hl
+	add hl,bc
+	ex de,hl
+	ld hl,ppu_expired_mode0_line_0
+	ex (sp),hl
+	jp (hl)
+	
+ppu_schedule_post_vblank_mode2:
+	ld (ppu_mode2_event_line),a
+	CPU_SPEED_IMM16($+1)
+	ld de,-(CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK)
+	add hl,de
+	ld (ppu_counter),hl
+	add hl,bc
+	ex de,hl
+	ld hl,ppu_expired_mode2_line_0
+	ex (sp),hl
+	jp (hl)
+	
+ppu_expired_lcd_off:
+	; Set the current vblank start time
+	ex de,hl
+	ld (vblank_counter),hl
+	; Save a persistent time relative to which the next vblank must occur,
+	; in case the LCD is toggled on and off
+	ld (persistent_vblank_counter),hl
+	; Set the next event time
+	CPU_SPEED_IMM16($+1)
+	ld de,-CYCLES_PER_FRAME
+	add hl,de
+	ld (ppu_counter),hl
+	dec sp
+	dec sp
+	jp.lil vblank_helper
 	
 timer_counter_checker:
 timer_counter = $+1

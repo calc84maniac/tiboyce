@@ -206,14 +206,12 @@ writeLYC:
 	exx
 	ld a,l
 	exx
-	; Check for a matching write
 	ld hl,LYC
-	cp (hl)
-	jr z,writeLYC_same
-	; Check for a predicted LYC write
-writeLYC_prediction_smc = $+1
-	cp 0
-	jr nz,writeLYC_nonpredicted
+writeLYC_disable_smc = $
+	; Check for write value after the upcoming event line
+writeLYC_event_line_smc = $+1
+	cp SCANLINES_PER_FRAME
+	jr c,writeLYC_nonpredicted
 	ld (hl),a
 	; Reset the LY=LYC coincidence bit
 	ld l,STAT & $FF
@@ -225,6 +223,10 @@ writeLYC_same:
 	ret
 	
 writeLYC_nonpredicted:
+	; Check for a matching write
+	cp (hl)
+	jr z,writeLYC_same
+	ld (hl),a
 	push de
 	 push bc
 	  call updateSTAT
@@ -748,22 +750,22 @@ _
 	adc a,256-144
 	jr c,schedule_hdma_last_line
 	ld bc,(nextupdatecycle_LY)
-	sbc hl,bc
 schedule_hdma_finish:
+	sbc hl,bc
 	ld (hdma_counter),hl
 	ld (hdma_line_counter),a
 	ret
 	
-schedule_hdma_last_line:
-	CPU_SPEED_IMM16($+1)
-	ld bc,(CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES
-	jr _
 schedule_hdma_vblank:
 	CPU_SPEED_IMM16($+1)
-	ld bc,-((CYCLES_PER_SCANLINE * 143) + MODE_0_CYCLES)
+	ld hl,CYCLES_PER_VBLANK + MODE_2_CYCLES + MODE_3_CYCLES
+	jr _
+schedule_hdma_last_line:
+	CPU_SPEED_IMM16($+1)
+	ld hl,CYCLES_PER_FRAME + CYCLES_PER_VBLANK + MODE_2_CYCLES + MODE_3_CYCLES
+	or a
 _
-	ld hl,(vblank_counter)
-	add hl,bc
+	ld bc,(vblank_counter)
 	ld a,256-144
 	jr schedule_hdma_finish
 	
@@ -1304,7 +1306,7 @@ updateSTAT_disable_smc = $
 	ld a,l
 	CPU_SPEED_IMM8($+1)
 	cp CYCLES_PER_SCANLINE
-	jr nc,updateSTAT_full
+	jr nc,updateSTAT_full_nc
 	ld h,l
 	ld a,(STAT)
 	ld b,a
@@ -1376,13 +1378,6 @@ updateSTAT_finish:
 	dec (hl)
 	ret
 	
-get_scanline_past_vblank:
-	 xor a
-	 ld r,a ; Disable catchup rendering when overflowing to vblank
-	 ld bc,((SCANLINES_PER_FRAME-2)<<8) | (CYCLES_PER_SCANLINE<<1)
-	 add hl,bc ; Sets carry flag
-	 jr get_scanline_from_cycle_count_finish
-	
 ; Inputs: HL-BC = current value of DIV
 ; Outputs: (LY) = current value of LY
 ;          (STAT) = current value of STAT
@@ -1390,25 +1385,21 @@ get_scanline_past_vblank:
 ;          (nextupdatecycle_STAT) = negated cycle count of next STAT update
 ; Destroys: AF, BC, HL
 updateSTAT_full:
-	push de
-	 ; Get negative DIV, the starting point for update times
-	 ; DE=BC-HL
-	 ld a,c
-	 sub l
-	 ld e,a
-	 ld a,b
-	 sbc a,h
-	 ld d,a
-	 ; Subtract from the vblank time, to get cycles until vblank
+	or a
+updateSTAT_full_nc:
+	; Set DE to DIV, the starting point for update times
+	sbc hl,bc
+	ex de,hl
+updateSTAT_full_adjusted:
+	; Save the old DE
+	push hl
+	 ; Subtract the time of previous vblank, to get cycles since vblank
 vblank_counter = $+1
 	 ld hl,0
 	 add hl,de
-	 ; Decrement by 1, for cycles until the cycle before vblank
-	 dec hl
-	 ; Normalize the divisor and also check if the current cycle is past vblank
+	 ; Normalize the divisor if not in double speed
 updateSTAT_full_speed_smc = $
-	 add.s hl,hl ; Replace with LD A,H \ INC A
-	 jr c,get_scanline_past_vblank ; Replace with JR Z
+	 add hl,hl ; Replace with NOP
 	
 get_scanline_from_cycle_count:
 	 ; Algorithm adapted from Improved division by invariant integers
@@ -1429,62 +1420,62 @@ get_scanline_from_cycle_count:
 	 add hl,bc
 	 cp l
 	 ld a,l
-	 jr c,_
-	 sub CYCLES_PER_SCANLINE<<1
-	 jr c,get_scanline_from_cycle_count_finish ; Carry set to add 1 to quotient
+	 jr nc,_
+	 cp 256-(CYCLES_PER_SCANLINE<<1)
+	 jr nc,get_scanline_from_cycle_count_finish
+	 ; Unlikely condition, add 1 to quotient
+	 dec b
+get_scanline_from_cycle_count_unlikely:
 	 ; Unlikely condition, add 2 to quotient
-	 inc b \ inc b
-	 .db $DA ;JP C
+	 inc b
+	 ; Carry is always set by the following sub in this path
 _
-	 sub 256-(CYCLES_PER_SCANLINE<<1)
-	 jr c,get_scanline_from_cycle_count_finish ; Unlikely condition, set carry
-_
+	 sub CYCLES_PER_SCANLINE<<1
+	 jr nc,get_scanline_from_cycle_count_unlikely
+	 ; Carry set to add 1 to quotient
 	 ld l,a
 get_scanline_from_cycle_count_finish:
-	 ; Scanline number (backwards from last before vblank) is in B+carry,
-	 ; and cycle offset (backwards from last scanline cycle) is in L
-	 ld a,143
-	 sbc a,b
-	 jr c,updateSTAT_full_vblank
+	 ; Scanline number since vblank is in B+carry,
+	 ; and negative cycle offset before the end of the scanline is in L
+	 ld a,b
+	 ; Adjust the scanline back to 0-based
+	 adc a,-SCANLINES_PER_VBLANK
+	 ; Check if scanline is during active video
+	 cp 144
+	 jr nc,updateSTAT_full_vblank
 	 ; Scanline is during active video
 	 ld b,a
-	 xor a
-	 ld c,a
-	 ; Get the (negative) cycles until the next scanline
-	 dec a
 	 ; Allow rendering catch-up outside of vblank, if this frame isn't skipped
+	 sbc a,a
 updateSTAT_full_enable_catchup_smc = $+1
 	 ld r,a
+	 ; Get the (negative) cycles until the next scanline
 	 ld h,a
-	 xor l
 cpu_speed_factor_smc_1 = $
-	 rrca ; NOP this out in double-speed mode
-	 ld l,a
-	 ; Add to the negative DIV count
-	 add hl,de
+	 rr l ; Simply reset carry instead in double-speed mode
+	 ld a,l
+	 ; Subtract the DIV count
+	 sbc hl,de
 	 ld (nextupdatecycle_LY),hl
 	 ; Determine the STAT mode and the cycles until next update
 	 ; Check if during mode 0
-	 ld l,a
 	 CPU_SPEED_IMM8($+1)
-	 add a,MODE_0_CYCLES
-	 jr c,_
-	 ; Check if during mode 3
-	 ld l,a
-	 inc c
-	 inc c
-	 inc c
-	 CPU_SPEED_IMM8($+1)
-	 add a,MODE_3_CYCLES
-	 jr c,_
-	 ; During mode 2
-	 ld l,a
-	 dec c
-_
-	 ld h,$FF
+	 ld de,MODE_0_CYCLES
+	 ld c,d
+	 add a,e
+	 jr c,updateSTAT_full_finish
 	 add hl,de
-	 ld (nextupdatecycle_STAT),hl
+	 ; Check if during mode 3
+	 CPU_SPEED_IMM8($+1)
+	 ld e,MODE_3_CYCLES
+	 ld c,3
+	 add a,e
+	 jr c,updateSTAT_full_finish
+	 ; During mode 2
+	 add hl,de
+	 dec c
 updateSTAT_full_finish:
+	 ld (nextupdatecycle_STAT),hl
 	 ; Write value of LY
 	 ld a,b
 	 ld hl,LY
@@ -1513,47 +1504,53 @@ updateSTAT_full_for_LY_restore:
 updateSTAT_full_for_LY_trampoline:
 	jr updateSTAT_full
 	
+updateSTAT_full_past_vblank:
+	 ld b,a ;144
+	 ; Disable catchup rendering when overflowing to vblank
+	 xor a
+	 ld r,a
+	 sub c ;1
+	 jr updateSTAT_full_past_vblank_finish
+	 
 updateSTAT_full_vblank:
 	 ; Set mode 1 unconditionally
 	 ld c,1
-	 ; Get the actual scanline, and check whether it's the final line
+	 ; Check if past the following vblank, which can happen when an
+	 ; instruction crosses the boundary before the vblank event is handled
+	 jr z,updateSTAT_full_past_vblank
+	 ; Check whether it's the final line
 	 inc a
+	 jr z,updateSTAT_full_last_scanline
+	 ; Get the actual scanline
 	 add a,SCANLINES_PER_FRAME - 1
 	 ld b,a
-	 jr nc,updateSTAT_full_last_scanline
+updateSTAT_full_last_scanline_finish:
 	 ; Get the (negative) cycles until the next scanline
 	 sbc a,a
+updateSTAT_full_past_vblank_finish:
 	 ld h,a
-	 xor l
 cpu_speed_factor_smc_2 = $
-	 rrca ; NOP this out in double-speed mode
-_
-	 ld l,a
-_
-	 ; Add to the negative DIV count
-	 add hl,de
+	 rr l ; Simply reset carry instead in double-speed mode
+	 ; Subtract the DIV count
+	 sbc hl,de
 	 ; This will be used for both the next LY and STAT update times
 	 ; Since during vblank, STAT must still be updated for LY=LYC
 	 ld (nextupdatecycle_LY),hl
-	 ld (nextupdatecycle_STAT),hl
 	 jr updateSTAT_full_finish
 	
 updateSTAT_full_last_scanline:
 	 ; On the final line, set LY to 0 after the first cycle
-	 ld h,$FF
+	 ld b,a ;0
 	 ld a,l
-	 cpl
-cpu_speed_factor_smc_3 = $
-	 rrca ; NOP this out in double-speed mode
+	 add a,(CYCLES_PER_SCANLINE - 1) << 1
+	 jr c,updateSTAT_full_last_scanline_finish
 	 ld l,a
-	 CPU_SPEED_IMM8($+1)
-	 add a,CYCLES_PER_SCANLINE - 1
-	 jr nc,--_
-	 ld b,0
-	 jr -_
+	 ld b,SCANLINES_PER_FRAME - 1
+	 scf
+	 jr updateSTAT_full_last_scanline_finish
 	
 updateSTAT_full_for_setup:
-	call updateSTAT_full
+	call updateSTAT_full_adjusted
 	ret.l
 	
 updateLY_fast:

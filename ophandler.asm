@@ -356,105 +356,76 @@ BGP_max_frequency = $+1
 BGP_write_done:
 	jp.sis z80_restore_swap_ret
 	
-lyc_write_mode1_nonzero:
-cpu_speed_ram_start = $
-	CPU_SPEED_START()
-	; Calculate the new LYC cycle offset (from vblank)
-	CPU_SPEED_IMM8($+1)
-	ld d,-CYCLES_PER_SCANLINE
-	sub 144
-	ld e,a
-	; Set scanline length to -1 for line 153, or -CYCLES_PER_SCANLINE otherwise
-	add a,-9
-	sbc a,a
-ppu_lyc_scanline_length_speed_smc = $
-	nop ; Replace with ADD A,A in double-speed mode
-	or d
-	ld c,a
-	; Multiply by -CYCLES_PER_SCANLINE
-	; Note that this produces 0 cycles for LYC=144, but the cycle offset is not used
-	; in that particular case (vblank collision is special-cased)
-	xor a
-	sub e
-	mlt de
-	add a,d
-	ld d,a
-	ld a,c
-	jr lyc_write_set_cycle_offset
-
-lyc_write_clear_prediction:
-	; Clear the prediction for the old LYC
-	ld a,c
-	ld (bc),a
-	; Check if the new LYC is during active video
-	ld a,(hl)
-	dec a
-	cp 143
-	inc a
-	jr c,lyc_write_continue
-lyc_write_mode1:
-	ld b,a
-	jr nz,lyc_write_mode1_nonzero
-	; Special case for line 0, thanks silly PPU hardware
-	CPU_SPEED_IMM16($+1)
-	ld de,-(CYCLES_PER_SCANLINE * 9 + 1)
-	CPU_SPEED_IMM8($+1)
-	ld a,1-CYCLES_PER_SCANLINE
-lyc_write_set_cycle_offset:
-	ld (lyc_cycle_offset),de
-	ld (z80codebase+ppu_lyc_scanline_length_smc),a
-	ld a,b
-	jr lyc_write_continue
-	
-; Writes to the LY compare register (LYC).
+; Handles writes to the LY compare register (LYC).
+; Only called if the value of LYC is changed, and before the LYC event line.
 ; Does not use a traditional call/return, must be jumped to directly.
 ;
 ; Sets the new cycle target according to the new value of LYC.
-; Triggers a GB interrupt if LY already matches the new LYC value,
-; but only if LYC is changing.
+; Triggers a GB interrupt if LY already matches the new LYC value.
 ;
-; Inputs:  L' = new value of LYC
+; Inputs:  L' = (LYC) = new value of LYC
 ;          (LY), (STAT) = current PPU state
 ;          BC, DE, return address on Z80 stack
 ;          BCDEHL' are swapped
 ; Outputs: LYC and cycle targets updated
 lyc_write_helper:
-	exx
-	ld a,l
-	exx
+	; Compare the new LYC to LY
 	ld hl,hram_base + LYC
-	ld bc,lyc_prediction_list
-	ld c,(hl)
-	; Set the new LYC value
-	ld (hl),a
-	; If the new LYC value is smaller, clear the prediction
-	cp c
-	jr c,lyc_write_clear_prediction
-	; If the new LYC value is after vblank, clear the prediction
-	cp 144
-	jr nc,lyc_write_clear_prediction
-	; Set the new prediction for the old LYC
-	ld (bc),a
-	; The new LYC is during active video, so skip vblank checks
-lyc_write_continue:
-lyc_write_disable_smc = $
-	; Check if LY=LYC
+	ld a,(hl)
 	dec hl
 	cp (hl)
-	; Set or reset the LYC coincidence bit in STAT
+	; Get STAT
 	ld l,STAT & $FF
 	ld c,(hl)
-	ld d,c
-	jr nz,_
-	; Set the LYC coincidence bit
+	; If they're the same, handle new coincidence
+	jr z,lyc_write_new_coincidence
+	; Reset LY=LYC coincidence bit
+	res 2,c
+	ld (hl),c
+	; If LYC > LY, LYC is on this frame
+	jr nc,lyc_write_this_frame
+	; If LYC < LY, LYC is on the next frame
+	; Check if the new LYC is less than the initial line prediction
+	ld hl,lyc_prediction_list+0
+	cp (hl)
+	jr nc,_
+	; If LYC is zero, this is not a valid initial prediction
+	or a
+	jr z,_
+	ld (hl),a
+_
+	; If during vblank, we need an event reschedule
+	ld a,c
+	dec a
+	and 3
+	jr z,lyc_write_reschedule
+lyc_write_no_reschedule:
+stat_write_no_reschedule:
+	jp.sis z80_pop_restore_swap_ret
+	
+lyc_write_this_frame:
+	; If LYC <= 144, update the LYC event line and prediction
+	cp VBLANK_SCANLINE+1
+	jr nc,lyc_write_reschedule
+	ld (z80codebase+writeLYC_event_line_smc),a
+	ld hl,(z80codebase+last_lyc_match)
+	ld (hl),a
+lyc_write_reschedule:
+	; Perform STAT scheduling updates
+	call stat_setup_c
+	; Reschedule the current PPU event
+	jp.sis reschedule_event_PPU
+	
+lyc_write_new_coincidence:
+	; Set LY=LYC coincidence bit
 	set 2,c
 	ld (hl),c
 	; If LYC interrupts are enabled, handle interrupt blocking logic
 	bit 6,c
-	jr z,lyc_write_reschedule_full
+	jr z,lyc_write_no_reschedule
 	; Transform mode into interrupt source mask:
 	; 0 -> $08, 1 -> $10, 2 -> $24, 3 -> $00
-	ld a,d
+	ld a,c
 	inc a
 	and 3
 	add a,a
@@ -462,35 +433,21 @@ lyc_write_disable_smc = $
 	daa
 	add a,a
 	; Check if any enabled interrupt modes block the interrupt
-	; Note that bit 2 of D is 0, so bit $04 will be ignored
-	and d
-	jr nz,lyc_write_reschedule_full
-	; Check if the IE STAT bit is set
+	and $38
+	and c
+	jr nz,lyc_write_no_reschedule
+	; Check if the IE STAT bit is set and IME is set
+	ld a,(z80codebase+intstate_smc_1)
 	ld l,h ;ld l,IE & $FF
-	bit 1,(hl)
+	add a,a
+	and (hl)
+	and 2
 	inc hl ;ld hl,active_ints
 	; Set the STAT interrupt active bit
-	set 1,(hl)
-	jr z,lyc_write_reschedule_full
-	; Perform STAT scheduling updates
-	call stat_setup
+	set.s 1,(hl)
+	jr z,lyc_write_no_reschedule
 	; Trigger a new event immediately
 	jp.sis trigger_event_pop
-_
-	; Reset the LYC coincidence bit
-	res 2,c
-	ld (hl),c
-lyc_write_reschedule_full:
-	; Perform STAT scheduling updates
-	call stat_setup
-	; Reschedule the current PPU event
-	jp.sis reschedule_event_PPU
-	
-lyc_write_no_reschedule:
-	; Disable predicted LYC write behavior by predicting the current LYC
-	ld (z80codebase+writeLYC_prediction_smc),a
-stat_write_no_reschedule:
-	jp.sis z80_pop_restore_swap_ret
 	
 stat_write_helper:
 	exx
@@ -547,12 +504,8 @@ _
 	jp.sis reschedule_event_PPU
 	
 do_lcd_disable:
-	; Disable predicted LYC write behavior by predicting the current LYC
-	ld hl,hram_base+LYC
-	ld a,(hl)
-	ld (z80codebase+writeLYC_prediction_smc),a
 	; Set STAT mode 0 and LY=0
-	ld l,STAT & $FF
+	ld hl,hram_base+STAT
 	ld a,(hl)
 	ld c,a
 	and $FC
@@ -579,8 +532,9 @@ _
 	ld (z80codebase+updateLY_disable_smc),a
 	
 	; Disable interrupt and rescheduling effects for LYC and STAT writes
-	ld hl,(lyc_write_no_reschedule - (lyc_write_disable_smc+2))<<8 | $18 ;JR
-	ld (lyc_write_disable_smc),hl
+	ld hl,(writeLYC_same - (writeLYC_disable_smc+3))<<16 | $1877 ;LD (HL),A \ JR writeLYC_same
+	ld (z80codebase+writeLYC_disable_smc),hl
+	ld l,h ;JR stat_write_no_reschedule
 	ld h,stat_write_no_reschedule - (stat_write_disable_smc+2)
 	ld (stat_write_disable_smc),hl
 	
@@ -592,242 +546,150 @@ scanline_off_color_smc = $+1
 	ld (scanline_fill_color_smc),a
 	
 	; Update PPU scheduler to do events once per "frame"
-	push ix
-	ld ix,z80codebase+ppu_expired_lcd_off
-	CPU_SPEED_IMM16($+1)
-	ld hl,-CYCLES_PER_FRAME
-	ld.sis (ppu_post_vblank_event_handler),ix
-	ld.sis (ppu_post_vblank_event_offset),hl
-	jr stat_setup_next_vblank_lcd_off
-	
-stat_setup_hblank:
-	ld ix,z80codebase+ppu_expired_mode0_line_0
-	ld (ix-ppu_expired_mode0_line_0+ppu_mode0_event_line),b ;144
-	CPU_SPEED_IMM16($+1)
-	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
-	; Check if LYC match is during vblank
-	cp b ;144
-	call nc,stat_setup_lyc_mode1_filter
-	ld.sis (ppu_post_vblank_event_handler),ix
-	ld.sis (ppu_post_vblank_event_offset),hl
-	ld ix,z80codebase+ppu_expired_mode0
-	; If currently in mode 1, schedule the first post-vblank event
-	ld a,c
-	and 3
-lcd_on_stat_setup_mode_smc = $+1
-	cp 1
-	jr z,stat_setup_hblank_post_vblank
-	; Get LY and add 1 if hblank has been reached
-	ld a,e
-	adc a,0
-	; If the result is 0, schedule the first post-vblank event
-	jr z,stat_setup_hblank_post_vblank
-	; If during hblank of line 143, schedule vblank
-	cp b ;144
-	jr z,stat_setup_next_vblank
-	ld c,a
-	; Determine the cycle time of next hblank
-	cp e
-	ld a,d
-	; Normally, schedule before the end of the current scanline
-	CPU_SPEED_IMM8($+1)
-	ld de,MODE_0_CYCLES
-	jr z,_
-	; For hblank, schedule in the next scanline
-	dec d
-	CPU_SPEED_IMM8($+1)
-	ld e,-(MODE_2_CYCLES + MODE_3_CYCLES)
-_
-	ld.sis hl,(nextupdatecycle_LY)
-	add hl,de
-	; Set the current line with the adjusted LY
-	ld (ix-ppu_expired_mode0+ppu_mode0_LY),c
-	; If LYC < adjusted LY, keep vblank as next event line 
-	cp c
-	jr c,stat_setup_done_trampoline
-	; If LYC == adjusted LY, update entry point and keep vblank as next event
-	jr z,stat_setup_hblank_lyc_match
-	; If LYC > adjusted LY and LYC < 144. update the event line
-	cp b ;144
-	jr nc,stat_setup_done_trampoline
-	ld (ix-ppu_expired_mode0+ppu_mode0_event_line),a
-	jr stat_setup_done_trampoline
-	
-stat_setup_hblank_post_vblank:
-	ld ix,z80codebase+ppu_expired_mode0_line_0
-	CPU_SPEED_IMM16($+1)
-	ld hl,-((CYCLES_PER_SCANLINE * 10) + MODE_2_CYCLES + MODE_3_CYCLES)
+	ld de,ppu_expired_lcd_off
+cpu_speed_ram_start = $
+	CPU_SPEED_START()
+	CPU_SPEED_IMM16($+2)
+	ld.sis bc,-CYCLES_PER_FRAME
 	jr stat_setup_next_from_vblank
 	
-stat_setup_hblank_trampoline:
-	jr stat_setup_hblank
-	
-stat_setup_lyc_vblank:
-	; The next event from vblank is vblank, unless LYC is during mode 1
-	CPU_SPEED_IMM16($+1)
-	ld hl,-CYCLES_PER_FRAME
-	call nz,stat_setup_lyc_mode1_filter
-stat_setup_next_vblank_post_vblank:
-	ld.sis (ppu_post_vblank_event_handler),ix
-	ld.sis (ppu_post_vblank_event_offset),hl
-stat_setup_next_vblank:
-	; The next event from now is vblank
-	ld ix,z80codebase+ppu_expired_vblank
-stat_setup_next_vblank_lcd_off:
-	or a
-	sbc hl,hl
-	ld.sis de,(vblank_counter)
-	sbc hl,de
+stat_setup_oam:
+	; Set the event line
+	ld (z80codebase+ppu_mode2_event_line),a
+	ld a,l
+	ld (z80codebase+ppu_mode2_LY),a
+	; Check if LY=LYC
+	cp h
+	ld.sis hl,(nextupdatecycle_LY)
+	ld.sis (ppu_counter),hl
+	ld de,ppu_expired_mode2
+	jr nz,stat_setup_done
+	ld de,ppu_expired_mode2_maybe_lyc_block
 	jr stat_setup_done
 	
-stat_setup_hblank_lyc_match:
-	lea ix,ix-ppu_expired_mode0+ppu_expired_mode0_lyc_match
-stat_setup_done_trampoline:
-	jr stat_setup_done
+stat_setup_hblank_this_line:
+	ld (z80codebase+ppu_mode0_LY),a
+	; Check if LY=LYC
+	bit 2,c
+	CPU_SPEED_IMM8($+2)
+	ld.sis bc,MODE_0_CYCLES
+	jr nz,stat_setup_done_add
+	ld de,ppu_expired_mode0_maybe_lyc_block
+	jr stat_setup_done_add
 	
 	; Input: C = current value of STAT
 stat_setup_c:
 	ld d,c
 	; Input: D = current writable bits of STAT, C = current read-only bits of STAT
 stat_setup:
-	push ix
-	ld ix,z80codebase+ppu_expired_vblank
-	ld b,144
-	; Get the line to match, but treat offscreen lines as vblank match
+	; Get LY and LYC
 	ld.sis hl,(LY)
-	ld a,h
-	; Disable predicted LYC write behavior by predicting the current LYC
-	ld (z80codebase+writeLYC_prediction_smc),a
-	cp 154
-	jr c,_
-	ld h,b ;144
-	ld a,h
+	; Get the currently scheduled line event
+	ld a,(z80codebase+writeLYC_event_line_smc)
+	; Check if in post-vblank state
+	cp SCANLINES_PER_FRAME
+	jr nz,_
+	; Check if LY is still after vblank
+	ld a,l
+	cp VBLANK_SCANLINE
+	jr nc,stat_setup_vblank
+	; If not, LY has wrapped back around to 0
+	; Get the initial LYC prediction for the frame and set it as the current event line
+	ld a,(lyc_prediction_list+0)
+	ld (z80codebase+writeLYC_event_line_smc),a
 _
-	dec a
-	ex de,hl
 	; Check if hblank interrupt is enabled (blocks OAM)
-	bit 3,h
-	jr nz,stat_setup_hblank_trampoline
+	bit 3,d
+	jr nz,stat_setup_hblank
 	; Check if OAM interrupt is enabled
-	bit 5,h
+	bit 5,d
 	jr nz,stat_setup_oam
-	; Check if LYC match is at or during vblank
-	cp 143
-	jr nc,stat_setup_lyc_vblank
-	; The next event from vblank is LYC (mode 2)
-	lea ix,ix-ppu_expired_vblank+ppu_expired_lyc_mode2
-	; Set current and initial LYC predictions
-	inc a
-	ld (ix-ppu_expired_lyc_mode2+lyc_curr_prediction),a
-	ld (ix-ppu_expired_lyc_mode2+lyc_initial_prediction),a
+	ld de,ppu_expired_active_lyc
+stat_setup_specific_line:
 	; Calculate cycle offset from vblank
-	add a,10
-	ld l,a
+	add a,SCANLINES_PER_VBLANK
+	ld b,a
 	CPU_SPEED_IMM8($+1)
-	ld h,-CYCLES_PER_SCANLINE
+	ld c,-CYCLES_PER_SCANLINE
 	xor a
-	sub l
-	mlt hl
-	add a,h
-	ld h,a
-	; Check if LY >= LYC
-	ld a,e
-	cp d
-	jr c,stat_setup_next_from_vblank_post_vblank
-	; Check if LY < 144
-	cp b ;144
-	jr c,stat_setup_next_vblank_post_vblank
-stat_setup_next_from_vblank_post_vblank:
-	ld.sis (ppu_post_vblank_event_handler),ix
-	ld.sis (ppu_post_vblank_event_offset),hl
+	sub b
+	mlt bc
+	add a,b
+	ld b,a
 stat_setup_next_from_vblank:
 	; The next event from now is relative to start of vblank
-	ld.sis de,(vblank_counter)
-	sbc hl,de
-	; Offset is from start of vblank, so adjust back to previous vblank
-	CPU_SPEED_IMM16($+1)
-	ld de,CYCLES_PER_FRAME
-	add hl,de
+	ld.sis hl,(vblank_counter)
+stat_setup_done_add:
+	add hl,bc
 stat_setup_done:
 	ld.sis (ppu_counter),hl
 lcd_on_stat_setup_event_smc = $+3
-	ld.sis (event_counter_checker_slot_PPU),ix
-	pop ix
+	ld.sis (event_counter_checker_slot_PPU),de
 	ret
 	
-stat_setup_oam:
-	ld ix,z80codebase+ppu_expired_mode2_line_0
-	ld (ix-ppu_expired_mode2_line_0+ppu_mode2_event_line),143
-	CPU_SPEED_IMM16($+1)
-	ld hl,-(CYCLES_PER_SCANLINE * 10)
-	; Check if LYC match is during vblank
-	cp b ;144
-	call nc,stat_setup_lyc_mode1_filter
-	ld.sis (ppu_post_vblank_event_handler),ix
-	ld.sis (ppu_post_vblank_event_offset),hl
-	; If LY is 143, schedule vblank
-	ld a,e
-	cp 143
-	jp z,stat_setup_next_vblank
-	ld ix,z80codebase+ppu_expired_mode2
-	; If currently in mode 1, schedule the first post-vblank event
-	ld a,c
-	dec a
-	and 3
-	jr z,stat_setup_oam_post_vblank
-	; Set the current line to LY and get the time for the next event
-	ld (ix-ppu_expired_mode2+ppu_mode2_LY),e
+stat_setup_hblank:
+	; Set the event line
+	ld (z80codebase+ppu_mode0_event_line),a
+	ld b,a
+	ld a,l
 	ld.sis hl,(nextupdatecycle_LY)
-	; If LYC < LY, keep vblank as next event line
-	ld a,d
-	cp e
-	jr c,stat_setup_done
-	; If LYC == LY, update entry point and keep vblank as next event
-	jr z,stat_setup_oam_lyc_blocking
-	; If LYC > LY and LYC < 143, update the event line
-	cp 143
-	jr nc,stat_setup_done
-	ld (ix-ppu_expired_mode2+ppu_mode2_event_line),a
+	ld de,ppu_expired_mode0
+	; Check if hblank has already been reached this line
+	bit 1,c
+lcd_on_stat_setup_mode_smc = $
+	jr nz,stat_setup_hblank_this_line
+	; Schedule either LYC match or hblank on the next line
+	inc a
+	ld (z80codebase+ppu_mode0_LY),a
+	; Check if the event line is next line
+	cp b
+	CPU_SPEED_IMM8($+2)
+	ld.sis bc,-(MODE_2_CYCLES + MODE_3_CYCLES)
+	jr nz,stat_setup_done_add
+	ld de,ppu_expired_mode0_maybe_lyc_match
+	; Check for vblank scanline
+	cp VBLANK_SCANLINE
+	jr nz,stat_setup_done
+	ld de,ppu_expired_vblank
 	jr stat_setup_done
 	
-stat_setup_oam_post_vblank:
-	lea ix,ix-ppu_expired_mode2+ppu_expired_mode2_line_0
-	CPU_SPEED_IMM16($+1)
-	ld hl,-(CYCLES_PER_SCANLINE * 10)
+stat_setup_vblank:
+	; Check if LY < LYC
+	cp h
+	ld a,h
+	ex de,hl
+	ld de,ppu_expired_lyc_mode1
+	jr c,stat_setup_vblank_maybe_lyc_match
+	; Check if LYC=0
+	or a
+	jr nz,stat_setup_post_vblank
+	CPU_SPEED_IMM16($+2)
+	ld.sis bc,-(CYCLES_PER_SCANLINE * 9 + 1)
 	jr stat_setup_next_from_vblank
 	
-stat_setup_oam_lyc_blocking:
-	lea ix,ix-ppu_expired_mode2+ppu_expired_mode2_lyc_blocking
-	jr stat_setup_done
+stat_setup_vblank_maybe_lyc_match:
+	; Check if LYC < 154
+	sub SCANLINES_PER_FRAME
+	jr c,stat_setup_specific_line
+stat_setup_post_vblank:
+	ld a,(lyc_prediction_list+0)
+	bit 3,h
+	jr nz,stat_setup_post_vblank_mode0
+	bit 5,h
+	ld de,ppu_expired_active_lyc_post_vblank
+	jr z,stat_setup_specific_line
+	ld (z80codebase+ppu_mode2_event_line),a
+	ld de,ppu_expired_mode2_line_0
+	CPU_SPEED_IMM16($+2)
+	ld.sis bc,-(CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK)
+	jr stat_setup_next_from_vblank
 	
-	; Input: A=LYC-1, L=LY, HL=event cycle offset, IX=event handler, carry reset
-	; Output: HL=new event cycle offset, IX=new event handler,
-	;         unless the PPU is currently between vblank and LYC,
-	;         in which case this call does not actually return.
-stat_setup_lyc_mode1_filter:
-	; Record the filtered event handler and offset to follow LYC
-	ld.sis (ppu_post_mode1_lyc_event_handler),ix
-	push de
-lyc_cycle_offset = $+1
-	 ld de,0
-	 ASSERT_NC
-	 sbc hl,de
-	 ld.sis (ppu_post_mode1_lyc_event_offset),hl
-	 ex de,hl
-	pop de
-	; The next event from vblank is LYC (mode 1)
-	ld ix,z80codebase+ppu_expired_lyc_mode1
-	; Return if LY >= LYC (unless LYC=0)
-	cp e
-	ret c
-	; Return if LY < 144
-	ld a,e
-	cp b ;144
-	ret c
-	; The next event from now is LYC (mode 1)
-	pop de
-	jp stat_setup_next_from_vblank_post_vblank
-	
+stat_setup_post_vblank_mode0:
+	ld (z80codebase+ppu_mode0_event_line),a
+	ld de,ppu_expired_mode0_line_0
+	CPU_SPEED_IMM16($+2)
+	ld.sis bc,-((CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK) + MODE_2_CYCLES + MODE_3_CYCLES)
+	jr stat_setup_next_from_vblank
 	
 ; Writes to the LCD control register (LCDC).
 ; Does not use a traditional call/return, must be jumped to directly.
@@ -975,36 +837,40 @@ _
 	rlca
 	jr c,lcd_enable_helper
 
-	; Determine whether the persistent vblank time has already passed
-	ld.sis bc,(vblank_counter)
-	; Check how many cycles the persistent vblank is before the current vblank
-	ASSERT_NC
-	ld.sis hl,(persistent_vblank_counter)
-	sbc hl,bc
-	; Check if the persistent vblank is at or after the current vblank
-	; This should work in both single and double speed
-	ld a,h
-	cp (((CYCLES_PER_SCANLINE * 10) + 1) >> 7) + 1
-	; If so, use the persistent vblank
-	jr c,_
-	; Get the number of cycles left until the current vblank
-	ex de,hl
-	sbc hl,bc
-	; If current vblank was passed in this instruction, make no change
-	ld a,h
-	or a
-	jr z,++_
-	; Check whether the current time is after the persistent vblank time
-	sbc.s hl,de
-	; If not, use the persistent vblank time
-	ex de,hl
-	jr c,_
-	; If so, use the current time
-	add hl,de
+	push de
+	 ; Get the number of cycles passed since the previous vblank
+	 ld.sis hl,(vblank_counter)
+	 add hl,de
+	 ex.s de,hl
+	 ; Get the number of cycles between persistent vblank and previous vblank
+	 ld.sis bc,(persistent_vblank_counter)
+	 add hl,bc
+	 ASSERT_NC
+	 sbc.s hl,de
+	 ; Check if the difference is unsigned (previous vblank can be earlier
+	 ; due to rescheduling when the LCD is turned on).
+	 ; This comparison should work in either single or double speed modes.
+	 ld a,h
+	 add a,((CYCLES_PER_VBLANK + 1) >> 7) + 1
+	 jr c,_
+	 ; Add the cycles since previous vblank, with 24-bit result
+	 add hl,de
+	 ASSERT_NC
+	 ; Check if less than a frame passed since persistent vblank,
+	 CPU_SPEED_IMM16($+2)
+	 ld.sis de,CYCLES_PER_FRAME
+	 sbc hl,de
 _
-	add hl,bc
+	 ; Use persistent vblank if so
+	 ld h,b
+	 ld l,c
+	; Restore value of DIV
+	pop bc
+	jr c,_
+	ex de,hl
+	sbc hl,bc
+_
 	ld.sis (vblank_counter),hl
-_
 	
 	; Disable the LCD
 	call do_lcd_disable
@@ -1042,10 +908,9 @@ _
 	
 	; Enable interrupt and rescheduling effects for LYC and STAT writes
 	.db $21 ;ld hl,
-	 dec hl
-	 cp (hl)
-	 .db $2E ;ld l,
-	ld (lyc_write_disable_smc), hl
+	 cp SCANLINES_PER_FRAME
+	 .db $38 ;jr c,
+	ld (z80codebase+writeLYC_disable_smc),hl
 	.db $21 ;ld hl,
 	 rrca
 	 rrca
@@ -1057,26 +922,36 @@ _
 	ld (z80codebase+lcd_on_STAT_restore),a
 	ld a,lcd_on_STAT_handler - (lcd_on_updateSTAT_smc + 1)
 	ld (z80codebase+lcd_on_updateSTAT_smc),a
-	xor a
+	ld a,$18 ;JR
 	ld (lcd_on_stat_setup_mode_smc),a
-	ld hl,($DD << 16) | lcd_on_ppu_event_checker
+	ld hl,($C9 << 16) | lcd_on_ppu_event_checker
 	ld (lcd_on_stat_setup_event_smc),hl
 	ld hl,lcd_on_STAT_handler
 	ld.sis (event_counter_checker_slot_PPU),hl
 	
-	; Schedule vblank relative to now (minus 1 cycle because the LCD is wack)
+	; Schedule previous vblank relative to now (plus 1 cycle because the LCD is wack)
 	CPU_SPEED_IMM16($+1)
-	ld hl,(CYCLES_PER_SCANLINE * 144) - 1
-	add hl,de
+	ld hl,-(CYCLES_PER_VBLANK+1)
+	xor a
+	sbc hl,de
 	ld.sis (vblank_counter),hl
 	
-	; Check if LYC=0
+	; Set the initial LYC prediction
+	; Lines 1-144 are passed through, all others use 144
+	ld (z80codebase+last_lyc_match),a
 	ld hl,hram_base+LYC
 	ld a,(hl)
-	or a
+	dec a
+	cp VBLANK_SCANLINE
+	; Also check if LYC=0
+	inc a
+	jr c,_
+	ld a,VBLANK_SCANLINE
+_
+	ld (lyc_prediction_list+0),a
 	ld l,STAT & $FF
-	ld a,(hl)
-	ld c,a
+	ld c,(hl)
+	ld a,c
 	; Set/reset LY=LYC coincidence bit (based on LY being 0)
 	res 2,c
 	jr nz,_
@@ -1132,10 +1007,10 @@ lcd_on_STAT_restore_helper:
 	ld (z80codebase+lcd_on_STAT_restore),a
 	ld a,updateSTAT_mode0_mode1 - (lcd_on_updateSTAT_smc + 1)
 	ld (z80codebase+lcd_on_updateSTAT_smc),a
-	ld a,1
+	ld a,$20 ;JR NZ,
 	ld (lcd_on_stat_setup_mode_smc),a
 	push hl
-	 ld hl,($DD << 16) | event_counter_checker_slot_PPU
+	 ld hl,($C9 << 16) | event_counter_checker_slot_PPU
 	 ld (lcd_on_stat_setup_event_smc),hl
 	 ; If this is called from the PPU event, it overwrites the return address
 	 ld.sis hl,(lcd_on_ppu_event_checker)
@@ -1161,13 +1036,19 @@ reset_div:
 	cpl
 	CPU_SPEED_IMM8($+1) ; Use bit 12 for double speed
 	and $08 ;(4096 >> 8) >> 1
-	ld.sis hl,(vblank_counter)
+	ld.sis hl,(hdma_counter)
 	sbc hl,bc
-	ld.sis (vblank_counter),hl
+	ld.sis (hdma_counter),hl
 	add a,a
 	ld (z80codebase+audio_counter+1),a
-	ld.sis hl,(persistent_vblank_counter)
+	ld.sis hl,(serial_counter)
 	sbc hl,bc
+	ld.sis (serial_counter),hl
+	ld.sis hl,(vblank_counter)
+	add hl,bc
+	ld.sis (vblank_counter),hl
+	ld.sis hl,(persistent_vblank_counter)
+	add hl,bc
 	ld.sis (persistent_vblank_counter),hl
 	ld.sis hl,(ppu_counter)
 	add hl,bc
@@ -1178,12 +1059,9 @@ reset_div:
 	ld.sis hl,(nextupdatecycle_LY)
 	add hl,bc
 	ld.sis (nextupdatecycle_LY),hl
-	ld.sis hl,(serial_counter)
-	xor a
-	sbc hl,bc
-	ld.sis (serial_counter),hl
 	; Update timer schedule, with logic to cause an instant TIMA increment
 	; if the specified bit of DIV is moving from 1 to 0
+	xor a
 	ld b,a
 	ld a,(hram_base+TIMA)
 	cpl
@@ -1381,14 +1259,10 @@ set_cpu_speed:
 	APTR(CpuSpeedRelocs)
 	ex de,hl
 	rla
-	ld hl,lyc_cycle_offset
-	jr nc,set_cpu_single_speed
-	sla (hl) \ inc hl \ rl (hl)
-	ld hl,z80codebase+ppu_lyc_scanline_length_smc
-	sla (hl)
 	ld hl,z80codebase+audio_counter+1
+	ld b,5
+	jr nc,set_cpu_single_speed
 	sla (hl)
-	ld b,6
 _
 	ex de,hl
 	ld e,(hl)
@@ -1401,20 +1275,13 @@ _
 	rl (hl)
 	djnz -_
 	
-	.db $21 ;LD HL,
-	 ld a,h
-	 inc a
-	 .db $28 ;JR Z,
-	xor a ;NOP
+	ld l,$3F ;CCF
+	ld h,b ;NOP
+	ld a,$8F ;ADC A,A
 	jr set_cpu_any_speed
 	
 set_cpu_single_speed:
-	inc hl \ sra (hl) \ dec hl \ rr (hl)
-	ld hl,z80codebase+ppu_lyc_scanline_length_smc
-	scf \ rr (hl)
-	ld hl,z80codebase+audio_counter+1
 	srl (hl)
-	ld b,6
 _
 	ex de,hl
 	ld e,(hl)
@@ -1422,33 +1289,25 @@ _
 	ld d,(hl)
 	inc hl
 	ex de,hl
-	ld a,b
-	cp 5
 	inc hl
+	scf
 	rr (hl)
 	dec hl
 	rr (hl)
 	djnz -_
 	
-	.db $21
-	 add.sis hl,hl
-	 .db $38 ;JR C,
-	ld a,$0F ;RRCA
+	ld hl,$1DCB ;RR L
+	ld a,b ;NOP
+	ld b,$29 ;ADD HL,HL
 set_cpu_any_speed:
-	ld (z80codebase+updateSTAT_full_speed_smc),hl
-	ld (z80codebase+cpu_speed_factor_smc_1),a
-	ld (z80codebase+cpu_speed_factor_smc_2),a
-	ld (z80codebase+cpu_speed_factor_smc_3),a
-	; Convert NOP to ADD A,A and RRCA to NOP
-	xor $0F
-	; $0F -> $87, $00 -> $00
-	ld l,a
-	rrca
-	ld (apply_cpu_speed_shift_smc_2),a
-	ld (ppu_lyc_scanline_length_speed_smc),a
-	; Convert ADD A,A to ADC A,A and NOP to NOP
-	or l
+	ld.sis (cpu_speed_factor_smc_1),hl
+	ld.sis (cpu_speed_factor_smc_2),hl
 	ld (apply_cpu_speed_shift_smc_1),a
+	; Convert ADC A,A to ADD A,A and NOP to NOP
+	res 3,a
+	ld (apply_cpu_speed_shift_smc_2),a
+	ld a,b
+	ld (z80codebase+updateSTAT_full_speed_smc),a
 	
 	ld ix,(ArcBase)
 	ld bc,cpu_speed_ram_start - program_end

@@ -475,6 +475,9 @@ MODE_3_CYCLES = 43
 CYCLES_PER_SCANLINE = MODE_2_CYCLES + MODE_3_CYCLES + MODE_0_CYCLES
 SCANLINES_PER_FRAME = 154
 CYCLES_PER_FRAME = CYCLES_PER_SCANLINE * SCANLINES_PER_FRAME
+VBLANK_SCANLINE = 144
+SCANLINES_PER_VBLANK = SCANLINES_PER_FRAME - VBLANK_SCANLINE
+CYCLES_PER_VBLANK = CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK
 
 ioregs = $ff00
 P1 = $ff00
@@ -729,10 +732,10 @@ gbc_obj_opaque_colors = gbc_bg_opaque_colors + (24*2)
 recompile_cycle_offset_stack = overlapped_bg_palette_colors + 256
 
 ; List of LYC write predictions, based on writes in previous frames.
-; The values in indices 1 to 143 correspond to the last value written to LYC
-; while LYC was the value in that index, only if the new value is between
-; the old value and 143. Otherwise, the value in the index equals the index.
-; The remaining indices may be written to, but are not used by the scheduler.
+; The values in indices 1 to 144 correspond to the last value written to LYC
+; after LYC matched LY at that index, only if the new value is between
+; LY and 144. Otherwise, the value in the index equals 144.
+; Index 0 is special, and indicates the first LYC value after vblank.
 ; This table must be 256-byte aligned.
 lyc_prediction_list = recompile_cycle_offset_stack
 
@@ -1809,7 +1812,6 @@ CpuSpeedRelocs:
 	.dw ppu_counter
 	.dw nextupdatecycle_STAT
 	.dw nextupdatecycle_LY
-	.dw ppu_post_vblank_event_offset
 	buf(1)
 	run()
 
