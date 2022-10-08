@@ -3030,11 +3030,11 @@ coherency_handler:
 	ex (sp),ix
 	 lea hl,ix+RAM_PREFIX_SIZE-3
 	 exx
-	 ld bc,(ix+2) ;BCU=0
-	 ld ix,(ix)
 	 ex af,af'
 	 ld e,a
 	 push de
+	  ld de,(ix)
+	  ld bc,(ix+2)
 	  jp.lil check_coherency_helper
 	
 handle_overlapped_op_1_1:

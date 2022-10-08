@@ -1173,10 +1173,10 @@ ram_block_padding = $+1
 	  sbc hl,bc
 	  inc bc
 	  ldir
-	  ; Complement the final byte to force the match to end here
+	  ; Decrement the final byte to force the match to end here
 	  dec de
 	  ld a,(de)
-	  cpl
+	  dec a
 	  ld (de),a
 	  inc de
 	 
@@ -1191,52 +1191,101 @@ ram_block_padding = $+1
 	 xor a
 	 jp recompile_end_common
 	
-	
 check_coherency_helper:
-	ld de,recompile_struct
-	add ix,de
-	ld hl,(ix+2)
-	ex.s de,hl
-	GET_BASE_ADDR_FAST
+	ld hl,recompile_struct+2
 	add hl,de
-	ex de,hl
-	ld hl,i ;HLU=z80codebase>>16
-	ld h,b
-	ld l,c
-	ld b,0
-	ld c,(ix+5)
-	inc c
-	sbc hl,bc
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	inc hl
+	inc hl
+	ld a,(hl)
+	inc hl
+	inc hl
+	push hl
+	 ld hl,z80codebase+mem_read_lut
+	 ld l,d
+	 ld l,(hl)
+	 inc h ;mem_get_ptr_routines
+	 inc l \ inc l
+	 ld ix,(hl)
+	 add ix,de
+	 sbc hl,hl
+	 add hl,sp
+	 ex de,hl
+	 ld hl,z80codebase-1
+	 cpl
+	 ld l,a
+	 sub ixl
+	 add hl,bc ; Resets carry
+	 ld sp,hl
 check_coherency_loop:
-	ld a,(de)
-	inc de
-	cpi
-	jr nz,_
-	ld a,(de)
-	inc de
-	cpi
-	jr nz,_
-	ld a,(de)
-	inc de
-	cpi
-	jr nz,_
-	ld a,(de)
-	inc de
-	cpi
-	jr z,check_coherency_loop
-_
-	jp pe,rerecompile
-	; Make sure the last (complemented) byte matches
-	dec hl
-	xor (hl)
-	inc a
-	jr nz,rerecompile
-	
+	 pop hl
+	 ld bc,(ix)
+	 sbc hl,bc
+	 jr nz,check_coherency_loop_finish_3
+	 pop hl
+	 ld bc,(ix+3)
+	 sbc hl,bc
+	 jr nz,check_coherency_loop_finish_6
+	 pop hl
+	 ld bc,(ix+6)
+	 sbc hl,bc
+	 jr nz,check_coherency_loop_finish_9
+	 pop hl
+	 ld bc,(ix+9)
+	 sbc hl,bc
+	 jr nz,check_coherency_loop_finish_12
+	 pop hl
+	 ld bc,(ix+12)
+	 sbc hl,bc
+	 lea ix,ix+15
+	 jr z,check_coherency_loop
+	 jr check_coherency_loop_finish
+	 
+check_coherency_loop_finish_12:
+	 add a,3
+check_coherency_loop_finish_9:
+	 add a,9
+	 jr check_coherency_loop_finish
+	 
+check_coherency_loop_finish_6:
+	 add a,3
+check_coherency_loop_finish_3:
+	 add a,3
+check_coherency_loop_finish:
+	 ex de,hl
+	 ld sp,hl
+	 add a,ixl
+	 jr z,check_coherency_3byte
+	 dec a
+	 jr z,check_coherency_2byte
+	 dec a
+	 jr nz,rerecompile
+	 ; Make sure the last (decremented) byte matched
+	 inc e
+	 jr z,check_coherency_cycles
+	 jr rerecompile
+check_coherency_2byte:
+	 ; Make sure the last (decremented) byte and second-to-last byte matched
+	 inc d
+	 or d
+	 or e
+	 jr z,check_coherency_cycles
+	 jr rerecompile
+check_coherency_3byte:
+	 ; Make sure the last (decremented) byte and previous two bytes matched
+	 scf
+	 sbc.s hl,hl
+	 adc hl,de
+	 jr nz,rerecompile
+	 
 check_coherency_cycles:
+	pop hl
 	pop.s de
 check_coherency_cycles_popped:
 	ld a,e
-	add a,(ix+7)
+	add a,(hl)
 	jr c,++_
 _
 	pop.s ix
@@ -1246,11 +1295,14 @@ _
 _
 	inc d
 	jr nz,--_
+	inc.s bc ;BCU=0
 	ld c,a
 	sub e
 	ld b,a
-	ld hl,(ix+2)
-	ex.s de,hl
+	dec hl \ dec hl \ dec hl \ dec hl
+	ld d,(hl)
+	dec hl
+	ld e,(hl)
 	exx
 	push hl
 	pop ix
@@ -1266,10 +1318,12 @@ _
 ; If the new recompiled code overflows the allotted space, all code is flushed
 ; and the ram_block_padding variable is increased by the amount of overflow.
 ;
-; Inputs:  IX = recompile struct entry for the block
+; Inputs:  (SP) = recompile struct entry for the block, plus 7
 ; Outputs: None
 ; Destroys AF,BC,DE,HL
 rerecompile:
+	pop ix
+	lea ix,ix-7
 #ifdef 0
 	push ix
 	 ld hl,(ix)
@@ -1342,55 +1396,57 @@ rerecompile:
 	ldir
 	dec de
 	ld a,(de)
-	cpl
+	dec a
 	ld (de),a
 	
 	; Check for entries on the callstack containing this region
-	sbc hl,hl
-	add.s hl,sp
-	; Get the number of used callstack entries
-	ld a,(myz80stack - 4 - 4) & $FF
-	sub l
-#ifdef FASTLOG
-	jp z,check_coherency_cycles
-#else
-	jr z,check_coherency_cycles
-#endif
-	rrca
-	rrca
-	push hl
-	 ld hl,(ix)
-	 ex.s de,hl
-	 sbc hl,de
-	 ld b,h
-	 ld c,l
-	 add hl,de
-	 ex de,hl
+	pea ix+7
 	 sbc hl,hl
-	 sbc hl,de
-	 ex de,hl
-	 pop.s hl
-	 pop.s hl
+	 add.s hl,sp
+	 ; Get the number of used callstack entries
+	 ld a,(myz80stack - 4 - 4) & $FF
+	 sub l
+#ifdef FASTLOG
+	 jp z,check_coherency_cycles
+#else
+	 jr z,check_coherency_cycles
+#endif
+	 rrca
+	 rrca
+	 push hl
+	  ld hl,(ix)
+	  ex.s de,hl
+	  sbc hl,de
+	  ld b,h
+	  ld c,l
+	  add hl,de
+	  ex de,hl
+	  sbc hl,hl
+	  sbc hl,de
+	  ex de,hl
+	  pop.s hl
+	  pop.s hl
 _
-	 pop.s hl
-	 pop.s hl
-	 add hl,de
-	 add hl,bc
-	 jr c,rerecompile_found_callstack_entry
-	 dec a
-	 jr nz,-_
-	pop hl
-	ld.s sp,hl
-	jp check_coherency_cycles
+	  pop.s hl
+	  pop.s hl
+	  add hl,de
+	  add hl,bc
+	  jr c,rerecompile_found_callstack_entry
+	  dec a
+	  jr nz,-_
+	 pop hl
+	 ld.s sp,hl
+	 jp check_coherency_cycles
 	
 rerecompile_found_callstack_entry:
-	; For now, just flush the whole callstack
+	  ; For now, just flush the whole callstack
+	 pop hl
+	 ld.s sp,hl
+	 pop.s de
+	 pop.s hl
+	 ld.sis sp,myz80stack - 4
+	 push.s hl
 	pop hl
-	ld.s sp,hl
-	pop.s de
-	pop.s hl
-	ld.sis sp,myz80stack - 4
-	push.s hl
 	ld sp,myADLstack
 	jp check_coherency_cycles_popped
 	
