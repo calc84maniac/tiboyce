@@ -1670,16 +1670,19 @@ _
 	and $0F ;RRCA vs. NOP
 	ld (gbc_scroll_write_SCX_smc),a
 	ld bc,16
-	jr nz,_
+	ld a,c
+	jr z,_
 	add hl,bc
+	rlca
 _
+	ld (recompile_ram_unbanked_range_smc),a
 	ldir
+	jr z,_
 	ld a,lcdc_write_no_sprite_change_gb - (lcdc_write_sprite_change_smc_2+1)
 	ld ix,write_vram_last_slice
 	ld de,write_vram_catchup
 	ld bc,render_save_spl
 	ld hl,scanline_do_render
-	jr z,_
 	AJUMP(SetupLoadStateNoGBC)
 _
 	
@@ -1714,6 +1717,7 @@ _
 	dec h \ dec h ;wram_bank_base_for_read
 	ld (hl),a
 	ld a,(wram_gbc_base >> 8) & $FF
+	ld (z80codebase+coherency_handler_wram_smc),a
 	ld l,(wram_unbanked_base_for_read + 1) & $FF
 	ld (hl),a
 	inc h \ inc h ;wram_unbanked_base
@@ -3864,6 +3868,16 @@ cram_mbc2_write_any_size = $ - cram_mbc2_write_any_impl
 	.assume adl=1
 	
 LCDC_0_change_impls:
+	; GBC impl
+	ld hl,LCDC_0_smc_1_gbc
+	ld a,(hl)
+	xor (low_normal_prio_sprite_palette_lut ^ high_prio_sprite_palette_lut) >> 8
+	ld (hl),a
+	ld hl,LCDC_0_smc_2_gbc
+	ld a,(hl)
+	xor $80 ^ $00
+	ld (hl),a
+	
 	; GB impl
 	ld a,(LCDC_0_7_smc)
 	; Only update this SMC if the LCD is not disabled
@@ -3874,15 +3888,6 @@ LCDC_0_change_impls:
 	nop
 	nop
 _
-	; GBC impl
-	ld hl,LCDC_0_smc_1_gbc
-	ld a,(hl)
-	xor (low_normal_prio_sprite_palette_lut ^ high_prio_sprite_palette_lut) >> 8
-	ld (hl),a
-	ld hl,LCDC_0_smc_2_gbc
-	ld a,(hl)
-	xor $80 ^ $00
-	ld (hl),a
 	
 customHardwareSettings:
 	;mpIntEnable

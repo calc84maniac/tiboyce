@@ -1147,9 +1147,26 @@ recompile_ram:
 	 
 	 ld (hl),$CD
 	 inc hl
-	 ld (hl),coherency_handler & $FF
+	 ld a,d
+	 inc a
+	 jr nz,_
+	 ld (hl),coherency_handler_hram & $FF
 	 inc hl
-	 ld (hl),coherency_handler >> 8
+	 ld (hl),coherency_handler_hram >> 8
+	 jr ++_
+_
+	 ld (hl),coherency_handler_wram & $FF
+	 inc hl
+	 ld (hl),coherency_handler_wram >> 8
+	 sub $C0+1
+recompile_ram_unbanked_range_smc = $+1
+	 cp $20
+	 jr c,_
+	 dec hl
+	 ld (hl),coherency_handler_generic & $FF
+	 inc hl
+	 ld (hl),coherency_handler_generic >> 8
+_
 	 inc hl
 	 ld (hl),ix
 	 inc hl
@@ -1191,7 +1208,7 @@ ram_block_padding = $+1
 	 xor a
 	 jp recompile_end_common
 	
-check_coherency_helper:
+check_coherency_helper_generic:
 	ld hl,recompile_struct+2
 	add hl,de
 	ld e,(hl)
@@ -1209,6 +1226,23 @@ check_coherency_helper:
 	 inc h ;mem_get_ptr_routines
 	 inc l \ inc l
 	 ld ix,(hl)
+	 jr check_coherency_helper_any
+	
+check_coherency_helper_hram:
+	ld ix,hram_base
+check_coherency_helper:
+	ld hl,recompile_struct+2
+	add hl,de
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	inc hl
+	inc hl
+	ld a,(hl)
+	inc hl
+	inc hl
+	push hl
+check_coherency_helper_any:
 	 add ix,de
 	 sbc hl,hl
 	 add hl,sp

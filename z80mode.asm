@@ -3026,7 +3026,7 @@ flush_address = $+1
 	ex af,af'
 	jp.lil flush_normal
 	
-coherency_handler:
+coherency_handler_generic:
 	ex (sp),ix
 	 lea hl,ix+RAM_PREFIX_SIZE-3
 	 exx
@@ -3035,7 +3035,31 @@ coherency_handler:
 	 push de
 	  ld de,(ix)
 	  ld bc,(ix+2)
+	  jp.lil check_coherency_helper_generic
+	
+coherency_handler_wram:
+	ex (sp),ix
+	 lea hl,ix+RAM_PREFIX_SIZE-3
+	 exx
+	 ex af,af'
+	 ld e,a
+	 push de
+	  ld de,(ix)
+	  ld bc,(ix+2)
+coherency_handler_wram_smc = $+4
+	  ld.lil ix,wram_base
 	  jp.lil check_coherency_helper
+	
+coherency_handler_hram:
+	ex (sp),ix
+	 lea hl,ix+RAM_PREFIX_SIZE-3
+	 exx
+	 ex af,af'
+	 ld e,a
+	 push de
+	  ld de,(ix)
+	  ld bc,(ix+2)
+	  jp.lil check_coherency_helper_hram
 	
 handle_overlapped_op_1_1:
 	ex (sp),ix
