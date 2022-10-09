@@ -18,6 +18,7 @@ frame_emulated_count = $+1
 	ld l,a
 	ld a,h
 	adc a,0
+	daa
 	ld h,a
 	ld (frame_emulated_count),hl
 	
