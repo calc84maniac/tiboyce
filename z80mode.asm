@@ -3026,6 +3026,42 @@ flush_address = $+1
 	ex af,af'
 	jp.lil flush_normal
 	
+do_dynamic_jp_banked:
+	ex af,af'
+	add.l hl,bc
+do_dynamic_jp:
+	ex (sp),ix
+	 ld e,a
+	 push de
+	  call.il lookup_code_cached_for_dynamic_jp
+	  ex de,hl
+	  add a,4 ; Add cycles for taken JP
+	 pop de
+	 add a,e
+	 jr c,++_
+_
+	 exx
+	 ex af,af'
+	 ex (sp),ix
+	 ret
+_
+	 inc d
+	 jr nz,--_
+	 inc bc ;BCU=0
+	 ld c,a
+	 sub e
+	 sub 4
+	 ld b,a
+	 ex de,hl
+	 exx
+	 lea hl,ix
+	 exx
+#ifdef VALIDATE_SCHEDULE
+	 call.il schedule_event_helper
+#else
+	 jp.lil schedule_event_helper
+#endif
+	
 coherency_handler_generic:
 	ex (sp),ix
 	 lea hl,ix+RAM_PREFIX_SIZE-3

@@ -600,12 +600,35 @@ _
 	  ; Cycle count will be 0
 	  jr lookup_gb_found_overlapped
 	
-	 ; When a match is found, load it from the cache
+dynamic_jp_mismatch:
+	ld.s de,(ix+2)
+	pop hl
+	lea hl,ix-1
+	ld ix,recompile_struct
+	add ix,de
+	ld de,(ix)
+	ld bc,RAM_PREFIX_SIZE
+	ld.s (hl),$CD ;CALL
+	ldir.s
+	push de
+	 exx
+	pop hl
+	exx
+	jp rerecompile_popped
+	
+	; When a match is found, load it from the cache
 lookup_code_cached_found:
 	ld a,(ix-3)
 	ld ix,(ix-5)
 	ret.l
 	
+lookup_code_cached_for_dynamic_jp:
+	ld a,(hl)
+	cp $C3
+	jr nz,dynamic_jp_mismatch
+	inc hl
+	ld hl,(hl)
+	ex.s de,hl
 	
 ; Looks up a Game Boy address from the cached code mappings, and
 ; adds it to the cache upon miss.
@@ -1145,9 +1168,43 @@ recompile_ram:
 	 pop ix
 #endif
 	 
-	 ld (hl),$CD
+	 ld (hl),$CD ;CALL
+	 push hl
+	  ld bc,RAM_PREFIX_SIZE
+	  add hl,bc
+	  
+	  call generate_opcodes
+	  
+	  ; Add in padding to avoid flushes
+	  ex de,hl
+ram_block_padding = $+1
+	  ld bc,0
+	  add hl,bc
+	  ex de,hl
+	  ; Copy the GB opcodes for coherency
+	  ld c,a
+	  xor a
+	  ld b,a
+	  sbc hl,bc
+	  inc bc
+	  ; Check for a single JP opcode
+	  ld a,(hl)
+	  cp $C3 ;JP
+	  jr z,recompile_ram_dynamic_jp
+recompile_ram_dynamic_jp_continue:
+	  ldir
+	  ; Decrement the final byte to force the match to end here
+	  dec de
+	  ld a,(de)
+	  dec a
+	  ld (de),a
+	  inc de
+	 
+	 pop hl
+recompile_ram_dynamic_jp_skip:
+	 ; Determine the SMC handler to use based on the RAM region
 	 inc hl
-	 ld a,d
+	 ld a,(ix+3)
 	 inc a
 	 jr nz,_
 	 ld (hl),coherency_handler_hram & $FF
@@ -1168,36 +1225,10 @@ recompile_ram_unbanked_range_smc = $+1
 	 ld (hl),coherency_handler_generic >> 8
 _
 	 inc hl
+	 ; Save the block struct pointer in the block prefix
 	 ld (hl),ix
 	 inc hl
 	 inc hl
-	 push hl
-	  inc hl
-	  inc hl
-	  
-	  call generate_opcodes
-	  
-	  ; Add in padding to avoid flushes
-	  ex de,hl
-ram_block_padding = $+1
-	  ld bc,0
-	  add hl,bc
-	  ex de,hl
-	  ; Copy the GB opcodes for coherency
-	  ld c,a
-	  xor a
-	  ld b,a
-	  sbc hl,bc
-	  inc bc
-	  ldir
-	  ; Decrement the final byte to force the match to end here
-	  dec de
-	  ld a,(de)
-	  dec a
-	  ld (de),a
-	  inc de
-	 
-	 pop hl
 	 ; Save the block end pointer in the block prefix, in case the next
 	 ; block pointer is advanced by a low-pool trampoline allocation
 	 ld (hl),e
@@ -1207,6 +1238,70 @@ ram_block_padding = $+1
 	 ; Report block cycle length of 0
 	 xor a
 	 jp recompile_end_common
+	
+recompile_ram_dynamic_jp:
+	  ; Only handle a fully contiguous JP (not overlapped)
+	  ld a,c
+	  cp 3
+	  jr nz,recompile_ram_dynamic_jp_continue
+	  ; Save the block end address and get the block start address
+	  ex de,hl
+	  ex (sp),hl
+	  ld (hl),$D9 ;EXX
+	  inc hl
+	  ex de,hl
+	  ; Look up the memory reads
+	  ld hl,z80codebase+mem_read_lut+$08 ;EX AF,AF'
+	  ld a,l
+	  ld l,(ix+3)
+	  ld l,(hl)
+	  dec h ;mem_read_any_routines
+	  ; Check if there's a banked access routine
+	  dec l
+	  cp (hl)
+	  ; Get the pointer to the base address variable
+	  ld b,2
+	  add hl,bc
+	  ; Get the opcode GB address (note: bank is 0 for RAM addresses)
+	  ld bc,(ix+2)
+	  jr nz,recompile_ram_dynamic_jp_unbanked
+	  ex de,hl
+	  ld (hl),$01 ;LD BC,opcode_gb_addr
+	  inc hl
+	  ld (hl),c
+	  inc hl
+	  ld (hl),b
+	  ld a,$2A ;LD HL,(*_banked_base)
+	  ld bc,do_dynamic_jp_banked
+	  jr recompile_ram_dynamic_jp_finish
+	  
+recompile_ram_dynamic_jp_unbanked:
+	  ; Get the direct opcode address
+	  ld hl,(hl)
+	  add hl,bc
+	  ex de,hl
+	  ld (hl),a   ;EX AF,AF'
+	  ld bc,do_dynamic_jp
+	  ld a,$21 ;LD HL,opcode_addr
+recompile_ram_dynamic_jp_finish:
+	  inc hl
+	  ld (hl),$5B ;.LIL
+	  inc hl
+	  ld (hl),a
+	  inc hl
+	  ld (hl),de
+	  inc hl
+	  inc hl
+	  inc hl
+	  ld (hl),$CD ;CALL
+	  inc hl
+	  ld (hl),c
+	  inc hl
+	  ld (hl),b
+	 ; Restore the block end address
+	 pop de
+	 ; Dump the rest of the normal prefix after this point
+	 jr recompile_ram_dynamic_jp_skip
 	
 check_coherency_helper_generic:
 	ld hl,recompile_struct+2
@@ -1358,6 +1453,7 @@ _
 rerecompile:
 	pop ix
 	lea ix,ix-7
+rerecompile_popped:
 #ifdef 0
 	push ix
 	 ld hl,(ix)
@@ -3039,6 +3135,7 @@ jump_template_struct_smc = $
 	.assume adl=1
 jump_template_size = $-jump_template
 	.db 0 ;padding for struct pointer write
+	
 	
 opgen_region_overflow:
 	; Check if block was forced to end
