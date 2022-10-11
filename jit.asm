@@ -3974,7 +3974,7 @@ opgen_emit_hl_read_bc:
 	ex de,hl
 	ld (hl),RST_GET_HL_READ_PTR
 	inc hl
-	ld (hl),$49 ;.LIS
+	ld (hl),$5B ;.LIL
 	inc hl
 	ld (hl),$6E ;LD L,(HL)
 	inc hl

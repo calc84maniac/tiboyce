@@ -456,8 +456,8 @@ patch_hl_port_read_helper:
 	cp $7E ;LD A,(HL)
 	jr z,patch_hl_port_direct_read_a_helper
 	cp $6E ;LD L,(HL)
-	; Get the byte after the JIT implementation
-	lea.s bc,ix+7
+	; Get the byte after the JIT implementation (minus 1, bit 1 of L is set)
+	lea.s bc,ix+7-1
 	jr z,patch_port_direct_read_helper
 patch_hl_port_indirect_read_helper:
 	ld a,8
