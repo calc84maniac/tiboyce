@@ -468,6 +468,7 @@ _
 	pop af
 	ld bc,regs_init_gbc - regs_init
 	jr z,_
+	ld e,a
 	add hl,bc
 	; Update registers which are different on GBC
 	ld a,$7E
@@ -476,11 +477,22 @@ _
 	ld (hram_saved + $0100 + (SC-ioregs)),a
 	rlca ;A=$FE
 	ld (hram_saved + $0100 + (VBK-ioregs)),a
+	; Set carry for GBA back-compat
+	add a,e
 	ld a,$F8
 	ld (hram_saved + $0100 + (SVBK-ioregs)),a
 _
 	ld de,regs_saved
 	ldir
+	jr nc,_
+	; For GBA back-compat, update the F and B registers
+	ld hl,regs_saved + STATE_REG_AF
+	ld (hl),c ;0
+	inc hl
+	inc hl ;STATE_REG_BC
+	inc hl
+	inc (hl)
+_
 	
 StartFromHere:
 	ld hl,(save_state_size_bytes)

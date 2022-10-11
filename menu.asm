@@ -1441,7 +1441,7 @@ GraphicsMenu:
 	.db "Display emulator message overlays.",0
 	.db ITEM_OPTION,10, 140,1,"Message display: %-3s",0
 	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
-	.db ITEM_OPTION,3, 160,1,"Palette selection: %-10s",0
+	.db ITEM_OPTION,3, 160,1,"GB palette selection: %-10s",0
 	.db "Off: Use specified colors directly.\n GBC: Adjust to emulate a GBC display.\n GBA: Adjust to emulate a GBA display.",0
 	.db ITEM_OPTION,11, 170,1,"Adjust colors: %-3s",0
 	.db "Return to the main menu.",0
@@ -1487,7 +1487,7 @@ EmulationMenu:
 	.db 7
 	.db 5,11,"Emulation Options",0
 	.db "Preferred Game Boy model to emulate.\n GBC will only be used if compatible.\n Requires game restart to take effect.",0
-	.db ITEM_OPTION,13, 50,1,"Preferred model: %-14s",0
+	.db ITEM_OPTION,13, 50,1,"Preferred model: %-15s",0
 	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
 	.db ITEM_OPTION,2, 70,1,"Auto save state: %-3s",0
 	.db "",0
@@ -1502,9 +1502,10 @@ EmulationMenu:
 	.db ITEM_LINK,0, 160,1,"Back",0
 	
 OptionPreferredModel:
-	.db 2
+	.db 3
 	.db "Game Boy",0
 	.db "Game Boy Color",0
+	.db "GBA back-compat",0
 	
 OptionConfigSelect:
 	.db 2

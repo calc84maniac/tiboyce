@@ -1724,7 +1724,7 @@ AdjustColors:
 ; Confirm state save/load (Bit 0=Load, Bit 1=Save)
 ConfirmStateOperation:
 	.db 3
-; Select preferred model (0=GB, 1=GBC)
+; Select preferred model (0=GB, 1=GBC, 2=GBA)
 PreferredModel:
 	.db 1
 	
