@@ -506,11 +506,31 @@ StartFromHere:
 	
 	ld hl,SkinFileName
 	ACALL(LookUpAppvar)
-	jr nc,_
-	or a
+	ccf
+	jr c,_
 	sbc hl,hl
 _
 	ld (skin_file_ptr),hl
+	jr nc,++_
+	; If found and system type is GBC, check if there's a second skin in the skin file
+	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	or a
+	jr z,++_
+	; Skip over the palette
+	ld a,32
+_
+	cpi
+	dec a
+	jr nz,-_
+	; Decompress the first skin
+	ld de,decompress_buffer
+	call lzf_decompress
+	; Successful decompression means only one skin is present
+	jr z,_
+	; Otherwise, use the second skin
+	add hl,de
+	ld (skin_file_ptr),hl
+_
 	
 	ACALL(SetCustomHardwareSettings)
 	
