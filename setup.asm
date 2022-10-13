@@ -368,7 +368,7 @@ OutOfMemoryFinish:
 StartROMAutoStateNoError:
 	ld de,AutoStateLoadedMessage
 	ACALL(SetEmulatorMessage)
-	jr StartFromHereTrampoline2
+	jr StartFromHereCleanFrameTrampoline
 	
 RestartFromHere:
 	xor a
@@ -410,9 +410,8 @@ _
 	 jr nc,StartROMInitStateContinue
 StartROMInitStateOutOfMemory:
 	pop af
-	xor a
-	ld (current_state),a
 	; Temporarily prevent auto state saving because state is clean
+	xor a
 	ld (should_auto_save),a
 	dec de
 	dec de
@@ -422,13 +421,13 @@ StartROMInitStateOutOfMemory:
 	ld (de),a
 	ld hl,(errorArg)
 	push hl
-	 ACALL_SAFERET(SaveStateFilesAndGameConfig)
+	 ACALL_SAFERET(SaveAutoStateFilesAndGameConfig)
 	pop hl
 	ld (errorArg),hl
 	jr OutOfMemoryFinish
 	
-StartFromHereTrampoline2:
-	jr StartFromHere
+StartFromHereCleanFrameTrampoline:
+	jr StartFromHereCleanFrame
 RestartFromHereTrampoline:
 	jr RestartFromHere
 	
@@ -495,6 +494,16 @@ _
 	inc hl
 	inc (hl)
 _
+	
+StartFromHereCleanFrame:
+	; Clear the mini frame backup for a clean initial frame
+	ld hl,mini_frame_backup
+	push hl
+	pop de
+	inc de
+	ld bc,160*144-1
+	ld (hl),SCREEN_OFF_COLOR
+	ldir
 	
 StartFromHere:
 	ld hl,(save_state_size_bytes)
@@ -760,22 +769,9 @@ _
 	ldir
 	
 	scf
-	; GBC empty frame is white
-	ld a,WHITE
 SetupOverlappedPixelsDone:
-	ld (scanline_off_color_smc),a
-
-	; Clear the mini frame backup for a clean initial frame
-	ld hl,mini_frame_backup
-	push hl
-	pop de
-	inc de
-	ld bc,160*144-1
-	ld (hl),a
-	ldir
-	
 	; Fill the LYC write prediction list with vblank predictions
-	ld h,(lyc_prediction_list >> 8) & $FF
+	ld hl,lyc_prediction_list
 _
 	ld (hl),VBLANK_SCANLINE
 	inc l
@@ -930,7 +926,7 @@ _
 	jr nz,-_
 	djnz --_
 	
-	ld.sis sp,myz80stack
+	;ld.sis sp,myz80stack	; This is set by custom hardware settings above
 	ld hl,callstack_ret_dummy_target  ; Return handler when no cached calls are available
 	push.s hl
 	push.s bc ; Cycle count of 0 for default return handler
@@ -2100,9 +2096,7 @@ ExitOrDelete:
 	adc a,-1 ; Sets carry
 ExitDone:
 	push af
-	 xor a
-	 ld (current_state),a
-	 ACALL_SAFERET(SaveStateFilesAndGameConfig)
+	 ACALL_SAFERET(SaveAutoStateFilesAndGameConfig)
 	pop af
 	ret
 	
@@ -2223,7 +2217,9 @@ LoadConfigFileAny:
 	ldir
 	ret
 
-SaveStateFilesAndGameConfig:
+SaveAutoStateFilesAndGameConfig:
+	xor a
+	ld (current_state),a
 	ACALL_SAFERET(SaveStateFiles)
 	
 	; Generate the config file name
@@ -3311,6 +3307,8 @@ SetCustomHardwareSettings:
 	ld (z80codebase + wait_for_interrupt_stub),a
 	ld hl,$C94976 ; HALT \ RET.LIS
 	ld (z80codebase + wait_for_interrupt_stub + 1),hl
+	; Set the Z80 stack to a safe place to call the interrupt stub with
+	ld.sis sp,myz80stack
 SetCustomHardwareSettingsNoHalt:
 	di
 	APTR(customHardwareSettings)

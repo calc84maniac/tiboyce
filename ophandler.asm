@@ -554,8 +554,7 @@ _
 	; Force scanline fill and set its color
 	ld a,l ;JR
 	ld (LCDC_0_7_smc),a
-scanline_off_color_smc = $+1
-	ld a,WHITE
+	ld a,SCREEN_OFF_COLOR
 	ld (scanline_fill_color_smc),a
 	
 	; Update PPU scheduler to do events once per "frame"

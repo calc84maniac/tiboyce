@@ -341,6 +341,10 @@ LoadPalettesNoColorAdjust:
 	 ld (hl),a
 	 inc hl
 	 ld (hl),update_palettes_gbc - (update_palettes_gbc_smc+2)
+	 ld hl,mpLcdPalette + (SCREEN_OFF_COLOR*2)
+	 ld (hl),$FF
+	 inc hl
+	 ld (hl),$FF
 	 ex de,hl
 	 ld (hl),prepare_next_frame_gbc_no_adjust - (prepare_next_frame_gbc_smc+2)
 	 jr c,_

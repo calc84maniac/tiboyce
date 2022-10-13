@@ -313,7 +313,9 @@ GBC_BG_TRANSPARENT_COLORS = 1
 ; Palette entries representing low-priority opaque OBJ pixels on GBC.
 ; Never rendered, only used to determine priority against rendered pixels.
 ; Three are allocated, to enable translation to actual OBJ colors.
-GBC_OBJ_LOW_PRIO_COLORS = 12
+GBC_OBJ_LOW_PRIO_COLORS = 13
+; Color used when the screen is off. Set to white on GBC.
+SCREEN_OFF_COLOR = BG_COLOR_0
 ; Palette entries representing normal-priority opaque BG pixels on GBC.
 ; Three per palette, for 24 in total.
 GBC_BG_OPAQUE_COLORS = GBC_OBJ_LOW_PRIO_COLORS + 3
@@ -391,9 +393,6 @@ LlBrack = $C1
 ; OS flags used
 graphFlags = $03
 graphDraw = 0		;0=graph is valid, 1=redraw graph(dirty)
-
-textFlags = $05		;Text output flags
-textInverse = 3		;1=display inverse bit-map
 
 ; 84+CE IO definitions
 mpFlashWaitStates = $E00005
@@ -550,6 +549,7 @@ IE = $ffff
 ; Memory areas used by the emulator
 
 ; The 16-bit Z80 address space starts here.
+decompress_buffer = vRam
 z80codebase = vRam
 #ifdef SHADOW_STACK
 ; The Z80-mode shadow stack. A sliding window of the game's "main" stack.
@@ -588,7 +588,6 @@ myADLstack = usbArea - 3
 ; So, each GB tilemap row takes a total of 256 bytes here.
 ; Buffer must be 256-byte aligned and contained within one 64KB-aligned block.
 vram_tiles_start = (pixelShadow | $FF) + 1
-decompress_buffer = vram_tiles_start
 
 ; LUT for LSB of green component adjustment.
 ; Input: Bit 7: Bit 2 of G
@@ -948,6 +947,8 @@ Arc_Unarc_Safe:
 _
 	; No free spot, so prepare for Garbage Collect message
 	ACALL(RestoreHomeScreen)
+	; Set Z flag
+	cp a
 _
 	push ix
 	 ld ix,(tSymPtr1)
@@ -956,20 +957,22 @@ _
 	 ld l,(ix-3)
 	pop ix
 	push hl
-	 ld hl,Arc_Unarc_ErrorHandler
-	 call _PushErrorHandler
-	 call _Arc_Unarc
-	 call _PopErrorHandler
-	 .db $3E	; LD A,$AF
-Arc_Unarc_ErrorHandler:
-	 xor a
+	 scf
 	 push af
+	  ld hl,Arc_Unarc_ErrorHandler
+	  call _PushErrorHandler
+	  call _Arc_Unarc
+	  call _PopErrorHandler
+	 pop af
+	 ccf
+	 push af
+Arc_Unarc_ErrorHandler:
 	  ld hl,SelfName
 	  call _Mov9ToOP1
 	  call _chkFindSym
 	  jr c,EpicFailure
 	  ld (tSymPtr1),hl
-	 pop af
+	 pop bc
 	pop hl
 	ex de,hl
 	or a
@@ -980,7 +983,23 @@ Arc_Unarc_ErrorHandler:
 	ld (ArcBase),hl
 	pop hl
 	add hl,de
-	cp 1
+	push hl
+	push bc
+	pop af
+	ret nz
+	; If we restored the homescreen earlier, disable GRAM output from DMA
+	; to prevent artifacts from compression, decompression, or loading
+	push af
+	 ; Disable the run indicator in case garbage collect enabled it
+	 call _RunIndicOff
+	 ACALL(SetCustomHardwareSettingsNoHalt)
+	 ld de,spiResetWindowAddress
+	 ld b,spiDisableRamAccessSize
+	 call spiFastTransfer
+	 ACALL(RestoreOriginalHardwareSettings)
+	pop af
+	ret
+	
 CallHL:
 	jp (hl)
 	

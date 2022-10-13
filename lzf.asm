@@ -5,8 +5,9 @@
 #define HLOG 13
 #define HSIZE (1 << (HLOG))
 
-lzf_hash_table = pixelShadow
-lzf_compress_buffer = lzf_hash_table + (HSIZE * 2)
+;HSIZE*2 bytes in size (16KB)
+lzf_hash_table = vram_tiles_start
+lzf_compress_buffer = vRam
 
 	; Inputs: HL = uncompressed data start
 	;         BC = uncompressed data size
