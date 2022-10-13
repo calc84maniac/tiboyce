@@ -992,7 +992,8 @@ _
 	jr z,_
 	dec (hl)
 	jr nz,_
-	ld (emulatorMessageText),a
+	inc hl ;emulatorMessageText
+	ld (hl),a
 	call reset_preserved_area
 _
 frame_real_count = $+1

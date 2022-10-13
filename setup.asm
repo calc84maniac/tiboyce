@@ -327,7 +327,6 @@ _
 	jr c,LoadROMAndRAMFailed
 	
 	xor a
-	ld (emulatorMessageText),a
 	ld (current_state),a
 	ACALL(LoadStateFiles)
 	push af
@@ -372,6 +371,9 @@ StartROMAutoStateNoError:
 	jr StartFromHereTrampoline2
 	
 RestartFromHere:
+	xor a
+	ld (emulatorMessageText),a
+	call reset_preserved_area
 	; Check for GBC support
 	ld hl,(rom_start)
 	ld bc,$0143

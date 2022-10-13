@@ -44,7 +44,7 @@ SetEmulatorMessageWithDuration:
 	ex (sp),ix
 	ld hl,emulatorMessageDuration
 	ld (hl),a
-	inc hl
+	inc hl ;emulatorMessageText
 	push hl
 	 ld a,(GameMessageDisplay)
 	 cp $FF
