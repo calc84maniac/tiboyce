@@ -50,10 +50,8 @@ identify_waitloop:
 	inc sp
 #endif
 	
-	ld (waitloop_jp_smc),de
 	GET_BASE_ADDR_FAST
 	add hl,de
-	ld (waitloop_jr_smc),hl
 	lea de,ix
 	xor a
 	ld (waitloop_length_smc),a
@@ -163,7 +161,8 @@ waitloop_found_read_c:
 	ld c,a
 	; Set 0 for read in 2nd cycle, and set Z flag to indicate HRAM
 	xor a
-	; Consume 2 more bytes of recompiled code
+	; Consume 3 more bytes of recompiled code
+	inc de
 	inc de
 	inc de
 	jr waitloop_resolve_read
@@ -234,6 +233,7 @@ waitloop_found_data_op:
 	; See if we reached the loop end
 	push hl
 	 ld hl,9
+waitloop_found_jump_next:
 	 add hl,de
 	 ex de,hl
 	pop.s hl
@@ -249,20 +249,13 @@ waitloop_found_data_op:
 	jr z,waitloop_found_jr
 	cp $C2		;JP cc
 	jr nz,waitloop_find_data_op_again	;Allow multiple data operations
-	
-	; Validate the JP target address
+	; Skip the JP opcode
 	inc hl
-	push de
-waitloop_jp_smc = $+1
-	 ld de,0
-	 ld a,(hl)
-	 cp e
-	 ld a,d
-	pop de
-	ret nz
-	cp (hl)
-	ret nz
-waitloop_try_next_target:
+waitloop_found_jr:
+	; Skip the JR opcode
+	inc hl
+	inc hl
+	; Advance past the JIT implementation and add its untaken cycles
 	push hl
 	 ex de,hl
 	 ld de,15-9
@@ -270,41 +263,16 @@ waitloop_try_next_target:
 	 ld a,(waitloop_length_smc)
 	 add.s a,(hl)
 	 ld (waitloop_length_smc),a
-	 ld e,(19+1)-15
-	 add hl,de
-	 ex de,hl
-	pop hl
-	inc hl
-	jr waitloop_find_data_op_again_loop
+	 ld e,(19-15)+9
+	 jr waitloop_found_jump_next
 	
 waitloop_find_data_op_again:
 	ld a,e
-	sub 7
+	sub 8
 	ld e,a
 	jr nc,waitloop_find_data_op_again_loop
 	dec d
 	jr waitloop_find_data_op_again_loop
-	
-waitloop_found_jr:
-	; Validate the JR target address
-	inc hl
-	ld a,(hl)
-	push de
-	 ex de,hl
-waitloop_jr_smc = $+1
-	 ld hl,0
-	 scf
-	 sbc hl,de
-	 ex de,hl
-	 cp e
-	 jr nz,_
-	 rla
-	 sbc a,a
-	 cp d
-_
-	pop de
-	jr z,waitloop_try_next_target
-	ret
 	
 waitloop_identified:
 #ifdef DEBUG
