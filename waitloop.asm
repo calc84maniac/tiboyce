@@ -31,7 +31,7 @@ waitloop_found_uncond_jump:
 ;          (SPS) = branch recompiled code address (plus 9, or 7 if uncond)
 ;          (SPL+4) = number of cycles to sub-block end from target
 ;          (SPL+7) = number of cycles taken by jump
-;          BC',DE',HL' = Game Boy BC,DE,HL registers
+;          (SPS+2),BC',DE' = Game Boy BC,DE,HL registers
 ; Outputs: IX = filtered branch target
 identify_waitloop:
 #ifdef 0
@@ -142,10 +142,13 @@ waitloop_found_read_3byte:
 waitloop_found_read_bc:
 	; Consume one extra byte of recompiled code
 	inc de
-	exx
 	; Use BC as read address
-	push hl
-	 jr waitloop_found_read_rr
+	pop.s af
+	pop.s bc
+	push.s bc
+	push.s af
+	xor a
+	jr waitloop_found_read_any
 	
 waitloop_found_read_de:
 	exx
@@ -155,10 +158,10 @@ waitloop_found_read_de:
 
 waitloop_found_read_c:
 	; Use C as HRAM read address
-	exx
-	ld a,l
-	exx
-	ld c,a
+	pop.s af
+	pop.s bc
+	push.s bc
+	push.s af
 	; Set 0 for read in 2nd cycle, and set Z flag to indicate HRAM
 	xor a
 	; Consume 3 more bytes of recompiled code
@@ -187,6 +190,7 @@ waitloop_found_read_rr:
 	pop bc
 	; Set A to 0 for read in 2nd cycle, -1 for read in 3rd cycle
 	sbc a,a
+waitloop_found_read_any:
 	; Set Z flag if read is HRAM
 	inc b
 waitloop_resolve_read:
