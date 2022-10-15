@@ -2154,7 +2154,10 @@ _
 	ld a,l
 _
 	add a,c
+	jr c,_
+	add a,c
 	jr nc,-_
+_
 	sub l
 	; Add in the cycles, which may overflow if the update time and
 	; cycle expiration time are in the same block
@@ -2176,6 +2179,8 @@ handle_waitloop_set_sentinel:
 	
 	; Skip as many full loops as possible until the cycle count expires
 handle_waitloop_skip_to_expiration:
+	add a,c
+	jr c,handle_waitloop_overflow
 	add a,c
 	jr nc,handle_waitloop_skip_to_expiration
 handle_waitloop_overflow:

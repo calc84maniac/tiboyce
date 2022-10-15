@@ -59,7 +59,7 @@ identify_waitloop:
 	; Check for a read
 	ld a,(hl)
 	cp $BE		;CP (HL)
-	jr z,waitloop_found_read_hl
+	jr z,waitloop_found_read_hl_trampoline
 	cp $CB		;Bitwise ops
 	inc hl
 	jr z,waitloop_found_read_bitwise
@@ -73,7 +73,7 @@ identify_waitloop:
 	inc de
 	cp $18		;JR
 	jr z,waitloop_found_uncond_jump
-	cp $C3
+	cp $C3		;JP
 	jr z,waitloop_found_uncond_jump
 	cp $0A		;LD A,(BC)
 	jr z,waitloop_found_read_bc
@@ -81,9 +81,17 @@ identify_waitloop:
 	jr z,waitloop_found_read_de
 	cp $F2		;LD A,($FF00+C)
 	jr z,waitloop_found_read_c
-	and $C7
-	cp $46		;LD r,(HL)
+	xor $46		;LD r,(HL)
+	tst a,$C7
 	ret nz
+	cp $10		;LD B/C,(HL)
+	jr nc,waitloop_found_read_hl
+	; Consume 4 bytes of recompiled code
+	inc de
+	inc de
+	inc de
+	inc de
+waitloop_found_read_hl_trampoline:
 	jr waitloop_found_read_hl
 	
 waitloop_found_read_1:
@@ -214,13 +222,28 @@ waitloop_find_data_op_again_loop:
 	cp $C6		;Immediate ALU ops
 	jr z,waitloop_found_data_op_1
 	cp $86		;(HL) ALU ops
-	jr z,waitloop_found_data_op_hl
-	and $C0
-	cp $80		;Register ALU ops
+	jr z,waitloop_found_data_op_3byte
+	cp $07		;Special data processing
+	jr z,waitloop_found_data_op_special
+	and $C6
+	xor $80		;Register ALU ops using BC (IX prefix)
+	jr z,waitloop_found_data_op_ix
+	and $C0		;Register ALU ops
 	jr z,waitloop_found_data_op
 	ret
 	
-waitloop_found_data_op_hl:
+waitloop_found_data_op_special:
+	dec hl
+	ld a,(hl)
+	inc hl
+	cp $2F	;CPL
+	jr z,waitloop_found_data_op
+	cp $10  ;RLCA/RRCA
+	jr c,waitloop_found_data_op_3byte
+	cp $20	;RLA/RRA
+	ret nc
+	inc de
+waitloop_found_data_op_3byte:
 	inc de
 	inc de
 	jr waitloop_found_data_op
@@ -229,9 +252,19 @@ waitloop_found_data_op_bitwise:
 	ld a,(hl)
 	add a,$40	;BIT b,r
 	ret po
+	and 7
+	cp 6	;BIT b,(HL)
+	jr z,waitloop_found_data_op_4byte
+	cp 2	;BIT b,B/C
+	jr nc,waitloop_found_data_op_1
+	inc de
+waitloop_found_data_op_4byte:
+	inc de
+	inc de
 waitloop_found_data_op_1:
 	; Consume second byte of opcode and recompiled code
 	inc hl
+waitloop_found_data_op_ix:
 	inc de
 waitloop_found_data_op:
 	; See if we reached the loop end
@@ -276,7 +309,7 @@ waitloop_find_data_op_again:
 	ld e,a
 	jr nc,waitloop_find_data_op_again_loop
 	dec d
-	jr waitloop_find_data_op_again_loop
+	jp waitloop_find_data_op_again_loop
 	
 waitloop_identified:
 #ifdef DEBUG
