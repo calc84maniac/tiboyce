@@ -1003,6 +1003,7 @@ patch_memory_access_finish:
 op_read_bc_normal:
 	exx
 	lea bc,ix
+rom_any_read_handler:
 	; Input: BC=Game Boy DE
 	; Output: A=read value
 	;         If not possible, JIT instruction is patched

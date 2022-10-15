@@ -4298,12 +4298,15 @@ opgenCONSTread:
 	ld a,b
 	inc a
 	jr z,opgenHMEMread
-	inc a
-	cp $E2
-	jr c,_
-	res 5,b ; Handle WRAM mirroring
-_
 	push hl
+	 ; Check for a ROM read, needs a special handler because of trimming
+	 bit 7,b
+	 jr z,opgen_rom_read
+	 inc a
+	 cp $E2
+	 jr c,_
+	 res 5,b ; Handle WRAM mirroring
+_
 	 ; Look up the memory reads
 	 ld hl,z80codebase+mem_read_lut
 	 ld l,b
@@ -4329,6 +4332,8 @@ _
 	pop de
 	jp opgen_next_swap_skip
 	
+opgen_rom_read:
+	 ld hl,rom_any_read_handler
 opgen_banked_read:
 	 ex de,hl
 	 ld (hl),$D9 ;EXX
