@@ -2752,6 +2752,7 @@ callstack_ret_bound:
 	jr nc,callstack_ret_do_compare
 	or a
 callstack_ret_no_shadow_stack:
+	ld c,$C9 ;RET
 	jp do_pop_for_ret_slow
 	
 callstack_ret_maybe_overflow:
@@ -2968,6 +2969,7 @@ callstack_ret_cond_bound:
 	jr nc,callstack_ret_cond_do_compare_nc
 callstack_ret_cond_no_shadow_stack:
 	scf
+	ld c,$FF ;stale open bus because of internal cycle
 	jp do_pop_for_ret_slow
 	
 callstack_ret_bank_mismatch:

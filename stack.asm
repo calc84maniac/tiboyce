@@ -739,6 +739,25 @@ set_shadow_stack_finish:
 	ret
 #endif
 	
+	; Input: Carry reset for unconditional RET, set for conditional RET
+	;        C = open bus value, DA = cycle counter
+do_pop_for_ret_slow:
+	ld e,a
+	push ix
+	 push af
+	  push de
+	   ; Advance the cycle count past the end of the RET
+	   adc a,4
+	   jr nc,_
+	   inc d
+_
+	   ld e,-3 ; The first read is 3 cycles before the end of the instruction
+	   call do_pop_any_slow
+	   push hl
+	    exx
+	   pop de
+	   jp do_pop_for_ret_slow_finish
+	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Pop routines
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -760,8 +779,9 @@ ophandlerC1_smc_size = $-ophandlerC1_smc
 	call shift_stack_window_higher
 	ret nc
 do_pop_bc_slow:
-	;ld l,$C1 ;POP BC
-	call do_pop_any_slow
+	exx
+	ld c,$C1 ;POP BC
+	call do_pop_instr_slow
 	push hl
 	pop ix
 	ret
@@ -786,8 +806,9 @@ ophandlerD1_smc_size = $+1-ophandlerD1_smc
 	call shift_stack_window_higher
 	ret nc
 do_pop_de_slow:
-	;ld l,$D1 ;POP DE
-	call do_pop_any_slow
+	exx
+	ld c,$D1 ;POP DE
+	call do_pop_instr_slow
 	ld b,h
 	ld c,l
 	ret
@@ -808,8 +829,9 @@ ophandlerE1_smc_size = $-ophandlerE1_smc
 	call shift_stack_window_higher
 	ret nc
 do_pop_hl_slow:
-	;ld l,$E1 ;POP HL
-	call do_pop_any_slow
+	exx
+	ld c,$E1 ;POP HL
+	call do_pop_instr_slow
 	ex de,hl
 	ret
 	
@@ -839,25 +861,31 @@ ophandlerF1_overflow:
 	call shift_stack_window_higher_preserved_a
 	jr nc,do_pop_af_finish
 do_pop_af_slow:
-	;ld l,$F1 ;POP AF
-	call do_pop_any_slow_unswapped
+	exx
+	ld c,$F1 ;POP AF
+	ex af,af'
+	call do_pop_instr_slow
 	ex af,af'
 	jr do_pop_af_slow_finish
 	
+do_pop_instr_slow:
+	ld b,a
+	ld a,(curr_gb_stack_region)
+	or a ;cp io_region_base
+	jr z,do_pop_instr_get_cycle_offset
+do_pop_instr_get_cycle_offset_return:
+	ld a,b
 do_pop_any_slow:
 	ex af,af'
-do_pop_any_slow_unswapped:
 	push af
-	 ;ld a,l
-	 exx
+	 ld a,c
 	 ld hl,(stack_window_base)
 	 lea bc,iy-2
 	 ld b,0
 	 add hl,bc
 	 ld b,h
 	 ld c,l
-	 dec e ; The first read is 1 cycle earlier
-	 call read_mem_any_stale_bus
+	 call read_mem_any
 	 push af
 	  call read_mem_any_stale_bus_next
 	  exx
@@ -868,32 +896,20 @@ do_pop_any_slow_unswapped:
 	ex af,af'
 	ret
 	
-	; Input: Carry reset for unconditional RET, set for conditional RET
-do_pop_for_ret_slow:
-	ld e,a
-	push ix
-	 push af
-	  push de
-	   lea bc,iy-2
-	   ; Advance the cycle count past the end of the RET
-	   ld hl,4
-	   ld b,h
-	   adc hl,de
-	   ex de,hl
-	   ld hl,(stack_window_base)
-	   add hl,bc
-	   ld b,h
-	   ld c,l
-	   ld e,-2 ; The first read is 3 cycles before the end of the instruction
-	   ; Don't bother with open bus here, we can't know which specific
-	   ; RET opcode this is so just take the accuracy hit
-	   call read_mem_any_stale_bus
-	   push af
-	    call read_mem_any_stale_bus_next
-	   pop de
-	   ld e,d
-	   ld d,a
-	   jp do_pop_for_ret_slow_finish
+do_pop_instr_get_cycle_offset:
+	; Check the original instruction
+	ld a,c
+	cp $F1 ;POP AF
+	push bc
+	 ; Get the JIT address after the pop routine call
+	 ld hl,4
+	 add hl,sp
+	 ld bc,(hl)
+	 ; Skip the EX AF,AF' if not POP AF
+	 jr z,_
+	 inc bc
+_
+	 jp.lil do_pop_instr_get_cycle_offset_helper
 	
 	; SMC to apply to pop routines
 pop_short_ptr_src:

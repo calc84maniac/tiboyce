@@ -166,6 +166,19 @@ lookup_code_bus:
 	pop ix
 	ret.l
 	
+do_pop_instr_get_cycle_offset_helper:
+	push ix
+	 push de
+	  call lookup_gb_code_address
+	 pop de
+	 ; Get the cycle offset of the first pop read
+	 cpl
+	 dec a
+	 ld e,a
+	pop ix
+	pop.s bc
+	jp.sis do_pop_instr_get_cycle_offset_return
+	
 ; Gets the recompile struct entry for a given code pointer.
 ;
 ; Inputs: BC = 16-bit Z80 code pointer

@@ -669,7 +669,6 @@ try_get_mem_readwrite_ptr_swapped:
 read_mem_any_stale_bus_next:
 	inc bc
 	inc e
-read_mem_any_stale_bus:
 	ld a,$FF
 	; Input: BC'=Game Boy address, D',A'=cycle counter, E'=cycle offset, A=open bus value, BCDEHL' are swapped
 	; Output: A=read value, BCDEHL' are swapped
@@ -1066,7 +1065,7 @@ do_cram_open_bus_read_any_with_return:
 	bit 7,(hl) ; Check for EXX
 	jr nz,do_cram_open_bus_read_bc
 	inc hl
-	bit 1,(hl) ; Check for LD H,n or JR
+	bit 2,(hl) ; Check for LD H,n or JR
 	jr nz,do_cram_open_bus_read_de
 do_cram_open_bus_read_absolute:
 	; For LD A,(nnnn) read the MSB of the address
@@ -1076,7 +1075,7 @@ do_cram_open_bus_read_absolute:
 	
 do_cram_open_bus_read_not_bcde:
 	inc hl
-	bit 1,(hl) ; Check for LD H,n or JR
+	bit 2,(hl) ; Check for LD H,n/INC E or JR
 	jr z,do_cram_open_bus_read_absolute
 	; For generic reads, preserve the input open bus value
 	ex af,af'
