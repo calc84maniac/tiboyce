@@ -1054,7 +1054,7 @@ div_write_helper:
 	pop bc
 	sbc hl,bc
 	ld i,hl
-	jp.sis trigger_event
+	jp.sis trigger_event_resolved
 	
 reset_div:
 	ld hl,i
@@ -1423,7 +1423,7 @@ tac_write_helper:
 	jp.sis nz,z80_restore_swap_ret
 	sbc hl,hl
 	set.s 2,(hl) ;active_ints
-	jp.sis trigger_event
+	jp.sis trigger_event_resolved
 	
 tac_write_enable:
 	ld hl,timer_counter_checker

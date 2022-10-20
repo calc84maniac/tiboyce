@@ -696,6 +696,8 @@ write_mem_any:
 	cp a ; Set Z flag
 	jp (hl)
 	
+generic_write_gb_address:
+	.dw 0
 do_hmem_write_any:
 	ex af,af'
 	exx
@@ -710,92 +712,6 @@ do_hmem_write_any:
 	ld l,(hl)
 	inc h
 	jp (hl)
-	
-	; Gets information about the current I/O memory write.
-	; This is done by analyzing the generated trampoline, or else determining
-	; that it was a generic write and collecting the info provided elsewhere.
-	; Input: HL=return address from the write call
-	;        DE=current cycle count
-	; Output: HL=JIT address of the following instruction
-	;         BC=cycle count of the following instruction
-	;         IX=Game Boy address of the following instruction
-	;         A=number of cycles between the write and the following instruction
-	; Destroys: F
-get_mem_write_info:
-	push hl
-	 dec hl
-	 dec hl
-	 ld ix,(hl)
-	 lea bc,ix
-	 ld a,(bc)
-	 ; Check for absolute I/O write trampoline
-	 cp $C3 ;JP
-	 jr z,get_mem_write_info_absolute
-	 ; Check for immediate write
-	 cp $2E ;LD L,n
-	 jr z,get_mem_write_info_immediate
-	 ; Check for read-modify-write
-	 cp $D9 ;EXX
-	 jr z,get_mem_write_info_readwrite
-	 ; Check for generic write
-	 cp $08 ;EX AF,AF'
-	 jr z,get_mem_write_info_generic
-	 ; At this point, it's a register-based write
-	 ; Grab the cycle offset from the trampoline
-	 ld a,(ix+3)
-get_mem_write_info_finish:
-	 ; Check whether the trampoline is in the low or high pool
-	 ; No need to set or reset the carry because the Game Boy address buffers it
-	 ld hl,(trampoline_next)
-	 sbc hl,bc
-	pop hl
-	jr c,get_mem_write_info_finish_no_inc
-get_mem_write_info_finish_inc:
-	; If in the low pool, skip the JIT byte following the routine call
-	inc hl
-get_mem_write_info_finish_no_inc:
-	; Get the Game Boy address from before the trampoline
-	ld ix,(ix-2)
-	; Calculate the cycle counter at the time of the write
-	add a,e
-	ld c,a
-	ld b,d
-	; For all non-generic writes, the write is 1 cycle before the next instr
-	ld a,1
-	ret c
-	dec b
-	ret
-	
-get_mem_write_info_absolute:
-	 ; Grab the cycle offset from before the call
-	 dec hl
-	 dec hl
-	 ; For LD ($FF00+C),A the offset is here
-	 ; For LD (nnnn),A this is either EX AF,AF' or a byte in I/O range
-	 bit 7,(hl)
-	 jr nz,_
-	 ; For LD (nnnn),A the cycle offset is one byte earlier
-	 dec hl
-_
-	 ld a,(hl)
-	pop hl
-	; There's never a JIT byte following the call
-	jr get_mem_write_info_finish_no_inc
-	
-get_mem_write_info_immediate:
-	 ; Grab the cycle offset from the trampoline
-	 ld a,(ix+4)
-	pop hl
-	; There's always a JIT byte following the call
-	jr get_mem_write_info_finish_inc
-	
-get_mem_write_info_readwrite:
-	 ; Grab the cycle offset from the trampoline
-	 ld a,(ix+2)
-	 jr get_mem_write_info_finish
-	
-get_mem_write_info_generic:
-	 FIXME
 	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Slowmem patching routines

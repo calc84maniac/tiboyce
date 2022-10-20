@@ -573,7 +573,7 @@ _writeSC:
 	 ld hl,i ; Resets carry
 	 sbc hl,de
 	pop de
-	jp reschedule_event_any
+	jp reschedule_event_resolved
 	
 writeSC_disable:
 	ld hl,disabled_counter_checker

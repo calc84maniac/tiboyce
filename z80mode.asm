@@ -426,8 +426,10 @@ schedule_event_finish_no_schedule:
 	; Check if an event was scheduled at or before the current memory cycle
 	; Inputs: DE = cycle count at end of block (only call when D=0)
 	;         C = block-relative cycle offset (negative)
-	;         A = D = 0
-	; Destroys: AF, BC, HL
+	;         I = time of next event
+	; Outputs: DE = updated cycle count at end of block
+	;          I = updated time of next event
+	; Destroys: AF, B, HL
 handle_events_for_mem_access:
 	ld a,e
 	add a,c
@@ -465,6 +467,10 @@ event_expired_for_mem_access_loop:
 	   add hl,de
 	   ld i,hl
 	  pop de
+	  ; Restore the memory cycle offset
+	  ld a,e
+	  cpl
+	  ld c,a
 	 pop ix
 	pop hl
 	; Restore the terminating event counter checker
@@ -2420,7 +2426,7 @@ tima_reschedule_helper:
 	 ld hl,i ; Resets carry
 	 sbc hl,bc
 	pop bc ; Restore current cycle count
-	jr reschedule_event_any
+	jr reschedule_event_resolved
 	
 enableHDMA:
 	rrca
@@ -2436,7 +2442,7 @@ enableHDMA:
 	pop bc
 	ld a,(STAT)
 	and 3
-	jr nz,_
+	jr nz,reschedule_event
 	ld hl,hdma_immediate_handler
 	ld (event_counter_checker_slot_HDMA),hl
 	jr trigger_event
@@ -2448,49 +2454,41 @@ reschedule_event_PPU:
 	 ld hl,i
 	 add hl,de
 	pop de
-_
+reschedule_event:
 	; Calculate current cycle count from block offset
 	ld a,e
 	add a,c
 	ld c,a
 	ld b,d
-	jr c,reschedule_event_any
+	jr c,reschedule_event_resolved
 	dec b
-reschedule_event_any:
+reschedule_event_resolved:
 	; If the current event is scheduled before or at the current cycle, do nothing
 	xor a
 	cp b
 	jr z,reschedule_event_no_reschedule
 	; If the new event is after or at the currently scheduled event, do nothing
-	dec bc
+	dec hl
 	add hl,bc
 	jr c,reschedule_event_no_reschedule
-	; If the counter already overflowed, trigger an event now to reschedule
+	sbc hl,bc
+	inc hl
+	; Add to the cycle counter
+	add hl,de
+	; If the cycle counter overflowed, trigger an event without removing
+	jr c,trigger_event_from_reschedule_no_remove
+	; If the counter already overflowed, trigger an event and remove existing
 	or d
-	jr z,trigger_event
-	; Update the schedule time
-	sbc hl,bc
-	ld b,h
-	ld c,l
-	ld hl,i ; Resets carry
-	sbc hl,bc
-	ld i,hl
+	jr z,trigger_event_from_reschedule_remove
 	; Update the cycle counter
 	ex de,hl
+	; Update the schedule time
+	sbc hl,de
+	ld b,h
+	ld c,l
+	ld hl,i
 	add hl,bc
-	ex de,hl
-	; If the cycle counter didn't overflow, just continue execution
-	jr nc,reschedule_event_no_reschedule
-	; Trigger an event without attempting to remove an event trigger
-	pop hl
-	push hl
-	push ix
-	 call get_mem_write_info
-	 ld (event_cycle_count),a
-	 jr trigger_event_no_remove
-	
-trigger_event_already_triggered:
-	pop ix
+	ld i,hl
 reschedule_event_no_reschedule:
 	ld a,e
 	ex af,af'
@@ -2500,55 +2498,107 @@ reschedule_event_no_reschedule:
 trigger_event_pop:
 	 pop bc
 	pop de
+	; Input: DE=block cycle count, C=block cycle offset of memory access
 trigger_event:
-	; Get the cycle offset, GB address, and JIT address after the current opcode
-	pop hl
-	push hl
-	push ix
-	 call get_mem_write_info
-	 ; If the end of this instruction is already past the target, no reschedule
-	 inc b
-	 dec b
-	 jr z,trigger_event_already_triggered
-	 ld (event_cycle_count),a
-	 ; If the counter already overflowed, remove any already-scheduled event
-	 xor a
-	 cp d
-	 ld d,a
-	 jr nz,trigger_event_no_remove
+	ld h,$FF
+	ld l,c
+	add hl,de
+	ld b,h
+	ld c,l
+	; Input: DE=block cycle count, BC=cycle count of memory access
+trigger_event_resolved:
+	; If the end of this instruction is already past the target, no reschedule
+	xor a
+	cp b
+	jr z,trigger_event_already_triggered
+	; If the counter already overflowed, remove any already-scheduled event
+	cp d
+trigger_event_from_reschedule_no_remove:
+	ld d,a
+trigger_event_from_reschedule_remove:
+	; By default, assume the memory access is 1 cycle before the next instruction
+	inc a
+	ld (event_cycle_count),a
+	jr c,trigger_event_no_remove
 #ifdef DEBUG
-	 ld a,(event_address+1)
-	 cp (event_debug_address >> 8) + 1
-	 jr c,$
+	ld a,(event_address+1)
+	cp (event_debug_address >> 8) + 1
+	jr c,$
 #endif
-	 ld a,(event_value)
+	ld a,(event_value)
 event_address = $+1
-	 ld (event_value),a
+	ld (event_value),a
 #ifdef DEBUG
-	 jr _
+	jr _
 #endif
 trigger_event_no_remove:
 #ifdef DEBUG
-	 ld a,(event_address+1)
-	 cp (event_debug_address >> 8) + 1
-	 jr nc,$
+	ld a,(event_address+1)
+	cp (event_debug_address >> 8) + 1
+	jr nc,$
 _
 #endif
-	 ld (event_gb_address),ix
-	pop ix
-	ld a,(hl)
-	ld (event_value),a
-	ld (event_address),hl
-	ld (hl),RST_EVENT
 	ld hl,i
 	add hl,bc	; Reset div counter to the time of memory access
 	ld i,hl
 	; Cycle count at event is relative to the memory access
 	ld a,e
 	sub c
+	ld e,a
+	; Get the address after the CALL for this memory access (likely JIT)
+	pop hl
+	push hl
+	; Get the CALL target (likely trampoline)
+	dec hl
+	dec hl
+	ld bc,(hl)
+	; Check whether the trampoline is in the low or high pool
+	ld a,(trampoline_next+1)
+	cp b
+	jr c,trigger_event_high_pool
+	jr nz,trigger_event_low_pool
+	ld a,(trampoline_next)
+	cp c
+	jr c,trigger_event_high_pool
+trigger_event_low_pool:
+	; In the low pool or a generic write routine
+	; Check the address to determine if it's a generic routine
+	ld a,b
+	cp jit_start >> 8
+	jr c,trigger_event_for_generic_write
+	; Skip the JIT byte following the routine call
+	inc hl
+trigger_event_high_pool:
+	inc hl
+	inc hl
+trigger_event_finish:
+	; Set the event trigger
+	ld a,(hl)
+	ld (event_value),a
+	ld (event_address),hl
+	ld (hl),RST_EVENT
+	; Get the GB address before the trampoline/routine
+	ld hl,-2
+	add hl,bc
+	ld hl,(hl)
+	ld (event_gb_address),hl
+trigger_event_already_triggered:
+	ld a,e
 	ex af,af'
 	exx
 	ret
+	
+trigger_event_for_generic_write:
+	FIXME
+	; Calculate the accurate event cycle offset
+	ld a,e
+generic_write_instr_cycle_offset = $+1
+	sub 0
+	ld (event_cycle_count),a
+	; Get the JIT address for the event
+generic_write_jit_address = $+1
+	ld hl,0
+	jr trigger_event_finish
 	
 z80_pop_restore_swap_ret:
 	 pop bc
