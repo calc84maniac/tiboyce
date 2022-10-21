@@ -399,30 +399,6 @@ banked_jump_mismatch:
 	ld (hl),a
 	jp.lil banked_jump_mismatch_helper
 	
-schedule_event_finish:
-	 ld (event_cycle_count),a
-	 ld (event_gb_address),hl
-#ifdef DEBUG
-	 ld a,(event_address+1)
-	 cp (event_debug_address >> 8) + 1
-	 jr nc,$
-#endif
-	 lea hl,ix
-	 ld (event_address),hl
-	 ld a,(hl)
-	 ld (event_value),a
-	 ld (hl),RST_EVENT
-	 ld a,e
-_
-	pop ix
-	ex af,af'
-	exx
-	jp (hl)
-	
-schedule_event_finish_no_schedule:
-	 ld a,c
-	 jr -_
-	
 	; Check if an event was scheduled at or before the current memory cycle
 	; Inputs: DE = cycle count at end of block (only call when D=0)
 	;         C = block-relative cycle offset (negative)
@@ -2490,6 +2466,7 @@ reschedule_event_resolved:
 	add hl,bc
 	ld i,hl
 reschedule_event_no_reschedule:
+trigger_event_already_triggered:
 	ld a,e
 	ex af,af'
 	exx
@@ -2515,11 +2492,8 @@ trigger_event_resolved:
 	cp d
 trigger_event_from_reschedule_no_remove:
 	ld d,a
-trigger_event_from_reschedule_remove:
-	; By default, assume the memory access is 1 cycle before the next instruction
-	inc a
-	ld (event_cycle_count),a
 	jr c,trigger_event_no_remove
+trigger_event_from_reschedule_remove:
 #ifdef DEBUG
 	ld a,(event_address+1)
 	cp (event_debug_address >> 8) + 1
@@ -2529,76 +2503,101 @@ trigger_event_from_reschedule_remove:
 event_address = $+1
 	ld (event_value),a
 #ifdef DEBUG
-	jr _
+	ld hl,event_debug_address
+	ld (event_address),hl
 #endif
+	scf
 trigger_event_no_remove:
+	; Adjust cycle count to the end of the instruction,
+	; assuming the memory access is on the last cycle
+	ASSERT_C
+	ld a,e
+	sbc a,c
+	ld e,a
 #ifdef DEBUG
 	ld a,(event_address+1)
 	cp (event_debug_address >> 8) + 1
 	jr nc,$
-_
 #endif
 	ld hl,i
 	add hl,bc	; Reset div counter to the time of memory access
 	ld i,hl
-	; Cycle count at event is relative to the memory access
-	ld a,e
-	sub c
-	ld e,a
 	; Get the address after the CALL for this memory access (likely JIT)
-	pop hl
-	push hl
-	; Get the CALL target (likely trampoline)
-	dec hl
-	dec hl
-	ld bc,(hl)
-	; Check whether the trampoline is in the low or high pool
-	ld a,(trampoline_next+1)
-	cp b
-	jr c,trigger_event_high_pool
-	jr nz,trigger_event_low_pool
-	ld a,(trampoline_next)
-	cp c
-	jr c,trigger_event_high_pool
-trigger_event_low_pool:
-	; In the low pool or a generic write routine
-	; Check the address to determine if it's a generic routine
-	ld a,b
-	cp jit_start >> 8
-	jr c,trigger_event_for_generic_write
-	; Skip the JIT byte following the routine call
-	inc hl
-trigger_event_high_pool:
-	inc hl
-	inc hl
-trigger_event_finish:
-	; Set the event trigger
-	ld a,(hl)
-	ld (event_value),a
-	ld (event_address),hl
-	ld (hl),RST_EVENT
-	; Get the GB address before the trampoline/routine
-	ld hl,-2
-	add hl,bc
-	ld hl,(hl)
-	ld (event_gb_address),hl
-trigger_event_already_triggered:
-	ld a,e
+	ex (sp),ix
+	 exx
+	 lea hl,ix
+	 exx
+	 ; Get the CALL target (likely trampoline)
+	 ld ix,(ix-2)
+	 ; Get the GB address before the trampoline/routine
+	 ld hl,(ix-2)
+	 ld (event_gb_address),hl
+	 ; Cycle count after instruction is 1 after the event time
+	 lea bc,ix
+	 ld ix,1
+	 ; Check whether the trampoline is in the low or high pool
+	 ; No need to set or reset the carry because the Game Boy address buffers it
+	 ld hl,(trampoline_next)
+	 sbc hl,bc
+	 ; If in the high pool, simply invoke event handlers
+	 jp c,do_event_pushed
+	 ; Check if this was low pool or a generic write
+	 ld a,b
+	 cp jit_start >> 8
+	 jr c,trigger_event_for_generic_write
+	 ; Execute INC DE, DEC DE, POP AF, or NOP
+	 exx
+	 ld a,(hl)
+	 ld (trigger_event_low_pool_smc),a
+	 inc hl
+	 ; Non-destructively pop the old IX from the stack and re-push it,
+	 ; to ensure safe operation for a potential POP AF
+	 pop af
+	 ex af,af'
+trigger_event_low_pool_smc = $
+	 nop
+	 ex af,af'
+	 push af
+	 exx
+	 jp do_event_pushed
+	 
+trigger_event_for_generic_write:
+	 FIXME
+	 ; Get the JIT address for the event
+generic_write_jit_address = $+1
+	 ld hl,0
+	 ; Adjust the cycle counter back from the last-cycle access adjustment
+	 inc e
+	 ; Calculate the event cycle offset based on the end of instruction
+	 ld a,e
+generic_write_instr_cycle_offset = $+1
+	 sub 0
+	 jr trigger_event_for_generic_write_finish
+	
+schedule_event_finish:
+	 ld (event_gb_address),hl
+	 lea hl,ix
+trigger_event_for_generic_write_finish:
+	 ld (event_cycle_count),a
+#ifdef DEBUG
+	 ld a,(event_address+1)
+	 cp (event_debug_address >> 8) + 1
+	 jr nc,$
+#endif
+	 ld (event_address),hl
+	 ld a,(hl)
+	 ld (event_value),a
+	 ld (hl),RST_EVENT
+	 ld a,e
+_
+	pop ix
 	ex af,af'
 	exx
-	ret
+	jp (hl)
 	
-trigger_event_for_generic_write:
-	FIXME
-	; Calculate the accurate event cycle offset
-	ld a,e
-generic_write_instr_cycle_offset = $+1
-	sub 0
-	ld (event_cycle_count),a
-	; Get the JIT address for the event
-generic_write_jit_address = $+1
-	ld hl,0
-	jr trigger_event_finish
+schedule_event_finish_no_schedule:
+	 ld a,c
+	 jr -_
 	
 z80_pop_restore_swap_ret:
 	 pop bc
