@@ -167,6 +167,18 @@ lookup_code_bus:
 	ret.l
 	
 do_pop_instr_get_cycle_offset_helper:
+	; Check the original instruction
+	ld a,c
+	cp $F1 ;POP AF
+	push.s bc
+	; Get the JIT address after the pop routine call
+	ld hl,4
+	add.s hl,sp
+	ld.s bc,(hl)
+	; Skip the EX AF,AF' if not POP AF
+	jr z,_
+	inc bc
+_
 	push ix
 	 push de
 	  call lookup_gb_code_address
@@ -178,6 +190,36 @@ do_pop_instr_get_cycle_offset_helper:
 	pop ix
 	pop.s bc
 	jp.sis do_pop_instr_get_cycle_offset_return
+	
+do_push_instr_get_cycle_offset_helper:
+	ex af,af'
+	push.s af
+	; Set call cycle offset of 0
+	ld l,0
+	push.s hl
+	exx
+	push.s hl
+	ld a,h
+	exx
+	push ix
+	 ld l,a
+	 push hl
+	  push de
+	   call lookup_gb_code_address
+	   ; Save the lookup results for use by event triggers
+	   ld.sis (generic_write_jit_address),bc
+	   ld.sis (generic_write_gb_address),de
+	   ld (z80codebase+generic_write_instr_cycle_offset),a
+	  pop bc
+	  ; Get the cycle offset of the first push write
+	  cpl
+	  dec a
+	  ld e,a
+	 pop hl
+	 ld d,h
+	 ld a,l
+	pop ix
+	jp.sis do_push_instr_get_cycle_offset_return
 	
 ; Gets the recompile struct entry for a given code pointer.
 ;

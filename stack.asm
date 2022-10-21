@@ -237,8 +237,6 @@ shift_stack_window_higher_overlap:
 	jp set_gb_stack
 	
 shift_stack_window_higher_2_check_overlap:
-	ld (hl),$81
-	inc hl
 	; Compare the current and next stack regions
 	ld l,(hl)
 	ld h,mem_read_lut >> 8
@@ -289,7 +287,7 @@ shift_stack_window_lower_preserved_a_swapped:
 	; Special case for HRAM, force a region transition immediately
 	ld c,(hl)
 	inc c
-	jr z,shift_stack_window_lower_overlap
+	jr z,shift_stack_window_lower_io
 	; Decrement the MSB of the window base
 	dec (hl)
 shift_stack_window_lower_finish:
@@ -308,7 +306,7 @@ shift_stack_window_lower_any_finish:
 shift_stack_window_lower_2:
 	; Shift the stack window by 128 bytes
 	add a,$3F
-	ld c,a
+	ld e,a
 	ld a,(hl)
 	; Check for moving backward from $00 or $40, causing a new page overlap
 	sub $80
@@ -316,9 +314,9 @@ shift_stack_window_lower_2:
 	jr nc,shift_stack_window_lower_2_check_overlap
 	inc hl
 	; Special case for HRAM, force a region transition immediately
-	ld e,(hl)
-	inc e
-	jr z,shift_stack_window_lower_overlap
+	ld c,(hl)
+	inc c
+	jr z,shift_stack_window_lower_io
 	; Decrement the MSB of the window base
 	dec (hl)
 shift_stack_window_lower_2_finish:
@@ -347,16 +345,23 @@ shift_stack_window_lower_check_overlap:
 	jr z,shift_shadow_stack_lower
 #endif
 shift_stack_window_lower_overlap:
-	dec c
-	ld b,c
 	ld a,(stack_window_base)
 	add a,e
+	jr c,++_
+_
+	dec c
+_
+	ld b,c
 	ld c,a
 	exx
 	ld a,h
 	exx
 	scf
 	jp set_gb_stack
+
+shift_stack_window_lower_io:
+	add a,e
+	jr --_
 
 shift_stack_window_lower_2_check_overlap:
 	; Compare the next and current pages
@@ -540,7 +545,7 @@ set_gb_stack_region_io:
 	 ld (ophandlerD5_smc),a
 	 ld a,do_push_hl_slow - push_routines_start
 	 ld (ophandlerE5_smc),a
-	 ld a,do_push_any_slow - push_routines_start
+	 ld a,do_push_instr_slow - push_routines_start
 	 ld (ophandlerF5_smc),a
 	 ld hl,$18 | ((do_call_no_shadow_stack - (do_call_shadow_stack_smc+2)) << 8)
 	 ld (do_call_shadow_stack_smc),hl
@@ -758,6 +763,72 @@ _
 	   pop de
 	   jp do_pop_for_ret_slow_finish
 	
+do_push_for_call_slow_swap:
+	exx
+	; Input: E = cycles for specific call (RST, CALL, interrupt)
+	;        HL = value to push, DA = cycle counter, AFBCDEHL' are swapped
+	; Output: AFBCDEHL' are unswapped, cycle counter updated if event triggered
+do_push_for_call_slow:
+	; Add cycles for the specific call type
+	add a,e
+#ifdef DEBUG
+	; Prevent assertions when handling events during a memory access
+	ld (event_cycle_count),a
+#endif
+	jr nc,_
+	inc d
+_
+	ex af,af'
+	push af
+	 ; Save the call cycle offset
+	 push de
+	  push hl
+	   ld a,h
+	   ; Ensure a triggered event won't clobber any code
+	   ld hl,generic_write_instr_cycle_offset
+	   ld (generic_write_jit_address),hl
+#ifdef DEBUG
+	   ; Be consistent with debug assertions...
+	   inc d
+	   dec d
+	   jr z,_
+	   ld hl,event_debug_address
+_
+#endif
+	   ld (event_address),hl
+	   ld e,-2 ; First call push is two cycles before the end
+	   ld hl,(stack_window_base)
+	   ld c,iyl
+	   ld b,0
+	   add hl,bc
+	   ld b,h
+	   ld c,l
+do_push_instr_get_cycle_offset_return:
+	   push de
+	    push bc
+	     call write_mem_any
+	    pop bc
+	   pop hl
+	   ; Increment cycle offset, decrement stack pointer and address
+	   ld e,l
+	   inc e
+	   dec iyl
+	   dec bc
+	  pop hl
+	  ld a,l
+	  call write_mem_any
+	 pop hl
+	pop af
+	; Subtract the call cycle offset again
+	ex af,af'
+	sub l
+	jr nc,_
+	dec d
+_
+	ex af,af'
+	exx
+	ret
+	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Pop routines
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -813,6 +884,10 @@ do_pop_de_slow:
 	ld c,l
 	ret
 	
+ophandlerD1_slow:
+	call shift_stack_window_higher
+	jr do_pop_de_slow
+	
 	; POP HL
 ophandlerE1:
 	ex af,af'
@@ -834,6 +909,10 @@ do_pop_hl_slow:
 	call do_pop_instr_slow
 	ex de,hl
 	ret
+	
+ophandlerE1_slow:
+	call shift_stack_window_higher
+	jr do_pop_hl_slow
 	
 	; POP AF
 ophandlerF1:
@@ -897,19 +976,7 @@ do_pop_any_slow:
 	ret
 	
 do_pop_instr_get_cycle_offset:
-	; Check the original instruction
-	ld a,c
-	cp $F1 ;POP AF
-	push bc
-	 ; Get the JIT address after the pop routine call
-	 ld hl,4
-	 add hl,sp
-	 ld bc,(hl)
-	 ; Skip the EX AF,AF' if not POP AF
-	 jr z,_
-	 inc bc
-_
-	 jp.lil do_pop_instr_get_cycle_offset_helper
+	jp.lil do_pop_instr_get_cycle_offset_helper
 	
 	; SMC to apply to pop routines
 pop_short_ptr_src:
@@ -961,13 +1028,13 @@ pop_slow_src:
 	;ophandlerD1_smc
 	inc iyl
 	inc iyl
-	call p,shift_stack_window_higher
-	jr $+(do_pop_de_slow-(ophandlerD1_smc+7))
+	jp m,do_pop_de_slow
+	jr $+(ophandlerD1_slow-(ophandlerD1_smc+7))
 	;ophandlerE1_smc
 	inc iyl
 	inc iyl
-	call p,shift_stack_window_higher
-	jr $+(do_pop_hl_slow-(ophandlerE1_smc+7))
+	jp m,do_pop_hl_slow
+	jr $+(ophandlerE1_slow-(ophandlerE1_smc+7))
 	;ophandlerF1_smc
 	.db $18, ophandlerF1_slow - (ophandlerF1_smc+2) ;JR ophandlerF1_slow
 	
@@ -1068,7 +1135,8 @@ ophandlerF5_smc = $+1
 	; If possible after the window shift, do a direct write
 	inc iyl
 	jr nz,ophandlerF5_retry
-	jr do_push_any_slow_retry
+	dec iyl
+	jr do_push_instr_slow
 	
 	; PUSH HL
 ophandlerE5:
@@ -1078,13 +1146,14 @@ ophandlerE5_retry:
 ophandlerE5_smc = $+1
 	jp m,do_push_hl_long_ptr
 	call shift_stack_window_lower
-do_push_hl_slow:
 	; If possible after the window shift, do a direct write
 	inc iyl
 	jr nz,ophandlerE5_retry
+	dec iyl
+do_push_hl_slow:
 	ld h,d
 	ld l,e
-	jr do_push_any_slow_retry
+	jr do_push_instr_slow
 	
 	.block (audio_port_values + $80) - $
 	; Masks to apply to readable audio registers
@@ -1108,13 +1177,14 @@ ophandlerD5_retry:
 ophandlerD5_smc = $+1
 	jp m,do_push_de_long_ptr
 	call shift_stack_window_lower
-do_push_de_slow:
 	; If possible after the window shift, do a direct write
 	inc iyl
 	jr nz,ophandlerD5_retry
+	dec iyl
+do_push_de_slow:
 	ld h,b
 	ld l,c
-	jr do_push_any_slow_retry
+	jr do_push_instr_slow
 	
 	; PUSH BC
 ophandlerC5:
@@ -1124,39 +1194,49 @@ ophandlerC5_retry:
 ophandlerC5_smc = $+1
 	jp m,do_push_bc_long_ptr
 	call shift_stack_window_lower
-do_push_bc_slow:
 	; If possible after the window shift, do a direct write
 	inc iyl
 	jr nz,ophandlerC5_retry
-	lea hl,ix
-do_push_any_slow_retry:
 	dec iyl
-do_push_any_slow:
+do_push_bc_slow:
+	lea hl,ix
+do_push_instr_slow:
+	exx
+	ld b,d
+	ld c,a
+	ld hl,(stack_window_base)
+	ld e,iyl
+	ld d,0
+	add hl,de
+	ex de,hl
+	call try_get_mem_readwrite_ptr_swapped
 	ex af,af'
-do_push_any_slow_swapped:
-	push af
-	 push hl
-	  ld a,h
-	  exx
-do_push_any_slow_for_call_finish:
-	  ld hl,(stack_window_base)
-	  ld c,iyl
-	  ld b,0
-	  add hl,bc
-	  ld b,h
-	  ld c,l
-	  call write_mem_any
-	  dec iyl
-	  dec bc
-	 pop hl
-	 ld a,l
-	 call write_mem_any
-	 exx
-	pop af
+	jr c,do_push_instr_get_cycle_offset
+	exx
+	ld a,h
+	exx
+	ld.l (hl),a
+	dec de
+	call try_get_mem_readwrite_ptr_swapped
+	ex af,af'
+	jr c,do_push_instr_get_cycle_offset_2
+	dec iyl
+	exx
+	ld a,l
+	exx
+	ld.l (hl),a
+	ld d,b
+	ld a,c
+	exx
+	ex af,af'
 	ret
 	
-do_push_any_slow_for_call:
-	push af
-	 push hl
-	  ld a,h
-	  jr do_push_any_slow_for_call_finish
+do_push_instr_get_cycle_offset_2:
+	inc de
+do_push_instr_get_cycle_offset:
+	ld h,b
+	ld a,c
+	pop bc
+	push bc
+	jp.lil do_push_instr_get_cycle_offset_helper
+	

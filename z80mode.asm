@@ -114,7 +114,12 @@ do_call_no_shadow_stack:
 	push bc
 do_push_overflow_for_call_slow:
 	 push hl
-	  call do_push_any_slow_for_call
+	  ld e,6 ; Cycles for taken CALL
+	  exx
+	  push hl
+	   call do_push_for_call_slow_swap
+	   ex af,af'
+	  pop hl
 	  exx
 	 pop hl
 	pop bc
@@ -738,9 +743,9 @@ do_push_for_interrupt_no_shadow_stack:
 	ex (sp),ix
 	pop de
 	ld a,e
-	exx
 	ld hl,(event_gb_address)
-	call do_push_any_slow
+	ld e,5 ; Cycles for interrupt dispatch
+	call do_push_for_call_slow
 	ex af,af'
 	exx
 	ld e,a
@@ -1824,29 +1829,9 @@ do_push_overflow_for_rst:
 	   exx
 	  pop hl
 	 pop bc
+	 jr c,do_push_overflow_for_rst_slow
 	 exx
 	pop hl
-	jr nc,do_rst
-	add a,(hl)
-	inc hl
-	exx
-do_rst_no_shadow_stack:
-	call do_push_any_slow_for_call
-decode_rst_return:
-	jr nc,_
-	inc d
-	jr z,cycle_overflow_for_rst_pushed
-_
-	exx
-	ex af,af'
-	jp (hl)
-	
-#ifdef SHADOW_STACK
-do_rst_set_shadow_stack:
-	call set_shadow_stack
-	jr do_rst_shadow_stack_smc
-#endif
-	
 do_rst:
 	; Count cycles and advance to JP
 	add a,(hl)
@@ -1894,6 +1879,36 @@ cycle_overflow_for_rst_pushed:
 	 call.il schedule_event_helper
 #else
 	 jp.lil schedule_event_helper
+#endif
+	
+do_rst_no_shadow_stack:
+	; Undo cycle counting because writes might be cycle-sensitive
+	exx
+	dec hl
+	sub (hl)
+	push hl
+	 exx
+do_push_overflow_for_rst_slow:
+	 ld e,4 ; Cycles for taken RST
+	 call do_push_for_call_slow
+	 ex af,af'
+	pop hl
+	add a,(hl)
+	inc hl
+	exx
+decode_rst_return:
+	jr nc,_
+	inc d
+	jr z,cycle_overflow_for_rst_pushed
+_
+	exx
+	ex af,af'
+	jp (hl)
+	
+#ifdef SHADOW_STACK
+do_rst_set_shadow_stack:
+	call set_shadow_stack
+	jr do_rst_shadow_stack_smc
 #endif
 	
 decode_rst:
@@ -2562,7 +2577,6 @@ trigger_event_low_pool_smc = $
 	 jp do_event_pushed
 	 
 trigger_event_for_generic_write:
-	 FIXME
 	 ; Get the JIT address for the event
 generic_write_jit_address = $+1
 	 ld hl,0

@@ -696,7 +696,7 @@ write_mem_any:
 	cp a ; Set Z flag
 	jp (hl)
 	
-generic_write_gb_address:
+generic_write_gb_address = $
 	.dw 0
 do_hmem_write_any:
 	ex af,af'
@@ -1018,7 +1018,7 @@ do_cram_open_bus_get_ptr:
 	push hl
 do_cram_open_bus_get_ptr_with_return:
 	push af
-	 ; Currently, try_get_mem_readwrite_ptr is used only by LD (nnnn),SP
+	 ; Currently, try_get_mem_readwrite_ptr is used only by LD (nnnn),SP or PUSH
 	 ; This is write-only, so just return a pointer to two bytes of scratch space
 	 jr z,do_cram_open_bus_get_ptr_finish
 	 call.il lookup_code_bus
