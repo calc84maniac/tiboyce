@@ -118,7 +118,23 @@ _
 	
 	; LD [nnnn],SP
 ophandler08_slow:
+	; Save the GB address provided by the trampoline
+	ld (generic_write_gb_address),hl
+	; Get the cycle offset and write address
+	pop hl
+	ld e,(hl)
+	inc hl
+	ld bc,(hl)
+	inc hl
+	inc hl
+	push hl
+	; Save the JIT address
+	ld (generic_write_jit_address),hl
 	push af
+	 ; Calculate and save the end-of-instruction offset
+	 ld a,-2
+	 sub e
+	 ld (generic_write_instr_cycle_offset),a
 	 ; Calculate the real value of SP
 	 ld hl,(stack_window_base)
 	 ld a,l
@@ -128,10 +144,15 @@ ophandler08_slow:
 _
 	 ; Write to the memory addresses
 	 push bc
+	  ld l,e
 	  push hl
 	   call write_mem_any
-	  pop af
+	  pop hl
+	  ld a,h
+	  ld e,l
 	 pop bc
+	 ; Increment the address and cycle offset
+	 inc e
 	 inc bc
 	 call write_mem_any
 	pop af

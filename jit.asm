@@ -3809,46 +3809,98 @@ _opgen08:
 	inc hl
 	ld c,(hl)
 	inc hl
-	ld a,(hl)
+	ld b,(hl)
 	ex de,hl
 	ld (hl),$D9 ;EXX
 	inc hl
 	; Check for $FFxx
+	ld a,b
 	inc a
 	jr nz,_
 	; Check for HRAM
 	bit 7,c
-	jr nz,opgen08_hram
+	jr nz,opgen08_fast
 _
 	; Do fast implementation for WRAM, OAM, or HRAM
 	cp $C0+1
 	jr c,opgen08_slow
-opgen08_hram:
+opgen08_fast:
 	ld (hl),$21 ;LD HL,nnnn
 	inc hl
 	ld (hl),c
+	inc c
 	ld bc,ophandler08_fast
+	jr z,opgen08_check_bounds
 	or a
 	jr nz,opgen08_finish
 	ld bc,ophandler08_hram
 opgen08_finish:
-	inc hl
 	dec a
+opgen08_finish_2:
+	inc hl
 	ld (hl),a
 	inc hl
 	ld (hl),$CD ;CALL opgen08_*
 	inc hl
+opgen08_slow_finish:
 	ld (hl),c
 	inc hl
 	ld (hl),b
 	dec iyl
-	jp opgen_next_swap_skip_1cc	
+	jp opgen_next_swap_skip_1cc
+opgen08_check_bounds:
+	push hl
+	 ld hl,z80codebase+mem_write_lut
+	 ld l,a
+	 ld a,(hl)
+	 dec l
+	 cp (hl)
+	 ld a,l
+	pop hl
+	jr z,opgen08_finish_2
+	ld c,(hl)
+	dec hl
+	ld b,a
 opgen08_slow:
-	ld (hl),$01 ;LD BC,nnnn
-	inc hl
-	ld (hl),c
-	ld bc,ophandler08_slow
-	jr opgen08_finish
+	push bc
+	 inc de
+	 inc b
+	 ld bc,ophandler08_slow
+	 jr nz,++_
+	 push hl
+	  ld a,6
+	  ; Z flag is set
+	  call allocate_high_trampoline_for_jit
+	  ; Avoid emitting a trampoline if a flush is imminent,
+	  ; to avoid overwriting code prior to this JIT block
+	  jr c,_
+	  push hl
+	   ; Emit a load of the GB address
+	   ld (hl),$21 ;LD HL,
+	   call opgen_emit_gb_address
+	   ; Emit the jump to the handler
+	   ld (hl),$C3 ;JP ophandler08_slow
+	   inc hl
+	   ld (hl),c
+	   inc hl
+	   ld (hl),b
+	  ; Use the trampoline as the handler
+	  pop bc
+_
+	 pop hl
+_
+	 ; Emit the routine call
+	 ld (hl),$CD ;CALL
+	 inc hl
+	 ld (hl),c
+	 inc hl
+	 ld (hl),b
+	 ; Emit the cycle offset
+	 call opgen_emit_cycle_offset
+	 dec de
+	; Emit the write address
+	pop bc
+	jr opgen08_slow_finish
 	
 _opgen36:
 	inc hl
