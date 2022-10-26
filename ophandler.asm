@@ -579,15 +579,19 @@ stat_setup_oam:
 	ld de,ppu_expired_mode2_maybe_lyc_block
 	jr stat_setup_done
 	
-stat_setup_hblank_this_line:
-	ld (z80codebase+ppu_mode0_LY),a
-	; Check if LY=LYC
-	bit 2,c
-	CPU_SPEED_IMM8($+2)
-	ld.sis bc,MODE_0_CYCLES
-	jr nz,stat_setup_done_add
-	ld de,ppu_expired_mode0_maybe_lyc_block
-	jr stat_setup_done_add
+stat_setup_vblank:
+	; Check if LY < LYC
+	cp h
+	ld a,h
+	ex de,hl
+	ld de,ppu_expired_lyc_mode1
+	jr c,stat_setup_vblank_maybe_lyc_match
+	; Check if LYC=0
+	or a
+	jr nz,stat_setup_post_vblank
+	CPU_SPEED_IMM16($+2)
+	ld.sis bc,-(CYCLES_PER_SCANLINE * 9 + 1)
+	jr stat_setup_next_from_vblank
 	
 	; Input: C = current value of STAT
 	; Output: HL = (ppu_counter) = new PPU event time
@@ -662,6 +666,31 @@ lcd_on_stat_setup_event_smc = $+3
 	ld.sis (event_counter_checker_slot_PPU),de
 	ret
 	
+stat_setup_vblank_maybe_lyc_match:
+	; Check if LYC < 154
+	sub SCANLINES_PER_FRAME
+	jr c,stat_setup_specific_line
+stat_setup_post_vblank:
+	ld a,(lyc_prediction_list+0)
+	bit 3,h
+	jr nz,stat_setup_post_vblank_mode0
+	bit 5,h
+	ld de,ppu_expired_active_lyc_post_vblank
+	ld (z80codebase+ppu_post_vblank_initial_lyc_prediction),a
+	jr z,stat_setup_specific_line
+	ld (z80codebase+ppu_mode2_event_line),a
+	ld de,ppu_expired_mode2_line_0
+	CPU_SPEED_IMM16($+2)
+	ld.sis bc,-(CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK)
+	jr stat_setup_next_from_vblank
+	
+stat_setup_post_vblank_mode0:
+	ld (z80codebase+ppu_mode0_event_line),a
+	ld de,ppu_expired_mode0_line_0
+	CPU_SPEED_IMM16($+2)
+	ld.sis bc,-((CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK) + MODE_2_CYCLES + MODE_3_CYCLES)
+	jr stat_setup_next_from_vblank
+	
 stat_setup_hblank:
 	; Set the event line
 	ld (z80codebase+ppu_mode0_event_line),a
@@ -688,43 +717,15 @@ lcd_on_stat_setup_mode_smc = $
 	ld de,ppu_expired_vblank
 	jr stat_setup_done
 	
-stat_setup_vblank:
-	; Check if LY < LYC
-	cp h
-	ld a,h
-	ex de,hl
-	ld de,ppu_expired_lyc_mode1
-	jr c,stat_setup_vblank_maybe_lyc_match
-	; Check if LYC=0
-	or a
-	jr nz,stat_setup_post_vblank
-	CPU_SPEED_IMM16($+2)
-	ld.sis bc,-(CYCLES_PER_SCANLINE * 9 + 1)
-	jr stat_setup_next_from_vblank
-	
-stat_setup_vblank_maybe_lyc_match:
-	; Check if LYC < 154
-	sub SCANLINES_PER_FRAME
-	jr c,stat_setup_specific_line
-stat_setup_post_vblank:
-	ld a,(lyc_prediction_list+0)
-	bit 3,h
-	jr nz,stat_setup_post_vblank_mode0
-	bit 5,h
-	ld de,ppu_expired_active_lyc_post_vblank
-	jr z,stat_setup_specific_line
-	ld (z80codebase+ppu_mode2_event_line),a
-	ld de,ppu_expired_mode2_line_0
-	CPU_SPEED_IMM16($+2)
-	ld.sis bc,-(CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK)
-	jr stat_setup_next_from_vblank
-	
-stat_setup_post_vblank_mode0:
-	ld (z80codebase+ppu_mode0_event_line),a
-	ld de,ppu_expired_mode0_line_0
-	CPU_SPEED_IMM16($+2)
-	ld.sis bc,-((CYCLES_PER_SCANLINE * SCANLINES_PER_VBLANK) + MODE_2_CYCLES + MODE_3_CYCLES)
-	jr stat_setup_next_from_vblank
+stat_setup_hblank_this_line:
+	ld (z80codebase+ppu_mode0_LY),a
+	; Check if LY=LYC
+	bit 2,c
+	CPU_SPEED_IMM8($+2)
+	ld.sis bc,MODE_0_CYCLES
+	jr nz,stat_setup_done_add
+	ld de,ppu_expired_mode0_maybe_lyc_block
+	jr stat_setup_done_add
 	
 ; Writes to the LCD control register (LCDC).
 ; Does not use a traditional call/return, must be jumped to directly.

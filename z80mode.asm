@@ -1089,8 +1089,9 @@ _
 _
 	inc sp
 	inc sp
-	ld.lil a,(lyc_prediction_list+0)
-	jr _	
+ppu_post_vblank_initial_lyc_prediction = $+1
+	ld a,0
+	jr _
 	
 ppu_expired_active_lyc_post_vblank:
 	call -_
@@ -1366,6 +1367,7 @@ ppu_schedule_post_vblank_event:
 	and $28
 	jr nz,ppu_schedule_post_vblank_mode0_mode2
 	ld a,d
+	ld (ppu_post_vblank_initial_lyc_prediction),a
 	add a,SCANLINES_PER_VBLANK
 	ld d,a
 	CPU_SPEED_IMM8($+1)
