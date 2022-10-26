@@ -1535,10 +1535,10 @@ overlapped_op_1_2_mismatch:
 	
 handle_overlapped_op_1_1_helper:
 	ex af,af'
-	lea hl,ix+4
+	lea hl,ix
 	exx
 	ld e,a
-	ld bc,z80codebase+4
+	ld bc,z80codebase
 	add ix,bc
 	ld.s bc,(ix-3)
 	ld hl,z80codebase+mem_read_lut
@@ -1568,10 +1568,10 @@ overlapped_op_2_1_mismatch:
 	
 handle_overlapped_op_1_2_helper:
 	ex af,af'
-	lea hl,ix+5
+	lea hl,ix
 	exx
 	ld e,a
-	ld bc,z80codebase+5
+	ld bc,z80codebase
 	add ix,bc
 	ld.s bc,(ix-3)
 	ld hl,z80codebase+mem_read_lut
@@ -1601,10 +1601,10 @@ handle_overlapped_op_1_2_helper:
 	
 handle_overlapped_op_2_1_helper:
 	ex af,af'
-	lea hl,ix+5
+	lea hl,ix
 	exx
 	ld e,a
-	ld bc,z80codebase+5
+	ld bc,z80codebase
 	add ix,bc
 	ld.s bc,(ix-3)
 	ld hl,z80codebase+mem_read_lut

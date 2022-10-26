@@ -3171,14 +3171,17 @@ coherency_handler_hram:
 	
 handle_overlapped_op_1_1:
 	ex (sp),ix
+	lea ix,ix+4
 	jp.lil handle_overlapped_op_1_1_helper
 	
 handle_overlapped_op_1_2:
 	ex (sp),ix
+	lea ix,ix+5
 	jp.lil handle_overlapped_op_1_2_helper
 	
 handle_overlapped_op_2_1:
 	ex (sp),ix
+	lea ix,ix+5
 	jp.lil handle_overlapped_op_2_1_helper
 	
 Z80InvalidOpcode:
