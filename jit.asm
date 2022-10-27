@@ -4172,13 +4172,14 @@ opgenMBCorVRAMwrite:
 	
 opgenVRAMwrite:
 	pop hl
+opgenOAMwrite:
 	push hl
 	 call opgen_emit_load_cycle_offset_swap
 	 ld (hl),$CD ;CALL vram_banked_write_handler
 	 inc hl
-	 ld (hl),vram_banked_write_handler & $FF
+	 ld (hl),vram_oam_write_handler & $FF
 	 inc hl
-	 ld (hl),vram_banked_write_handler >> 8
+	 ld (hl),vram_oam_write_handler >> 8
 	 inc hl
 	 ld (hl),c ;.DW addr
 	 inc hl
@@ -4196,6 +4197,7 @@ opgenCONSTwrite:
 	inc a
 	jr z,opgenHMEMwrite
 	inc a
+	jr z,opgenOAMwrite
 	cp $E0+2
 	jr c,_
 	res 5,b ;Handle WRAM mirroring

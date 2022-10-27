@@ -40,7 +40,7 @@
 ;     SWAP (HL)
 ;       .DW gb_addr \ EXX \ LD C,cycle_offset \ JP op_readwrite_hl_port_swap
 ;
-;   Write to VRAM:
+;   Write to VRAM/OAM:
 ;     LD (rr),r:
 ;       LD L,r \ EXX \ LD C,cycle_offset \ JP op_write_rr_vram
 ;     LD (HL),n:

@@ -103,6 +103,7 @@ write_vram_check_sprite_catchup:
 	ld a,(myspriteLY)
 	cp (hl)
 	jp nc,render_catchup
+sprite_catchup_full:
 	call render_catchup
 	ld a,(myLY)
 ; Catches up sprite rendering before changing sprite state.
@@ -122,6 +123,14 @@ sprite_catchup:
 	ld hl,(scanlineLUT_ptr)
 	ld (scanlineLUT_sprite_ptr),hl
 	jp sync_frame_flip
+	
+write_oam_catchup:
+	exx
+	push de
+	 call sprite_catchup_full
+	pop de
+	exx
+	ret.l
 	
 dma_write_helper:
 	; Catch up background rendering

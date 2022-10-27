@@ -370,7 +370,7 @@ oam_unbanked_base = $+2+z80codebase
 	ex af,af'
 	ret
 	
-vram_banked_get_write_ptr:
+vram_oam_get_write_ptr:
 	jp nz,patch_hl_vram_access
 try_get_pointer_failed:
 	scf
@@ -430,13 +430,13 @@ mem_write_lut:
 	.fill $20, mbc_rom_bank_get_write_ptr & $FF
 	.fill $20, mbc_cram_bank_get_write_ptr & $FF
 	.fill $20, mbc_specific_get_write_ptr & $FF
-	.fill $20, vram_banked_get_write_ptr & $FF
+	.fill $20, vram_oam_get_write_ptr & $FF
 	.fill $20, cram_banked_get_ptr & $FF
 	.fill $10, wram_unbanked_get_ptr & $FF
 	.fill $10, wram_banked_get_ptr & $FF
 	.fill $10, wram_mirror_unbanked_get_ptr & $FF
 	.fill $0E, wram_mirror_banked_get_ptr & $FF
-	.fill $01, oam_get_ptr & $FF
+	.fill $01, vram_oam_get_write_ptr & $FF
 	.fill $01, hmem_get_ptr & $FF
 	
 mem_write_any_routines:
@@ -560,7 +560,7 @@ oam_write_any:
 	
 	.block 6
 	
-vram_banked_write_any:
+vram_oam_write_any:
 	jp nz,patch_bc_de_vram_write
 	push bc
 	 ld c,e
@@ -568,7 +568,7 @@ vram_banked_write_any:
 	 call updateSTAT
 	pop bc
 	; This unswaps shadow registers, so swap them back before returning
-	call do_vram_banked_write_any
+	call do_vram_oam_write_any
 	exx
 	ret
 	nop
@@ -1205,7 +1205,7 @@ do_swap_for_memory:
 	; Execute the MBC write
 	ret
 	
-vram_banked_write_handler:
+vram_oam_write_handler:
 	ex af,af'
 	ld e,a
 	call updateSTAT
@@ -1214,7 +1214,9 @@ vram_banked_write_handler:
 	inc hl
 	inc hl
 	push hl
-do_vram_banked_write_any:
+do_vram_oam_write_any:
+	bit 6,b
+	jr nz,do_oam_write_any
 	push de
 	 ex af,af'
 	 ld e,a
@@ -1305,6 +1307,15 @@ op_readwrite_hl_vram_smc = $
 	ex af,af'
 	jr op_write_hl_vram_finish
 	
+do_oam_write_any:
+	ld a,c
+	exx
+	ld h,a
+	ex af,af'
+	ld l,a
+	ex af,af'
+	jr op_write_any_oam
+	
 	; Input: DE=Game Boy HL, L=write value, C'=cycle offset, BCDEHL' are swapped
 	; Output: Value written, or write instruction is unpatched
 	; Destroys: HL, BC', E', HL', F'
@@ -1348,6 +1359,9 @@ op_write_bc_port:
 	jp (hl)
 	
 unpatch_op_write_bc_vram:
+	; Check for OAM write
+	cp $FE
+	jr z,op_write_bc_oam
 unpatch_op_write_bc_port:
 	ld a,e
 	ex af,af'
@@ -1382,6 +1396,10 @@ op_write_de_port:
 	jp (hl)
 
 unpatch_op_write_de_vram:
+	; Check for OAM write
+	cp $FE
+	ld h,c
+	jr z,op_write_any_oam
 unpatch_op_write_de_port:
 	exx
 	ld a,e
@@ -1394,6 +1412,27 @@ unpatch_op_write_de_port:
 	ld (hl),op_write_de_normal & $FF
 	dec hl
 	jp (hl)
+
+op_write_bc_oam:
+	ld a,ixl
+	ld h,a
+	; Input: H=OAM write address, L=write value, DE'=cycle counter, AF' is swapped
+	;        LY/STAT have been updated
+op_write_any_oam:
+	; Check for rendering catchup
+	ld a,r
+	call.il m,write_oam_catchup
+	; Write value to OAM
+	ld a,l
+	ld l,h
+	ld h,$FE
+	ld (hl),a
+	; Restore cycle counter
+	exx
+	ld a,e
+	exx
+	ex af,af'
+	ret
 
 	; Input: DE=Game Boy HL, L=write value, C'=cycle offset, BCDEHL' are swapped
 	; Output: Value is written to the port at Game Boy HL
@@ -1433,6 +1472,10 @@ op_write_c_hmem:
 	jp (hl)
 	
 unpatch_op_write_hl_vram:
+	; Check for OAM write
+	cp $FE
+	ld h,e
+	jr z,op_write_any_oam
 unpatch_op_write_hl_port:
 	; Restore cycle counter in A'
 	exx
@@ -1484,6 +1527,22 @@ _
 	pop de
 	jp (hl)
 	
+op_readwrite_hl_oam:
+	ld (op_readwrite_hl_oam_smc),hl
+	exx
+	ld a,(de)
+	ld l,a
+	ld h,e
+	ex af,af'
+op_readwrite_hl_oam_smc = $
+	rlc l
+	ex af,af'
+	jr op_write_any_oam
+	call do_swap_for_memory
+	ex af,af'
+	ld h,e
+	jr op_write_any_oam
+	
 unpatch_op_write_hl_mbc:
 	; Get the trampoline address
 	dec hl
@@ -1517,8 +1576,11 @@ unpatch_op_write_hl_mbc:
 	 ret
 	
 unpatch_op_readwrite_hl_vram:
+	; Check for OAM write
+	cp $FE
 	exx
 	ld hl,(op_readwrite_hl_vram_smc)
+	jr z,op_readwrite_hl_oam
 unpatch_op_readwrite_hl_port:
 	; Get the address following the CALL
 	ex (sp),hl
