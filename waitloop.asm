@@ -185,7 +185,6 @@ waitloop_found_read_bitwise:
 	ret nz
 	; Parse this opcode as a data op
 	dec hl
-	inc de
 	; Adjust the read cycle forward by 1
 	scf
 waitloop_found_read_hl:
