@@ -105,19 +105,20 @@ write_vram_check_sprite_catchup:
 	jp nc,render_catchup
 sprite_catchup_full:
 	call render_catchup
-	ld a,(myLY)
 ; Catches up sprite rendering before changing sprite state.
 ; Must be called only if render_catchup has already been called.
 ;
-; Inputs: A = current scanline
 ; Destroys: AF, BC, DE, HL
 sprite_catchup:
 	push ix
 	 push iy
+	  ld a,(myLY)
 	  call draw_sprites
 	 pop iy
 	pop ix
 	
+	xor a
+	ld (z80codebase+sprite_catchup_available),a
 	ld a,(myLY)
 	ld (myspriteLY),a
 	ld hl,(scanlineLUT_ptr)
@@ -137,9 +138,9 @@ dma_write_helper:
 	ld a,r
 	call m,render_catchup
 	; Render the existing OAM data if applicable
-	ld a,(myLY)
-	or a
-	call nz,sprite_catchup
+	ld a,(z80codebase+sprite_catchup_available)
+	rla
+	call c,sprite_catchup
 	; This returns BC=0, DE=0
 	MEMSET_FAST(oam_tile_usage_lut, 256, 0)
 	; Copy 160 bytes from the specified source address to OAM
@@ -240,10 +241,10 @@ scroll_write_SCY:
 scroll_write_OBP:
 	push de
 	 push hl
-	  ; Catchup sprites if at least one scanline has been rendered
-	  ld a,(myLY)
-	  or a
-	  call nz,sprite_catchup
+	  ; Catchup sprites if the BG has been rendered ahead
+	  ld a,(z80codebase+sprite_catchup_available)
+	  rla
+	  call c,sprite_catchup
 	 pop hl
 	pop de
 	exx
@@ -767,9 +768,9 @@ lcdc_write_sprite_change_smc_2 = $+1
 	jr z,lcdc_write_no_sprite_change_gbc
 	push bc
 	 push de
-	  ld a,(myLY)
-	  or a
-	  call nz,sprite_catchup
+	  ld a,(z80codebase+sprite_catchup_available)
+	  rla
+	  call c,sprite_catchup
 	 pop de
 	pop bc
 	bit 1,b

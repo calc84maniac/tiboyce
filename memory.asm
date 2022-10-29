@@ -1421,6 +1421,8 @@ op_write_bc_oam:
 op_write_any_oam:
 	; Check for rendering catchup
 	ld a,r
+sprite_catchup_available = $+1
+	or 0 ; Bit 7 is set if BG has been rendered ahead of sprites
 	call.il m,write_oam_catchup
 	; Write value to OAM
 	ld a,l

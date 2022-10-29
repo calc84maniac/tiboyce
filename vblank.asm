@@ -468,6 +468,7 @@ prepare_initial_frame:
 	ld (myLY),a
 	ld (myspriteLY),a
 	ld (mypaletteLY),a
+	ld (z80codebase+sprite_catchup_available),a
 	ld (BGP_max_frequency),a
 	; Make the next rendering operation sync with frame flip,
 	; if the frame flip hasn't happened yet
@@ -1511,6 +1512,8 @@ render_scanline_next:
 	   ; Restore important Z80 things
 	   ld a,z80codebase >> 16
 	   ld mb,a
+	   ; Allow sprite catchup
+	   ld (z80codebase+sprite_catchup_available),a
 	   ld.sis sp,(render_save_sps)
 	  pop iy
 	 pop ix
