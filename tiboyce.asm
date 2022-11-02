@@ -1188,6 +1188,7 @@ _
 	add a,3
 	djnz -_
 	ldir
+	ex de,hl
 	ret
 	
 ; Gets a pointer to the current menu in HL, the current selection index in BC,
