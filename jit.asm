@@ -313,7 +313,7 @@ Z80InvalidOpcode_helper:
 	ld a,(ERROR_INVALID_OPCODE << 2) + 5
 	jr runtime_error_finish
 runtime_error:
-#ifdef DEBUG
+#ifdef CEMU
 	; Open debugger on CEmu
 	ld (exitReason),a
 	ld a,2
@@ -416,7 +416,11 @@ lookup_gb_found_abs_write:
 	  jr lookup_gb_add
 	
 runtime_error_trampoline:
+#ifdef FASTLOG
+	jp runtime_error
+#else
 	jr runtime_error
+#endif
 	
 lookup_gb_found_abs_read_write_high:
 	   ; Check the first JIT byte for short read/write
@@ -1152,7 +1156,7 @@ _
 	 jr nc,-_
 	 ; Check for approaching the end of the JIT code space
 	 ld a,d
-	 cp (flags_lut >> 8) - 2
+	 cp (trampoline_end >> 8) - 1
 	 jr nc,prepare_flush_from_buffer_overflow
 	pop af
 	

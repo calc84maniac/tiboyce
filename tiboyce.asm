@@ -1474,19 +1474,22 @@ fastlog_init:
 	ret
 	
 fastlog_dump_to_save:
+	; Force auto save state to be saved
+	inc a
 	ld hl,(fastlog_output_addr)
 	ld de,(FPS)
-	or a
 	sbc hl,de
 	ex de,hl
+	; Output to the auto save state file
 	ld hl,save_state_size_bytes
 	ld bc,(hl)
 	add hl,bc
 	inc hl
-	inc hl
-	ld bc,(hl)
-	add hl,bc
-	inc hl
+	; No longer output to battery save file
+	;inc hl
+	;ld bc,(hl)
+	;add hl,bc
+	;inc hl
 	ex de,hl
 	dec bc
 	jr z,++_
