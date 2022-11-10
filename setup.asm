@@ -592,16 +592,35 @@ _
 	 inc b
 	 ldir
 	
-	 ; Duplicate palette overlapped indices to fill the 256-byte table
-	 ;HL=overlapped_palette_index_lut_init
-	 ld de,overlapped_palette_index_lut
+	 ; Generate palette overlapped indices using a 6-bit LFSR.
+	 ; Palette register format is little endian, so the LFSR shifts right.
+	 ; The first iteration does not use the LFSR, handling the invalid
+	 ; state of 000. The first LFSR state is 100, which properly overlaps.
+	 ld hl,overlapped_palette_index_lut
+	 ld a,$10<<2 ; The first state of the LFSR
+	 ld e,a ; Initial counter of 64
+SetupOverlappedPaletteIndexLoop:
+	 ; Duplicate indices to ignore low 2 bits of input
+	 ld b,4
 _
-	 ld a,(hl) \ inc hl
-	 ld (de),a \ inc e
-	 ld (de),a \ inc e
-	 ld (de),a \ inc e
-	 ld (de),a \ inc e
-	 jr nz,-_
+	 ld (hl),c \ inc l
+	 djnz -_
+	 ; Use the LFSR state as the next LUT entry
+	 ld l,a
+	 ; Shift the LFSR right two bits (using tap bits $21<<2)
+	 ld b,2
+_
+	 sra a ; Duplicate the top bit
+	 bit 1,a ; Check the shifted-out bottom bit
+	 jr z,_
+	 xor $82 ; Reset the shifted-out bit and invert the top bit
+_
+	 djnz --_
+	 ; Advance to the next index
+	 inc c
+	 dec e
+	 jr nz,SetupOverlappedPaletteIndexLoop
+	 ld c,b
 	
 	 ; Generate a routine in cursor memory to generate overlapped pixels
 	 ; First fill 512 bytes with DEC HL
@@ -4185,15 +4204,6 @@ overlapped_pixel_index_lut_init:
 	.db $29,$39,$57,$63,$C8,$DE,$6E,$75,$1F,$2D,$51,$5B,$BC,$D0,$F3,$F7
 	.db $28,$56,$C7,$6D,$2C,$5A,$CF,$F6,$38,$62,$DD,$74,$FD,$3C,$7D,$E5
 	.db $68,$69,$6A,$71,$6B,$79,$72,$7B,$67,$6C,$78,$7A,$66,$73,$FC,$7C
-	
-	; Specifies palette indices corresponding to the input 2bpp palettes.
-	; Note that this is only used for colors 1-3, because BG color 0 is
-	; special-cased and this can be used for BG+sprites.
-overlapped_palette_index_lut_init:
-	.db $00,$03,$06,$3F,$02,$0B,$12,$1B,$05,$25,$15,$1E,$08,$18,$0F,$3E
-	.db $01,$0C,$16,$09,$0A,$23,$2B,$22,$11,$2A,$33,$30,$1A,$2D,$21,$28
-	.db $04,$13,$1F,$10,$0D,$24,$31,$29,$14,$32,$38,$37,$1D,$2F,$3A,$36
-	.db $07,$1C,$26,$19,$17,$2C,$34,$2E,$20,$0E,$39,$3B,$27,$35,$3C,$3D
 	
 DefaultPaletteChecksumTable:
 	.db $00,$88,$16,$36,$D1,$DB,$F2,$3C,$8C,$92,$3D,$5C,$58,$C9,$3E,$70

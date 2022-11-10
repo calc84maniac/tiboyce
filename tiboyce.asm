@@ -298,11 +298,11 @@ BG_COLOR_3 = 18
 ; The data is overlapped such that a unique sequence of three colors begins
 ; at each entry. Note that this means each table is (64 + 2) entries large.
 ; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
-; at the offset corresponding to palette %100100, which is $0D.
+; at the offset corresponding to palette %100100, which is $13.
 OBP0_COLORS_START = 19
-OBP0_ORIG_COLORS = OBP0_COLORS_START+$0D
+OBP0_ORIG_COLORS = OBP0_COLORS_START+$13
 OBP1_COLORS_START = OBP0_COLORS_START + (64 + 2)
-OBP1_ORIG_COLORS = OBP1_COLORS_START+$0D
+OBP1_ORIG_COLORS = OBP1_COLORS_START+$13
 
 ; Palette entry representing transparent OBJ pixels on GBC.
 ; Never rendered, only used to determine priority against rendered pixels.
@@ -711,10 +711,10 @@ gbc_tile_attributes_lut_2 = gbc_tile_attributes_lut + 256
 ; The data is overlapped such that a unique sequence of three colors begins
 ; at each word. Note that this means the table is (64 + 2) * 2 bytes large.
 ; Additionally, the original sequence of colors 0, 1, 2, 3 is present starting
-; at the index corresponding to palette %100100, which is $0D.
+; at the index corresponding to palette %100100, which is $13.
 ; This table must be 256-byte aligned. Game Boy only.
 overlapped_bg_palette_colors = overlapped_palette_index_lut + 256
-bg_palette_colors = overlapped_bg_palette_colors + ($0D*2)
+bg_palette_colors = overlapped_bg_palette_colors + ($13*2)
 
 ; Table of GBC palette colors ready to copy to the native palette.
 ; There are 8 transparent BG colors, followed by 24 opaque BG colors,
