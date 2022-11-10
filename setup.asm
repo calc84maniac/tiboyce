@@ -586,73 +586,80 @@ _
 	inc b
 	ldir
 	
-	;HL=overlapped_pixel_index_lut_init
-	ld de,overlapped_pixel_index_lut
-	push de
-	 inc b
-	 ldir
-	
-	 ; Generate palette overlapped indices using a 6-bit LFSR.
-	 ; Palette register format is little endian, so the LFSR shifts right.
-	 ; The first iteration does not use the LFSR, handling the invalid
-	 ; state of 000. The first LFSR state is 100, which properly overlaps.
-	 ld hl,overlapped_palette_index_lut
-	 ld a,$10<<2 ; The first state of the LFSR
-	 ld e,a ; Initial counter of 64
+	; Generate palette overlapped indices using a 6-bit LFSR.
+	; Palette register format is little endian, so the LFSR shifts right.
+	; The first iteration does not use the LFSR, handling the invalid
+	; state of 000. The first LFSR state is 100, which properly overlaps.
+	ld hl,overlapped_palette_index_lut
+	ld a,$10<<2 ; The first state of the LFSR
+	ld e,a ; Initial counter of 64
 SetupOverlappedPaletteIndexLoop:
-	 ; Duplicate indices to ignore low 2 bits of input
-	 ld b,4
+	; Duplicate indices to ignore low 2 bits of input
+	ld b,4
 _
-	 ld (hl),c \ inc l
-	 djnz -_
-	 ; Use the LFSR state as the next LUT entry
-	 ld l,a
-	 ; Shift the LFSR right two bits (using tap bits $21<<2)
-	 ld b,2
+	ld (hl),c \ inc l
+	djnz -_
+	; Use the LFSR state as the next LUT entry
+	ld l,a
+	; Shift the LFSR right two bits (using tap bits $21<<2)
+	ld b,2
 _
-	 sra a ; Duplicate the top bit
-	 bit 1,a ; Check the shifted-out bottom bit
-	 jr z,_
-	 xor $82 ; Reset the shifted-out bit and invert the top bit
+	sra a ; Duplicate the top bit
+	bit 1,a ; Check the shifted-out bottom bit
+	jr z,_
+	xor $82 ; Reset the shifted-out bit and invert the top bit
 _
-	 djnz --_
-	 ; Advance to the next index
-	 inc c
-	 dec e
-	 jr nz,SetupOverlappedPaletteIndexLoop
-	 ld c,b
+	djnz --_
+	; Advance to the next index
+	inc c
+	dec e
+	jr nz,SetupOverlappedPaletteIndexLoop
 	
-	 ; Generate a routine in cursor memory to generate overlapped pixels
-	 ; First fill 512 bytes with DEC HL
-	 ld hl,mpLcdCursorImg
-	 push hl
-	 pop de
-	 ld (hl),$2B ;DEC HL
-	 inc de
-	 ld b,2
-	 ldir
-	 ld (hl),$C9 ;RET
-	
-	 ; Use the index data to sprinkle LD (HL),B/C/D/E instructions
-	pop de
+	; Generate a routine in cursor memory to generate overlapped pixels,
+	; and also generate the overlapped pixel index LUT using 8-bit LFSR.
+	ld a,c ; Initial LFSR state = $40
+	ld de,overlapped_pixel_index_lut ; Initial pixel sequence is 0000
+	ld hl,mpLcdCursorImg + 512
+	ld (hl),$C9 ;RET
+SetupOverlappedPixelIndexLoop:
+	; Write the index for the current pixel sequence into the LUT
+	ex de,hl
+	ld (hl),b
+	ex de,hl
+	; Initialize the opcode
+	ld c,$70>>2 ;LD (HL),B/C/D/E
+	; Shift out the upper pixel from the sequence
+	sla e
+	; Shift the high bit of the pixel into the opcode
+	rl c
+	; Test and reset the low bit of the shifted pixel
+	bit 4,e
+	jr z,_
+	res 4,e
+	scf
+_
+	; Shift the low bit of the pixel into the opcode
+	rl c
+	; Write the opcodes
 	dec hl
+	ld (hl),c ;LD (HL),B/C/D/E
+	dec hl
+	ld (hl),$2B ;DEC HL
+	; Shift the LFSR left twice, writing the output into the empty spot
+	; of the shifted pixel sequence
+	add a,a
+	jr nc,_
+	xor $C3
+	set 4,e
 _
-	push hl
-	 ld a,(de)
-	 ld c,a
-	 ld a,e
-	 and %10001000
-	 sbc hl,bc
-	 sbc hl,bc
-	 add a,%00111000
-	 rlca
-	 rlca
-	 and 3
-	 add a,$70
-	 ld (hl),a
-	pop hl
+	add a,a
+	jr nc,_
+	xor $C3
 	inc e
-	jr nz,-_
+_
+	; Advance the index
+	inc b
+	jr nz,SetupOverlappedPixelIndexLoop
 	
 	ld a,(iy-state_size+STATE_SYSTEM_TYPE)
 	dec a
@@ -711,6 +718,7 @@ _
 	
 SetupOverlappedGBCPixels:
 	; Generate the reversed overlapped index LUT
+	ld e,a
 	push de
 	pop hl
 	inc d ;DE=overlapped_pixel_rev_index_lut
@@ -4183,27 +4191,6 @@ flags_lut_init:
 	.db $4B,$4B,$4B,$4B,$4B,$4B,$4B,$4B, $A0,$B0,$E0,$F0,$A0,$B0,$E0,$F0
 	.db $5A,$5A,$5A,$5A,$5A,$5A,$5A,$5A, $80,$90,$C0,$D0,$80,$90,$C0,$D0
 	.db $5B,$5B,$5B,$5B,$5B,$5B,$5B,$5B, $A0,$B0,$E0,$F0,$A0,$B0,$E0,$F0
-	
-	; Specifies offsets into a buffer of pixel data corresponding to the
-	; input 2bpp pixel data. Note that the input has the high palette bits
-	; grouped in the high nibble, and the low palette bits in the low nibble.
-overlapped_pixel_index_lut_init:
-	.db $00,$80,$81,$88,$82,$A0,$89,$A6,$83,$8B,$A1,$A9,$8A,$A8,$A7,$E8
-	.db $01,$84,$05,$8C,$11,$A2,$15,$AA,$93,$9B,$B1,$B9,$C0,$D6,$47,$E9
-	.db $02,$90,$85,$98,$06,$AE,$8D,$B6,$12,$C1,$A3,$D7,$16,$48,$AB,$EA
-	.db $09,$94,$0D,$9C,$19,$B2,$1D,$BA,$3F,$CD,$43,$E3,$4B,$ED,$4F,$F1
-	.db $03,$13,$91,$BE,$86,$A4,$99,$D4,$07,$17,$AF,$49,$8E,$AC,$B7,$EB
-	.db $21,$31,$23,$C2,$2F,$D2,$33,$D8,$25,$35,$53,$5F,$C4,$DA,$5D,$F9
-	.db $0A,$40,$95,$CA,$0E,$44,$9D,$E0,$1A,$4C,$B3,$EE,$1E,$50,$BB,$F2
-	.db $27,$C6,$2B,$CE,$37,$DC,$3B,$E4,$55,$70,$59,$F5,$61,$77,$65,$FB
-	.db $FF,$04,$10,$14,$92,$B0,$BF,$46,$7F,$87,$9F,$A5,$9A,$B8,$D5,$E7
-	.db $08,$0C,$18,$1C,$3E,$42,$4A,$4E,$8F,$97,$AD,$B5,$CC,$E2,$EC,$F0
-	.db $20,$22,$2E,$32,$24,$52,$C3,$5C,$30,$BD,$D1,$D3,$34,$5E,$D9,$F8
-	.db $26,$2A,$36,$3A,$54,$58,$60,$64,$C5,$C9,$DB,$DF,$6F,$F4,$76,$FA
-	.db $0B,$1B,$41,$4D,$96,$B4,$CB,$EF,$FE,$0F,$3D,$45,$7E,$9E,$E1,$E6
-	.db $29,$39,$57,$63,$C8,$DE,$6E,$75,$1F,$2D,$51,$5B,$BC,$D0,$F3,$F7
-	.db $28,$56,$C7,$6D,$2C,$5A,$CF,$F6,$38,$62,$DD,$74,$FD,$3C,$7D,$E5
-	.db $68,$69,$6A,$71,$6B,$79,$72,$7B,$67,$6C,$78,$7A,$66,$73,$FC,$7C
 	
 DefaultPaletteChecksumTable:
 	.db $00,$88,$16,$36,$D1,$DB,$F2,$3C,$8C,$92,$3D,$5C,$58,$C9,$3E,$70
