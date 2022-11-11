@@ -619,44 +619,50 @@ _
 	; and also generate the overlapped pixel index LUT using 8-bit LFSR.
 	ld a,c ; Initial LFSR state = $40
 	ld de,overlapped_pixel_index_lut ; Initial pixel sequence is 0000
+	ld c,e ; Initial reversed pixel sequence is 0000
 	ld hl,mpLcdCursorImg + 512
 	ld (hl),$C9 ;RET
 SetupOverlappedPixelIndexLoop:
 	; Write the index for the current pixel sequence into the LUT
 	ex de,hl
 	ld (hl),b
+	; Write the index for the reversed pixel sequence into the reverse LUT
+	push hl
+	 ld l,c
+	 inc h ;overlapped_pixel_rev_index_lut
+	 ld (hl),b
+	pop hl
 	ex de,hl
 	; Initialize the opcode
-	ld c,$70>>2 ;LD (HL),B/C/D/E
-	; Shift out the upper pixel from the sequence
+	dec hl
+	ld (hl),$70>>2 ;LD (HL),B/C/D/E
+	; Shift out a pixel from the sequence
 	sla e
 	; Shift the high bit of the pixel into the opcode
-	rl c
-	; Test and reset the low bit of the shifted pixel
-	bit 4,e
-	jr z,_
-	res 4,e
-	scf
-_
-	; Shift the low bit of the pixel into the opcode
-	rl c
-	; Write the opcodes
-	dec hl
-	ld (hl),c ;LD (HL),B/C/D/E
-	dec hl
-	ld (hl),$2B ;DEC HL
-	; Shift the LFSR left twice, writing the output into the empty spot
-	; of the shifted pixel sequence
+	rl (hl)
+	; Shift a high pixel bit out of the LFSR into the sequences
 	add a,a
+	res 4,c
+	jr nc,_
+	xor $C3
+	set 4,c
+	inc e
+_
+	; Shift a low pixel bit out of the LFSR into the sequences
+	add a,a
+	res 4,e
 	jr nc,_
 	xor $C3
 	set 4,e
+	scf
 _
-	add a,a
-	jr nc,_
-	xor $C3
-	inc e
-_
+	; Shift out a pixel from the reversed sequence
+	rr c
+	; Shift the low bit of the pixel into the opcode
+	rl (hl)
+	; Write the other opcode
+	dec hl
+	ld (hl),$2B ;DEC HL
 	; Advance the index
 	inc b
 	jr nz,SetupOverlappedPixelIndexLoop
@@ -717,33 +723,6 @@ _
 	jr SetupOverlappedPixelsDone
 	
 SetupOverlappedGBCPixels:
-	; Generate the reversed overlapped index LUT
-	ld e,a
-	push de
-	pop hl
-	inc d ;DE=overlapped_pixel_rev_index_lut
-	inc b
-_
-	; Copy from the first LUT to the second
-	ld a,l
-	ldi
-	dec de
-	; Get the changed bits in L
-	xor l
-	; Rotate them to the top of A to get the reverse
-_
-	rra
-	jr c,-_
-	; Rotate back to the original nibbles
-	rrca
-	rrca
-	rrca
-	rrca
-	; Apply the reverse of the changed bits in each nibble
-	xor e
-	ld e,a
-	jr nz,--_
-	
 	; Generate overlapped BG palette pixels
 	ld hl,gbc_overlapped_pixel_data_end
 	ld b,GBC_BG_TRANSPARENT_COLORS + 7
