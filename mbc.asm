@@ -87,41 +87,6 @@ mbc_zero_page_override_fast:
 	 inc a
 	 jr mbc_zero_page_continue
 	
-	
-	OP_WRITE_HL_MBC
-mbc_write_cram_protect_handler:
-	push af
-	 ld a,l
-mbc_cram_protect_mask_smc = $+1
-	 and $0F
-	 cp $0A
-	 ld hl,$215B ;LD.LIL HL,
-	 jr z,_
-	 ld hl,$18 | ((cram_open_bus_read_any - (cram_banked_read_any_protect_smc+2)) << 8)
-_
-	 ld (cram_banked_get_ptr_protect_smc),hl
-	 ld (cram_banked_read_any_protect_smc),hl
-	 ld (cram_banked_write_any_protect_smc),hl
-	 ; See if SP is pointing into the protected bank
-	 ld a,(curr_gb_stack_region)
-	 cp cram_bank_base & $FF
-	 jr z,++_
-_
-	pop af
-	ret
-_
-	 ; If an RTC register is not selected, fix stack routines
-	 ld a,(cram_banked_get_ptr_rtc_smc)
-	 rra ;JR vs. ADD.L
-	 jr nc,--_
-	 ; Prepare the offset based on the current stack pointer
-	 exx
-	 ld e,iyl
-	 ld a,(do_pop_any_ptr_offset_smc)
-	 xor $80
-	 ld iyl,a
-	 jp set_gb_stack_region_cram
-	
 	OP_WRITE_HL_MBC
 mbc_write_rtc_cram_bank_handler:
 	push af
@@ -203,34 +168,8 @@ mbc_fix_sp_switch_cram_smc = $
 mbc_no_fix_sp:
 mbc_finish:
 	 exx
-mbc_finish_unswapped:
 	pop af
 	ret
-	
-mbc_fix_sp_switch_cram:
-	 or mbc_fix_sp - (mbc_fix_sp_switch_cram_smc+2) ; Resets Z
-	 ld (mbc_fix_sp_switch_cram_smc+1),a
-mbc_fix_sp:
-	 ; If so, update it
-	 ld e,iyl
-	 ld iy,(stack_window_base)
-	 ld bc,$0080
-	 add iy,bc
-	 ex.l de,hl
-	 add.l iy,de
-	 ex de,hl
-	 jp nz,set_gb_stack_region_cram
-	 ; Get the new offset from the window base
-	 ld a,iyl
-	 xor c
-	 ; Set the low byte of the stack index
-	 ld iyl,e
-	 ; Apply offset SMC if the offset has changed
-	 ld hl,do_pop_any_ptr_offset_smc
-	 cp (hl)
-	 jr z,mbc_finish
-	 ld (hl),a
-	 jp pop_apply_stack_offset_smc
 	
 	OP_WRITE_HL_MBC
 mbc1_write_mode_handler:
@@ -253,6 +192,67 @@ _
 	 ld (mbc1_cram_smc_for_read),a
 	 ld (mbc1_cram_smc_for_write),a
 	 jr mbc_write_cram_any_check_stack
+	
+mbc_fix_sp_switch_cram:
+	 or mbc_fix_sp - (mbc_fix_sp_switch_cram_smc+2) ; Resets Z
+	 ld (mbc_fix_sp_switch_cram_smc+1),a
+mbc_fix_sp:
+	 ; If so, update it
+	 ld e,iyl
+	 ld iy,(stack_window_base)
+	 ld bc,$0080
+	 add iy,bc
+	 ex.l de,hl
+	 add.l iy,de
+	 ex de,hl
+	 jr nz,set_gb_stack_region_cram_trampoline
+	 ; Get the new offset from the window base
+	 ld a,iyl
+	 xor c
+	 ; Set the low byte of the stack index
+	 ld iyl,e
+	 ; Apply offset SMC if the offset has changed
+	 ld hl,do_pop_any_ptr_offset_smc
+	 cp (hl)
+	 jr z,mbc_finish
+	 ld (hl),a
+	 jp pop_apply_stack_offset_smc
+	
+	OP_WRITE_HL_MBC
+mbc_write_cram_protect_handler:
+	push af
+	 ld a,l
+mbc_cram_protect_mask_smc = $+1
+	 and $0F
+	 cp $0A
+	 ld hl,$215B ;LD.LIL HL,
+	 jr z,_
+	 ld hl,$18 | ((cram_open_bus_read_any - (cram_banked_read_any_protect_smc+2)) << 8)
+_
+	 ld (cram_banked_get_ptr_protect_smc),hl
+	 ld (cram_banked_read_any_protect_smc),hl
+	 ld (cram_banked_write_any_protect_smc),hl
+	 ; See if SP is pointing into the protected bank
+	 ld a,(curr_gb_stack_region)
+	 cp cram_bank_base & $FF
+	 jr z,_
+mbc_finish_unswapped:
+	pop af
+	ret
+_
+	 ; If an RTC register is not selected, fix stack routines
+	 ld a,(cram_banked_get_ptr_rtc_smc)
+	 rra ;JR vs. ADD.L
+	 jr nc,mbc_finish_unswapped
+	 ; Prepare the offset based on the current stack pointer
+	 exx
+	 ld e,iyl
+	 ld a,(do_pop_any_ptr_offset_smc)
+	 xor $80
+	 ld iyl,a
+set_gb_stack_region_cram_trampoline:
+	 ld bc,$2525 ; DEC H \ DEC H
+	 jp set_gb_stack_region_cram
 	
 	; Size-optimized HL write op
 	push af
