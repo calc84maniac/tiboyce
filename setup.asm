@@ -3944,9 +3944,9 @@ customHardwareSettings:
 	.db $83
 	;mpSpiDivider
 #ifdef CEMU
-	.dl $020000
+	.dl $020001
 #else
-	.dl $070000
+	.dl $070001
 #endif
 	
 lcdSettings4Bit:
