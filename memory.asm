@@ -73,6 +73,7 @@ rom_unbanked_base_for_read = $+2+z80codebase
 	
 rom_trimmed_read_any:
 	ex af,af'
+rom_trimmed_read_value = $+1
 	ld a,0
 	ret
 	nop

@@ -1584,6 +1584,9 @@ cram_size:
 ; The start address of Game Boy cartridge RAM.
 cram_start:
 	.dl 0
+; The byte trimmed from the end of ROM banks ($00 or $FF).
+rom_trim_value:
+	.db 0
 ; The cartridge's Memory Bank Controller type.
 mbc:
 	.db 0

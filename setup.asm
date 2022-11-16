@@ -980,6 +980,15 @@ _
 	ld (rom_unbanked_base),hl
 	ld (rom_unbanked_base_for_read),hl
 	
+	ld a,(rom_trim_value)
+	ld (z80codebase+rom_trimmed_read_value),a
+	inc a
+	jr nz,_
+	; Big hack, read $FF from the end of the boot code
+	ld hl,$020000-$8000
+	ld (rom_trimmed_base),hl
+_
+	
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
 	ld (z80codebase+rom_bank_check_smc_1),a
@@ -2629,51 +2638,7 @@ _
 	ld (hl),a
 	jr LoadROM
 
-LoadROMPageLoop:
-	ld a,d
-	dec a
-	cp (hl)
-	ld a,ERROR_FILE_INVALID
-	ret c
-	push de
-	 ld e,(hl)
-	 ld d,4
-	 mlt de
-	 ld ix,rombankLUT
-	 add ix,de
-	 cp (ix) ; Check for $3F-$7F (already found) rather than $00
-	 jr c,_
-	 inc hl
-	 dec bc
-	 push bc
-	  ld c,(hl)
-	  inc hl
-	  ld b,(hl)
-	  inc hl
-	  ld de,$4000
-	  sbc hl,de
-	  ld (ix+1),hl
-	  ex de,hl
-	  add hl,bc
-	  ex de,hl
-	  add hl,de
-	  dec de
-	  ld (ix),d
-	  ex (sp),hl
-	  inc bc
-	  inc bc
-	  sbc hl,bc
-	  ex (sp),hl
-	 pop bc
-_
-	pop de
-	ret c
-	jr z,_
-	dec e
-	jr nz,LoadROMPageLoop
-	scf
-	ret
-_
+LoadROMPageNext:
 	dec e
 	ret z
 	ld hl,ROMName
@@ -2691,6 +2656,58 @@ _
 	dec hl
 	inc (hl)
 	jr LoadROMLoop
+
+LoadROMPageLoop:
+	ld a,d
+	dec a
+	cp (hl)
+	ld a,ERROR_FILE_INVALID
+	ret c
+	push de
+	 ld e,(hl)
+	 ld d,4
+	 mlt de
+	 ld ix,rombankLUT
+	 add ix,de
+	 cp (ix) ; Check for $3F-$7F (already found) rather than $00
+	 jr c,++_
+	 inc hl
+	 dec bc
+	 push bc
+	  ld c,(hl)
+	  inc hl
+	  ld b,(hl)
+	  inc hl
+	  ld de,$4000
+	  sbc hl,de
+	  ld (ix+1),hl
+	  ex de,hl
+	  add hl,bc
+	  ex de,hl
+	  bit 7,d
+	  dec de
+	  add hl,de
+	  ld (ix),d
+	  ; If the page isn't full, track which byte was trimmed
+	  jr nz,_
+	  ld e,(hl)
+	  ld (rom_trim_value),de
+_
+	  inc hl
+	  ex (sp),hl
+	  inc bc
+	  inc bc
+	  sbc hl,bc
+	  ex (sp),hl
+	 pop bc
+_
+	pop de
+	ret c
+	jr z,LoadROMPageNext
+	dec e
+	jr nz,LoadROMPageLoop
+	scf
+	ret
 	
 GetStateRAMFileName:
 	ld hl,ROMName
