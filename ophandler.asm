@@ -1125,6 +1125,8 @@ reset_div:
 gdma_transfer_helper:
 	push bc
 	 push de
+	  ld a,r
+	  call m,render_catchup_safe
 	  ld hl,hram_base+HDMA5
 	  ld b,(hl)
 	  ld (hl),$FF

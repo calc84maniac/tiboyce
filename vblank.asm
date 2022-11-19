@@ -1370,6 +1370,8 @@ scanline_fill_color_smc = $+1
 	ldir
 	jp render_scanline_next
 	
+render_catchup_safe:
+	inc.s bc ;BCU=0
 ; Catches up the renderer before changing an LCD register.
 ; Must be called only if the current frame is being rendered.
 ;
