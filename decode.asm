@@ -106,7 +106,7 @@ decode_jump_maybe_overlap:
 	; Get the base address for the next region
 	ld hl,z80codebase+mem_get_ptr_routines
 	ld l,b
-	inc l \ inc l
+	inc hl \ inc hl ; Preserve Z
 	ld hl,(hl)
 	ld b,-3 ; Taken JR cycles (negative)
 	jr z,decode_overlapped_jr
