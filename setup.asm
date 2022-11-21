@@ -3326,6 +3326,8 @@ BackupHardwareSettings:
 	ret
 	
 SetCustomHardwareSettings:
+	; Disable interrupts before placing code in VRAM
+	di
 	ld a,$FB      ; EI
 	ld (z80codebase + wait_for_interrupt_stub),a
 	ld hl,$C94976 ; HALT \ RET.LIS
