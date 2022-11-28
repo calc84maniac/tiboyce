@@ -425,7 +425,6 @@ wait_for_interrupt:
 frame_interrupt:
 	push de
 	 push bc
-	  ld hl,mpLcdMis
 	  call sync_frame_flip_always
 	 pop bc
 	pop de

@@ -228,7 +228,7 @@ shift_stack_window_higher_2_finish:
 	ld a,(hl)
 	xor c
 	ld iyl,a
-	add.l iy,de
+	add.l iy,bc
 	jr shift_stack_window_higher_any_finish
 	
 shift_stack_window_higher_check_overlap:
