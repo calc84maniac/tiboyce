@@ -1278,6 +1278,9 @@ updateSTAT_maybe_mode1:
 	; Check if LY update kept STAT in mode 1 or changed it to mode 0
 	ld a,(STAT)
 	rra
+	; Ensure effective mode is 1, could have been set to 0 by an LY update
+	; prior to this STAT update, so the mode would have been read as 0
+	set 0,b
 	jr nc,updateSTAT_mode1_exit
 updateSTAT_mode1:
 	; Disable catch-up rendering in case of vblank overflow
