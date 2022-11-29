@@ -453,21 +453,23 @@ _
 	 ld de,hram_saved + $0100
 	 ld c,hmem_init_size
 	 ldir
-	 push hl ;regs_init
-	
-	  push de
-	  pop hl
+	 ;HL=hram_init
+	 push de
+	  ex (sp),hl
 	  dec hl
 	  ld c,$80 - hmem_init_size + 1
 	  ldir
-	
-	  ld (hl),c
-	  ld c,$7F
-	  ldir
-	
+	  push hl
+	   ld (hl),c
+	   ld c,$7F
+	   ldir
+	  pop de
 	 pop hl
+	 ld c,hram_init_size
+	 ldir
+	 ;HL=regs_init
 	pop af
-	ld bc,regs_init_gbc - regs_init
+	ld c,regs_init_gbc - regs_init
 	jr z,_
 	ld e,a
 	add hl,bc
@@ -1576,7 +1578,7 @@ _
 	; Check if audio is disabled in NR52
 	bit 7,(hl)
 	jr nz,_
-	;JR write_port_ignore (overriding EXX \ LD L,A)
+	;JR write_port_ignore (overriding EXX \ LD A,L)
 	ld hl,$18 | ((write_port_ignore - (write_audio_disable_smc+2)) << 8)
 	ld.sis (write_audio_disable_smc),hl
 _
@@ -4138,6 +4140,12 @@ hmem_init:
 	.db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	.db $91,0,$00,$00,0,$00,$FF,$FC,$FF,$FF,$00,$00,$FF
 hmem_init_size = $ - hmem_init
+	
+hram_init:
+	.db $CE,$ED,$66,$66,$CC,$0D,$00,$0B,$03,$73,$00,$83,$00,$0C,$00,$0D
+	.db $00,$08,$11,$1F,$88,$89,$00,$0E,$DC,$CC,$6E,$E6,$DD,$DD,$D9,$99
+	.db $BB,$BB,$67,$63,$6E,$0E,$EC,$CC,$DD,$DC,$99,$9F,$BB,$B9,$33,$3E
+hram_init_size = $ - hram_init
 	
 regs_init:
 	.db $00	; Hardware type
