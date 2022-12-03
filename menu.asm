@@ -7,7 +7,7 @@
 
 #define ITEM_ROMONLY $80
 
-#define ROMS_PER_PAGE 16
+#define ROMS_PER_PAGE 15
 
 #define UNMAPPED_KEY 41
 
@@ -482,14 +482,9 @@ ShowConfirmationDialog:
 	 add hl,de
 	 push hl
 	  ACALL(ClearMenuBuffer)
-	
-	  ld a,5
-	  ld (cursorRow),a
-	  ld a,1
-	  ld (cursorCol),a
-	
 	  ld a,WHITE
-	  ACALL(PutStringFormatColor)
+	  ld hl,1<<8|5
+	  ACALL(PutStringFormatColorXY)
 	 pop hl
 	pop hl
 	
@@ -594,7 +589,16 @@ _
 	jp GetRomDescriptionFromVAT
 	
 ItemSelectKey:
-	ACALL(GetKeyConfig)
+	sub KeyConfig-OptionConfig
+	sbc hl,hl
+	ld l,a
+	ld a,(current_config)
+	or a
+	ld bc,KeyConfig
+	jr z,_
+	ld bc,GameKeyConfig
+_
+	add hl,bc
 	push bc
 	 ld c,(hl)
 	 ld (hl),0
@@ -781,17 +785,6 @@ ItemDeleteState:
 	ld hl,(current_state)
 	jr ItemDeleteStateFinish
 	
-ItemDeleteKeyUnmap:
-	; Don't allow unmapping in-game buttons or menu
-	ld a,d
-	dec a
-	cp 9
-	ret c
-	ld a,UNMAPPED_KEY
-	cp (hl)
-	jr nz,ItemDeleteKeyUnmapFinish
-	ret
-	
 ItemChangeRom:
 	ld hl,romListFrameStart
 	ld a,(hl)
@@ -847,44 +840,39 @@ ItemDeleteDigit:
 	jr draw_current_menu_trampoline
 	
 ItemDeleteKey:
-	ld d,a
-	ACALL(GetKeyConfig)
-	; If already inheriting from global, unmap instead
-	ld a,(hl)
-	inc a
-	jr z,ItemDeleteKeyUnmap
-	; If global config is selected, unmap
-	ld a,(current_config)
-	dec a
-	jr nz,ItemDeleteKeyUnmap
-	dec a
-ItemDeleteKeyUnmapFinish:
-	ld (hl),a
-	jr draw_current_menu_trampoline
-	
 ItemDeleteOption:
-	or a
-	ret m
+	ld d,a
 	ACALL(GetOption)
-	ld a,(current_config)
+	jr nz,ItemRevertGameSpecific
+	ld a,d
+	sub KeyConfig-OptionConfig
+	ret c
+	; Don't allow unmapping in-game buttons or menu
 	dec a
-	ret nz
-	dec a
+	cp UndeletableKeysEnd-UndeletableKeysStart
+	ret c
+	ld a,(bc)
+	cp UNMAPPED_KEY
+	ret z
+	ld a,UNMAPPED_KEY
+	jr ItemDeleteKeyUnmapFinish
+ItemRevertGameSpecific:
+	ld a,-1
+ItemDeleteKeyUnmapFinish:
 	ld (bc),a
-	jr draw_current_menu_trampoline
+draw_current_menu_trampoline:
+	jr draw_current_menu
 	
 ItemChangeOption:
 	ld d,b
 	ACALL(GetOption)
 	add a,d
-	cp (hl)
-	jr c,_
 	add a,(hl)
-	jr c,_
-	xor a
 _
+	sub (hl)
+	jr nc,-_
+	add a,(hl)
 	ld (bc),a
-draw_current_menu_trampoline:
 	jr draw_current_menu
 	
 redraw_current_menu:
@@ -908,7 +896,7 @@ _
 	
 	; Display only description if no ROM is loaded
 	or a
-	ld a,30
+	ld c,35
 	jr z,draw_current_description
 	
 	; Draw mini screen if on main menu
@@ -921,10 +909,6 @@ _
 	ld ix,(rom_start)
 	ld bc,$0134
 	add ix,bc
-	ld a,35
-	ld (cursorRow),a
-	ld a,b
-	ld (cursorCol),a
 	ld b,(ix+$014E-$0134)
 	ld c,(ix+$014F-$0134)
 	push bc
@@ -932,19 +916,18 @@ _
 	  APTR(TitleChecksumFormat)
 	  push hl
 	   ld a,MAGENTA
-	   ACALL(PutStringFormatColor)
+	   ld hl,1<<8|40
+	   ACALL(PutStringFormatColorXY)
 	  pop hl
 	 pop hl
 	pop hl
 	
-	ld a,25
+	ld c,30
 draw_current_description:
-	ld (cursorRow),a
-	ld a,1
-	ld (cursorCol),a
+	ld b,1
 	ld hl,(current_description)
 	ld a,MAGENTA
-	ACALL(PutNStringColor)
+	ACALL(PutNStringColorXY)
 	
 draw_current_menu:
 	; Erase the help text
@@ -973,19 +956,17 @@ draw_menu:
 	  call SetStringColor
 	  ex de,hl
 	  ld hl,$FF00
+	  ld c,l
 	  push hl
 	   jr draw_menu_title
 draw_menu_loop:
 	 dec c
 	 push bc
 	  jr nz,_
-	  ld a,205
-	  ld (cursorRow),a
-	  ld a,1
-	  ld (cursorCol),a
-	  ld a,MAGENTA
 	  push de
-	   ACALL(PutStringColor)
+	   ld a,MAGENTA
+	   ld bc,1<<8|205
+	   ACALL(PutStringColorXY)
 	   ld (current_item_ptr),hl
 	   ld a,WHITE
 	   jr draw_menu_item
@@ -1021,26 +1002,26 @@ draw_menu_item_push:
 	  push de
 draw_menu_item:
 	   call SetStringColor
-	 
+
 	   ld de,ItemDisplayCallbacks
 	   ACALL(DoItemCallback)
 	   inc de
 	   
 draw_menu_title:
-	   ld a,(de)
-	   inc de
-	   ld (cursorRow),a
-	   ld a,(de)
-	   inc de
-	   ld (cursorCol),a
 	   push hl
-	    push de
-	     inc c
+	    ex de,hl
+	    ld a,c
+	    ld c,(hl)
+	    inc hl
+	    ld b,(hl)
+	    inc hl
+	    push hl
+	     or a
 	     ld a,' '
-	     jr nz,_
+	     jr z,_
 	     ld a,'*'
 _
-	     call PutChar
+	     call PutCharXY
 	     ACALL(PutStringFormat)
 	    pop hl
 	   pop de
@@ -1069,23 +1050,17 @@ _
 	push bc
 	 ld hl,romListItem
 	 ld (current_item_ptr),hl
-	 ld a,205
-	 ld (cursorRow),a
-	 ld a,1
-	 ld (cursorCol),a
 	 APTR(LoadRomHelpText)
 	 ld a,MAGENTA
-	 ACALL(PutStringColor)
+	 ld bc,1<<8|205
+	 ACALL(PutStringColorXY)
 	pop bc
 	ld a,c
 _
 	ld (menuPrevItem),a
-	
-	ld a,20
-	ld (cursorRow),a
-	ld a,1
-	ld (cursorCol),a
-	add a,c
+
+	ld a,c
+	inc a
 	cp b
 	jr nz,_
 	xor a
@@ -1102,6 +1077,8 @@ _
 	mlt de
 	ld iy,romListStart
 	add iy,de
+	ld hl,1<<8|25
+	ld (cursorRowCol),hl
 	djnz draw_rom_list_loop
 	APTR(LoadRomNoRomsText)
 	ld a,GRAY
@@ -1116,14 +1093,7 @@ draw_rom_list_loop:
 _
 	 call GetRomDescription
 	 ACALL(PutNStringColor)
-	
-	 ld hl,cursorCol
-	 ld (hl),1
-	 inc hl
-	 ld a,(hl)
-	 add a,10
-	 ld (hl),a
-	  
+	 ACALL(PutNewLine)
 	pop bc
 	lea iy,iy+3
 	djnz draw_rom_list_loop
@@ -1131,7 +1101,7 @@ _
 	
 draw_mini_screen:
 	ld hl,mini_frame_backup
-	ld de,menu_frame_buffer + (320*(120-72) - 8)
+	ld de,menu_frame_buffer + (320*55 - 8)
 	ld a,144
 draw_mini_screen_row_loop:
 	ld bc,160
@@ -1187,33 +1157,38 @@ _
 	djnz GetKeyCodeLoop
 	ld a,c
 	ret
-	
+
+; @param[in] a option index
+; @param[out] a option value
+; @param[out] ubc pointer to option value in current config
+; @param[out] uhl pointer to length-prefixed sequence of display strings for
+;                 option values
+; @param[out] zf option value not game-specific
 GetOption:
 	ld hl,current_config
 	ld bc,0
+	inc a
 	ld c,a
-	add a,a
 	ld a,(hl)
-	jr c,++_
-	dec a
-	ld hl,OptionConfig
-	jr nz,_
-	ld hl,GameOptionConfig
-_
+	jr z,++_
+	or a
+	ld hl,OptionConfig-1
 	add hl,bc
 	ld a,(hl)
-	cp $FF
+	jr z,++_
+	ld hl,GameOptionConfig-1
+	add hl,bc
+	ld b,a
+	ld a,(hl)
+	cp -1
 	jr nz,_
-	push bc
-	 ld c,game_config_start - config_start
-	 sbc hl,bc
-	 ld a,(hl)
-	 add hl,bc
-	pop bc
+	ld a,b
+_
+	ld b,0
 _
 	push hl
-	 ld hl,OptionList
-	 sla c
+	 ld hl,OptionList-2
+	 add hl,bc
 	 add hl,bc
 	 ld bc,(ArcBase)
 	 add hl,bc
@@ -1222,37 +1197,25 @@ _
 	 add hl,bc
 	pop bc
 	ret
-	
-	; Returns config pointer in HL, start pointer in BC
-GetKeyConfig:
-	or a
-	sbc hl,hl
-	ld l,a
-	ld a,(current_config)
-	or a
-	ld bc,KeyConfig
-	jr z,_
-	ld bc,GameKeyConfig
-_
-	add hl,bc
-	ret
-	
+
 ItemDisplayDigit:
-	or a
-	sbc hl,hl
-	cp 2
-	ld a,(current_state)
-	jr nz,++_
-	ld a,(current_config)
-	or a
-	ld a,(GameFrameskipValue)
+	ld hl,current_state
+	add a,-2
+	jr nc,++_
+					; a = 0
+	dec hl				; hl = current_config
+	sub (hl)
 	jr z,_
-	cp $FF
-	jr nz,++_
+					; a = -1
+	ld hl,GameFrameskipValue
+	sub (hl)
 	ld c,a
+	jr nz,++_
 _
-	ld a,(FrameskipValue)
+	ld hl,FrameskipValue
 _
+	ld a,(hl)
+	sbc hl,hl
 	ld l,a
 ItemDisplayLink:
 ItemDisplayCmd:
@@ -1264,33 +1227,39 @@ ItemDeleteCmd:
 	ret
 	
 ItemDisplayKey:
-	ACALL(GetKeyConfig)
-	ld a,(calcType)
-	or a
+	ACALL(GetOption)
+	ld c,0
 	jr z,_
-	ld a,57
-_
-	ld c,(hl)
 	inc c
-	jr nz,_
-	ld bc,game_config_start - config_start
-	sbc hl,bc
-	ld c,b
 _
-	dec c
-	add a,(hl)
+	ld hl,(calcType)
+	dec l
+	jr z,_
+	add a,57
+_
 	push de
 	 APTR(KeyNames)
 	pop de
 	jr ItemDisplayKeyEntry
-	
+
+; @param[in] a option index
+; @param[out] a 0
+; @param[out] b 0
+; @param[out] c nonzero iff option value is game-specific
+; @param[out] uhl pointer to display string for option value
 ItemDisplayOption:
 	ACALL(GetOption)
+	ld c,0
+	jr z,_
+	inc c
+_
 	inc hl
-	push af
-	 ld a,(bc)
-	 ld c,a
-	pop af
+
+; @param[in] a option value
+; @param[in] uhl pointer to sequence of display strings for option values
+; @param[out] a 0
+; @param[out] b 0
+; @param[out] uhl pointer to display string for option value
 ItemDisplayKeyEntry:
 	ld b,a
 	or a
@@ -1323,12 +1292,18 @@ TitleChecksumFormat:
 	.db "%.16s  %04X",0
 	
 MenuList:
+MainMenuIndex = ($-MenuList)/2
 	.dw MainMenu+1
+LoadGameMenuIndex = ($-MenuList)/2
 	.dw LoadGameMenu+1
+GraphicsMenuIndex = ($-MenuList)/2
 	.dw GraphicsMenu+1
+ControlsMenuIndex = ($-MenuList)/2
 	.dw ControlsMenu+1
+EmulationMenuIndex = ($-MenuList)/2
 	.dw EmulationMenu+1
 	
+	.dw OptionConfigSelect+1
 OptionList:
 	.dw OptionFrameskipType+1
 	.dw OptionSpeedDisplay+1
@@ -1344,13 +1319,15 @@ OptionList:
 	.dw OptionAdjustColors+1
 	.dw OptionConfirmState+1
 	.dw OptionPreferredModel+1
-	; This always goes at the end
-	.dw OptionConfigSelect+1
 	
 CmdList:
+ReturnExitReason = ($-CmdList)/2
 	.dw CmdExit+1
+; SelectRomExitReason = ($-CmdList)/2
 	.dw CmdExit+1
+ExitExitReason = ($-CmdList)/2
 	.dw CmdExit+1
+RestartExitReason = ($-CmdList)/2
 	.dw CmdExit+1
 	
 ItemDisplayCallbacks:
@@ -1384,31 +1361,90 @@ ItemDeleteCallbacks:
 	.dw ItemDeleteOption+1
 	.dw ItemDeleteKey+1
 	.dw ItemDeleteRom+1
-	
+
+
+#if 0
+MenuTemplate:
+	.db item_count
+
+	.db title_x,title_y
+	.db title_text,0
+
+	.db item_0_help_text
+	.db item_0_type
+	.db item_0_type_data
+	.db item_0_x,item_0_y
+	.db item_0_text,0
+
+	.db item_1_help_text
+; ...
+#endif
+
 MainMenu:
 	.db 10
-	.db 0,8
-	.db "TI-Boy CE Alpha v0.2.1\n https://calc84maniac.github.io/tiboyce",0
-	.db "Select to load the game state from the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT | ITEM_ROMONLY,0, 50,0,"Load State Slot %c",0
-	.db "Select to save the game state to the\n current slot for this game.\n Press left/right to change the slot.",0
-	.db ITEM_DIGIT | ITEM_ROMONLY,1, 60,0,"Save State Slot %c",0
-	.db "Choose configuration options to edit.\n Inherited global options show a '*'.\n Press DEL to delete a per-game option.",0
-	.db ITEM_OPTION | ITEM_ROMONLY,option_config_count-$81, 80,0,"Config: %-8s",0
-	.db "Select to set appearance and\n frameskip behavior.",0
-	.db ITEM_LINK,2, 100,0,"Graphics Options",0
-	.db "Select to change the in-game behavior\n of buttons and arrow keys.",0
-	.db ITEM_LINK,3, 110,0,"Control Options",0
+
+	.db 5,8
+	.db "TI-Boy CE Alpha v0.2.1\nhttps://calc84maniac.github.io/tiboyce",0
+
+	.db "Select to load the game state from the\ncurrent slot for this game.\nPress left/right to change the slot.",0
+	.db ITEM_DIGIT | ITEM_ROMONLY
+	.db 0
+	.db 55,0
+	.db "Load State Slot %c",0
+
+	.db "Select to save the game state to the\ncurrent slot for this game.\nPress left/right to change the slot.",0
+	.db ITEM_DIGIT | ITEM_ROMONLY
+	.db 1
+	.db 65,0
+	.db "Save State Slot %c",0
+
+	.db "Choose configuration options to edit.\nGame-specific options show a '*'.\nPress DEL to revert an option.",0
+	.db ITEM_OPTION | ITEM_ROMONLY
+	.db -1
+	.db 85,0
+	.db "Config: %-8s",0
+
+	.db "Select to set appearance and\nframeskip behavior.",0
+	.db ITEM_LINK
+	.db GraphicsMenuIndex
+	.db 105,0
+	.db "Graphics Options",0
+
+	.db "Select to change the in-game behavior\nof buttons and arrow keys.",0
+	.db ITEM_LINK
+	.db ControlsMenuIndex
+	.db 115,0
+	.db "Control Options",0
+
 	.db "Select to manage miscellaneous options.",0
-	.db ITEM_LINK,4, 120,0,"Emulation Options",0
-	.db "Select to load a new game\n (will exit a currently playing game).",0
-	.db ITEM_LINK,1, 140,0,"Load new game",0
-	.db "Select to reset the Game Boy\n with the current game loaded.",0
-	.db ITEM_CMD | ITEM_ROMONLY,3, 150,0,"Restart game",0
-	.db "Select to exit this menu and\n resume gameplay.",0
-	.db ITEM_CMD | ITEM_ROMONLY,0, 160,0,"Return to game",0
-	.db "Select to exit the emulator and\n return to TI-OS.",0
-	.db ITEM_CMD,2, 180,0,"Exit TI-Boy CE",0
+	.db ITEM_LINK
+	.db EmulationMenuIndex
+	.db 125,0
+	.db "Emulation Options",0
+
+	.db "Select to load a new game\n(will exit a currently playing game).",0
+	.db ITEM_LINK
+	.db LoadGameMenuIndex
+	.db 145,0
+	.db "Load new game",0
+
+	.db "Select to reset the Game Boy\nwith the current game loaded.",0
+	.db ITEM_CMD | ITEM_ROMONLY
+	.db RestartExitReason
+	.db 155,0
+	.db "Restart game",0
+
+	.db "Select to exit this menu and\nresume gameplay.",0
+	.db ITEM_CMD | ITEM_ROMONLY
+	.db ReturnExitReason
+	.db 165,0
+	.db "Return to game",0
+
+	.db "Select to exit the emulator and\nreturn to TI-OS.",0
+	.db ITEM_CMD
+	.db ExitExitReason
+	.db 185,0
+	.db "Exit TI-Boy CE",0
 	
 NoRomLoadedDescription:
 	.db _-$-1,"No ROM currently loaded"
@@ -1416,94 +1452,237 @@ _
 	
 LoadGameMenu:
 	.db 1
-	.db 5,14
+
+	.db 10,14
 	.db "Load New ROM",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 185,1,"Back",0
+	.db ITEM_LINK
+	.db MainMenuIndex
+	.db 185,0
+	.db "Back",0
 	
 LoadRomHelpText:
-	.db "Press 2nd/Enter to start the game.\n Press left/right to scroll pages.\n Press DEL to delete ROM files.",0
+	.db "Press 2nd/Enter to start the game.\nPress left/right to scroll pages.\nPress DEL to delete ROM files.",0
 	
 LoadRomNoRomsText:
 	.db "No ROMs found!",0
 	
 GraphicsMenu:
 	.db 10
-	.db 5,12,"Graphics Options",0
+
+	.db 10,12
+	.db "Graphics Options",0
+
 	.db "",0
-	.db ITEM_OPTION,6, 60,1,"Scaling mode: %-10s",0
-	.db "Static: Scale absolutely.\n Scrolling: Scale relative to tilemap.",0
-	.db ITEM_OPTION,9, 70,1,"Scaling type: %-9s",0
-	.db "Display a skin in \"no scaling\" mode.\n Requires the TIBoySkn.8xv AppVar.",0
-	.db ITEM_OPTION,7, 80,1,"Skin display: %-3s",0
-	.db "Off: Do not skip any frames.\n Auto: Skip up to N frames as needed.\n Manual: Render 1 of each N+1 frames.",0
-	.db ITEM_OPTION,0, 100,1,"Frameskip type: %-6s",0
+	.db ITEM_OPTION
+	.db ScalingMode-OptionConfig
+	.db 55,0
+	.db "Scaling mode: %-10s",0
+
+	.db "Static: Scale absolutely.\nScrolling: Scale relative to tilemap.",0
+	.db ITEM_OPTION
+	.db ScalingType-OptionConfig
+	.db 65,0
+	.db "Scaling type: %-9s",0
+
+	.db "Display a skin in \"no scaling\" mode.\nRequires the TIBoySkn.8xv AppVar.",0
+	.db ITEM_OPTION
+	.db SkinDisplay-OptionConfig
+	.db 75,0
+	.db "Skin display: %-3s",0
+
+	.db "Off: Do not skip any frames.\nAuto: Skip up to N frames as needed.\nManual: Render 1 of each N+1 frames.",0
+	.db ITEM_OPTION
+	.db FrameskipType-OptionConfig
+	.db 95,0
+	.db "Frameskip type: %-6s",0
+
 	.db "",0
-	.db ITEM_DIGIT,2, 110,1,"Frameskip value: %u",0
-	.db "Show percentage of real GB performance.\n Turbo: Display when turbo is activated.\n Slowdown: Display when below fullspeed.",0
-	.db ITEM_OPTION,1, 130,1,"Speed display: %-8s",0
+	.db ITEM_DIGIT
+	.db 2
+	.db 105,0
+	.db "Frameskip value: %u",0
+
+	.db "Show percentage of real GB performance.\nTurbo: Display when turbo is activated.\nSlowdown: Display when below fullspeed.",0
+	.db ITEM_OPTION
+	.db SpeedDisplay-OptionConfig
+	.db 125,0
+	.db "Speed display: %-8s",0
+
 	.db "Display emulator message overlays.",0
-	.db ITEM_OPTION,10, 140,1,"Message display: %-3s",0
-	.db "Default: Use GBC game-specific palette.\n Others: Use GBC manual palette.",0
-	.db ITEM_OPTION,3, 160,1,"GB palette selection: %-10s",0
-	.db "Off: Use specified colors directly.\n GBC: Adjust to emulate a GBC display.\n GBA: Adjust to emulate a GBA display.",0
-	.db ITEM_OPTION,11, 170,1,"Adjust colors: %-3s",0
+	.db ITEM_OPTION
+	.db MessageDisplay-OptionConfig
+	.db 135,0
+	.db "Message display: %-3s",0
+
+	.db "Default: Use GBC game-specific palette.\nOthers: Use GBC manual palette.",0
+	.db ITEM_OPTION
+	.db PaletteSelection-OptionConfig
+	.db 155,0
+	.db "GB palette selection: %-10s",0
+
+	.db "Off: Use specified colors directly.\nGBC: Adjust to emulate a GBC display.\nGBA: Adjust to emulate a GBA display.",0
+	.db ITEM_OPTION
+	.db AdjustColors-OptionConfig
+	.db 165,0
+	.db "Adjust colors: %-3s",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 190,1,"Back",0
+	.db ITEM_LINK
+	.db MainMenuIndex
+	.db 185,0
+	.db "Back",0
 	
 ControlsMenu:
 	.db 16
-	.db 5,12,"Control Options",0
+
+	.db 10,12
+	.db "Control Options",0
+
 	.db "",0
-	.db ITEM_KEY,1,  50,1,"Right: %-9s",0
+	.db ITEM_KEY
+	.db RightKey-OptionConfig
+	.db  55,0
+	.db "Right: %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,2,  60,1,"Left:  %-9s",0
+	.db ITEM_KEY
+	.db LeftKey-OptionConfig
+	.db  65,0
+	.db "Left:  %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,3,  70,1,"Up:    %-9s",0
+	.db ITEM_KEY
+	.db UpKey-OptionConfig
+	.db  75,0
+	.db "Up:    %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,4,  80,1,"Down:  %-9s",0
+	.db ITEM_KEY
+	.db DownKey-OptionConfig
+	.db  85,0
+	.db "Down:  %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,5, 50,19,"A:      %-9s",0
+	.db ITEM_KEY
+	.db AKey-OptionConfig
+	.db 55,20
+	.db "A:      %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,6, 60,19,"B:      %-9s",0
+	.db ITEM_KEY
+	.db BKey-OptionConfig
+	.db 65,20
+	.db "B:      %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,7, 70,19,"Select: %-9s",0
+	.db ITEM_KEY
+	.db SelectKey-OptionConfig
+	.db 75,20
+	.db "Select: %-9s",0
+
 	.db "",0
-	.db ITEM_KEY,8, 80,19,"Start:  %-9s",0
+	.db ITEM_KEY
+	.db StartKey-OptionConfig
+	.db 85,20
+	.db "Start:  %-9s",0
+
 	.db "Open the emulator menu.",0
-	.db ITEM_KEY,9, 100,1,"Open menu:       %-9s",0
-	.db "Enable or toggle turbo mode.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,0, 110,1,"Turbo mode:      %-9s",0
-	.db "Save state to the current slot.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,10, 120,1,"Save state:      %-9s",0
-	.db "Load state from the current slot.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,11, 130,1,"Load state:      %-9s",0
-	.db "Show or select the current state slot.\n Press a number while holding to select.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,12, 140,1,"State slot:      %-9s",0
-	.db "Turn screen brightness up.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,13, 150,1,"Brightness up:   %-9s",0
-	.db "Turn screen brightness down.\n Press DEL to unmap this key.",0
-	.db ITEM_KEY,14, 160,1,"Brightness down: %-9s",0
+	.db ITEM_KEY
+	.db MenuKey-OptionConfig
+	.db 105,0
+	.db "Open menu:       %-9s",0
+
+	.db "Enable or toggle turbo mode.\nPress DEL to unmap this key.",0
+	.db ITEM_KEY
+	.db TurboKey-OptionConfig
+	.db 115,0
+	.db "Turbo mode:      %-9s",0
+
+	.db "Save state to the current slot.\nPress DEL to unmap this key.",0
+	.db ITEM_KEY
+	.db SaveStateKey-OptionConfig
+	.db 125,0
+	.db "Save state:      %-9s",0
+
+	.db "Load state from the current slot.\nPress DEL to unmap this key.",0
+	.db ITEM_KEY
+	.db LoadStateKey-OptionConfig
+	.db 135,0
+	.db "Load state:      %-9s",0
+
+	.db "Show or select the current state slot.\nPress a number while holding to select.\nPress DEL to unmap this key.",0
+	.db ITEM_KEY
+	.db StateKey-OptionConfig
+	.db 145,0
+	.db "State slot:      %-9s",0
+
+	.db "Turn screen brightness up.\nPress DEL to unmap this key.",0
+	.db ITEM_KEY
+	.db BrightnessUpKey-OptionConfig
+	.db 155,0
+	.db "Brightness up:   %-9s",0
+
+	.db "Turn screen brightness down.\nPress DEL to unmap this key.",0
+	.db ITEM_KEY
+	.db BrightnessDownKey-OptionConfig
+	.db 165,0
+	.db "Brightness down: %-9s",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 190,1,"Back",0
+	.db ITEM_LINK
+	.db MainMenuIndex
+	.db 185,0
+	.db "Back",0
 	
 EmulationMenu:
 	.db 7
-	.db 5,11,"Emulation Options",0
-	.db "Preferred Game Boy model to emulate.\n GBC will only be used if compatible.\n Requires game restart to take effect.",0
-	.db ITEM_OPTION,13, 50,1,"Preferred model: %-15s",0
-	.db "Automatically save state on ROM exit.\n State will be resumed upon next load.",0
-	.db ITEM_OPTION,2, 70,1,"Auto save state: %-3s",0
+
+	.db 10,11
+	.db "Emulation Options",0
+
+	.db "Preferred Game Boy model to emulate.\nGBC will only be used if compatible.\nRequires game restart to take effect.",0
+	.db ITEM_OPTION
+	.db PreferredModel-OptionConfig
+	.db 55,0
+	.db "Preferred model: %-15s",0
+
+	.db "Automatically save state on ROM exit.\nState will be resumed upon next load.",0
+	.db ITEM_OPTION
+	.db AutoSaveState-OptionConfig
+	.db 75,0
+	.db "Auto save state: %-3s",0
+
 	.db "",0
-	.db ITEM_OPTION,12, 80,1,"Confirm state save/load: %-9s",0
+	.db ITEM_OPTION
+	.db ConfirmStateOperation-OptionConfig
+	.db 85,0
+	.db "Confirm state save/load: %-9s",0
+
 	.db "",0
-	.db ITEM_OPTION,8, 90,1,"Turbo mode: %-6s",0
-	.db "The time offset for games with clocks.\n Should match the time set in the OS.\n Relevant when sharing save files.",0
-	.db ITEM_OPTION,4, 110,1,"Time zone: UTC%-6s",0
+	.db ITEM_OPTION
+	.db TurboMode-OptionConfig
+	.db 95,0
+	.db "Turbo mode: %-6s",0
+
+	.db "The time offset for games with clocks.\nShould match the time set in the OS.\nRelevant when sharing save files.",0
+	.db ITEM_OPTION
+	.db TimeZone-OptionConfig
+	.db 105,0
+	.db "Time zone: UTC%-6s",0
+
 	.db "Set to on if DST is currently active.",0
-	.db ITEM_OPTION,5, 120,1,"Daylight Saving Time: %-3s",0
+	.db ITEM_OPTION
+	.db DaylightSavingTime-OptionConfig
+	.db 115,0
+	.db "Daylight Saving Time: %-3s",0
+
 	.db "Return to the main menu.",0
-	.db ITEM_LINK,0, 160,1,"Back",0
+	.db ITEM_LINK
+	.db MainMenuIndex
+	.db 185,0
+	.db "Back",0
 	
 OptionPreferredModel:
 	.db 3
@@ -1618,61 +1797,6 @@ OptionTimeZone:
 	.db "-1:00",0
 	
 KeyNames:
-	; 84 Plus CE keys
-	.db "(press)",0
-	.db "down",0
-	.db "left",0
-	.db "right",0
-	.db "up",0
-	.db 0,0,0,0
-	.db "enter",0
-	.db "+",0
-	.db "-",0
-	.db "x",0
-	.db "div",0
-	.db "^",0
-	.db "clear",0
-	.db 0
-	.db "(-)",0
-	.db "3",0
-	.db "6",0
-	.db "9",0
-	.db ")",0
-	.db "tan",0
-	.db "vars",0
-	.db 0
-	.db ".",0
-	.db "2",0
-	.db "5",0
-	.db "8",0
-	.db "(",0
-	.db "cos",0
-	.db "prgm",0
-	.db "stat",0
-	.db "0",0
-	.db "1",0
-	.db "4",0
-	.db "7",0
-	.db ",",0
-	.db "sin",0
-	.db "apps",0
-	.db "XT0n",0
-	.db "(none)",0
-	.db "sto>",0
-	.db "ln",0
-	.db "log",0
-	.db "x^2",0
-	.db "x^-1",0
-	.db "math",0
-	.db "alpha",0
-	.db "graph",0
-	.db "trace",0
-	.db "zoom",0
-	.db "window",0
-	.db "y=",0
-	.db "2nd",0
-	.db "mode",0
-	.db "del",0
 	; 83 Premium CE keys
 	.db "(appuyer)",0
 	.db "bas",0
@@ -1728,6 +1852,61 @@ KeyNames:
 	.db "2nde",0
 	.db "mode",0
 	.db "suppr",0
+	; 84 Plus CE keys
+	.db "(press)",0
+	.db "down",0
+	.db "left",0
+	.db "right",0
+	.db "up",0
+	.db 0,0,0,0
+	.db "enter",0
+	.db "+",0
+	.db "-",0
+	.db "x",0
+	.db "div",0
+	.db "^",0
+	.db "clear",0
+	.db 0
+	.db "(-)",0
+	.db "3",0
+	.db "6",0
+	.db "9",0
+	.db ")",0
+	.db "tan",0
+	.db "vars",0
+	.db 0
+	.db ".",0
+	.db "2",0
+	.db "5",0
+	.db "8",0
+	.db "(",0
+	.db "cos",0
+	.db "prgm",0
+	.db "stat",0
+	.db "0",0
+	.db "1",0
+	.db "4",0
+	.db "7",0
+	.db ",",0
+	.db "sin",0
+	.db "apps",0
+	.db "XT0n",0
+	.db "(none)",0
+	.db "sto>",0
+	.db "ln",0
+	.db "log",0
+	.db "x^2",0
+	.db "x^-1",0
+	.db "math",0
+	.db "alpha",0
+	.db "graph",0
+	.db "trace",0
+	.db "zoom",0
+	.db "window",0
+	.db "y=",0
+	.db "2nd",0
+	.db "mode",0
+	.db "del",0
 	
 KeySMCList:
 	.db key_smc_right - key_smc_turbo - 1

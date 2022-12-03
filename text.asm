@@ -58,22 +58,28 @@ _
 	jp reset_preserved_area
 	
 PutEmulatorMessage:
-	xor a
-	ld (cursorCol),a
-	ld (cursorRow),a
-	; Modify PutChar to use a 160-pixel wide buffer
-	ld (PutChar_SmallBufferSMC1),a
-	ld a,(160-8)/2
-	ld (PutChar_SmallBufferSMC2),a
 	ld a,BLACK
 	call SetStringBgColor
-	ld a,WHITE
-	ACALL(PutStringColor)
+	; Modify PutChar to use a 160-pixel wide buffer
+	push hl
+	 xor a
+	 ld hl,PutChar_SmallBufferSMC1
+	 ld (hl),a			; nop
+#if (PutChar_SmallBufferSMC1>>8)!=(PutChar_SmallBufferSMC2>>8)
+.error "(PutChar_SmallBufferSMC1>>8)!=(PutChar_SmallBufferSMC2>>8)"
+#endif
+	 ld l,PutChar_SmallBufferSMC2&$FF
+	 ld (hl),(160-8)/2
+	 ld c,a
+	 ld b,a
+	 ld a,WHITE
+	 ex (sp),hl
+	 ACALL(PutStringColorXY)
+	pop hl
 	; Restore PutChar to use a 320-pixel wide buffer
-	ld a,$29	;ADD HL,HL
-	ld (PutChar_SmallBufferSMC1),a
-	ld a,(320-8)/2
-	ld (PutChar_SmallBufferSMC2),a
+	ld (hl),(320-8)/2
+	ld l,PutChar_SmallBufferSMC1&$FF
+	ld (hl),$09			; add hl,bc
 	
 	ld a,BLUE
 	call SetStringBgColor
@@ -82,8 +88,11 @@ PutEmulatorMessage:
 	add hl,hl
 	ld h,10
 	jp PutEmulatorMessageRet
-	
-	
+
+	; Call like printf, A=color, H=x (column), L=y
+PutStringFormatColorXY:
+	ld (cursorRowCol),hl
+
 	; Call like printf, A=color
 PutStringFormatColor:
 	call SetStringColor
@@ -96,7 +105,11 @@ PutStringFormat:
 	pop hl
 	push ix
 	jr PutString
-	
+
+	; HL points to string, A=color, B=x (column), C=y
+PutStringColorXY:
+	ld (cursorRowCol),bc
+
 	; HL points to string, A=color
 PutStringColor:
 	call SetStringColor
@@ -111,7 +124,10 @@ PutString:
 	 call PutChar
 	pop hl
 	jr PutString
-	
+
+PutNStringColorXY:
+	ld (cursorRowCol),bc
+
 PutNStringColor:
 	call SetStringColor
 	
@@ -130,17 +146,14 @@ PutNString_B:
 	ret
 	
 PutNewLine:
-	push hl
-	 ld hl,cursorCol
-	 ld (hl),0
-	 inc hl
-	 ld a,(hl)
-	 add a,10
-	 cp 240
-	 jr nc,_
-	 ld (hl),a
-_
-	pop hl
+	ld hl,cursorRowCol+1
+	ld (hl),1
+	dec hl
+	ld a,(hl)
+	cp a,240
+	ret nc
+	add a,10
+	ld (hl),a
 	ret
 
 font:

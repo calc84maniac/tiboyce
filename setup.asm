@@ -1,7 +1,6 @@
-MENU_ITEM_COUNT = 15
-	
-	.org 0
 Startup:
+	ld bc,-arc_start
+	add hl,bc
 	ld (ArcBase),hl
 	
 	; Get the calculator type from the OS header
@@ -2889,14 +2888,9 @@ DisplayErrorAny:
 	  ACALL(ClearMenuBuffer)
 	 pop hl
 	 push bc
-	  
-	  ld a,5
-	  ld (cursorRow),a
-	  ld a,1
-	  ld (cursorCol),a
-	   
 	  ld a,WHITE
-	  ACALL(PutStringColor)
+	  ld bc,1<<8|5
+	  ACALL(PutStringColorXY)
 	   
 	  APTR(error_messages)
 	 pop bc
@@ -4265,13 +4259,13 @@ error_messages:
 	.db 0
 	DEFINE_ERROR("ERROR_FILE_MISSING", "Missing AppVar %s")
 	DEFINE_ERROR("ERROR_FILE_INVALID", "Invalid AppVar %s")
-	DEFINE_ERROR("ERROR_NOT_ENOUGH_ARCHIVE", "Failed to archive AppVar\n %s")
+	DEFINE_ERROR("ERROR_NOT_ENOUGH_ARCHIVE", "Failed to archive AppVar\n%s")
 	DEFINE_ERROR("ERROR_UNSUPPORTED_MBC", "Unsupported cartridge type %02X")
 	DEFINE_ERROR("ERROR_INVALID_ROM", "ROM is invalid")
 	DEFINE_ERROR("ERROR_NOT_ENOUGH_MEMORY", "Need %d more bytes free RAM")
 	DEFINE_ERROR("ERROR_RUNTIME", "Encountered a runtime error!")
-	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Ran an invalid Game Boy opcode\n at %06X")
-	DEFINE_ERROR("ERROR_KEY_CONFLICT", "Duplicate key mappings in\n per-game config have been removed")
+	DEFINE_ERROR("ERROR_INVALID_OPCODE", "Ran an invalid Game Boy opcode\nat %06X")
+	DEFINE_ERROR("ERROR_KEY_CONFLICT", "Duplicate key mappings in\nper-game config have been removed")
 	
 ErrorNoROMsFound:
 	.db "No ROMs found!",0

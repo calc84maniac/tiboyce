@@ -852,11 +852,13 @@ recompile_struct = z80codebase + $010000
 ; and jumps/calls to banked regions use the cache upon a bank mismatch.
 ; Buffer end must be 256-byte aligned.
 recompile_cache_end = gb_frame_buffer_1
-	
+
 	.db "TIBoyEXE",$01
 	.dw program_size
+header_size = $
 	
 	.org userMem
+program_start:
 	
 ; Calls a routine located in the archived appvar.
 ; The 16-bit offset (plus 1) is stored at the return address.
@@ -1264,9 +1266,20 @@ PutChar_BgColorSMC1 = $+1
 	xor BLUE
 	ld (PutChar_ColorSMC),a
 	ret
-	
-; Renders the character in A on the current buffer at (cursorRow), (cursorCol).
+
+; Renders the character in A on the current buffer at (*B, *C) and updates the
+; cursor location.
+PutCharXY:
+	ld (cursorRowCol),bc
+
+; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
 PutChar:
+	ld bc,0
+cursorRowCol = $-3
+; The current text output row, in pixels (0-230).
+cursorRow = cursorRowCol
+; The current text output column, in characters (0-39).
+cursorCol = cursorRow+1
 	; Convert to font index. 0 is treated as a space, and 1-31 as newline.
 	or a
 	jr z,_
@@ -1275,24 +1288,24 @@ PutChar:
 	AJUMP(PutNewLine)
 _
 	; Put pointer to character data in appvar in DE.
-	ld c,a
-	ld b,10
-	mlt bc
-	APTR_INLINE(font)
-	add hl,bc
+	ld hl,(ArcBase)
+	ld de,font
+	add hl,de
+	ld e,a
+	ld d,10
+	mlt de
+	add hl,de
 	ex de,hl
-	
 	; Get pointer to buffer output location in HL.
-	ld hl,(cursorCol)
 	; Refuse to draw past the right side of the screen.
-	ld a,l
+	ld a,b
 	cp 40
 	ret nc
-	ld l,160
-	mlt hl
+	ld b,160
+	mlt bc
+	ld hl,(current_buffer)
+	add hl,bc
 PutChar_SmallBufferSMC1 = $
-	add hl,hl
-	ld bc,(current_buffer)
 	add hl,bc
 	ld c,a
 	ld b,8
@@ -1615,13 +1628,7 @@ default_palette:
 ; The digits for performance display.
 perf_digits:
 	.db 0,0,0,0,10
-	
-; The current text output column, in characters (0-39).
-cursorCol:
-	.db 0
-; The current text output row, in pixels (0-230).
-cursorRow:
-	.db 0
+
 ; The output buffer for printf, large enough for two rows of text.
 text_buffer:
 	.block 83
@@ -1698,7 +1705,7 @@ originalLcdSettings:
 	#include "waitloop.asm"
 	#include "lzf.asm"
 	
-	.echo "User RAM code size: ", $ - userMem
+	.echo "User RAM code size: ", $ - program_start
 	
 	; Pad to align vram_gbc_start
 	.block (7-$) & 15
@@ -1764,7 +1771,38 @@ PreferredModel:
 	.db key_config_count
 ; Key configuration. Each is a GetCSC scan code.
 KeyConfig:
-	.db 51,3,2,4,1,54,48,40,55,15,42,43,44,10,11
+TurboKey:
+	.db 51
+UndeletableKeysStart:
+RightKey:
+	.db 3
+LeftKey:
+	.db 2
+UpKey:
+	.db 4
+DownKey:
+	.db 1
+AKey:
+	.db 54
+BKey:
+	.db 48
+SelectKey:
+	.db 40
+StartKey:
+	.db 55
+MenuKey:
+	.db 15
+UndeletableKeysEnd:
+SaveStateKey:
+	.db 42
+LoadStateKey:
+	.db 43
+StateKey:
+	.db 44
+BrightnessUpKey:
+	.db 10
+BrightnessDownKey:
+	.db 11
 	
 config_end:
 option_config_count = (KeyConfig-1) - FrameskipValue
@@ -1772,7 +1810,7 @@ key_config_count = config_end - KeyConfig
 	
 ; The RAM program ends here. Should be at an odd address.
 program_end:
-program_size = program_end - userMem
+program_size = program_end - program_start
 	.echo "User RAM program size: ", program_size
 
 ; Space for the game-specific config is located at the end of the program.
@@ -1829,7 +1867,11 @@ save_state_gbc_end = obj_palettes_saved + $0040
 
 save_state_size = save_state_end - save_state_start
 save_state_gbc_size = save_state_gbc_end - save_state_start
-	
+
+arc_offset = $15
+arc_program_start = arc_offset+header_size
+	.org arc_program_start+program_size
+arc_start:
 ; These files remain in the archived appvar.
 	#include "setup.asm"
 	#include "text.asm"
@@ -1846,5 +1888,7 @@ CpuSpeedRelocs:
 	.dw nextupdatecycle_LY
 	buf(1)
 	run()
+arc_end:
+arc_size = arc_end - arc_start
 
-	.echo "Total size: ", program_size + $
+	.echo "Total size: ", arc_end-arc_offset

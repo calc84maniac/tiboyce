@@ -1353,10 +1353,9 @@ set_cpu_any_speed:
 	ld (z80codebase+updateSTAT_full_speed_smc),a
 	
 	ld ix,(ArcBase)
-	ld bc,cpu_speed_ram_start - program_end
+	ld bc,arc_program_start + (cpu_speed_ram_start - program_start)
 	add ix,bc
 	ld hl,cpu_speed_ram_start
-	inc.s bc
 	call apply_cpu_speed
 	
 	ld ix,(ArcBase)
