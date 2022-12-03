@@ -824,6 +824,12 @@ callstack_overflow_helper:
 	push.l hl
 	pop hl
 	ld (callstack_overflow_helper_smc),hl
+#ifdef FASTLOG
+	push af
+	push hl
+	FASTLOG_EVENT_Z80(CALLSTACK_OVERFLOW, 2)
+	pop af
+#endif
 	pop hl
 	ld sp,myz80stack - 4
 	push hl
@@ -1650,6 +1656,15 @@ decode_jump:
 	   ld a,(hl)
 	   inc hl
 	   ld de,(hl)
+#ifdef FASTLOG
+	   push af
+	   push de
+	   push hl
+	   push ix
+	   FASTLOG_EVENT_Z80(DECODE_JUMP, 8)
+	   dec sp \ dec sp
+	   pop af
+#endif
 	   jp.lil decode_jump_helper
 decode_jump_return:
 	  pop hl

@@ -559,6 +559,19 @@ _
 	ld (hl),0
 	ldir
 #endif
+#ifdef FUZZ_SAFERAM
+	; Randomize SafeRAM for fuzz testing
+	ld hl,pixelShadow
+	ld de,rombankLUT
+_
+	ld a,r
+	ld (hl),a
+	inc hl
+	or a
+	sbc hl,de
+	add hl,de
+	jr nz,-_
+#endif
 	
 	ld iy,state_start+state_size
 	ld (saveSP),sp

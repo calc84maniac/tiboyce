@@ -537,9 +537,11 @@ lookup_gb_finish:
 	pop af
 #endif
 #ifdef FASTLOG
+	push af
 	push de
 	FASTLOG_EVENT(LOOKUP_GB_FOUND, 2)
 	inc sp
+	pop af
 #endif
 	ret
 
@@ -991,11 +993,14 @@ lookup_code_link_internal_with_bank:
 	bit 7,h
 	jr z,lookup_code_with_bank
 #ifdef FASTLOG
+	ex (sp),hl
+	push hl
 	push hl
 	push hl
 	push de
-	FASTLOG_EVENT(LOOKUP_JIT_INTERNAL, 6)
+	FASTLOG_EVENT(LOOKUP_JIT_INTERNAL, 9)
 	pop hl
+	ex (sp),hl
 #endif
 	xor a
 	; We're running from RAM, check if destination is in running block
@@ -1050,7 +1055,10 @@ lookup_code:
 lookup_code_with_bank:
 #ifdef FASTLOG
 	push de
-	FASTLOG_EVENT(LOOKUP_JIT, 3)
+	FASTLOG_EVENT(LOOKUP_JIT, 6)
+	dec sp
+	dec sp
+	dec sp
 #endif
 	ld bc,0
 	push iy
@@ -1687,6 +1695,11 @@ coherency_flush:
 ; Destroys None
 generate_opcodes:
 	push hl
+#ifdef DEBUG
+	 ld a,(recompile_cycle_offset_sp)
+	 inc a
+	 jr nz,$
+#endif
 	 lea hl,ix+7
 	 ld (opgen_last_cycle_count_smc),hl
 	 or a
@@ -1740,6 +1753,11 @@ _
 	  call m,opgen_region_overflow
 	 pop ix
 	 ex de,hl
+#ifdef DEBUG
+	 ld a,(recompile_cycle_offset_sp)
+	 inc a
+	 jr nz,$
+#endif
 	 ; Get the size of the GB opcodes (minus 1) and save it
 	 ld a,l
 	 sub (ix+2)

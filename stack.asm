@@ -177,6 +177,15 @@ shift_stack_window_higher:
 	ld h,a
 shift_stack_window_higher_preserved_a:
 	exx
+#ifdef FASTLOG
+	ld b,iyl
+	push bc
+	inc sp
+	ld hl,(stack_window_base)
+	push hl
+	FASTLOG_EVENT_Z80(SHIFT_STACK_HIGHER, 7)
+	dec sp \ dec sp \ dec sp \ dec sp
+#endif
 	ld hl,stack_window_base
 	; Attempt shifting the stack window by 64 bytes
 	ld a,iyl
@@ -291,6 +300,15 @@ shift_stack_window_lower:
 shift_stack_window_lower_preserved_a:
 	exx
 shift_stack_window_lower_preserved_a_swapped:
+#ifdef FASTLOG
+	ld b,iyl
+	push bc
+	inc sp
+	ld hl,(stack_window_base)
+	push hl
+	FASTLOG_EVENT_Z80(SHIFT_STACK_LOWER, 7)
+	dec sp \ dec sp \ dec sp \ dec sp
+#endif
 	ld hl,stack_window_base
 	; Attempt shifting the stack window by 64 bytes
 	ld a,iyl
@@ -468,6 +486,10 @@ ophandler31:
 ; Destroys: HL, BC', E', HL'
 set_gb_stack:
 	push af
+#ifdef FASTLOG
+	 push bc
+	 FASTLOG_EVENT_Z80(SET_STACK, 2)
+#endif
 	 ; Determine the new stack window start address.
 	 ; Aligns to 128 bytes by default for simplicity.
 	 ; If the new stack pointer is on a 128-byte boundary, the preceding
@@ -666,6 +688,16 @@ pop_apply_stack_offset_smc:
 	exx
 	ld a,l
 apply_stack_offset_smc:
+#ifdef FASTLOG
+	push af
+	ld b,a
+	ld c,iyl
+	push bc
+	ld hl,(stack_window_base)
+	push hl
+	FASTLOG_EVENT_Z80(APPLY_STACK_OFFSET, 4)
+	pop af
+#endif
 	exx
 apply_stack_offset_smc_offset_smc = $+1
 	jr apply_stack_offset_smc_short_ptr

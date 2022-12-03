@@ -324,8 +324,13 @@ keys_done:
 	    or a
 	    jr z,_
 	    ld (mpIntAcknowledge),a
+#ifdef FASTLOG
+	    ld hl,runtime_error
+	    jr do_exit_any
+#else
 	    inc a
 	    ld (exitReason),a
+#endif
 _
 	    ; Reasons for exiting:
 	    ; 1: load new game
@@ -339,6 +344,7 @@ exitReason = $+1
 	    jr z,_
 do_exit:
 	    APTR(ExitEmulation)
+do_exit_any:
 	    ex de,hl
 	    ld hl,z80codebase+event_not_expired
 	    ; Emit JP.LIL ExitEmulation
