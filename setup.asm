@@ -3954,7 +3954,7 @@ customHardwareSettings:
 	;mpIntLatch
 	.dl $000011
 	;mpFlashWaitStates
-	.db 2
+	.db 3
 	;MBASE
 	.db z80codebase >> 16
 	;mpKeypadScanMode
