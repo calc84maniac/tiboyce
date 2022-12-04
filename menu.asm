@@ -1396,7 +1396,7 @@ MainMenu:
 	.db 10
 
 	.db 5,8
-	.db "TI-Boy CE Alpha v0.2.1\nhttps://calc84maniac.github.io/tiboyce",0
+	.db "TI-Boy CE Alpha v0.3.0\nhttps://calc84maniac.github.io/tiboyce",0
 
 	.db "Select to load the game state from the\ncurrent slot for this game.\nPress left/right to change the slot.",0
 	.db ITEM_DIGIT | ITEM_ROMONLY

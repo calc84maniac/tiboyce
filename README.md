@@ -5,7 +5,7 @@
 
 TI-Boy CE is a Game Boy emulator for the TI-84 Plus CE and the TI-83 Premium CE graphing calculators.
 
-Currently only the original Game Boy is supported, no Game Boy Color (and never Game Boy Advance).
+Now supports both the original Game Boy and Game Boy Color, but not Super Game Boy (and never Game Boy Advance).
 
 This emulator is currently in the alpha state, so while it is intended to be stable, it is possible that it could crash and cause data loss. It is advised to put any important files in Archive memory before running the emulator.
 
@@ -13,13 +13,15 @@ Grab the latest pre-built releases at <https://github.com/calc84maniac/tiboyce/r
 
 ## Features
 
-*   Emulates original Game Boy hardware (except audio and linking)
+*   Emulates Game Boy and Game Boy Color hardware (except audio and linking)
+*   Supports GBA backwards-compatibility to unlock features in some GBC games
 *   Emulates real-time clock for certain cartridges
 *   Save states with compression
-*   Fullscreen and 1:1 scaling modes (with optional skin)
+*   Fullscreen and 1:1 scaling modes (with optional skins)
 *   Automatic and manual frameskip
 *   Turbo mode (with speed display)
 *   GBC-style selectable color palettes for Game Boy games
+*   Color correction to approximate the color spectrum of a GBC or GBA screen
 *   Customizable controls
 *   Per-game configuration settings
 
@@ -46,7 +48,7 @@ To convert save files between PC and AppVar formats, see the [Converting Save Fi
 
 ## Running the emulator
 
-Send the `TIBOYCE.8xp` and `TIBoyDat.8xv` files to the calculator. Optionally also send the `TIBoySkn.8xv` file which contains a skin image.
+Send the `TIBOYCE.8xp` and `TIBoyDat.8xv` files to the calculator. Optionally also send the `TIBoySkn.8xv` file which contains skin images.
 
 If your calculator is running OS v5.3 or newer, you can keep all of these files in Archive and run `prgmTIBOYCE` from the <kbd>prgm</kbd> menu.
 
@@ -81,13 +83,15 @@ You should now see a list of the ROMs on the calculator. Choose one with <kbd>�
 *   Select item: <kbd>2nd</kbd> <kbd>enter</kbd>
 *   Delete ROM or save state: <kbd>del</kbd>
 *   Unmap key or remove per-game config item: <kbd>del</kbd>
+*   Brightness up: <kbd>+</kbd>
+*   Brightness down: <kbd>-</kbd>
 *   Close menu: <kbd>clear</kbd>
 
 ## Configuration
 
 All emulator configuration items can be edited on either a global or per-game basis. The configuration to edit can be selected on the main menu after loading a ROM.
 
-When editing the per-game configuration, options used from the global configuration are marked with a `*`. Editing such an item will override the global configuration. Press <kbd>del</kbd> on a per-game configuration item to revert it to global.
+When editing the per-game configuration, changing an option will override the global configuration and mark it with a `*`. Press <kbd>del</kbd> on an overridden configuration item to revert it to global.
 
 ### Graphics Options
 *   Scaling mode: Choose the display mode.
@@ -96,7 +100,7 @@ When editing the per-game configuration, options used from the global configurat
 *   Scaling type: Choose the scaling method to use for fullscreen mode.
     *   Static: The same horizontal lines on the screen are always doubled. This appears consistent but may cause shimmering effects when scrolling vertically.
     *   Scrolling: Attempts to double the same lines relative to the game's scrolling background. This reduces scrolling artifacts but may cause sudden shifts.
-*   Skin display: Choose whether to display the skin in no scaling mode. Requires the `TIBoySkn.8xv` file.
+*   Skin display: Choose whether to display a skin in no scaling mode. Requires the `TIBoySkn.8xv` file.
 *   Frameskip type: Choose the type of frameskip.
     *   Auto: Skip up to N frames as needed, or fewer if there is enough processing time. Always skips N frames when turbo mode is active.
     *   Manual: Always skip N frames, so 1 of every N+1 frames is rendered.
@@ -108,11 +112,11 @@ When editing the per-game configuration, options used from the global configurat
     *   Slowdown: Display when turbo mode is active, or when running below 100% speed.
     *   Always: Always display.
 *   Message display: Choose whether to display emulator message overlays, for example when a save state is loaded.
-*   Palette selection: Chooses GBC-style colorization options to apply to original Game Boy games.
+*   GB palette selection: Chooses GBC-style colorization options to apply to original Game Boy games.
     *   Default: Use the official palette for a game as a GBC would select. If no official palette exists, reverts to Classic.
     *   Classic: Use a green-ish palette to evoke the feel of an original Game Boy.
     *   Others: The palettes choosable on a GBC through button combinations are made available as additional options.
-*   Adjust colors: Choose whether to adjust colors to more closely mimic a GBC display. Ignored for the Classic palette.
+*   Adjust colors: Choose whether to adjust colors to more closely mimic a GBC or GBA display. Ignored for the Classic palette.
 
 ### Control options
 
@@ -123,8 +127,12 @@ If a chosen button is already mapped to another button, the two buttons are swap
 Emulator shortcut buttons, aside from the menu and quick exit buttons, may be unmapped using the <kbd>del</kbd> key.
 
 ### Emulation options
+*   Preferred model: Choose the preferred type of Game Boy to emulate. Requires a game restart to take effect.
+    *   Game Boy: Forces emulation of the original Game Boy, even for Game Boy Color enhanced titles.
+    *   Game Boy Color: Emulates a Game Boy Color if the title is enhanced, otherwise the original Game Boy.
+    *   GBA back-compat: Same as Game Boy Color, but tells the game that it is running on a Game Boy Advance.
 *   Auto save state: Choose whether to create an auto save state when exiting a game. This state is separate from slots 0-9, and is automatically loaded the next time the game is started.
-*   Confirm state save/load: Choose whether to prompt for confirmation when loading a state and/or overwriting a state. Useful to prevent accidental loss of progress.
+*   Confirm state save/load: Choose whether to prompt for confirmation when loading a state and/or overwriting a state. Useful to prevent accidental loss of progress. Restarting the game is also considered as loading a state.
 *   Turbo mode: Choose how turbo mode is activated.
     *   Toggle: Press the turbo button once to toggle the turbo mode on or off.
     *   Hold: Hold the turbo button to turn turbo mode on, and release the button to turn it off.
@@ -147,7 +155,7 @@ The various files used by the emulator are as follows (replace Name with ROM pre
 | TIBoyCE.8xp  | The executable launcher.                                     |
 | TIBoyCfg.8xv | The current emulator configuration.                          |
 | TIBoyDat.8xv | The core emulator data, loaded by the launcher.              |
-| TIBoySkn.8xv | An optional skin to be displayed in “no scaling” mode.       |
+| TIBoySkn.8xv | Optional skins to be displayed in “no scaling” mode.         |
 
 Note that save states cannot be loaded properly if the associated cartridge save data file is deleted or replaced. When transferring save states, make sure to include both the `St#` and `Sv#` files. However, this doesn't apply to games that have no cartridge save data in the first place.
 
@@ -176,7 +184,7 @@ If you get a missing DLL error when running the command-line utility, you may ne
 
 To build the emulator from source, first grab the latest release of [SPASM-ng](https://github.com/alberthdev/spasm-ng/releases).
 
-SPASM-ng v0.5-beta.3 is new enough to build properly; however, if you use that release you should ignore any warnings about file sizes exceeding 24KB.
+A build newer than SPASM-ng v0.5-beta.3 is required to build TI-Boy CE properly; currently, there is not a release corresponding to that so you must build it yourself.
 
 For simplicity's sake, I'll call the name of the executable `spasm` below. Run the following to produce the emulator files:
 ```
@@ -199,4 +207,4 @@ Report issues / bugs to the issue tracker, found here:
 ## License
 
 TI-Boy CE — a Game Boy emulator for the TI-84 Plus CE calculator family.
-Copyright © 2018 – 2021 Brendan Fletcher
+Copyright © 2018 – 2022 Brendan Fletcher
