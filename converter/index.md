@@ -12,7 +12,7 @@ sidebar_link: true
     #dlList li:before { content: '\2022'; margin-left: 0.5em; margin-right: 0.25em; }
 </style>
 
-Create .8xv files from your Game Boy ROM file: <input style="display: inline-block" type="file" accept=".gb,.gbc,.rom,.zip" onChange="fileLoad(event)"/>
+Create .8xv files from your Game Boy (Color) ROM file: <input style="display: inline-block" type="file" accept=".gb,.gbc,.rom,.zip" onChange="fileLoad(event)"/>
 
 File links will appear here (click to download):
 <ul id="dlList"></ul>

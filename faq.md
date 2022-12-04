@@ -25,10 +25,14 @@ sidebar_link: true
 **Can this play Game Boy Color games?**
 
 <p class="message">
-  Not for now, but support is currently being worked on for future versions. I can't make any promises about performance, though.
+  Yes! However, GBC is a stronger system so the performance may be worse, depending on the game.
   <br/><br/>
-  Note that some Game Boy Color games are compatible with the original Game Boy, and these can already run in TI-Boy but without full color.
-  The <a href="https://en.wikipedia.org/wiki/List_of_Game_Boy_Color_games">game list on Wikipedia</a> helpfully specifies these Dual Mode games.
+  Note that some games cannot be played at all due to storage limitations; the calculator has only 3MB of storage, and a number of GBC games are 4MB.
+  Some of these games may still fit if there is enough empty space in the ROM that can be trimmed by the converter (see the later FAQ about storage).
+  The approximate limit is when the ROM converter produces files numbered up to 40.
+  <br/><br/>
+  There are also some remaining issues to be resolved with certain games, mostly when they attempt to display more than 56 colors at once.
+  These games will run, but the colors may appear strange or the graphics garbled. This should be addressed in a future release.
 </p>
 
 **What about Game Boy Advance?**
@@ -37,7 +41,7 @@ sidebar_link: true
   No. Just no.
 </p>
 
-**My game isn't colorized, why not?**
+**My original Game Boy game isn't colorized, why not?**
 
 <p class="message">
   Only games in the Game Boy Color's colorization database will receive an automatic color palette.
