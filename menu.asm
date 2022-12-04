@@ -486,24 +486,22 @@ ShowConfirmationDialog:
 	ld b,2
 	ld c,b
 ConfirmationDialogDisplayLoop:
+	ld hl,1<<8|20
+	ld (cursorRowCol),hl
 	APTR(ConfirmText)
-	ld a,20
-	ld (cursorRow),a
 	push bc
 _
-	 ld a,1
-	 ld (cursorCol),a
 	 ld a,WHITE
-	 ld e,'>'
+	 ld e,'>'-' '
 	 djnz _
 	 ld a,OLIVE
-	 ld e,' '
+	 ld e,b ;' '-' '
 _
 	 call SetStringColor
 	 ld a,e
 	 push bc
 	  push hl
-	   call PutChar
+	   call PutCharTranslated
 	  pop hl
 	  ACALL(PutString)
 	 pop bc
@@ -922,8 +920,8 @@ _
 	  APTR(TitleChecksumFormat)
 	  push hl
 	   ld a,MAGENTA
-	   ld hl,1<<8|40
-	   ACALL(PutStringFormatColorXY)
+	   ld de,1<<8|40
+	   ACALL(PutStringFormatColorXYIgnoreInvalid)
 	  pop hl
 	 pop hl
 	pop hl

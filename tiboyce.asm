@@ -1273,6 +1273,9 @@ PutChar_BgColorSMC1 = $+1
 	ld (PutChar_ColorSMC),a
 	ret
 
+PutCharNewLine:
+	AJUMP(PutNewLine)
+
 ; Renders the character in A on the current buffer at (*B, *C) and updates the
 ; cursor location.
 PutCharXY:
@@ -1280,19 +1283,32 @@ PutCharXY:
 
 ; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
 PutChar:
+PutChar_DefaultInvalidSMC = $+1
+	ld b,0
+
+; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
+; Uses the value in B to specify an invalid character handler:
+; 0=Newline
+; 1=Don't display
+; 2=Box
+PutCharSpecifyInvalid:
+	; Translate to font index.
+	sub ' '
+	cp $7F-' '
+	jr c,PutCharTranslated
+	dec b
+	ret z
+	djnz PutCharNewLine
+	ld a,$7F-' '
+
+; Renders the pre-translated character index in A at (*cursorCol, *cursorRow).
+PutCharTranslated:
 	ld bc,0
 cursorRowCol = $-3
 ; The current text output row, in pixels (0-230).
 cursorRow = cursorRowCol
 ; The current text output column, in characters (0-39).
 cursorCol = cursorRow+1
-	; Convert to font index. 0 is treated as a space, and 1-31 as newline.
-	or a
-	jr z,_
-	sub ' '
-	jr nc,_
-	AJUMP(PutNewLine)
-_
 	; Put pointer to character data in appvar in DE.
 	ld hl,(ArcBase)
 	ld de,font

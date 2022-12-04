@@ -89,6 +89,12 @@ PutEmulatorMessage:
 	ld h,10
 	jp PutEmulatorMessageRet
 
+	; Call like printf, A=color, D=x (column), E=y
+PutStringFormatColorXYIgnoreInvalid:
+	ld hl,PutChar_DefaultInvalidSMC
+	ld (hl),1
+	ex de,hl
+
 	; Call like printf, A=color, H=x (column), L=y
 PutStringFormatColorXY:
 	ld (cursorRowCol),hl
@@ -119,11 +125,14 @@ PutString:
 	ld a,(hl)
 	inc hl
 	or a
-	ret z
+	jr z,_
 	push hl
 	 call PutChar
 	pop hl
 	jr PutString
+_
+	ld (PutChar_DefaultInvalidSMC),a
+	ret
 
 PutNStringColorXY:
 	ld (cursorRowCol),bc
@@ -139,12 +148,13 @@ PutNString_B:
 	 ld a,(hl)
 	 inc hl
 	 push hl
-	  call PutChar
+	  ld b,2 ; Display invalid characters as boxes
+	  call PutCharSpecifyInvalid
 	 pop hl
 	pop bc
 	djnz PutNString_B
 	ret
-	
+
 PutNewLine:
 	ld hl,cursorRowCol+1
 	ld (hl),1
