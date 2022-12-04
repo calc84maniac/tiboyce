@@ -461,14 +461,15 @@ ShowConfirmStateOperation:
 	call check_valid_state
 	dec a
 	ret m
+	ld de,ConfirmLoadState
+	ld hl,(main_menu_selection)
+ShowConfirmRestartOperation:
 	; Return NZ if confirmation is disabled for this type
 	ld ix,ConfirmStateOperation
 	call read_config_item
-	ld hl,main_menu_selection
-	and (hl)
+	and l
 	dec a
 	ret m
-	ld de,ConfirmLoadState
 	jr z,_
 	ld de,ConfirmSaveState
 _
@@ -637,11 +638,20 @@ RemapKey:
 	ld a,UNMAPPED_KEY
 	jr -_
 	
+CmdRestart:
+	; Use the Load State confirmation setting
+	ld l,1
+	ld de,ConfirmRestartGame
+	ACALL(ShowConfirmRestartOperation)
+	ld a,RestartExitReason
+	jr _
+	
 ItemSelectDigit:
 	cp 2
 	jr z,menu_loop
 	ACALL(ShowConfirmStateOperation)
 	ld a,4
+_
 	jr nz,CmdExit
 	xor a
 	jr ItemSelectLink
@@ -1304,6 +1314,9 @@ ConfirmLoadState:
 ConfirmSaveState:
 	.db "Overwrite state slot %c?",0
 	
+ConfirmRestartGame:
+	.db "Restart the Game Boy system?",0
+	
 TitleChecksumFormat:
 	.db "%.16s  %04X",0
 	
@@ -1344,7 +1357,7 @@ ReturnExitReason = ($-CmdList)/2
 ExitExitReason = ($-CmdList)/2
 	.dw CmdExit+1
 RestartExitReason = ($-CmdList)/2
-	.dw CmdExit+1
+	.dw CmdRestart+1
 	
 ItemDisplayCallbacks:
 	.dw ItemDisplayLink+1
