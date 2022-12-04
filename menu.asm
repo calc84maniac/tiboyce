@@ -654,6 +654,9 @@ emulator_menu_ingame:
 emulator_menu:
 	push af
 	 ACALL(BackupMiniScreen)
+	 .db $3E ;LD A,
+emulator_menu_no_backup:
+	push af
 	 ACALL(SetMenuWindow)
 	 ; If the state slot was changed, verify load state is valid
 	 ld hl,main_menu_selection

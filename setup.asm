@@ -2133,7 +2133,7 @@ DeleteInGame:
 	ACALL(DeleteSelectedFiles)
 	ACALL(SetCustomHardwareSettings)
 	ld a,(current_menu)
-	ACALL(emulator_menu)
+	ACALL(emulator_menu_no_backup)
 	ex af,af'
 	push af
 	 ACALL(RestoreOriginalHardwareSettings)
