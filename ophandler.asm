@@ -2022,6 +2022,7 @@ mbc_change_rom_bank_trim_msb:
 	ld l,(hl)
 	ld a,(z80codebase+curr_gb_stack_region)
 	cp rom_bank_base & $FF
+CallHL:
 	jp (hl)
 	
 mbc_change_rom_bank_trim_less:

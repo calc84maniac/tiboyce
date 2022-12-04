@@ -240,13 +240,7 @@ _
 ClearMenuBuffer:
 	ld hl,menu_frame_buffer
 	ld (current_buffer),hl
-	push hl
-	pop de
-	inc de
-	ld bc,320*240-1
-	ld (hl),BLUE
-	ldir
-	ret
+	MEMSET_FAST_TAIL(menu_frame_buffer, 320*240, BLUE)
 	
 	; Input: C = palette index, A = color adjust mode
 	; Output: BC = 0
@@ -894,13 +888,12 @@ redraw_current_menu:
 	; Apply configuration if ROM is loaded (updates palette settings)
 	ld a,(ROMName+1)
 	or a
-	jr z,_
 	push af
+	 jr z,_
 	 ACALL(ApplyConfiguration)
-	pop af
 _
-	
-	ACALL(ClearMenuBuffer)
+	 ACALL(ClearMenuBuffer)
+	pop af
 	
 	; Skip description display if on ROM list
 	ld hl,(current_menu)
@@ -944,15 +937,7 @@ draw_current_description:
 	
 draw_current_menu:
 	; Erase the help text
-	ld hl,menu_frame_buffer
-	ld de,320*205
-	add hl,de
-	push hl
-	pop de
-	inc de
-	ld bc,320*30-1
-	ld (hl),BLUE
-	ldir
+	MEMSET_FAST(menu_frame_buffer+(320*205), 320*30, BLUE)
 	
 	call get_current_menu_selection
 	ld a,(bc)

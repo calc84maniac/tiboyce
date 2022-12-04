@@ -1008,9 +1008,6 @@ Arc_Unarc_ErrorHandler:
 	pop af
 	ret
 	
-CallHL:
-	jp (hl)
-	
 	; Set ArcBase to -1 so the error handler won't try to call the appvar
 EpicFailure:
 	sbc hl,hl
@@ -1146,6 +1143,15 @@ _
 	ld bc,(((length / 24) + 1) % 256 * 256) | (((length / 24) / 256) + 1)
 	ld a,((8 - (length / 3 % 8)) * 4) | ((3 - (length % 3)) % 2 * 2) | ((3 - (length % 3)) / 2 % 2)
 	call memset_fast
+#endmacro
+	
+	; Tail call version
+#macro MEMSET_FAST_TAIL(start, length, byte)
+	ld hl,start + length
+	ld de,byte * $010101
+	ld bc,(((length / 24) + 1) % 256 * 256) | (((length / 24) / 256) + 1)
+	ld a,((8 - (length / 3 % 8)) * 4) | ((3 - (length % 3)) % 2 * 2) | ((3 - (length % 3)) / 2 % 2)
+	jp memset_fast
 #endmacro
 	
 memset_fast:
