@@ -1117,6 +1117,7 @@ draw_mini_screen_row_loop:
 	ret
 	
 	; Returns key code in A, or 0 if ON is pressed.
+	; Intercepts plus/minus presses for brightness changes.
 	; Also returns Z flag set if ON is pressed.
 WaitForKey:
 _
@@ -1125,18 +1126,30 @@ _
 	ACALL(GetKeyCode)
 	or a
 	jr nz,-_
-_
+wait_for_key_loop:
 	ld de,$000010
 	call ack_and_wait_for_interrupt
 	ACALL(GetKeyCode)
-	or a
+	sub 10
+	cp 2
+	jr c,wait_for_key_change_brightness
+	add a,10
 	ret nz
 	ld a,(mpIntMaskedStatus)
 	or a
-	jr z,-_
+	jr z,wait_for_key_loop
 	ld (mpIntAcknowledge),a
 	xor a
 	ret
+	
+wait_for_key_change_brightness:
+	add a,a
+	dec a
+	ld hl,mpBlLevel
+	add a,(hl)
+	jr z,wait_for_key_loop
+	ld (hl),a
+	jr wait_for_key_loop
 	
 GetKeyCode:
 	ld c,0
