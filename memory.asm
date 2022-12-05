@@ -775,6 +775,7 @@ patch_hl_hmem_access:
 	ret
 _
 	pop hl
+	push hl
 	dec hl
 	ld (hl),do_swap_hl_hram >> 8
 	dec hl
