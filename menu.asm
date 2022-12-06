@@ -1675,19 +1675,19 @@ EmulationMenu:
 	.db "",0
 	.db ITEM_OPTION
 	.db TurboMode-OptionConfig
-	.db 95,0
+	.db 105,0
 	.db "Turbo mode: %-6s",0
 
 	.db "The time offset for games with clocks.\nShould match the time set in the OS.\nRelevant when sharing save files.",0
 	.db ITEM_OPTION
 	.db TimeZone-OptionConfig
-	.db 105,0
+	.db 125,0
 	.db "Time zone: UTC%-6s",0
 
 	.db "Set to on if DST is currently active.",0
 	.db ITEM_OPTION
 	.db DaylightSavingTime-OptionConfig
-	.db 115,0
+	.db 135,0
 	.db "Daylight Saving Time: %-3s",0
 
 	.db "Return to the main menu.",0
