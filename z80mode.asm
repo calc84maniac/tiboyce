@@ -2656,9 +2656,9 @@ ophandlerSTOP:
 	 add a,a
 	 xor $80
 	 ld (bc),a
-	 ld d,a
 	 ld b,d
 	 ld c,e
+	 ld d,a
 	 push hl
 	  call.il reset_div
 	  ld i,hl

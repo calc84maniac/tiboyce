@@ -1333,7 +1333,10 @@ _
 	inc hl
 	ex de,hl
 	inc hl
-	scf
+	; vblank_counter and persistent_vblank_counter are in the past, so >= 0
+	; ppu_counter and nextupdatecycles are in the future, so < 0
+	ld a,b
+	cp 4
 	rr (hl)
 	dec hl
 	rr (hl)
