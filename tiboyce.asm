@@ -1202,9 +1202,9 @@ Arc_Unarc_ErrorHandler:
 	 ; Disable the run indicator in case garbage collect enabled it
 	 call _RunIndicOff
 	 ACALL(SetCustomHardwareSettingsNoHalt)
-	 ld de,spiResetWindowAddress
+	 ld de,spiDisableRamAccess
 	 ld b,spiDisableRamAccessSize
-	 call spiFastTransfer
+	 call spiFastTransferArc
 	 ACALL(RestoreOriginalHardwareSettings)
 	pop af
 	ret
