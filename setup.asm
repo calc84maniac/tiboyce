@@ -162,6 +162,10 @@ NoRomMenuLoop:
 	ACALL(SetCustomHardwareSettings)
 	; Set original gamma settings and initialize menu palette
 	ACALL(SetupOriginalGamma)
+	; Set up common scroll area used by all display modes
+	ld de,spiSetupScrollArea
+	ld b,spiSetupScrollAreaSize
+	call spiFastTransferArc
 	
 	; Set current description and main menu selection
 	APTR(NoRomLoadedDescription)
@@ -3722,9 +3726,9 @@ GeneratePixelCacheGBC:
 	
 SetScalingMode:
 	; Disable GRAM access from DMA to allow a clean buffer rewrite
-	ld de,spiResetWindowAddress
+	ld de,spiDisableRamAccess
 	ld b,spiDisableRamAccessSize
-	call spiFastTransfer
+	call spiFastTransferArc
 	
 	ld hl,scanlineLUT_2
 	ld (scanlineLUT_ptr),hl
@@ -3741,7 +3745,6 @@ SetScalingMode:
 	ld a,(active_scaling_mode)
 	or a
 	jr z,SetNoScalingMode
-	ld (gram_curr_draw_buffer),a
 	
 	; Restore the mini frame backup and initialize the scanline LUTs
 	ld a,144/3*2
@@ -3766,10 +3769,6 @@ _
 	jr nz,-_
 	ACALL(GeneratePixelCache)
 	
-	ld hl,inc_real_frame_count_or_flip_gram_display
-	ld (inc_real_frame_count_smc_1),hl
-	ld (inc_real_frame_count_smc_2),hl
-	
 	ld hl,-160*240
 	ld (frame_dma_size_smc),hl
 	
@@ -3777,7 +3776,7 @@ _
 	
 	APTR(lcdSettings8BitStretched)
 	ACALL(SetLcdSettingsFirstBuffer)
-	jp do_frame_flip_always_no_gram_flip
+	jp do_frame_flip_always_no_scale_fill
 	
 SetNoScalingMode:
 	; Restore the mini frame backup and initialize the scanline LUTs
@@ -3795,10 +3794,6 @@ _
 	pop af
 	ccf
 	jr c,--_
-	
-	ld hl,inc_real_frame_count
-	ld (inc_real_frame_count_smc_1),hl
-	ld (inc_real_frame_count_smc_2),hl
 	
 	ld hl,-160*144
 	ld (frame_dma_size_smc),hl
@@ -3856,12 +3851,12 @@ no_skin:
 	ld bc,160*240-1
 	ldir
 Set8BitWindowNoScale:
-	APTR(lcdSettings4Bit)
+	APTR(lcdSettingsSkin)
 	ld de,gb_frame_buffer_2
 	ACALL(SetLcdSettings)
 	APTR(lcdSettings8BitNoScale)
 	ACALL(SetLcdSettingsFirstBuffer)
-	jp do_frame_flip_always_no_gram_flip
+	jp do_frame_flip_always_no_scale_fill
 	
 IdentifyDefaultPalette:
 	ld ix,(rom_start)
@@ -4156,17 +4151,21 @@ customHardwareSettings:
 	.dl z80codebase + myz80stack_top + 3
 #endif
 
-lcdSettings4Bit:
+lcdSettingsSkin:
 	; LcdTiming0
-	.db $38,$03,$9C,$1F
+	.db $FC,$00,$00,$00 ; PPL=1024, HSW=1, HBP=1, HFP=1 (total=1027)
 	; LcdTiming1
-	.db $3F,$01,$8F,$00
+#ifdef CEMU
+	.db $4A,$00,$03,$F2 ; LPP=75, VSW=1, VBP=242, VFP=3 (total=321)
+#else
+	.db $4A,$00,$03,$C4 ; LPP=75, VSW=1, VBP=196, VFP=3 (total=275)
+#endif
 	; LcdTiming2
-	.db $00,$78,$EF,$00
+	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
 	; LcdCtrl
 	.dl $013C25
 	; SPI settings
-	.dw spiSetupDefault+1
+	.dw spiSetupScanFirst+1
 	
 lcdSettingsMenu:
 	; LcdTiming0
@@ -4175,7 +4174,7 @@ lcdSettingsMenu:
 #ifdef CEMU
 	.db $4A,$00,$03,$F2 ; LPP=75, VSW=1, VBP=242, VFP=3 (total=321)
 #else
-	.db $4A,$00,$03,$C4 ; LPP=75, VSW=1, VBP=196, VFP=3 (total=275)
+	.db $4A,$00,$C7,$00 ; LPP=75, VSW=1, VBP=0, VFP=199 (total=275)
 #endif
 	; LcdTiming2
 	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
@@ -4194,11 +4193,11 @@ lcdSettings8BitNoScale:
 	.db $02,$78,$1F,$01 ; PCD=4, CPL=288
 #else
 	; LcdTiming0
-	.db $B0,$03,$6D,$1F ; PPL=720, HSW=4, HBP=32, HFP=110 (total=866)
+	.db $BC,$03,$3D,$1F ; PPL=768, HSW=4, HBP=32, HFP=62 (total=866)
 	; LcdTiming1
-	.db $1F,$00,$C7,$00 ; LPP=32, VSW=1, VBP=0, VFP=199 (total=232)
+	.db $1D,$00,$C9,$00 ; LPP=30, VSW=1, VBP=0, VFP=201 (total=232)
 	; LcdTiming2
-	.db $00,$78,$CF,$02 ; PCD=2, CPL=720
+	.db $00,$78,$FF,$02 ; PCD=2, CPL=768
 #endif
 	; LcdCtrl
 	.dl $013C27
@@ -4237,18 +4236,49 @@ spiSetupDefault:
 	SPI_CMD($B0)     ; RAM Control
 	SPI_PARAM($11)   ;  RGB Interface
 	SPI_PARAM($F0)
-	SPI_CMD($33)     ; Vertical scroll parameters
-	SPI_PARAM16(0)   ;  Top fixed area
-	SPI_PARAM16(320) ;  Scrolling area
-	SPI_PARAM16(0)   ;  Bottom fixed area
 	SPI_CMD($37)     ; Vertical scroll amount
-	SPI_PARAM16(0)   ;  No scroll
+	SPI_PARAM16(160) ;  No scroll on right side
 	SPI_CMD($E4)     ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($10)   ;  No interlace
+	SPI_CMD($C6)     ; Frame rate control
+	SPI_PARAM(15)    ;  490 clocks per line
+	SPI_CMD($B2)     ; Porch control
+	SPI_PARAM(12)    ;  Back porch
+	SPI_PARAM(12)    ;  Front porch
+	SPI_PARAM(0)     ;  Disable separate porch control
+	SPI_PARAM($33)   ;  Back/front porch for idle mode
+	SPI_PARAM($33)   ;  Back/front porch for partial mode
 	SPI_END
 spiSetupSize = $ - spiSetupDefault
+	
+spiSetupScanFirst:
+	SPI_START
+	SPI_CMD($2A)     ; Column address set
+	SPI_PARAM16(0)   ;  Left bound
+	SPI_PARAM16(319) ;  Right bound
+	SPI_CMD($2B)     ; Row address set
+	SPI_PARAM16(0)   ;  Upper bound
+	SPI_PARAM16(239) ;  Lower bound
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	SPI_PARAM($F0)
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(160) ;  No scroll on right side
+	SPI_CMD($E4)     ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
+	SPI_CMD($C6)     ; Frame rate control
+	SPI_PARAM(17)    ;  522 clocks per line
+	SPI_CMD($B2)     ; Porch control
+	SPI_PARAM(1)     ;  Back porch
+	SPI_PARAM(1)     ;  Front porch
+	SPI_PARAM(0)     ;  Disable separate porch control
+	SPI_PARAM($33)   ;  Back/front porch for idle mode
+	SPI_PARAM($33)   ;  Back/front porch for partial mode
+	SPI_END
 	
 spiSetupVsyncInterface:
 	SPI_START
@@ -4261,16 +4291,20 @@ spiSetupVsyncInterface:
 	SPI_CMD($B0)     ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
 	SPI_PARAM($F0)
-	SPI_CMD($33)     ; Vertical scroll parameters
-	SPI_PARAM16(0)   ;  Top fixed area
-	SPI_PARAM16(320) ;  Scrolling area
-	SPI_PARAM16(0)   ;  Bottom fixed area
 	SPI_CMD($37)     ; Vertical scroll amount
-	SPI_PARAM16(0)   ;  No scroll
+	SPI_PARAM16(160) ;  No scroll on right side
 	SPI_CMD($E4)     ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($10)   ;  No interlace
+	SPI_CMD($C6)     ; Frame rate control
+	SPI_PARAM(17)    ;  522 clocks per line
+	SPI_CMD($B2)     ; Porch control
+	SPI_PARAM(127)   ;  Back porch
+	SPI_PARAM(1)     ;  Front porch
+	SPI_PARAM(0)     ;  Disable separate porch control
+	SPI_PARAM($33)   ;  Back/front porch for idle mode
+	SPI_PARAM($33)   ;  Back/front porch for partial mode
 	SPI_END
 	
 spiSetupNoScale:
@@ -4284,16 +4318,20 @@ spiSetupNoScale:
 	SPI_CMD($B0)     ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
 	SPI_PARAM($F0)
-	SPI_CMD($33)     ; Vertical scroll parameters
-	SPI_PARAM16(0)   ;  Top fixed area
-	SPI_PARAM16(320) ;  Scrolling area
-	SPI_PARAM16(0)   ;  Bottom fixed area
 	SPI_CMD($37)     ; Vertical scroll amount
-	SPI_PARAM16(0)   ;  No scroll
+	SPI_PARAM16(160) ;  No scroll on right side
 	SPI_CMD($E4)     ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($10)   ;  No interlace
+	SPI_CMD($C6)     ; Frame rate control
+	SPI_PARAM(16)    ;  506 clocks per line
+	SPI_CMD($B2)     ; Porch control
+	SPI_PARAM(1)     ;  Back porch
+	SPI_PARAM(1)     ;  Front porch
+	SPI_PARAM(0)     ;  Disable separate porch control
+	SPI_PARAM($33)   ;  Back/front porch for idle mode
+	SPI_PARAM($33)   ;  Back/front porch for partial mode
 	SPI_END
 	
 spiSetupDoubleScale:
@@ -4307,17 +4345,40 @@ spiSetupDoubleScale:
 	SPI_CMD($B0)     ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
 	SPI_PARAM($F0)
-	SPI_CMD($33)     ; Vertical scroll parameters
-	SPI_PARAM16(0)   ;  Top fixed area
-	SPI_PARAM16(160) ;  Scrolling area
-	SPI_PARAM16(160) ;  Bottom fixed area
 	SPI_CMD($37)     ; Vertical scroll amount
-	SPI_PARAM16(320) ;  Duplicate right side to left
+	SPI_PARAM16(0)   ;  Mirror left side to right side
 	SPI_CMD($E4)     ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($14)   ;  Interlace
+	SPI_CMD($C6)     ; Frame rate control
+	SPI_PARAM(10)    ;  410 clocks per line
+	SPI_CMD($B2)     ; Porch control
+	SPI_PARAM(87)    ;  Back porch
+	SPI_PARAM(1)     ;  Front porch
+	SPI_PARAM(0)     ;  Disable separate porch control
+	SPI_PARAM($33)   ;  Back/front porch for idle mode
+	SPI_PARAM($33)   ;  Back/front porch for partial mode
 	SPI_END
+	
+spiSetupScrollArea:
+	SPI_START
+	SPI_CMD($33)     ; Vertical scroll parameters
+	SPI_PARAM16(160) ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
+	SPI_CMD($37)     ; Vertical scroll amount
+	SPI_PARAM16(160) ;  No scroll on right side
+	SPI_END
+spiSetupScrollAreaSize = $ - spiSetupScrollArea
+	
+spiDisableRamAccess:
+	SPI_START
+	SPI_CMD($B0)     ; RAM Control
+	SPI_PARAM($02)   ;  RAM access from SPI, VSYNC interface
+	SPI_PARAM($F0)
+	SPI_END
+spiDisableRamAccessSize = $ - spiDisableRamAccess
 	
 hmem_init:
 	.db $CF,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
