@@ -125,7 +125,8 @@ NoSpeedDisplay:
 	    ; Swap buffers
 	    call prepare_next_frame
 	    call do_frame_flip
-	    ld a,(active_scaling_mode)
+active_scaling_mode = $+1
+	    ld a,0
 	    or a
 	    call nz,do_scale_fill
 	    call sync_frame_flip
@@ -911,7 +912,6 @@ _
 sync_frame_flip_or_wait:
 	ld a,(mpLcdMis)
 	or a
-inc_real_frame_count_smc_1 = $+1
 	call nz,inc_real_frame_count
 	ld hl,(mpLcdCurr)
 	ld de,(frame_flip_end_check_smc)
@@ -919,19 +919,15 @@ inc_real_frame_count_smc_1 = $+1
 	jr c,do_frame_flip_always
 sync_frame_flip_wait:
 	ld de,$000800
+	ld a,d
 	call wait_for_interrupt
-	ld a,(mpLcdMis)
-	bit 3,a
-	jr nz,sync_frame_flip_always
-	call flip_gram_display
-	jr sync_frame_flip_wait
+	jr sync_frame_flip_always
 	
 sync_frame_flip:
 	ld a,(mpLcdMis)
 	or a
 	ret z
 sync_frame_flip_always:
-inc_real_frame_count_smc_2 = $+1
 	call inc_real_frame_count
 do_frame_flip:
 	ld hl,(mpLcdCurr)
@@ -943,11 +939,7 @@ do_frame_flip_always:
 	ld (frame_flip_end_check_smc),hl
 	ld hl,(current_display)
 	ld (mpLcdBase),hl
-active_scaling_mode = $+1
-	ld a,0
-	or a
-	call nz,flip_gram_draw_buffer
-do_frame_flip_always_no_gram_flip:
+do_frame_flip_always_no_scale_fill:
 	ld hl,sync_frame_flip
 	ld (render_scanlines_wait_smc),hl
 	
@@ -988,62 +980,8 @@ update_palettes_gbc:
 	ldir
 	ret
 	
-	; Swap GRAM sub-buffers in stretched display mode to avoid tearing.
-	; Input: A=1
-	; Destroys AF,BC,DE,HL
-flip_gram_draw_buffer:
-gram_curr_draw_buffer = $+1
-	xor 0
-	ld (gram_curr_draw_buffer),a
-	ld de,spiDrawBufferLeft
-	jr z,_
-	ld de,spiDrawBufferRight
-_
-	ld b,spiDrawBufferSize
-	call spiFastTransfer
-	; Check if VSYNC was reached before this command completed
-	ld hl,mpLcdRis
-	bit 2,(hl)
-	ld (next_vertical_scroll),de
-	jr nz,_
-	
-	; Enable LCD base address update interrupt for display buffer flip
-	ld l,mpLcdImsc & $FF
-	ld (hl),$0C
-	ret
-	
-_
-	; Manually reset the window address because VSYNC may have set the old one
-	ld de,spiResetWindowAddress
-	ld b,spiResetWindowAddressSize
-	call spiFastTransfer
-	; Go ahead and issue the GRAM display flip command instead of scheduling it
-	ld a,4
-	
-flip_gram_display:
-	ld (mpLcdIcr),a
-	ld c,a
-	
-next_vertical_scroll = $+1
-	ld de,spiVerticalScrollLeft
-	ld b,spiVerticalScrollSize
-	call spiFastTransfer
-	
-	; Reset LCD interrupt mask
-	ld a,8
-	ld (mpLcdImsc),a
-	and c
-	ret z
-	jr inc_real_frame_count_always
-	
-inc_real_frame_count_or_flip_gram_display:
-	bit 2,a
-	jr nz,flip_gram_display
-	ld a,(mpLcdImsc)
-	xor 4
 inc_real_frame_count:
 	ld (mpLcdIcr),a
-inc_real_frame_count_always:
 frame_excess_count = $+1
 	ld a,0
 	inc a
@@ -1600,53 +1538,4 @@ _
 	djnz -_
 	pop.s ix
 	jp draw_next_sprite_2
-
-spiDrawBufferLeft:
-	SPI_START
-	SPI_CMD($2A)     ; Column address set
-	SPI_PARAM16(0)   ;  Left bound
-	SPI_PARAM16(159) ;  Right bound
-	SPI_END
-spiDrawBufferSize = $ - spiDrawBufferLeft
 	
-spiVerticalScrollLeft:
-	SPI_START
-	SPI_CMD($33)     ; Vertical scroll parameters
-	SPI_PARAM16(160) ;  Top fixed area
-	SPI_PARAM16(160) ;  Scrolling area
-	SPI_PARAM16(0)   ;  Bottom fixed area
-	SPI_CMD($37)     ; Vertical scroll amount
-	SPI_PARAM16(0)   ;  Duplicate left side to right
-	SPI_END
-spiVerticalScrollSize = $ - spiVerticalScrollLeft
-	
-spiDrawBufferRight:
-	SPI_START
-	SPI_CMD($2A)     ; Column address set
-	SPI_PARAM16(160) ;  Left bound
-	SPI_PARAM16(319) ;  Right bound
-	SPI_END
-	
-spiVerticalScrollRight:
-	SPI_START
-	SPI_CMD($33)     ; Vertical scroll parameters
-	SPI_PARAM16(0)   ;  Top fixed area
-	SPI_PARAM16(160) ;  Scrolling area
-	SPI_PARAM16(160) ;  Bottom fixed area
-	SPI_CMD($37)     ; Vertical scroll amount
-	SPI_PARAM16(320) ;  Duplicate right side to left (somehow)
-	SPI_END
-	
-spiResetWindowAddress:
-	SPI_START
-	SPI_CMD($B0)     ; RAM Control
-	SPI_PARAM($02)   ;  RAM access from SPI, VSYNC interface
-	SPI_PARAM($F0)
-spiDisableRamAccessSize = $+1 - spiResetWindowAddress
-	SPI_CMD($2C)     ; Reset to window start
-	SPI_CMD($B0)     ; RAM Control
-	SPI_PARAM($12)   ;  RAM access from RGB, VSYNC interface
-	SPI_PARAM($F0)
-	SPI_END
-spiResetWindowAddressSize = $ - spiResetWindowAddress
-
