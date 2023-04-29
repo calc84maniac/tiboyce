@@ -482,9 +482,7 @@ SetupGamma:
 	mlt bc
 	ld hl,spiGammaUniform
 	add hl,bc
-	ex de,hl
-	ld b,spiGammaCmdSize
-	call spiFastTransferArc
+	SPI_TRANSFER_CMDS(spiGammaCommandDescriptors)
 	ex de,hl
 	ld de,mpLcdPalette + (BLUE * 2)
 	ld c,menuPaletteSize
@@ -2109,21 +2107,24 @@ GreenAdjustOffsetsGBA:
 	.db 15 << 4, %01110111, %11010110, %01010001, %00010000
 #endif
 	
+spiGammaCommandDescriptors:
+	.db 14,$E0 ; Positive gamma
+	.db 14,$E1 ; Negative gamma
+	.db -1
+	
 spiGammaUniform:
-	SPI_START
-	SPI_CMD($E0)
+	; Positive gamma
 	#define J0 1
 	#define J1 3
 	SPI_GAMMA(129, 125, 121, 83, 65, 45, 41, 10,  49, 38, 13,  16, 6,  43, 20, 11)
 	#undef J1
 	#undef J0
-	SPI_CMD($E1)
+	; Negative gamma
 	#define J0 0
 	#define J1 3
 	SPI_GAMMA(129, 125, 121, 85, 64, 45, 41, 10,  49, 38, 14,  17, 7,  43, 20, 11)
 	#undef J1
 	#undef J0
-	SPI_END
 spiGammaCmdSize = $ - spiGammaUniform
 	; Menu colors
 	.dw $1882 ;BLUE
@@ -2134,20 +2135,18 @@ spiGammaConfigSize = $ - spiGammaUniform
 menuPaletteSize = spiGammaConfigSize - spiGammaCmdSize
 	
 spiGammaGBC:
-	SPI_START
-	SPI_CMD($E0)
+	; Positive gamma
 	#define J0 0
 	#define J1 1
 	SPI_GAMMA(129, 124, 123, 83, 57, 24, 19, 10,  55, 42, 16,  16, 6,  50, 37, 25)
 	#undef J1
 	#undef J0
-	SPI_CMD($E1)
+	; Negative gamma
 	#define J0 2
 	#define J1 1
 	SPI_GAMMA(129, 124, 123, 83, 56, 23, 18, 10,  55, 42, 16,  16, 7,  51, 38, 27)
 	#undef J1
 	#undef J0
-	SPI_END
 	; Menu colors
 	.dw $1CA3 ;BLUE
 	.dw $55F1 ;MAGENTA
@@ -2155,20 +2154,18 @@ spiGammaGBC:
 	.dw $35AD ;GRAY
 	
 spiGammaGBA:
-	SPI_START
-	SPI_CMD($E0)
+	; Positive gamma
 	#define J0 0
 	#define J1 1
 	SPI_GAMMA(129, 127, 126, 90, 68, 46, 44, 10,  56, 44, 16,  16, 7,  43, 20, 10)
 	#undef J1
 	#undef J0
-	SPI_CMD($E1)
+	; Negative gamma
 	#define J0 2
 	#define J1 1
 	SPI_GAMMA(129, 126, 126, 89, 67, 46, 44, 10,  56, 45, 17,  17, 7,  44, 20, 11)
 	#undef J1
 	#undef J0
-	SPI_END
 	; Menu colors
 	.dw $24C4 ;BLUE
 	.dw $EE98 ;MAGENTA
@@ -2176,20 +2173,18 @@ spiGammaGBA:
 	.dw $4A52 ;GRAY
 	
 spiGammaOriginal:
-	SPI_START
-	SPI_CMD($E0)
+	; Positive gamma
 	#define J0 1
 	#define J1 3
 	SPI_GAMMA(129, 128, 128, 83, 65, 45, 41, 10,  41, 32, 11,  16, 6,  43, 20, 11)
 	#undef J1
 	#undef J0
-	SPI_CMD($E1)
+	; Negative gamma
 	#define J0 0
 	#define J1 3
 	SPI_GAMMA(129, 128, 128, 85, 64, 45, 41, 10,  41, 32, 12,  17, 7,  43, 20, 11)
 	#undef J1
 	#undef J0
-	SPI_END
 	; Menu colors
 	.dw $1882 ;BLUE
 	.dw $EA56 ;MAGENTA

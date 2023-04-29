@@ -226,31 +226,18 @@
 #endif
 #endmacro
 
-#macro SPI_START
-	#define SPI_BIT $80
-	#define SPI_VALUE $00
+#macro SPI_TRANSFER_CMD(size, cmd)
+	call spiTransferCommandInline
+	.db size+1, cmd
 #endmacro
-	
-#macro SPI_CMD(cmd)
-	.db ((cmd * SPI_BIT) >> 8) | SPI_VALUE
-	#define SPI_VALUE eval((cmd * SPI_BIT) & $FF)
-	#if SPI_BIT == $01
-	SPI_END
-	SPI_START
-	#else
-	#define SPI_BIT eval(SPI_BIT >> 1)
-	#endif
+
+#macro SPI_TRANSFER_CMDS(descriptors)
+	call spiTransferCommandListArc
+	.dw descriptors
 #endmacro
 
 #macro SPI_PARAM(param)
-	.db ((param * SPI_BIT) >> 8) | (SPI_VALUE | SPI_BIT)
-	#define SPI_VALUE eval((param * SPI_BIT) & $FF)
-	#if SPI_BIT == $01
-	SPI_END
-	SPI_START
-	#else
-	#define SPI_BIT eval(SPI_BIT >> 1)
-	#endif
+	.db param
 #endmacro
 
 #macro SPI_PARAM16(param)
@@ -273,14 +260,6 @@
 	.error "Parameter ", param2, " not within limit ", limit2
 	#endif
 	SPI_PARAM((param2 << 4) | param1)
-#endmacro
-
-#macro SPI_END
-	#if SPI_BIT != $80
-	.db SPI_VALUE
-	#endif
-	#undef SPI_VALUE
-	#undef SPI_BIT
 #endmacro
 
 ; Gamma voltage levels are specified here.
@@ -308,9 +287,7 @@
 
 ; Sets both positive and negative gamma curves using the same parameters.
 #macro SPI_GAMMA_BOTH(V0, V1, V2, V20, V43, V61, V62, V63, V4, V6, V13, V27, V36, V50, V57, V59)
-	SPI_CMD($E0)
 	SPI_GAMMA(V0, V1, V2, V20, V43, V61, V62, V63, V4, V6, V13, V27, V36, V50, V57, V59)
-	SPI_CMD($E1)
 	SPI_GAMMA(V0, V1, V2, V20, V43, V61, V62, V63, V4, V6, V13, V27, V36, V50, V57, V59)
 #endmacro
 
@@ -1202,9 +1179,8 @@ Arc_Unarc_ErrorHandler:
 	 ; Disable the run indicator in case garbage collect enabled it
 	 call _RunIndicOff
 	 ACALL(SetCustomHardwareSettingsNoHalt)
-	 ld de,spiDisableRamAccess
-	 ld b,spiDisableRamAccessSize
-	 call spiFastTransferArc
+	 SPI_TRANSFER_CMD(1, $B0) ; RAM Control
+	 SPI_PARAM($02)           ;  RAM access from SPI, VSYNC interface
 	 ACALL(RestoreOriginalHardwareSettings)
 	pop af
 	ret
@@ -1477,76 +1453,95 @@ MulHLIXBy24:
 	add ix,ix \ adc hl,hl
 	ret
 	
-spiFastTransferArc:
-	ld hl,(ArcBase)
-	add hl,de
-spiFastTransferHL:
-	ex de,hl
-	; Input: DE=byte stream to transfer, B=byte count
-	; Output: DE follows byte stream, B=0
-	; Destroys: AF, HL
-spiFastTransfer:
-#ifdef CEMU
-	push bc
-	 ; Start SPI transfer
-	 ld c,1
-	 ld hl,mpSpiTransfer
-	 ld (hl),c
+	; Input: Descriptor offset at return address, HL=parameter offset
+spiTransferCommandListArc:
+	ex (sp),hl
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	inc hl
+	ex (sp),hl
+	ex.s de,hl
+	push hl
+	 ld hl,(ArcBase)
 	 ex de,hl
-	 inc b
-_
-	 dec b
-	 jr z,+++_
-	 ; Always read 2 bytes when byte-aligned
-	 ld e,(hl) \ inc hl
-	 dec b
-	 jr z,$
-_
-	 ld a,e
-	 ; Read next byte and shift into position
-	 ld e,(hl) \ inc hl
-	 ld d,c
-	 mlt de
-	 ; Combine with last byte
-	 or d
-	 ; Shift up low byte and send top 9 bits
-	 sla e \ rla
-	 ld d,3
-_
-	 rla \ rla \ rla
-	 ld (mpSpiFifo),a
-	 dec d
-	 jr nz,-_
-	 ; Update shift amount, and read two bytes if byte-aligned
-	 rlc c
-	 jr c,---_
-	 ; Check for end of byte stream
-	 djnz --_
-_
-	 ex de,hl
+	 add hl,de
+	 ex (sp),hl
+	 add hl,de
+	pop de
+	; Input: HL=command descriptors, DE=parameters
+	; Output: HL follows descriptors, DE follows parameters, B=0
+	; Destroys: AF
+spiTransferCommandList:
+	ld b,(hl)
+	inc hl
+	inc b
+	ret z
+	ld a,(hl)
+	inc hl
+	push hl
+	 call spiTransferCommand
 	pop hl
-	ld c,l
-	ld hl,mpSpiStatus
-#else
+	jr spiTransferCommandList
+	
+spiTransferCommandInline:
+	pop de
+	ld a,(de)
+	ld b,a
+	inc de
+	or a
+	sbc hl,hl
+	ld l,a
+	add hl,de
+	push hl
+	ld a,(de)
+	inc de
+	; Input: A=command, DE=parameters, B=byte count (including command)
+	; Output: DE follows parameters, B=0
+	; Destroys: AF, HL
+spiTransferCommand:
 	; Start SPI transfer
 	ld hl,mpSpiTransfer
 	ld (hl),1
+#ifdef CEMU
 	; Fill SPI FIFO and transfer at the same time
 	ld l,mpSpiFifo & $FF
+	or a
 _
+	rla \ rla \ rla \ ld (hl),a
+	rla \ rla \ rla \ ld (hl),a
+	rla \ rla \ rla \ ld (hl),a
 	ld a,(de)
+	inc de
+	scf
+	djnz -_
+#else
+	; Fill SPI FIFO and transfer at the same time
+	ld l,(mpSpiFifo + 1) & $FF
+	ld (hl),h
+_
+	dec hl
 	ld (hl),a
+	inc hl
+	ld (hl),l
+	ld a,(de)
 	inc de
 	djnz -_
-	; Wait for transfer to complete
-	ld l,mpSpiStatus & $FF
 #endif
+	dec de
+	; Wait for transfer to complete
+	ld l,(mpSpiStatus + 1) & $FF
+_
+	ld a,(hl)
+	and $F0
+	jr nz,-_
+	dec hl
 _
 	bit 2,(hl)
 	jr nz,-_
-	; Disable transfer, discarding excess bits sent to LCD
+	; Disable transfer
 	ld l,mpSpiTransfer & $FF
-	ld (hl),b
+	ld (hl),h
 	ret
 	
 #ifdef FASTLOG
@@ -1928,7 +1923,7 @@ originalLcdSettings:
 	; LcdCtrl
 	.dl 0
 	; SPI settings
-	.dw spiSetupDefault+1
+	.dw spiSetupDefault
 	
 ; These files are loaded into RAM.
 #ifndef NO_PORTS
