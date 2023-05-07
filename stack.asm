@@ -67,10 +67,11 @@ _
 	ex af,af'
 	; If NZ, flags are correct
 	ret nz
-	; Reset Z flag but preserve H/C flags and keep N flag reset.
-	ld a,$04
-	daa  ; Resets H but increases low nibble to $A if H was set.
-	daa  ; Iff low nibble is $A, sets H. Z is reset always.
+	; Recalculate in a way that generates the same carries and a result of 1.
+	xor a
+ophandlerE8_finish_z:
+	sub l ; Sets carry since the offset is known to be non-zero.
+	adc a,l
 	ld a,h
 	ret
 	
@@ -162,6 +163,39 @@ _
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Stack adjustment routines
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	; ADD SP,-nn
+ophandlerE8_negative:
+	ld h,a
+	; Add the negative offset to IYL and check for a bounds overflow
+	ld a,iyl
+	add a,l
+	ld iyl,a
+	; Results between $7F and $FE are valid
+	inc a
+	call p,shift_stack_window_lower_preserved_a	
+ophandlerE8_finish:
+	; Get the current LSB of the stack pointer
+	ld a,(stack_window_base)
+	add a,iyl
+	jr z,ophandlerE8_finish_z
+	; Subtract the offset and re-add to get half-carry and carry flags
+	sub l
+	add a,l
+	ld a,h
+	ret
+
+	; ADD SP,+nn
+ophandlerE8_positive:
+	ld h,a
+	; Add the offset to IYL and check for a bounds overflow
+	ld a,iyl
+	add a,l
+	ld iyl,a
+	; Results between $80 and $FF are valid
+	jr nc,ophandlerE8_finish
+	call shift_stack_window_higher_preserved_a
+	jr ophandlerE8_finish
 
 	; INC SP
 ophandler33:
@@ -423,47 +457,6 @@ shift_shadow_stack_lower:
 #else
 	jr shift_stack_window_lower_overlap
 #endif
-
-	; ADD SP,+nn
-ophandlerE8_non_negative:
-	ld h,a
-	; Add the offset to IYL and check for a bounds overflow
-	ld a,iyl
-	add a,l
-	ld iyl,a
-	; Results between $7F and $FF are valid
-	jr c,_
-ophandlerE8_finish:
-	; Get the current LSB of the stack pointer
-	ld a,(stack_window_base)
-	add a,iyl
-	; Subtract the offset and re-add to get half-carry and carry flags
-	sub l
-	add a,l
-	ld a,h
-	ret nz ; If Z flag is reset, all flags are correct
-	; Reset Z flag but preserve H/C flags and keep N flag reset.
-	ld a,$04
-	daa  ; Resets H but increases low nibble to $A if H was set.
-	daa  ; Iff low nibble is $A, sets H. Z is reset always.
-	ld a,h
-	ret
-_
-	call shift_stack_window_higher_preserved_a
-	jr ophandlerE8_finish
-
-	; ADD SP,-nn
-ophandlerE8_negative:
-	ld h,a
-	; Add the negative offset to IYL and check for a bounds overflow
-	ld a,iyl
-	add a,l
-	ld iyl,a
-	; Results between $7F and $FE are valid
-	inc a
-	jp m,ophandlerE8_finish
-	call shift_stack_window_lower_preserved_a
-	jr ophandlerE8_finish
 
 	; LD SP,HL
 ophandlerF9:
