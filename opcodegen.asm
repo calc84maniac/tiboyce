@@ -49,7 +49,7 @@ opgenJP:
 opgenRETcond:
 	jp opgen_emit_cond_ret
 	
-opgenE9:
+opgenJPHL:
 opgenRET:
 opgenRETI:
 	jp opgenblockend
@@ -71,8 +71,8 @@ opgenF1:
 opgen39:
 opgenF9:
 	dec iyl
-opgen27:
-opgenF3:
+opgenDAA:
+opgenDI:
 opgenEI:
 	call opgenroutinecall
 	djnz opgen_next_fast

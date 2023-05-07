@@ -922,7 +922,117 @@ ArcJump:
 	pop de
 	ex (sp),hl
 	ret
+
+	; Included here to minimize padding, since above routines don't typically change
+	#include "tables.asm"
+
+; Sets the current string BG color. Must be called before SetStringColor.
+SetStringBgColor:
+	ld (PutChar_BgColorSMC1),a
+	ld (PutChar_BgColorSMC2),a
+	ret
 	
+; Sets the current string color.
+SetStringColor:
+PutChar_BgColorSMC1 = $+1
+	xor BLUE
+	ld (PutChar_ColorSMC),a
+	ret
+
+PutCharNewLine:
+	AJUMP(PutNewLine)
+
+; Renders the character in A on the current buffer at (*B, *C) and updates the
+; cursor location.
+PutCharXY:
+	ld (cursorRowCol),bc
+
+; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
+PutChar:
+PutChar_DefaultInvalidSMC = $+1
+	ld b,0
+
+; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
+; Uses the value in B to specify an invalid character handler:
+; 0=Newline
+; 1=Don't display
+; 2=Box
+PutCharSpecifyInvalid:
+	; Translate to font index.
+	sub ' '
+	cp $7F-' '
+	jr c,PutCharTranslated
+	dec b
+	ret z
+	djnz PutCharNewLine
+	ld a,$7F-' '
+
+; Renders the pre-translated character index in A at (*cursorCol, *cursorRow).
+PutCharTranslated:
+	ld bc,0
+cursorRowCol = $-3
+; The current text output row, in pixels (0-230).
+cursorRow = cursorRowCol
+; The current text output column, in characters (0-39).
+cursorCol = cursorRow+1
+	; Put pointer to character data in appvar in DE.
+	ld hl,(ArcBase)
+	ld de,font
+	add hl,de
+	ld e,a
+	ld d,10
+	mlt de
+	add hl,de
+	ex de,hl
+	; Get pointer to buffer output location in HL.
+	; Refuse to draw past the right side of the screen.
+	ld a,b
+	cp 40
+	ret nc
+	ld b,160
+	mlt bc
+	ld hl,(current_buffer)
+	add hl,bc
+PutChar_SmallBufferSMC1 = $
+	add hl,bc
+	ld c,a
+	ld b,8
+	mlt bc
+	add hl,bc
+	
+	; Draw 10 rows of pixels.
+	ld b,10
+PutCharRowLoop:
+	push bc
+	 ; Get the bitmap for the current row in C.
+	 ld a,(de)
+	 inc de
+	 cpl
+	 ld c,a
+	 ld b,8
+PutCharPixelLoop:
+	 ; Render 2 pixels to the framebuffer per iteration.
+	 sla c
+	 sbc a,a
+PutChar_ColorSMC = $+1
+	 and WHITE ^ BLUE
+PutChar_BgColorSMC2 = $+1
+	 xor BLUE
+	 ld (hl),a
+	 inc hl
+	 djnz PutCharPixelLoop
+	 ; Advance output pointer to the next row.
+PutChar_SmallBufferSMC2 = $+1
+	 ld c,(320-8)/2
+	 add hl,bc
+	 add hl,bc
+	pop bc
+	djnz PutCharRowLoop
+	; Increment the cursor column.
+	ld hl,cursorCol
+	inc (hl)
+	ret
+
 ; Puts a pointer located in the archived appvar in HL.
 ; The 16-bit offset (plus 1) is stored at the return address.
 ArcPtr:
@@ -1264,114 +1374,7 @@ _
 	jr nz,-_
 	adc a,a
 	ret
-	
-; Sets the current string BG color. Must be called before SetStringColor.
-SetStringBgColor:
-	ld (PutChar_BgColorSMC1),a
-	ld (PutChar_BgColorSMC2),a
-	ret
-	
-; Sets the current string color.
-SetStringColor:
-PutChar_BgColorSMC1 = $+1
-	xor BLUE
-	ld (PutChar_ColorSMC),a
-	ret
 
-PutCharNewLine:
-	AJUMP(PutNewLine)
-
-; Renders the character in A on the current buffer at (*B, *C) and updates the
-; cursor location.
-PutCharXY:
-	ld (cursorRowCol),bc
-
-; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
-PutChar:
-PutChar_DefaultInvalidSMC = $+1
-	ld b,0
-
-; Renders the character in A on the current buffer at (*cursorCol, *cursorRow).
-; Uses the value in B to specify an invalid character handler:
-; 0=Newline
-; 1=Don't display
-; 2=Box
-PutCharSpecifyInvalid:
-	; Translate to font index.
-	sub ' '
-	cp $7F-' '
-	jr c,PutCharTranslated
-	dec b
-	ret z
-	djnz PutCharNewLine
-	ld a,$7F-' '
-
-; Renders the pre-translated character index in A at (*cursorCol, *cursorRow).
-PutCharTranslated:
-	ld bc,0
-cursorRowCol = $-3
-; The current text output row, in pixels (0-230).
-cursorRow = cursorRowCol
-; The current text output column, in characters (0-39).
-cursorCol = cursorRow+1
-	; Put pointer to character data in appvar in DE.
-	ld hl,(ArcBase)
-	ld de,font
-	add hl,de
-	ld e,a
-	ld d,10
-	mlt de
-	add hl,de
-	ex de,hl
-	; Get pointer to buffer output location in HL.
-	; Refuse to draw past the right side of the screen.
-	ld a,b
-	cp 40
-	ret nc
-	ld b,160
-	mlt bc
-	ld hl,(current_buffer)
-	add hl,bc
-PutChar_SmallBufferSMC1 = $
-	add hl,bc
-	ld c,a
-	ld b,8
-	mlt bc
-	add hl,bc
-	
-	; Draw 10 rows of pixels.
-	ld b,10
-PutCharRowLoop:
-	push bc
-	 ; Get the bitmap for the current row in C.
-	 ld a,(de)
-	 inc de
-	 cpl
-	 ld c,a
-	 ld b,8
-PutCharPixelLoop:
-	 ; Render 2 pixels to the framebuffer per iteration.
-	 sla c
-	 sbc a,a
-PutChar_ColorSMC = $+1
-	 and WHITE ^ BLUE
-PutChar_BgColorSMC2 = $+1
-	 xor BLUE
-	 ld (hl),a
-	 inc hl
-	 djnz PutCharPixelLoop
-	 ; Advance output pointer to the next row.
-PutChar_SmallBufferSMC2 = $+1
-	 ld c,(320-8)/2
-	 add hl,bc
-	 add hl,bc
-	pop bc
-	djnz PutCharRowLoop
-	; Increment the cursor column.
-	ld hl,cursorCol
-	inc (hl)
-	ret
-	
 DivHLIXBy60:
 	ld c,60
 DivHLIXByC:
@@ -1726,7 +1729,10 @@ originalLcdSettings:
 ; These files are loaded into RAM.
 	#include "jit.asm"
 	#include "decode.asm"
-	#include "ophandler.asm"
+	#include "mbc_helpers.asm"
+	#include "port_helpers.asm"
+	#include "memory_helpers.asm"
+	#include "scheduler_helpers.asm"
 	#include "trampoline.asm"
 	#include "vblank.asm"
 	#include "waitloop.asm"
