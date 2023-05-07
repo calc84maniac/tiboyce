@@ -789,26 +789,7 @@ set_shadow_stack_finish:
 	pop hl
 	ret
 #endif
-	
-	; Input: Carry reset for unconditional RET, set for conditional RET
-	;        C = open bus value, DA = cycle counter
-do_pop_for_ret_slow:
-	ld e,a
-	push ix
-	 push af
-	  push de
-	   ; Advance the cycle count past the end of the RET
-	   adc a,4
-	   jr nc,_
-	   inc d
-_
-	   ld e,-3 ; The first read is 3 cycles before the end of the instruction
-	   call do_pop_any_slow
-	   push hl
-	    exx
-	   pop de
-	   jp do_pop_for_ret_slow_finish
-	
+
 do_push_for_call_slow_swap:
 	exx
 	; Input: E = cycles for specific call (RST, CALL, interrupt)
@@ -874,11 +855,12 @@ _
 	ex af,af'
 	exx
 	ret
-	
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Pop routines
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	.block (-$)&255
+	.echo "Wasted space before pop routines: ", (-$)&$FF
+	.block (-$)&$FF
 pop_routines_start:
 
 	; POP BC
