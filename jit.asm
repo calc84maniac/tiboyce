@@ -2935,7 +2935,7 @@ opgentable:
 	.db ophandlerD1 >> 8
 	.db ophandlerF8_zero >> 8
 	;E0
-	.db ophandlerE8_non_negative & $FF
+	.db ophandlerE8_positive & $FF
 	.db ophandlerE1 & $FF
 	.db op_write_c_hmem & $FF
 	.db 0
@@ -2951,7 +2951,7 @@ opgentable:
 	.db 0
 	.db op_write_c_hmem >> 8
 	.db ophandlerE1 >> 8
-	.db ophandlerE8_non_negative >> 8
+	.db ophandlerE8_positive >> 8
 	;F0
 	.db ophandlerF8_positive & $FF
 	.db ophandlerF1 & $FF
