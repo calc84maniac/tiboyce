@@ -151,6 +151,13 @@ _
 	; Scaling method
 	call read_config_item
 	ld (active_scaling_method),a
+	ld hl,active_scaling_mode
+	and (hl)
+	ld hl,do_frame_flip
+	jr z,_
+	ld hl,do_frame_flip_gram_swap
+_
+	ld (do_frame_flip_gram_swap_smc),hl
 
 	; Check for conflicting keys between configs
 	ld e,b
