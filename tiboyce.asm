@@ -1814,9 +1814,9 @@ SkinDisplayOffset = $-OptionConfig
 TurboMode:
 TurboModeOffset = $-OptionConfig
 	.db 0
-; Scaling type (0=static, 1=scrolling)
-ScalingType:
-ScalingTypeOffset = $-OptionConfig
+; Scale tracking (0=static, 1=scrolling)
+ScaleTracking:
+ScaleTrackingOffset = $-OptionConfig
 	.db 1
 ; Message display (0=Off, 1=On)
 MessageDisplay:
@@ -1834,6 +1834,10 @@ ConfirmStateOperationOffset = $-OptionConfig
 PreferredModel:
 PreferredModelOffset = $-OptionConfig
 	.db 1
+; Scaling method (0=Nearest, 1=Linear)
+ScalingMethod:
+ScalingMethodOffset = $-OptionConfig
+	.db 0
 	
 ; Number of key bytes
 	.db key_config_count
