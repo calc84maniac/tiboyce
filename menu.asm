@@ -205,10 +205,6 @@ _
 _
 	 ld (timeZoneOffsetSeconds),hl
 
-	 ; Scaling mode
-	 ld a,(ix+ScalingModeOffset)
-	 ld (active_scaling_mode),a
-
 	 ; Turbo toggle
 	 ld a,(ix+TurboModeOffset)
 	 dec a
@@ -220,14 +216,25 @@ _
 	 add a,a
 	 add a,$20
 	 ld (turbo_keypress_smc),a
-	
-	 ; Scale tracking
-	 ld a,(ix+ScaleTrackingOffset)
-	 ld (active_scale_tracking),a
+
+	 ; Scaling mode
+	 ld a,(ix+ScalingModeOffset)
+	 ld (active_scaling_mode),a
+	 ld l,a
 
 	 ; Scaling method
 	 ld a,(ix+ScalingMethodOffset)
 	 ld (active_scaling_method),a
+	 and l
+	 ld hl,do_frame_flip
+	 jr z,_
+	 ld hl,do_frame_flip_gram_swap
+_
+	 ld (do_frame_flip_gram_swap_smc),hl
+
+	 ; Scale tracking
+	 ld a,(ix+ScaleTrackingOffset)
+	 ld (active_scale_tracking),a
 
 	 ; Palette selection
 	 ld a,(ix+PaletteSelectionOffset)
