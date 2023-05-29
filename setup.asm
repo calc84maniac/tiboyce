@@ -3742,8 +3742,8 @@ SetScalingMode:
 	ld de,gb_frame_buffer_1
 	ld (current_display),de
 	ld bc,0
-	ld (frame_flip_end_check_smc),bc
 	ld a,(active_scaling_mode)
+	ld (scale_remaining_fills),a
 	or a
 	jr z,SetNoScalingMode
 	
@@ -3770,14 +3770,11 @@ _
 	jr nz,-_
 	ACALL(GeneratePixelCache)
 	
-	ld hl,-160*240
-	ld (frame_dma_size_smc),hl
-	
 	call do_scale_fill
 	
 	APTR(lcdSettings8BitStretched)
 	ACALL(SetLcdSettingsFirstBuffer)
-	jp do_frame_flip_always_no_scale_fill
+	jp do_frame_flip_for_setup
 	
 SetNoScalingMode:
 	; Restore the mini frame backup and initialize the scanline LUTs
@@ -3795,9 +3792,6 @@ _
 	pop af
 	ccf
 	jr c,--_
-	
-	ld hl,-160*144
-	ld (frame_dma_size_smc),hl
 	
 	ACALL(GeneratePixelCache)
 
@@ -3857,7 +3851,7 @@ Set8BitWindowNoScale:
 	ACALL(SetLcdSettings)
 	APTR(lcdSettings8BitNoScale)
 	ACALL(SetLcdSettingsFirstBuffer)
-	jp do_frame_flip_always_no_scale_fill
+	jp do_frame_flip_for_setup
 	
 IdentifyDefaultPalette:
 	ld ix,(rom_start)
@@ -4337,7 +4331,7 @@ spiSetupDoubleScale:
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($14)   ;  Interlace
 	; C6             ; Frame rate control
-	SPI_PARAM(10)    ;  410 clocks per line
+	SPI_PARAM(9)     ;  394 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(87)    ;  Back porch
 	SPI_PARAM(1)     ;  Front porch

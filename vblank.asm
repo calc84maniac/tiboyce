@@ -121,16 +121,13 @@ _
 PutEmulatorMessageRet:
 	    call set_preserved_area
 NoSpeedDisplay:
-	
+
 	    ; Swap buffers
 	    call prepare_next_frame
-	    call do_frame_flip
-active_scaling_mode = $+1
-	    ld a,0
-	    or a
-	    call nz,do_scale_fill
-	    call sync_frame_flip
-	
+	    ld a,(mpLcdRis)
+	    bit 2,a
+	    call z,do_frame_flip
+
 	    xor a
 	    ; Signify frame was rendered
 	    scf
@@ -518,7 +515,8 @@ _
 	ld (scanlineLUT_palette_ptr),hl
 prepare_initial_frame:
 	; Reset window state
-	ld a,(hram_base+LCDC)
+	ld hl,hram_base+LCDC
+	ld a,(hl)
 	rrca
 	and $20
 	add a,(vram_tiles_start >> 8) & $FF
@@ -534,15 +532,55 @@ prepare_initial_frame:
 	ld (mypaletteLY),a
 	ld (z80codebase+sprite_catchup_available),a
 	ld (BGP_max_frequency),a
+	; Prepare scaling specifics based on the scaling mode and scroll
+active_scaling_mode = $+1
+	or 0
+	jr z,prepare_scaling_done
+active_scale_tracking = $+1
+	ld b,0
+	inc b
+	cp b
+	jr z,prepare_scaling_full
+	ld l,SCY & $FF
+	ld a,(hl)
+last_frame_scy = $+1
+	ld b,0
+	ld (last_frame_scy),a
+last_scale_offset = $+1
+	add a,0
+	sub b
+	jp m,++_
+_
+	sub 3
+	jr nc,-_
+_
+	add a,3
+	jr nc,-_
+	ld b,a
+	ld l,LCDC & $FF
+	bit 5,(hl)
+	jr z,prepare_scaling_full
+	ld l,WY & $FF
+	ld a,(hl)
+	dec a
+	cp 143
+	inc a
+	jr c,_
+prepare_scaling_full:
+	ld a,144
+_
+	ld (last_scale_window),a
+	ld a,b
+	ld (last_scale_offset),a
+	ld a,(active_scaling_method)
+	rrca
+	sbc a,-1
+prepare_scaling_done:
+	ld (scale_remaining_fills),a
 	; Make the next rendering operation sync with frame flip,
 	; if the frame flip hasn't happened yet
 	ld hl,sync_frame_flip_or_wait
 	ld (render_scanlines_wait_smc),hl
-	; Get the negative end-of-buffer pointer
-frame_dma_size_smc = $+1
-	ld hl,0
-	sbc hl,de
-	ld (frame_flip_end_check_smc),hl
 prepare_next_frame_gbc_smc = $
 	; Clear the frequency count for the native BGP value
 	ld a,(BGP_max_value)
@@ -704,180 +742,6 @@ convert_palette_row_smc_3 = $+1
 	jr nz,-_
 	ret
 	
-do_scale_fill:
-	ld hl,(current_display)
-	ld ix,160
-active_scaling_type = $+1
-	ld b,0
-	djnz do_scale_full
-	ld a,(hram_base+SCY)
-last_frame_scy = $+1
-	ld b,0
-	ld (last_frame_scy),a
-last_scale_offset = $+1
-	add a,0
-	sub b
-	jp m,++_
-_
-	sub 3
-	jr nc,-_
-_
-	add a,3
-	jr nc,-_
-	ld (last_scale_offset),a
-	ld b,a
-	ld a,(hram_base+LCDC)
-	and $20
-	jr z,do_scale_full
-	ld a,(hram_base+WY)
-	dec a
-	cp 143
-	jr c,_
-do_scale_full:
-	ld a,143
-_
-	inc a
-	push af
-	 cpl
-do_scale_fill_smc = $+1
-	 call scale_offset
-	 inc a
-	pop bc
-	ld c,a
-	add a,b
-	sub 144+6
-	ld b,c
-	
-scale_offset:
-	add a,3
-	ret c
-	djnz _
-scale_offset_1_loop:
-	lea de,ix
-	ld c,e
-	add hl,de
-	ex de,hl
-	add hl,de
-	ldir
-	ex de,hl
-	lea hl,ix
-	ld c,l
-	add hl,de
-	ldir
-	add a,3
-	jr nc,scale_offset_1_loop
-	ret
-_
-	djnz _
-	lea de,ix
-scale_offset_2_loop:
-	ld c,e
-	ex de,hl
-	add hl,de
-	ex de,hl
-	ldir
-	lea hl,ix
-	ld c,l
-	add hl,de
-	ex de,hl
-	ldir
-	ex de,hl
-	lea de,ix
-	add hl,de
-	add a,3
-	jr nc,scale_offset_2_loop
-	ret
-_
-	ld b,0
-scale_offset_0_loop:
-	ex de,hl
-	lea hl,ix
-	ld c,l
-	add hl,de
-	ex de,hl
-	ldir
-	lea hl,ix
-	ld c,l
-	ex de,hl
-	add hl,bc
-	ex de,hl
-	add hl,de
-	ldir
-	add a,3
-	jr nc,scale_offset_0_loop
-	ret
-	
-	
-scale_offset_preserve:
-scale_offset_preserve_smc_1 = $+1
-	ld c,2
-scale_offset_preserve_loop:
-	add a,3
-	jr nc,_
-	; Switch to window offset
-	pop de
-	pop de
-	ld b,a
-	add a,d
-	sub 144+6
-	ld de,scale_offset
-	push de
-_
-	push bc
-	 call scale_offset_preserve_draw
-	pop bc
-	dec c
-	jr nz,scale_offset_preserve_loop
-	jr scale_offset
-	
-scale_offset_preserve_draw:
-scale_offset_preserve_smc_2 = $+1
-	ld c,0
-	lea de,ix
-	add hl,de
-	dec hl
-	push de
-	 djnz _
-	 add hl,de
-	 ex de,hl
-	 add hl,de
-	 jr +++_
-_
-	 ex de,hl
-	 add hl,de
-	 ex de,hl
-	 djnz _
-	 push bc
-	  lddr
-	 pop bc
-	 ex de,hl
-	 inc hl
-	pop de
-	add hl,de
-	ex de,hl
-	add hl,de
-	ex de,hl
-	ldir
-	lea hl,ix
-	add hl,de
-	ret
-_
-	 ld b,0
-_
-	 push bc
-	  lddr
-	 pop bc
-	 ex de,hl
-	 inc hl
-	pop de
-	add hl,de
-	add hl,de
-	ex de,hl
-	add hl,de
-	ldir
-	ret
-	
-	
 ; Displays a digit onscreen at the given framebuffer offset in bytes.
 ; Draws to the current buffer.
 ;
@@ -912,14 +776,9 @@ _
 sync_frame_flip_or_wait:
 	ld a,(mpLcdMis)
 	or a
-	call nz,inc_real_frame_count
-	ld hl,(mpLcdCurr)
-	ld de,(frame_flip_end_check_smc)
-	add hl,de
-	jr c,do_frame_flip_always
+	jr nz,sync_frame_flip_always
 sync_frame_flip_wait:
 	ld de,$000800
-	ld a,d
 	call wait_for_interrupt
 	jr sync_frame_flip_always
 	
@@ -928,81 +787,32 @@ sync_frame_flip:
 	or a
 	ret z
 sync_frame_flip_always:
-	call inc_real_frame_count
-do_frame_flip:
-	ld hl,(mpLcdCurr)
-frame_flip_end_check_smc = $+1
-	ld de,0
-	add hl,de
-	ret nc
-do_frame_flip_always:
-	ld (frame_flip_end_check_smc),hl
-	ld hl,(current_display)
-	ld (mpLcdBase),hl
-do_frame_flip_always_no_scale_fill:
-	ld hl,sync_frame_flip
-	ld (render_scanlines_wait_smc),hl
-	
-; Update the host LCD palettes based on the currently set GB palettes.
-;
-; Uses the overlapped_bg_palette_colors table as the source BG colors.
-;
-; Destroys AF,BC,DE,HL
-update_palettes:
-update_palettes_gbc_smc = $
-update_palettes_bgp0_index = $+1
-	ld hl,bg_palette_colors
-	ld de,mpLcdPalette + (255*2)
-	ld bc,2
-	ldir
-update_palettes_bgp123_index = $+1
-	ld l,overlapped_bg_palette_colors & $FF
-	ld d,mpLcdPalette >> 8 & $FF
-	ld c,3*2
-	ldir
-	ret
-	
-update_palettes_gbc:
-	ld hl,gbc_bg_transparent_colors
-	ld de,mpLcdPalette + (GBC_BG_TRANSPARENT_COLORS*2)
-	ld bc,8*2
-	ldir
-	ld e,GBC_BG_OPAQUE_COLORS*2
-	ld c,24*2
-	ld a,c
-	ldir
-	ld e,GBC_OBJ_OPAQUE_COLORS*2
-	ld c,a
-	ldir
-	ld l,gbc_bg_opaque_colors & $FF
-	ld e,GBC_BG_HIGH_PRIO_COLORS*2
-	ld c,a
-	ldir
-	ret
-	
-inc_real_frame_count:
+	ld a,$0C
 	ld (mpLcdIcr),a
-frame_excess_count = $+1
-	ld a,0
-	inc a
-	jp pe,_
-	ld (frame_excess_count),a
-_
-	ld hl,emulatorMessageDuration
-	xor a
-	cp (hl)
-	jr z,_
-	dec (hl)
-	jr nz,_
-	inc hl ;emulatorMessageText
-	ld (hl),a
-	call reset_preserved_area
-_
 frame_real_count = $+1
 	ld a,0
 	add a,1
 	daa
 	ld (frame_real_count),a
+	push af
+	 call do_frame_flip
+frame_excess_count = $+1
+	 ld a,0
+	 inc a
+	 jp pe,_
+	 ld (frame_excess_count),a
+_
+	 ld hl,emulatorMessageDuration
+	 xor a
+	 cp (hl)
+	 jr z,_
+	 dec (hl)
+	 jr nz,_
+	 inc hl ;emulatorMessageText
+	 ld (hl),a
+	 call reset_preserved_area
+_
+	pop af
 	ret nc
 	ld hl,(frame_emulated_count)
 	ld de,perf_digits+3
@@ -1066,6 +876,214 @@ set_no_preserved_area:
 	ld hl,scale_offset
 _
 	ld (do_scale_fill_smc),hl
+	ret	
+	
+do_frame_flip:
+	ld hl,(current_display)
+	ld a,(mpLcdBase+1)
+	ld (mpLcdBase),hl
+	cp h
+	jr z,do_scale_fill
+do_frame_flip_for_setup:
+	ld hl,sync_frame_flip
+	ld (render_scanlines_wait_smc),hl
+	
+; Update the host LCD palettes based on the currently set GB palettes.
+;
+; Uses the overlapped_bg_palette_colors table as the source BG colors.
+;
+; Destroys AF,BC,DE,HL
+update_palettes:
+update_palettes_gbc_smc = $
+update_palettes_bgp0_index = $+1
+	ld hl,bg_palette_colors
+	ld de,mpLcdPalette + (255*2)
+	ld bc,2
+	ldir
+update_palettes_bgp123_index = $+1
+	ld l,overlapped_bg_palette_colors & $FF
+	ld d,mpLcdPalette >> 8 & $FF
+	ld c,3*2
+	ldir
+	jr do_scale_fill
+	
+update_palettes_gbc:
+	ld hl,gbc_bg_transparent_colors
+	ld de,mpLcdPalette + (GBC_BG_TRANSPARENT_COLORS*2)
+	ld bc,8*2
+	ldir
+	ld e,GBC_BG_OPAQUE_COLORS*2
+	ld c,24*2
+	ld a,c
+	ldir
+	ld e,GBC_OBJ_OPAQUE_COLORS*2
+	ld c,a
+	ldir
+	ld l,gbc_bg_opaque_colors & $FF
+	ld e,GBC_BG_HIGH_PRIO_COLORS*2
+	ld c,a
+	ldir
+	
+do_scale_fill:
+scale_remaining_fills = $+1
+	ld a,0
+	dec a
+	ret m
+	ld (scale_remaining_fills),a
+	
+	ld hl,(current_display)
+	ld a,(frame_real_count)
+active_scaling_method = $+1
+	and 0
+	rra
+	ld a,(last_scale_offset)
+	adc a,0
+	inc.s bc
+	ld b,a
+last_scale_window = $+1
+	ld a,144
+	push af
+	 cpl
+do_scale_fill_smc = $+1
+	 call scale_offset
+	 inc a
+	pop bc
+	ld c,a
+	add a,b
+	sub 144+6
+	ld b,c
+	
+scale_offset:
+	add a,3
+	ret c
+	ld de,160
+	push de
+	 ex (sp),ix
+	 djnz _
+scale_offset_1_loop:
+	 lea de,ix
+	 ld c,e
+	 add hl,de
+	 ex de,hl
+	 add hl,de
+	 ldir
+	 ex de,hl
+	 lea hl,ix
+	 ld c,l
+	 add hl,de
+	 ldir
+	 add a,3
+	 jr nc,scale_offset_1_loop
+	pop ix
+	ret
+_
+	 djnz _
+scale_offset_2_loop:
+	 ld c,e
+	 ex de,hl
+	 add hl,de
+	 ex de,hl
+	 ldir
+	 lea hl,ix
+	 ld c,l
+	 add hl,de
+	 ex de,hl
+	 ldir
+	 ex de,hl
+	 lea de,ix
+	 add hl,de
+	 add a,3
+	 jr nc,scale_offset_2_loop
+	pop ix
+	ret
+_
+	 ld b,0
+scale_offset_0_loop:
+	 ex de,hl
+	 lea hl,ix
+	 ld c,l
+	 add hl,de
+	 ex de,hl
+	 ldir
+	 lea hl,ix
+	 ld c,l
+	 ex de,hl
+	 add hl,bc
+	 ex de,hl
+	 add hl,de
+	 ldir
+	 add a,3
+	 jr nc,scale_offset_0_loop
+	pop ix
+	ret	
+	
+scale_offset_preserve:
+scale_offset_preserve_smc_1 = $+1
+	ld c,2
+scale_offset_preserve_loop:
+	add a,3
+	jr nc,_
+	; Switch to window offset
+	pop de
+	pop de
+	ld b,a
+	add a,d
+	sub 144+6
+	ld de,scale_offset
+	push de
+_
+	push bc
+	 call scale_offset_preserve_draw
+	pop bc
+	dec c
+	jr nz,scale_offset_preserve_loop
+	jr scale_offset
+	
+scale_offset_preserve_draw:
+scale_offset_preserve_smc_2 = $+1
+	ld c,0
+	ld de,160
+	add hl,de
+	dec hl
+	push de
+	 djnz _
+	 add hl,de
+	 ex de,hl
+	 add hl,de
+	 jr +++_
+_
+	 ex de,hl
+	 add hl,de
+	 ex de,hl
+	 djnz _
+	 push bc
+	  lddr
+	 pop bc
+	 ex de,hl
+	 inc hl
+	pop de
+	add hl,de
+	ex de,hl
+	add hl,de
+	ex de,hl
+	ldir
+	ld hl,160
+	add hl,de
+	ret
+_
+	 ld b,0
+_
+	 push bc
+	  lddr
+	 pop bc
+	 ex de,hl
+	 inc hl
+	pop de
+	add hl,de
+	add hl,de
+	ex de,hl
+	add hl,de
+	ldir
 	ret
 	
 convert_palette:

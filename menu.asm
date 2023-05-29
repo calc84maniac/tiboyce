@@ -221,9 +221,13 @@ _
 	 add a,$20
 	 ld (turbo_keypress_smc),a
 	
-	 ; Scaling type
-	 ld a,(ix+ScalingTypeOffset)
-	 ld (active_scaling_type),a
+	 ; Scale tracking
+	 ld a,(ix+ScaleTrackingOffset)
+	 ld (active_scale_tracking),a
+
+	 ; Scaling method
+	 ld a,(ix+ScalingMethodOffset)
+	 ld (active_scaling_method),a
 
 	 ; Palette selection
 	 ld a,(ix+PaletteSelectionOffset)
@@ -1391,11 +1395,12 @@ OptionList:
 	.dw OptionScalingMode+1
 	.dw OptionSkinDisplay+1
 	.dw OptionTurboMode+1
-	.dw OptionScalingType+1
+	.dw OptionScaleTracking+1
 	.dw OptionMessageDisplay+1
 	.dw OptionAdjustColors+1
 	.dw OptionConfirmState+1
 	.dw OptionPreferredModel+1
+	.dw OptionScalingMethod+1
 	
 CmdList:
 ReturnExitReason = ($-CmdList)/2
@@ -1551,7 +1556,7 @@ LoadRomNoRomsText:
 	.db "No ROMs found!",0
 	
 GraphicsMenu:
-	.db 10
+	.db 9
 
 	.db 10,12
 	.db "Graphics Options",0
@@ -1562,52 +1567,46 @@ GraphicsMenu:
 	.db 55,0
 	.db "Scaling mode: %-10s",0
 
-	.db "Static: Scale absolutely.\nScrolling: Scale relative to tilemap.",0
+	.db "Nearest: No blending, sharp pixels.\nLinear: Flicker-based blending, slower\nbut with more consistent pixel size.",0
 	.db ITEM_OPTION
-	.db ScalingTypeOffset
+	.db ScalingMethodOffset
 	.db 65,0
-	.db "Scaling type: %-9s",0
+	.db "Scaling method: %-7s",0
+
+	.db "Static: Scale relative to the screen.\nScrolling: Scale relative to tilemaps,\nwhich may reduce shimmering on scroll.",0
+	.db ITEM_OPTION
+	.db ScaleTrackingOffset
+	.db 75,0
+	.db "Scale tracking: %-9s",0
 
 	.db "Display a skin in \"no scaling\" mode.\nRequires the TIBoySkn.8xv AppVar.",0
 	.db ITEM_OPTION
 	.db SkinDisplayOffset
-	.db 75,0
+	.db 85,0
 	.db "Skin display: %-3s",0
 
 	.db "Off: Do not skip any frames.\nAuto: Skip up to N frames as needed.\nManual: Render 1 of each N+1 frames.",0
 	.db ITEM_OPTION
 	.db FrameskipTypeOffset
-	.db 95,0
+	.db 105,0
 	.db "Frameskip type: %-6s",0
 
 	.db "",0
 	.db ITEM_DIGIT
 	.db 2
-	.db 105,0
+	.db 115,0
 	.db "Frameskip value: %u",0
-
-	.db "Show percentage of real GB performance.\nTurbo: Display when turbo is activated.\nSlowdown: Display when below fullspeed.",0
-	.db ITEM_OPTION
-	.db SpeedDisplayOffset
-	.db 125,0
-	.db "Speed display: %-8s",0
-
-	.db "Display emulator message overlays.",0
-	.db ITEM_OPTION
-	.db MessageDisplayOffset
-	.db 135,0
-	.db "Message display: %-3s",0
 
 	.db "Default: Use GBC game-specific palette.\nOthers: Use GBC manual palette.",0
 	.db ITEM_OPTION
 	.db PaletteSelectionOffset
-	.db 155,0
+	.db 135,0
 	.db "GB palette selection: %-10s",0
 
 	.db "Off: Use specified colors directly.\nGBC: Adjust to emulate a GBC display.\nGBA: Adjust to emulate a GBA display.",0
 	.db ITEM_OPTION
 	.db AdjustColorsOffset
-	.db 165,0
+	.db 145,0
 	.db "Adjust colors: %-3s",0
 
 	.db "Return to the main menu.",0
@@ -1719,7 +1718,7 @@ ControlsMenu:
 	.db "Back",0
 	
 EmulationMenu:
-	.db 7
+	.db 9
 
 	.db 10,11
 	.db "Emulation Options",0
@@ -1742,22 +1741,34 @@ EmulationMenu:
 	.db 85,0
 	.db "Confirm state save/load: %-9s",0
 
+	.db "Display emulator message overlays.",0
+	.db ITEM_OPTION
+	.db MessageDisplayOffset
+	.db 95,0
+	.db "Message display: %-3s",0
+
 	.db "",0
 	.db ITEM_OPTION
 	.db TurboModeOffset
-	.db 105,0
+	.db 115,0
 	.db "Turbo mode: %-6s",0
+
+	.db "Show percentage of real GB performance.\nTurbo: Display when turbo is activated.\nSlowdown: Display when below fullspeed.",0
+	.db ITEM_OPTION
+	.db SpeedDisplayOffset
+	.db 125,0
+	.db "Speed display: %-8s",0
 
 	.db "The time offset for games with clocks.\nShould match the time set in the OS.\nRelevant when sharing save files.",0
 	.db ITEM_OPTION
 	.db TimeZoneOffset
-	.db 125,0
+	.db 145,0
 	.db "Time zone: UTC%-6s",0
 
 	.db "Set to on if DST is currently active.",0
 	.db ITEM_OPTION
 	.db DaylightSavingTimeOffset
-	.db 135,0
+	.db 155,0
 	.db "Daylight Saving Time: %-3s",0
 
 	.db "Return to the main menu.",0
@@ -1821,7 +1832,12 @@ OptionSpeedDisplay:
 	.db "slowdown",0
 	.db "always",0
 	
-OptionScalingType:
+OptionScalingMethod:
+	.db 2
+	.db "nearest",0
+	.db "linear",0
+	
+OptionScaleTracking:
 	.db 2
 	.db "static",0
 	.db "scrolling",0
