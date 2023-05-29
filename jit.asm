@@ -1078,7 +1078,13 @@ lookup_code_link_internal_with_bank:
 	pop iy
 	ret c
 	jp lookup_code_link_internal_with_bank_cached
-	
+
+lookup_code_sync_frame_flip:
+	push de
+	 call sync_frame_flip_always
+	pop de
+	jr lookup_code_sync_frame_flip_return
+
 lookupfoundstart:
 	 ld a,(ix+7)
 	 ld ix,(ix)
@@ -1089,7 +1095,7 @@ lookupfoundstart:
 	; Report a cycle length of 0 for RAM blocks
 	xor a
 	ret
-	
+
 ; Looks up a recompiled code pointer from a GB address.
 ;
 ; Inputs:  DE = 16-bit GB address to look up
@@ -1108,6 +1114,10 @@ lookup_code:
 ;          Carry is reset if at the start of a newly recompiled or RAM block
 ; Destroys AF,BC,DE,HL
 lookup_code_with_bank:
+	ld a,(mpLcdMis)
+	or a
+	jr nz,lookup_code_sync_frame_flip
+lookup_code_sync_frame_flip_return:
 #ifdef FASTLOG
 	push de
 	FASTLOG_EVENT(LOOKUP_JIT, 6)

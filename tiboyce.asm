@@ -1790,7 +1790,7 @@ originalLcdSettings:
 	.echo "User RAM code size: ", $ - program_start
 	
 	; Pad to align vram_gbc_start
-	.block (7-$) & 15
+	.block (5-$) & 15
 	
 ; Active configuration info:
 config_start:
@@ -1834,7 +1834,7 @@ SkinDisplay:
 TurboMode:
 	.db 0
 ; Scaling type (0=static, 1=scrolling)
-ScalingType:
+ScaleTracking:
 	.db 1
 ; Message display (0=Off, 1=On)
 MessageDisplay:
@@ -1848,7 +1848,10 @@ ConfirmStateOperation:
 ; Select preferred model (0=GB, 1=GBC, 2=GBA)
 PreferredModel:
 	.db 1
-	
+; Scaling method (0=Nearest, 1=Linear)
+ScalingMethod:
+	.db 0
+
 ; Number of key bytes
 	.db key_config_count
 ; Key configuration. Each is a GetCSC scan code.
