@@ -573,8 +573,7 @@ _
 	ld a,b
 	ld (last_scale_offset),a
 	ld a,(active_scaling_method)
-	rrca
-	sbc a,-1
+	inc a
 prepare_scaling_done:
 	ld (scale_remaining_fills),a
 	; Make the next rendering operation sync with frame flip,
@@ -795,6 +794,7 @@ frame_real_count = $+1
 	daa
 	ld (frame_real_count),a
 	push af
+do_frame_flip_gram_swap_smc = $+1
 	 call do_frame_flip
 frame_excess_count = $+1
 	 ld a,0
@@ -876,7 +876,21 @@ set_no_preserved_area:
 	ld hl,scale_offset
 _
 	ld (do_scale_fill_smc),hl
-	ret	
+	ret
+
+	; A = real frame count
+do_frame_flip_gram_swap:
+	rra
+	ld de,gramScrollLeftParams
+	jr nc,_
+	ld de,gramScrollRightParams
+_
+	ld a,$33 ; Vertical scroll parameters
+	ld b,7
+	call spiTransferCommand
+	ld a,$37 ; Vertical scroll amount
+	ld b,3
+	call spiTransferCommand
 	
 do_frame_flip:
 	ld hl,(current_display)
@@ -930,12 +944,34 @@ scale_remaining_fills = $+1
 	dec a
 	ret m
 	ld (scale_remaining_fills),a
-	
-	ld hl,(current_display)
-	ld a,(frame_real_count)
+
 active_scaling_method = $+1
-	and 0
+	ld a,0
 	rra
+	jr nc,+++_
+	ld a,(frame_real_count)
+	rra
+	push af
+	 ld de,gramDrawBufferLeftParams
+	 jr nc,_
+	 ld de,gramDrawBufferRightParams
+_
+	 ld a,$2A ; Column address set
+	 ld b,5
+	 call spiTransferCommand
+	 ; Check if VSYNC was reached before this command completed
+	 ld hl,mpLcdRis
+	 bit 2,(hl)
+	 jr z,_
+	 SPI_TRANSFER_CMD(1, $B0) ; RAM Control
+	 SPI_PARAM($02)           ;  RAM access from SPI, VSYNC interface
+	 SPI_TRANSFER_CMD(0, $2C) ; Reset to window start
+	 SPI_TRANSFER_CMD(1, $B0) ; RAM Control
+	 SPI_PARAM($12)           ;  RAM access from RGB, VSYNC interface           
+_
+	pop af
+_
+	ld hl,(current_display)
 	ld a,(last_scale_offset)
 	adc a,0
 	inc.s bc
@@ -1555,5 +1591,29 @@ _
 	inc hl
 	djnz -_
 	pop.s ix
-	jp draw_next_sprite_2
-	
+	jp draw_next_sprite_2	
+
+gramScrollLeftParams:
+	; 33             ; Vertical scroll parameters
+	SPI_PARAM16(160) ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
+gramScrollRightParams:
+	; 37             ; Vertical scroll amount
+	SPI_PARAM16(0)   ;  Mirror left side to right side
+	; 33             ; Vertical scroll parameters
+	;SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(160) ;  Bottom fixed area
+	; 37             ; Vertical scroll amount
+	SPI_PARAM16(320) ;  Mirror right side to left side
+
+gramDrawBufferLeftParams:
+	; 2A             ; Column address set
+	SPI_PARAM16(0)   ;  Left bound
+	SPI_PARAM16(159) ;  Right bound
+
+gramDrawBufferRightParams:
+	; 2A             ; Column address set
+	SPI_PARAM16(160) ;  Left bound
+	SPI_PARAM16(319) ;  Right bound
