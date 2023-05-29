@@ -162,14 +162,7 @@ NoRomMenuLoop:
 	ACALL(SetCustomHardwareSettings)
 	; Set original gamma settings and initialize menu palette
 	ACALL(SetupOriginalGamma)
-	; Set up common scroll area used by all display modes
-	SPI_TRANSFER_CMD(6, $33) ; Vertical scroll parameters
-	SPI_PARAM16(160)         ;  Top fixed area
-	SPI_PARAM16(160)         ;  Scrolling area
-	SPI_PARAM16(0)           ;  Bottom fixed area
-	SPI_TRANSFER_CMD(2, $37) ; Vertical scroll amount
-	SPI_PARAM16(160)         ;  No scroll on right side
-	
+
 	; Set current description and main menu selection
 	APTR(NoRomLoadedDescription)
 	ld (current_description),hl
@@ -3585,6 +3578,8 @@ backup_mini_screen_row_loop:
 	ret
 	
 SetMenuWindow:
+	xor a
+	ld (scale_remaining_fills),a
 	APTR(lcdSettingsMenu)
 SetLcdSettingsFirstBuffer:
 	ld de,menu_frame_buffer
@@ -3627,8 +3622,12 @@ _
 	; Get SPI settings address
 	ld hl,(hl)
 	SPI_TRANSFER_CMDS(spiSetupCommandDescriptors)
+
+	; Initialize vertical scroll amount to 0 for all modes
+	SPI_TRANSFER_CMD(2, $37) ; Vertical scroll amount
+	SPI_PARAM16(0)
 	ret
-	
+
 GeneratePixelCache:
 	; Fill in the scanline sprite count pointers
 	ld de,scanline_sprite_counts+144
@@ -3741,12 +3740,19 @@ SetScalingMode:
 	ld hl,mini_frame_backup
 	ld de,gb_frame_buffer_1
 	ld (current_display),de
-	ld bc,0
+	xor a
+	ld (frame_real_count),a
+	ld (frame_emulated_count),a
+	ld (frame_excess_count),a
+	inc.s bc
+	ld b,a
 	ld a,(active_scaling_mode)
-	ld (scale_remaining_fills),a
 	or a
 	jr z,SetNoScalingMode
-	
+	ld a,(active_scaling_method)
+	inc a
+	ld (scale_remaining_fills),a
+
 	; Restore the mini frame backup and initialize the scanline LUTs
 	ld a,144/3*2
 _
@@ -4224,7 +4230,7 @@ spiSetupCommandDescriptors:
 	.db 4,$2A ; Column address set
 	.db 4,$2B ; Row address set
 	.db 1,$B0 ; RAM Control
-	.db 2,$37 ; Vertical scroll amount
+	.db 6,$33 ; Vertical scroll parameters
 	.db 3,$E4 ; Gate control
 	.db 1,$C6 ; Frame rate control
 	.db 2,$B2 ; Porch control
@@ -4239,8 +4245,10 @@ spiSetupDefault:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($11)   ;  RGB Interface
-	; 37             ; Vertical scroll amount
-	SPI_PARAM16(160) ;  No scroll on right side
+	; 33             ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(320) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
 	; E4             ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
@@ -4261,8 +4269,10 @@ spiSetupScanFirst:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
-	; 37             ; Vertical scroll amount
-	SPI_PARAM16(160) ;  No scroll on right side
+	; 33             ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(320) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
 	; E4             ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
@@ -4282,8 +4292,10 @@ spiSetupVsyncInterface:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
-	; 37             ; Vertical scroll amount
-	SPI_PARAM16(160) ;  No scroll on right side
+	; 33             ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(320) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
 	; E4             ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
@@ -4303,8 +4315,10 @@ spiSetupNoScale:
 	SPI_PARAM16(191) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
-	; 37             ; Vertical scroll amount
-	SPI_PARAM16(160) ;  No scroll on right side
+	; 33             ; Vertical scroll parameters
+	SPI_PARAM16(0)   ;  Top fixed area
+	SPI_PARAM16(320) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
 	; E4             ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
@@ -4324,8 +4338,10 @@ spiSetupDoubleScale:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
-	; 37             ; Vertical scroll amount
-	SPI_PARAM16(0)   ;  Mirror left side to right side
+	; 33             ; Vertical scroll parameters
+	SPI_PARAM16(160) ;  Top fixed area
+	SPI_PARAM16(160) ;  Scrolling area
+	SPI_PARAM16(0)   ;  Bottom fixed area
 	; E4             ; Gate Control
 	SPI_PARAM($27)   ;  320 lines
 	SPI_PARAM($00)   ;  Start line 0
