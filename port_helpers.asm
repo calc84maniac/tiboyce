@@ -896,7 +896,11 @@ _
 	bit 7,b
 	jp.sis z,z80_restore_swap_ret
 	; Get the current cycle offset
+#ifdef NO_PORTS
 	push.s de
+#else
+	call.is push_z80_de_safe
+#endif
 	push.s bc
 	; Get the value of DIV
 	ld hl,i

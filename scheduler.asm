@@ -235,9 +235,11 @@ event_reschedule:
 	jp.lil schedule_event_later
 #endif
 
+#ifdef NO_PORTS
 trigger_int_callstack_overflow:
 	call callstack_overflow_helper
 	jr trigger_int_callstack_overflow_continue
+#endif
 
 trigger_interrupt_retry_dispatch:
 	; Count the full dispatch cycles again, without causing another retry
@@ -285,10 +287,12 @@ trigger_interrupt_push_offset_smc_2 = $+3
 	exx
 	; Push JIT return address
 	push hl
+#ifdef NO_PORTS
 	; Check for callstack overflow
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	jr nc,trigger_int_callstack_overflow
+#endif
 trigger_int_callstack_overflow_continue:
 	exx
 	; Push stack offset and RET cycle count
