@@ -19,7 +19,12 @@ do_push_overflow_for_call_slow:
 	inc sp
 	; Count cycles for taken CALL
 	add a,c
+#ifdef NO_PORTS
 	jr nc,do_call_dispatch
+#else
+	ccf
+	jr c,do_call_dispatch
+#endif
 	inc d
 	jr nz,do_call_dispatch
 	ex de,hl
@@ -27,10 +32,12 @@ do_push_overflow_for_call_slow:
 	ld a,c
 	jr cycle_overflow_for_call_pushed
 
+#ifdef NO_PORTS
 do_call_callstack_overflow:
 	call callstack_overflow_helper
 	scf
 	jr do_call_dispatch_push
+#endif
 
 #ifdef SHADOW_STACK
 do_call_set_shadow_stack:
@@ -62,18 +69,25 @@ do_call_push_offset_smc_2 = $+3
 	add a,c
 	jr c,do_call_maybe_cycle_overflow
 do_call_no_cycle_overflow:
+#ifdef NO_PORTS
 	; Check for callstack overflow
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	jr nc,do_call_callstack_overflow
+#endif
 do_call_dispatch_push:
 	; Push RET cycle count and stack offset
 	ld c,iyl
 	push bc
 do_call_dispatch:
 	; Dispatch to JIT target
+#ifdef NO_PORTS
 	; Carry is set to indicate to the decoder that the callstack cache was used,
 	; or reset if not. This indicates how to retrieve the JIT address.
+#else
+	; Carry is reset to indicate to the decoder that the callstack cache was used,
+	; or set if not. This indicates how to retrieve the JIT address.
+#endif
 	exx
 	ex af,af'
 	jp (hl)
@@ -131,10 +145,12 @@ do_call_maybe_cycle_overflow:
 	jr nz,do_call_no_cycle_overflow
 cycle_overflow_for_call:
 	ex de,hl
+#ifdef NO_PORTS
 	; Check for callstack overflow
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	call nc,callstack_overflow_helper
+#endif
 	ld l,a
 	ld a,c
 	; Push RET cycle count and stack offset
@@ -294,6 +310,7 @@ banked_jump_mismatch:
 	ld (hl),a
 	jp.lil banked_jump_mismatch_helper
 
+#ifdef NO_PORTS
 	; This is called when a CALL, RST, or interrupt occurs
 	; which exceeds the defined callstack limit.
 	; Inputs: SPL = myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL) - 3
@@ -322,6 +339,7 @@ callstack_overflow_helper:
 	push hl
 callstack_overflow_helper_smc = $+1
 	jp 0
+#endif
 
 decode_block_bridge:
 	ex af,af'
@@ -413,7 +431,9 @@ decode_call:
 	ex af,af'
 	; Grab the JIT return address from above or below the stack pointer,
 	; depending on whether the callstack cache was used during dispatch
+#ifdef NO_PORTS
 	ccf
+#endif
 	sbc hl,hl
 	add hl,hl
 	inc hl
@@ -557,10 +577,12 @@ do_rst_no_shadow_stack_continue:
 	inc d
 	jp nz,do_call_no_cycle_overflow
 cycle_overflow_for_rst:
+#ifdef NO_PORTS
 	; Check for callstack overflow
 	ld hl,(-call_stack_lower_bound) & $FFFF
 	add hl,sp
 	call nc,callstack_overflow_helper
+#endif
 	; Push RET cycle count and stack offset
 	ld c,iyl
 	push bc

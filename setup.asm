@@ -2,7 +2,8 @@ Startup:
 	ld bc,-arc_start
 	add hl,bc
 	ld (ArcBase),hl
-	
+
+#ifdef NO_PORTS
 	; Get the calculator type from the OS header
 	ld hl,_OSHeader
 	call _GetFieldSizeFromType
@@ -16,7 +17,32 @@ Startup:
 	and (hl)
 	ld (calcType),a
 _
-	
+#else
+	ACALL(port_setup)
+	ld a,E_Validation
+	jp c,_JError
+
+	; Get the calculator type from ports
+	push iy
+	 call port_unlock
+	pop iy
+	ld bc,$0003
+	call port_read
+	and 1
+	ld (calcType),a
+	; Also, save the original stack protector location
+	ld c,$3A-1
+	ld hl,originalHardwareSettings+14
+_
+	inc bc
+	call port_read
+	ld (hl),a
+	inc hl
+	bit 2,c
+	jr z,-_
+	call port_lock
+#endif
+
 	call _RunIndicOff
 	ACALL(LoadConfigFile)
 	
@@ -135,15 +161,21 @@ NoRomMenuLoop:
 	inc a
 	ACALL(emulator_menu)
 
-	; Check for deleting a ROM
 	ex af,af'
+	push af
+	 ACALL(RestoreOriginalHardwareSettings)
+	pop af
+
+	; Check for deleting a ROM
 	cp 5
-	jr z,DeleteROM
+	jr nz,_
+	ACALL(DeleteROMFiles)
+	jr NoRomMenuLoop
+_
 	; If not loading a new ROM, exit
 	dec a
 	jr nz,SaveConfigAndQuit
 	
-	ACALL(RestoreOriginalHardwareSettings)
 LoadNewGameLoop:
 	; Copy the name from ROMNameToLoad
 	ld hl,ROMName
@@ -164,16 +196,11 @@ LoadNewGameLoop:
 	jr z,SaveConfigAndQuit
 	; Display the error, and return to the menu if ON wasn't pressed
 	ACALL(DisplayError)
-NoRomMenuLoopTrampoline:
 	jr nz,NoRomMenuLoop
 	
 SaveConfigAndQuit:
-	call _PopErrorHandler
-SaveConfigAndQuitForError:
-	ACALL(RestoreOriginalHardwareSettings)
 	ACALL_SAFERET(SaveConfigFile)
-	ld a,(brightness)
-	ld (mpBlLevel),a
+	call _PopErrorHandler
 RestoreHomeScreen:
 	; Set all palette entries to white to smooth the transition
 	ld hl,mpLcdPalette
@@ -197,14 +224,11 @@ RestoreHomeScreen:
 	call _ClrLCDFull
 	call _DrawStatusBar
 	call _HomeUp
+	; Restore screen brightness
+	ld a,(brightness)
+	ld (mpBlLevel),a
 	; Change the LCD settings to fullscreen 16-bit
 	AJUMP(RestoreOriginalLcdSettings)
-	
-DeleteROM:
-	ACALL(RestoreOriginalHardwareSettings)
-	ACALL(DeleteROMFiles)
-	or a ; Non-zero
-	jr NoRomMenuLoopTrampoline
 	
 	; Input: HL = insertion point
 	;        DE = insertion size
@@ -583,10 +607,11 @@ _
 	push hl
 	pop de
 	inc de
-	ld bc,hram_start - z80codebase - 1
+	ld bc,myz80stack_top - 1
 	ld (hl),l
 	ldir
 	ld hl,hram_saved
+	inc d
 	ld b,2
 	ldir
 	
@@ -951,7 +976,8 @@ _
 	push.s hl
 	push.s bc ; Cycle count of 0 for default return handler
 	
-	; Copy palette conversion code to SHA hardware, if possible
+#ifdef NO_PORTS
+	; Copy rendering code to SHA hardware, if possible
 	APTR(sha_code)
 	ld de,mpShaData
 	ld c,sha_code_size
@@ -989,6 +1015,27 @@ _
 	ld (convert_palette_row_smc_2),hl
 	ld (convert_palette_row_smc_3),hl
 _
+#else
+	; Enable SHA access
+	ld c,$06
+	call port_read
+	set 2,a
+	call port_write
+	; Acknowledge any prior protection violations
+	ld c,$3E
+	ld a,3
+	call port_write
+	; Copy rendering code to SHA hardware
+	APTR(sha_code)
+	ld de,mpShaData
+	ld c,sha_code_size
+	ld a,(iy-state_size+STATE_SYSTEM_TYPE)
+	or a
+	jr z,_
+	add hl,bc ;sha_code_gbc
+_
+	ldir
+#endif
 
 	ld hl,(rom_start)
 	ld (rom_unbanked_base),hl
@@ -2076,6 +2123,15 @@ _
 	ld (hl),a
 ExitEmulationNoRTC:
 	ld sp,(saveSP)
+#ifndef NO_PORTS
+	; Read from SHA status to ensure consistent reads when access disabled
+	ld a,(mpShaStatus)
+	; Disable SHA access
+	ld bc,$0006
+	call port_read
+	res 2,a
+	call port_write
+#endif
 	ACALL(RestoreOriginalHardwareSettings)
 	ld a,(exitReason)
 NewExitReason:
@@ -3344,7 +3400,11 @@ SetCustomHardwareSettings:
 	; Set the Z80 stack to a safe place to call the interrupt stub with
 	ld.sis sp,myz80stack
 SetCustomHardwareSettingsNoHalt:
+#ifdef NO_PORTS
 	di
+#else
+	call port_unlock
+#endif
 	APTR(customHardwareSettings)
 	push hl
 	pop ix
@@ -3378,9 +3438,23 @@ RestoreHardwareSettings:
 	ld (mpRtcCtrl),a
 	ld hl,(ix+11)
 	ld (mpSpiDivider),hl
+#ifdef NO_PORTS
 	ret nc
 	ei
 	ret
+#else
+	lea hl,ix+14
+	ld bc,$003A-1
+_
+	ld a,(hl)
+	inc hl
+	inc bc
+	call port_write
+	bit 2,c
+	jr z,-_
+	jp c,port_lock
+	ret
+#endif
 	
 BackupMiniScreen:
 	ld ix,scanlineLUT_1
@@ -3976,7 +4050,11 @@ customHardwareSettings:
 #else
 	.dl $070001
 #endif
-	
+#ifndef NO_PORTS
+	; Stack protector
+	.dl z80codebase + myz80stack_top + 3
+#endif
+
 lcdSettings4Bit:
 	; LcdTiming0
 	.db $38,$03,$9C,$1F
