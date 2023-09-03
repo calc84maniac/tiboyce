@@ -79,21 +79,7 @@ rst38h:
 	exx
 	ret nz
 	ex (sp),ix
-	jr nc,cycle_overflow_for_jump
-	inc ix
-	lea hl,ix
-	exx
-	inc bc ;BCU=0
-	ld c,a
-	ld b,(ix-4)
-	ld de,(ix-8)
-#ifdef VALIDATE_SCHEDULE
-	call.il schedule_subblock_event_helper
-#else
-	jp.lil schedule_subblock_event_helper
-#endif
-
-cycle_overflow_for_jump:
+	jr c,cycle_overflow_for_subblock
 	ld hl,(ix+2)
 	push hl
 	 exx
@@ -108,6 +94,40 @@ cycle_overflow_for_jump:
 	call.il schedule_jump_event_helper_adjusted
 #else
 	jp.lil schedule_jump_event_helper_adjusted
+#endif
+
+#ifndef NO_PORTS
+push_z80_de_safe:
+	pop hl
+	push de
+	push hl
+	ret.l
+
+push_z80_hl_safe:
+	ex (sp),hl
+	push hl
+	ret.l
+
+z80_retn:
+	retn
+
+	.block $66-$
+z80_nmi:
+	jp.lil jit_stack_overflow_helper
+#endif
+
+cycle_overflow_for_subblock:
+	inc ix
+	lea hl,ix
+	exx
+	inc bc ;BCU=0
+	ld c,a
+	ld b,(ix-4)
+	ld de,(ix-8)
+#ifdef VALIDATE_SCHEDULE
+	call.il schedule_subblock_event_helper
+#else
+	jp.lil schedule_subblock_event_helper
 #endif
 
 	#include "branch.asm"
