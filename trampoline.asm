@@ -283,7 +283,11 @@ patch_hl_mbc_write_helper:
 	dec hl
 	push.s hl
 	ex.s (sp),ix
+#ifdef NO_PORTS
 	push.s de
+#else
+	call.is push_z80_de_safe
+#endif
 	ld l,c
 	ld d,$26 ;LD H,
 	jr nz,patch_hl_mbc_write_reg_helper

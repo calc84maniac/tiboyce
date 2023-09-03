@@ -348,6 +348,7 @@ GBC_OBJ_OPAQUE_COLORS = GBC_OBJ_HIGH_PRIO_COLORS + 3
 
 ; System calls used
 _sprintf = $0000BC
+__frameset0 = $000130
 _GetFieldSizeFromType = $00030C
 _FindField = $000314
 _boot_InitializeHardware = $000384
@@ -392,6 +393,8 @@ usbArea	= $D13FD8 ; End of SafeRAM
 osYear = $D177CF
 osDay = $D177D8
 osMonth = $D177DB
+heapBot = $D1887C
+ramCodeTop = $D18C7C
 userMem = $D1A881
 vRam = $D40000
 
@@ -400,6 +403,7 @@ appVarObj = $15
 tExtTok = $EF
 tAsm84CeCmp = $7B
 LlBrack = $C1
+E_Validation = 40
 
 ; OS flags used
 graphFlags = $03
@@ -408,6 +412,7 @@ graphDraw = 0		;0=graph is valid, 1=redraw graph(dirty)
 ; 84+CE IO definitions
 mpFlashWaitStates = $E00005
 
+mpShaStatus = $E10001
 mpShaData = $E10010
 
 mpLcdTiming0 = $E30000
@@ -575,15 +580,16 @@ myz80stack = shadow_stack_start
 ; The bottom of the Z80 stack. Grows down from the Game Boy HRAM start.
 myz80stack = $FE00
 #endif
+myz80stack_top = myz80stack - 256
 ; The lower bound of the call stack.
 call_stack_lower_bound = myz80stack - 4 - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80)
 ; The flags translation LUT.
-flags_lut = myz80stack - 512
+flags_lut = myz80stack_top - 256
 ; The end of the trampoline high allocation pool.
 trampoline_end = flags_lut - 3
 
-; The bottom of the ADL stack. Grows down from the end of SafeRAM.
-myADLstack = usbArea - 3
+; The bottom of the ADL stack. Grows down from the end of ramCode.
+myADLstack = ramCodeTop - 3
 
 ; Preprocessed Game Boy tilemap entries. 16KB in size.
 ; Game Boy only:
@@ -1717,6 +1723,10 @@ originalHardwareSettings:
 	.db 0
 	;mpSpiDivider
 	.dl 0
+#ifndef NO_PORTS
+	; Stack protector
+	.dl $D19881
+#endif
 	
 originalLcdSettings:
 	; LcdTiming0
@@ -1727,6 +1737,9 @@ originalLcdSettings:
 	.dw spiSetupDefault+1
 	
 ; These files are loaded into RAM.
+#ifndef NO_PORTS
+	#include "unlock_helpers.asm"
+#endif
 	#include "jit.asm"
 	#include "decode.asm"
 	#include "mbc_helpers.asm"
@@ -1907,6 +1920,9 @@ arc_program_start = arc_offset+header_size
 arc_start:
 ; These files remain in the archived appvar.
 	#include "setup.asm"
+#ifndef NO_PORTS
+	#include "unlock.asm"
+#endif
 	#include "text.asm"
 	#include "menu.asm"
 	#include "z80mode.asm"

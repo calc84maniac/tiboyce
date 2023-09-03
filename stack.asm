@@ -1004,6 +1004,7 @@ do_pop_any_slow:
 	ret
 	
 do_pop_instr_get_cycle_offset:
+	push bc
 	jp.lil do_pop_instr_get_cycle_offset_helper
 	
 	; SMC to apply to pop routines
@@ -1262,8 +1263,9 @@ do_push_instr_slow:
 do_push_instr_get_cycle_offset_2:
 	inc de
 do_push_instr_get_cycle_offset:
-	ld h,b
-	ld a,c
+	; Intentionally use stack instead of loading to ensure stack is allocated
+	push bc
+	pop hl
 	pop bc
 	push bc
 	jp.lil do_push_instr_get_cycle_offset_helper

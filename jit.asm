@@ -170,7 +170,6 @@ do_pop_instr_get_cycle_offset_helper:
 	; Check the original instruction
 	ld a,c
 	cp $F1 ;POP AF
-	push.s bc
 	; Get the JIT address after the pop routine call
 	ld hl,4
 	add.s hl,sp
@@ -192,11 +191,16 @@ _
 	jp.sis do_pop_instr_get_cycle_offset_return
 	
 do_push_instr_get_cycle_offset_helper:
+	ld a,l
 	ex af,af'
 	push.s af
 	; Set call cycle offset of 0
 	ld l,0
+#ifdef NO_PORTS
 	push.s hl
+#else
+	call.is push_z80_hl_safe
+#endif
 	exx
 	push.s hl
 	ld a,h
@@ -268,7 +272,59 @@ _
 _
 	lea ix,ix-16
 	ret
-	
+
+#ifndef NO_PORTS
+; This is called when the Z80 stack overflows via an NMI.
+; It removes CALL_STACK_DEPTH cached callstack entries from the bottom of
+; both the Z80 and ADL stacks.
+jit_stack_overflow_helper:
+	push af
+	push bc
+	push de
+	push hl
+	; Check the NMI reason and acknowledge it
+	ld bc,$003D
+	call port_read
+	inc bc
+	and 3
+	call port_write
+	; If the reason isn't only the stack protector, throw a runtime error
+	dec a
+	jr nz,runtime_error
+	; Move the Z80 stack contents, which are fixed-size
+	ld hl,z80codebase + call_stack_lower_bound - 1
+	ld de,z80codebase + myz80stack - 4 - 1
+	ld bc,call_stack_lower_bound - myz80stack_top
+	lddr
+	ld hl,CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_Z80
+	add.s hl,sp
+	ld.s sp,hl
+	; Move the ADL stack contents, which are variable size
+	ld hl,myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL) - 1
+	ld de,myADLstack - 1
+	sbc hl,sp
+	ld b,h
+	ld c,l
+	add hl,sp
+	lddr
+	ld a,(hl)
+	ld (de),a
+	ex de,hl
+	ld sp,hl
+#ifdef FASTLOG
+	pop.s hl
+	push.s hl
+	push hl
+	FASTLOG_EVENT(CALLSTACK_OVERFLOW, 2)
+	inc sp
+#endif
+	pop hl
+	pop de
+	pop bc
+	pop af
+	jp.sis z80_retn
+#endif
+
 Z80InvalidOpcode_helper:
 	exx
 	pop.s bc
