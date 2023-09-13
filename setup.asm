@@ -32,7 +32,7 @@ _
 	ld (calcType),a
 	; Also, save the original stack protector location
 	ld c,$3A-1
-	ld hl,originalHardwareSettings+14
+	ld hl,originalHardwareSettings+15
 _
 	inc bc
 	call port_read
@@ -3382,12 +3382,14 @@ BackupHardwareSettings:
 	ld (ix+7),a
 	ld a,(mpKeypadScanMode)
 	ld (ix+8),a
-	ld a,(mpLcdImsc)
+	ld a,(mpKeypadIntMask)
 	ld (ix+9),a
-	ld a,(mpRtcCtrl)
+	ld a,(mpLcdImsc)
 	ld (ix+10),a
+	ld a,(mpRtcCtrl)
+	ld (ix+11),a
 	ld hl,(mpSpiDivider)
-	ld (ix+11),hl
+	ld (ix+12),hl
 	ret
 	
 SetCustomHardwareSettings:
@@ -3433,17 +3435,19 @@ RestoreHardwareSettings:
 	ld a,(ix+8)
 	ld (mpKeypadScanMode),a
 	ld a,(ix+9)
-	ld (mpLcdImsc),a
+	ld (mpKeypadIntMask),a
 	ld a,(ix+10)
+	ld (mpLcdImsc),a
+	ld a,(ix+11)
 	ld (mpRtcCtrl),a
-	ld hl,(ix+11)
+	ld hl,(ix+12)
 	ld (mpSpiDivider),hl
 #ifdef NO_PORTS
 	ret nc
 	ei
 	ret
 #else
-	lea hl,ix+14
+	lea hl,ix+15
 	ld bc,$003A-1
 _
 	ld a,(hl)
@@ -4031,7 +4035,7 @@ _
 	
 customHardwareSettings:
 	;mpIntEnable
-	.dl $000001
+	.dl $000C01
 	;mpIntLatch
 	.dl $000011
 	;mpFlashWaitStates
@@ -4040,6 +4044,8 @@ customHardwareSettings:
 	.db z80codebase >> 16
 	;mpKeypadScanMode
 	.db 3
+	;mpKeypadIntMask
+	.db 2
 	;mpLcdImsc
 	.db 8
 	;mpRtcCtrl
