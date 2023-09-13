@@ -458,6 +458,8 @@ mpRtcCtrl = $F30020
 mpRtcIntStatus = $F30034
 
 mpKeypadScanMode = $F50000
+mpKeypadIntStat = $F50008
+mpKeypadIntMask = $F5000C
 mpKeypadGrp0 = $F50010
 mpKeypadGrp1 = $F50012
 mpKeypadGrp2 = $F50014
@@ -1716,6 +1718,8 @@ originalHardwareSettings:
 	; MBASE
 	.db 0
 	;mpKeypadScanMode
+	.db 0
+	;mpKeypadIntMask
 	.db 0
 	;mpLcdImsc
 	.db 0

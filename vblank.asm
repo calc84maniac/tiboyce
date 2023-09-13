@@ -184,9 +184,11 @@ frameskip_end:
 	    ld (z80codebase+ppu_mode0_enable_catchup_smc),a
 	    ld (z80codebase+ppu_mode2_enable_catchup_smc),a
 	    ld (z80codebase+ppu_lyc_enable_catchup_smc),a
-	    
+
+parse_keys:
 	    ; Get keys
 	    ld ix,mpKeypadGrp0
+	    jp nz,parse_menu_keys
 
 key_smc_turbo = $+2
 	    bit 2,(ix+1*2)	;ZOOM
@@ -229,6 +231,7 @@ key_smc_down = $+2
 	    set 2,a
 _
 	    ld (z80codebase+keys_low),a
+	    ld l,a
 	    ld a,$FF
 key_smc_a = $+2
 	    bit 5,(ix+1*2)	;2ND
@@ -251,7 +254,38 @@ key_smc_start = $+2
 	    res 3,a
 _
 	    ld (z80codebase+keys_high),a
+	    ld h,a
+	    ; Check if any key groups are selected
+	    ld de,hram_base+P1
+	    ld a,(de)
+	    inc a
+	    ret z
+	    dec a
+	    or $CF
+	    bit 4,a
+	    jr nz,_
+	    and l
+	    bit 5,a
+	    jr nz,++_
+_
+	    and h
+_
+	    ld (de),a
+	    ; Check if the old value was $F and the new value is not $F
+	    or $F0
+	    inc a
+	    ld hl,z80codebase+lastP1state
+	    tst a,(hl)
+	    cpl
+	    ld (hl),a
+	    ret p
+	    ; Request a joypad interrupt
+	    ld l,e ;active_ints & $FF
+	    ld h,e ;active_ints >> 8
+	    set 4,(hl)
+	    ret
 
+parse_menu_keys:
 key_smc_menu = $+2
 	    bit 6,(ix+6*2)	;CLEAR
 	    jr z,_
@@ -428,14 +462,22 @@ wait_for_interrupt:
 	ld (hl),bc
 	ret
 	
-frame_interrupt:
-	push de
-	 push bc
-	  call sync_frame_flip_always
-	 pop bc
-	pop de
-	jp.sis frame_interrupt_return
-	
+polled_interrupt:
+	push ix
+	 push de
+	  push bc
+	   call sync_frame_flip
+	   ld hl,mpKeypadIntStat
+	   ld a,(hl)
+	   ld (hl),a
+	   cpl
+	   and 2
+	   call z,parse_keys
+	  pop bc
+	 pop de
+	pop ix
+	jp.sis polled_interrupt_return
+
 ; Prepares to render the next frame.
 ; This swaps the current buffer, resets internal render variables,
 ; and prepares the current palette pointers.

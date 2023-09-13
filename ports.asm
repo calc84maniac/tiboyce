@@ -156,6 +156,7 @@ writeIF:
 	ld (active_ints),a
 checkInt:
 	exx
+checkIntSwapped:
 	; Check the pre-delay interrupt state, since if the interrupt enable
 	; delay is active then an interrupt check is already scheduled
 	ld a,(intstate_smc_2)
@@ -237,7 +238,10 @@ writeDIVhandler:
 writeDIV:
 	call updateTIMA
 	jp.lil div_write_helper
-	
+
+writeP1:
+	jp _writeP1
+
 writeSC:
 	jp _writeSC
 	
@@ -348,9 +352,6 @@ writeSVBK_stack:
 	ld iyh,a
 	ld a,c
 	jr writeVBK_finish
-
-writeP1:
-	jr _writeP1
 	
 writeRP:
 	jr _writeRP
@@ -389,29 +390,6 @@ writeVBK_finish:
 	ld (hl),a
 	dec h \ dec h
 	ld (hl),a
-	ld a,e
-	ex af,af'
-	exx
-	ret
-	
-writeP1handler:
-	ld e,a
-_writeP1:
-	exx
-	ld a,l
-	exx
-	or $CF
-	bit 4,a
-	jr nz,_
-keys_low = $+1
-	and $FF
-_
-	bit 5,a
-	jr nz,_
-keys_high = $+1
-	and $FF
-_
-	ld (P1),a
 	ld a,e
 	ex af,af'
 	exx
@@ -526,7 +504,42 @@ write_palette_data_check_autoinc:
 write_palette_data_autoinc_wrap:
 	ld c,$C0
 	jr write_palette_data_autoinc_finish
-	
+
+writeP1handler:
+	ld e,a
+_writeP1:
+	exx
+	ld a,l
+	exx
+	; Combine active key groups
+	or $CF
+	bit 4,a
+	jr nz,_
+keys_low = $+1
+	and $FF
+_
+	bit 5,a
+	jr nz,_
+keys_high = $+1
+	and $FF
+_
+	ld (P1),a
+	; Check if the old value was $F and the new value is not $F
+	or $F0
+	inc a
+lastP1state = $+2
+	tst a,0
+	cpl
+	ld (lastP1state),a
+	jp p,writeP1_finish
+	; Check if the joypad interrupt bit is already set
+	sbc hl,hl ;active_ints
+	bit 4,(hl)
+	jr nz,writeP1_finish
+	; Request a joypad interrupt
+	set 4,(hl)
+	jp checkIntSwapped
+
 writeSChandler:
 	ld e,a
 _writeSC:
@@ -578,6 +591,7 @@ _writeSC:
 writeSC_disable:
 	ld hl,disabled_counter_checker
 	ld (event_counter_checker_slot_serial),hl
+writeP1_finish:
 writeTMA_finish:
 	ld a,e
 	ex af,af'

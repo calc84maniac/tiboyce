@@ -628,10 +628,10 @@ timer_period = $+1
 	ret
 
 audio_expired_handler:
-	ld.lil a,(mpLcdMis)
+	ld.lil a,(mpIntMaskedStatus+1)
 	or a
-	jr nz,do_frame_interrupt
-frame_interrupt_return:
+	jr nz,do_polled_interrupt
+polled_interrupt_return:
 	ld a,(NR52)
 	tst a,$0F
 	jr z,audio_expired_disabled
@@ -708,8 +708,8 @@ audio_counter_offset = $+1
 	ld de,-4096	; Double this in double-speed mode
 	ret
 
-do_frame_interrupt:
-	jp.lil frame_interrupt
+do_polled_interrupt:
+	jp.lil polled_interrupt
 
 serial_counter_checker:
 serial_counter = $+1
