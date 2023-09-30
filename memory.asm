@@ -271,6 +271,7 @@ mbc_specific_get_write_ptr:
 	ret
 	
 rom_banked_get_ptr:
+	MATCH_LSB(rom_banked_get_ptr, rom_banked_read_any)
 rom_bank_base = $+2+z80codebase
 	ld.lil hl,0
 	add.l hl,de
@@ -280,6 +281,7 @@ rom_bank_base = $+2+z80codebase
 	nop
 	
 rom_unbanked_get_ptr:
+	MATCH_LSB(rom_unbanked_get_ptr, rom_unbanked_read_any)
 rom_unbanked_base = $+2+z80codebase
 	ld.lil hl,0
 	add.l hl,de
@@ -289,12 +291,14 @@ rom_unbanked_base = $+2+z80codebase
 	nop
 	
 rom_trimmed_get_ptr:
+	MATCH_LSB(rom_trimmed_get_ptr, rom_trimmed_read_any)
 rom_trimmed_base = $+2+z80codebase
 	ld.lil hl,mpZeroPage
 	ex af,af'
 	ret
 	
 vram_banked_get_read_ptr:
+	MATCH_LSB(vram_banked_get_ptr, vram_banked_read_any)
 vram_bank_base = $+2+z80codebase
 	ld.lil hl,vram_base
 	add.l hl,de
@@ -305,6 +309,7 @@ vram_bank_base = $+2+z80codebase
 	
 	nop
 cram_banked_get_ptr:
+	MATCH_LSB(cram_banked_get_ptr, cram_banked_read_any)
 cram_banked_get_ptr_protect_smc = $
 cram_bank_base = $+2+z80codebase
 	ld.lil hl,0
@@ -321,6 +326,7 @@ cram_rtc_get_read_ptr_finish:
 	ret
 	
 wram_banked_get_ptr:
+	MATCH_LSB(wram_banked_get_ptr, wram_banked_read_any)
 wram_bank_base = $+2+z80codebase
 	ld.lil hl,wram_gbc_base
 _
@@ -331,11 +337,13 @@ _
 	nop
 	
 wram_mirror_banked_get_ptr:
+	MATCH_LSB(wram_mirror_banked_get_ptr, wram_mirror_banked_read_any)
 wram_mirror_bank_base = $+2+z80codebase
 	ld.lil hl,wram_gbc_base - $2000
 	jr -_
 	
 wram_unbanked_get_ptr:
+	MATCH_LSB(wram_unbanked_get_ptr, wram_unbanked_read_any)
 wram_unbanked_base = $+2+z80codebase
 	ld.lil hl,wram_base
 _
@@ -346,11 +354,13 @@ _
 	nop
 
 wram_mirror_unbanked_get_ptr:
+	MATCH_LSB(wram_mirror_unbanked_get_ptr, wram_mirror_unbanked_read_any)
 wram_mirror_unbanked_base = $+2+z80codebase
 	ld.lil hl,wram_base-$2000
 	jr -_
 	
 shadow_stack_get_ptr:
+	MATCH_LSB(shadow_stack_get_ptr, shadow_stack_read_any)
 shadow_stack_base = $+2+z80codebase
 	ld.lil hl,z80codebase
 	add.l hl,de
@@ -358,6 +368,7 @@ shadow_stack_base = $+2+z80codebase
 	ret
 	
 hmem_get_ptr:
+	MATCH_LSB(hmem_get_ptr, hmem_read_any)
 	; This is used for pointer lookups by the JIT engine, and only for reads,
 	; to more simply support HRAM execution.
 hmem_unbanked_base = $+2+z80codebase
@@ -365,6 +376,7 @@ hmem_unbanked_base = $+2+z80codebase
 	jr hmem_get_pointer_impl
 	
 oam_get_ptr:
+	MATCH_LSB(oam_get_ptr, oam_read_any)
 oam_unbanked_base = $+2+z80codebase
 	ld.lil hl,hram_base
 	add.l hl,de
@@ -388,11 +400,14 @@ hmem_get_pointer_impl:
 	nop
 	
 cram_open_bus_get_ptr:
+	MATCH_LSB(cram_open_bus_get_ptr, cram_open_bus_read_any)
 	jp do_cram_open_bus_get_ptr
 	; This is treated as a union because MBC1 and RTC cannot coexist
 mbc1_preserved_cram_bank_base = $+z80codebase
 cram_rtc_get_ptr:
+	MATCH_LSB(cram_rtc_get_ptr, cram_rtc_read_any)
 cram_mbc2_get_ptr:
+	MATCH_LSB(cram_mbc2_get_ptr, cram_mbc2_read_any)
 	; Check whether this is a read or write
 	exx
 	pop hl
@@ -422,6 +437,7 @@ cram_mbc2_get_ptr:
 	; GBC OBJ palette data
 	.block (mem_get_ptr_routines+256-64)-$
 gbc_obj_palette_data:
+	MATCH_LSB(gbc_obj_palette_data, gbc_bg_palette_data)
 	.block 64
 	
 	; LUT to index write routines.
@@ -458,23 +474,27 @@ mem_write_any_routines:
 	
 	; MBC write handlers come first for easy detection by absolute writes
 mbc_cram_protect_write_any:
+	MATCH_LSB(mbc_cram_protect_write_any, mbc_cram_protect_get_write_ptr)
 mbc_cram_protect_handler_smc = $+1
 	ld hl,mbc_write_cram_protect_handler
 	ex af,af'
 	jr handle_mbc_write_any
 	
 mbc_rom_bank_write_any:
+	MATCH_LSB(mbc_rom_bank_write_any, mbc_rom_bank_get_write_ptr)
 	ld hl,mbc_write_rom_bank_handler
 	ex af,af'
 	jr handle_mbc_write_any
 	
 mbc_cram_bank_write_any:
+	MATCH_LSB(mbc_cram_bank_write_any, mbc_cram_bank_get_write_ptr)
 mbc1_write_large_rom_handler_smc = $+1
 	ld hl,mbc_write_cram_bank_handler
 	ex af,af'
 	jr handle_mbc_write_any
 	
 mbc_specific_write_any:
+	MATCH_LSB(mbc_specific_write_any, mbc_specific_get_write_ptr)
 	ld hl,mbc_write_denied_handler
 
 	; Reserved space for ROM/VRAM reads in other routine tables.
@@ -499,6 +519,7 @@ handle_mbc_write_any_smc = $+1
 cram_banked_write_handler:
 	ex af,af'
 cram_banked_write_any:
+	MATCH_LSB(cram_banked_write_any, cram_banked_get_ptr)
 cram_banked_write_any_protect_smc = $
 cram_bank_base_for_write = $+2+z80codebase
 	ld.lil hl,0
@@ -513,6 +534,7 @@ cram_banked_write_any_mbc2_smc = $
 wram_banked_write_handler:
 	ex af,af'
 wram_banked_write_any:
+	MATCH_LSB(wram_banked_write_any, wram_banked_get_ptr)
 wram_bank_base_for_write = $+2+z80codebase
 	ld.lil hl,wram_gbc_base
 _
@@ -522,10 +544,12 @@ _
 	ret
 	
 wram_mirror_banked_write_any:
+	MATCH_LSB(wram_mirror_banked_write_any, wram_mirror_banked_get_ptr)
 	ld.lil hl,(wram_mirror_bank_base)
 	jr -_
 	
 wram_unbanked_write_any:
+	MATCH_LSB(wram_unbanked_write_any, wram_unbanked_get_ptr)
 wram_unbanked_base_for_write = $+2+z80codebase
 	ld.lil hl,wram_base
 _
@@ -535,10 +559,12 @@ _
 	ret
 
 wram_mirror_unbanked_write_any:
+	MATCH_LSB(wram_mirror_unbanked_write_any, wram_mirror_unbanked_get_ptr)
 	ld.lil hl,(wram_mirror_unbanked_base)
 	jr -_
 	
 shadow_stack_write_any:
+	MATCH_LSB(shadow_stack_write_any, shadow_stack_get_ptr)
 	ld hl,(shadow_stack_base-z80codebase)
 	add hl,bc
 	ex af,af'
@@ -548,6 +574,7 @@ shadow_stack_write_any:
 	nop
 	
 hmem_write_any:
+	MATCH_LSB(hmem_write_any, hmem_get_ptr)
 	jr nz,patch_bc_de_hmem_write
 	; This unswaps shadow registers, so swap them back before returning
 	call do_hmem_write_any
@@ -555,6 +582,7 @@ hmem_write_any:
 	ret
 	
 oam_write_any:
+	MATCH_LSB(oam_write_any, oam_get_ptr)
 	ex af,af'
 	ld (bc),a
 	ret
@@ -562,6 +590,7 @@ oam_write_any:
 	.block 6
 	
 vram_oam_write_any:
+	MATCH_LSB(vram_oam_write_any, vram_oam_get_write_ptr)
 	jp nz,patch_bc_de_vram_write
 	push bc
 	 ld c,e
@@ -577,11 +606,14 @@ vram_oam_write_any:
 	nop
 	
 cram_open_bus_write_any:
+	MATCH_LSB(cram_open_bus_write_any, cram_open_bus_get_ptr)
 	ex af,af'
 	ret
 	nop
 cram_rtc_write_any:
+	MATCH_LSB(cram_rtc_write_any, cram_rtc_get_ptr)
 cram_mbc2_write_any:
+	MATCH_LSB(cram_mbc2_write_any, cram_mbc2_get_ptr)
 	exx
 	; Check if the RTC has changed since the last update
 	ld.lil hl,mpRtcIntStatus
