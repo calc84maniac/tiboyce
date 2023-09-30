@@ -138,6 +138,14 @@
 #endif
 #endmacro
 
+#macro MATCH_LSB(addr1, addr2)
+#if (addr1 ^ addr2) & $FF
+	#define ERROR_TEXT concat("\"", addr1, " and ", addr2, " are not LSB-aligned!\"")
+	.error ERROR_TEXT
+	#undef ERROR_TEXT
+#endif
+#endmacro
+
 ; A call to a routine located in the archived appvar.
 ; Destroys flags before entry to routine.
 #macro ACALL_SAFERET(address)
