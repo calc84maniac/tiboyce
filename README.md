@@ -68,7 +68,7 @@ You should now see a list of the ROMs on the calculator. Choose one with <kbd>�
 *   Select: <kbd>XTθn</kbd>
 
 ### Emulator controls:
-*   Open menu: <kbd>clear</kbd>
+*   Open/Close menu: <kbd>clear</kbd>
 *   Turbo mode: <kbd>zoom</kbd>
 *   Save state: <kbd>sto></kbd>
 *   Load state: <kbd>ln</kbd>
@@ -80,12 +80,10 @@ You should now see a list of the ROMs on the calculator. Choose one with <kbd>�
 ### Menu controls (non-configurable):
 *   Choose menu item: <kbd>↑</kbd> <kbd>↓</kbd>
 *   Change option: <kbd>←</kbd> <kbd>→</kbd>
-*   Select item: <kbd>2nd</kbd> <kbd>enter</kbd>
+*   Select item: <kbd>enter</kbd> or configured game control for A
 *   Delete ROM or save state: <kbd>del</kbd>
 *   Unmap key or remove per-game config item: <kbd>del</kbd>
-*   Brightness up: <kbd>+</kbd>
-*   Brightness down: <kbd>-</kbd>
-*   Close menu: <kbd>clear</kbd>
+*   Close menu: <kbd>clear</kbd> or configured game control for B
 
 ## Configuration
 

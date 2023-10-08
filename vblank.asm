@@ -432,14 +432,29 @@ update_state_with_numpad:
 	ret c
 	ld hl,(current_state)
 	ret
-	
+
+; Waits for the OS timer and polls for a single keypress.
+; Returns key code in A (0 for ON), or Z set if no key pressed.
+poll_single_key:
+	ld de,$000010
+	call ack_and_wait_for_interrupt
+	ACALL(GetKeyCode)
+	or a
+	ret nz
+	ld hl,mpIntMaskedStatus
+	bit 0,(hl)
+	ret z
+	ld l,mpIntAcknowledge & $FF
+	ld (hl),1
+	ret
+
 ; Acknowledges one or more interrupt sources and then waits on them.
 ; Interrupt is neither acknowledged nor handled once it triggers.
 ;
 ; Inputs:  DE = interrupt source mask to wait on
 ;          Interrupts are disabled
 ; Outputs: Original interrupt mask is restored
-; Destroys IX,DE,HL
+; Destroys BC,DE,HL
 ack_and_wait_for_interrupt:
 	ld (mpIntAcknowledge),de
 	
