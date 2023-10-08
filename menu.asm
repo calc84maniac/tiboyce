@@ -281,7 +281,7 @@ _
 _
 	inc a
 	ld (romListFrameCount),a
-	ld hl,main_menu_selection + 1
+	ld hl,main_menu_selection + LoadGameMenuIndex
 	cp (hl)
 	ret nc
 	ld (hl),a
@@ -841,6 +841,15 @@ _
 redraw_current_menu_trampoline:
 	jr redraw_current_menu
 
+ItemChangeKey:
+	sub RightKeyOffset
+	cp MenuKeyOffset-RightKeyOffset
+	ret nc
+	xor 4
+	inc a
+	ld (main_menu_selection + ControlsMenuIndex),a
+	jr draw_current_menu_trampoline
+
 ItemChangeDigit:
 	ld e,a
 	ld a,b
@@ -1048,15 +1057,34 @@ _
 	 djnz draw_menu_loop
 	pop af
 	ld c,a
-	jr z,_
+	jr z,draw_rom_list
 	sub e
 	ld (menuNextItem),a
 	ld a,c
 	scf
 	sbc a,d
 	ld (menuPrevItem),a
+	; Special handling for controls menu
+	ld a,(current_menu)
+	cp ControlsMenuIndex
+	ret nz
+	ld a,c
+	cp 5
+	jr z,_
+	xor 4^9
+	cp 4
+	jr z,++_
+	cp 9
+	ret nz
+	ld (menuNextItem),a
 	ret
 _
+	ld a,16
+_
+	ld (menuPrevItem),a
+	ret
+
+draw_rom_list:
 	; Draw the ROM list
 	dec c
 	ld a,(romListFrameCount)
@@ -1269,7 +1297,6 @@ ItemDisplayLink:
 ItemDisplayCmd:
 ItemChangeLink:
 ItemChangeCmd:
-ItemChangeKey:
 ItemDeleteLink:
 ItemDeleteCmd:
 	ret
