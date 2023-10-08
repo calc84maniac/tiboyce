@@ -46,11 +46,7 @@ SetEmulatorMessageWithDuration:
 	ld (hl),a
 	inc hl ;emulatorMessageText
 	push hl
-	 ld a,(GameMessageDisplay)
-	 cp $FF
-	 jr nz,_
 	 ld a,(MessageDisplay)
-_
 	 or a
 	 call nz,_sprintf
 	pop hl

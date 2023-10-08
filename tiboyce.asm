@@ -405,6 +405,7 @@ _InsertMem = $020514
 _CreatePVar4 = $020524
 _DelMem = $020590
 _ErrUndefined = $020764
+_ErrMemory = $020768
 _JError = $020790
 _PushErrorHandler = $020798
 _PopErrorHandler = $02079C
@@ -1126,7 +1127,7 @@ SaveStatePtr:
 	 ld l,3
 	 push de
 save_state_size_bytes = $+1
-	  ld de,game_config_end
+	  ld de,0
 	  add hl,de
 	 pop de
 	pop af
@@ -1425,18 +1426,7 @@ current_menu = $+1
 current_menu_selection = $+1
 	ld bc,main_menu_selection
 	ret
-	
-; Resolves the config item at IX via game and global config,
-; and advances to the next item.
-; Returns Z flag set if item was inherited from global config.
-read_config_item:
-	ld a,(ix-config_start+game_config_start)
-	inc ix
-	cp $FF
-	ret nz
-	ld a,(ix-1)
-	ret
-	
+
 ; Checks whether the digit item is load state and the state exists
 check_valid_load_state:
 	; Return zero if no ROM loaded
@@ -1679,7 +1669,7 @@ monthLUT:
 epochDayCount:
 	.dl 0
 ; The number of seconds offset for the selected time zone.
-timeZoneOffset:
+timeZoneOffsetSeconds:
 	.dl 0
 	
 ; The name of the currently loaded ROM.
@@ -1696,12 +1686,6 @@ MetaHeader:
 ; The name of the appvar itself.
 SelfName:
 	.db appVarObj,"TIBoyDat"
-; The name of the config file.
-ConfigFileName:
-	.db appVarObj,"TIBoyCfg"
-; The name of the skin file.
-SkinFileName:
-	.db appVarObj,"TIBoySkn"
 	
 ; The backup of SP before beginning emulation.
 saveSP:
@@ -1781,7 +1765,139 @@ should_auto_save:
 ; A bitmap of existing save states for the currently loaded game.
 existing_state_map:
 	.dw 0
+global_config_start:
+	.dl 0
+game_config_start:
+	.dl 0
+
+; Active configuration info:
+active_config_start:
+ConfigVersion:
+	.db 1
+
+; Number of option bytes
+	.db option_config_count
+OptionConfig:
+OptionConfigOffset = 0
+; The currently chosen frameskip value.
+FrameskipValue:
+FrameskipValueOffset = $-OptionConfig
+	.db 2
+; Frameskip type (0=Manual, 1=Auto, 2=Off)
+FrameskipType:
+FrameskipTypeOffset = $-OptionConfig
+	.db 1
+; Speed display (0=Never, 1=Turbo, 2=Slowdown, 3=Always)
+SpeedDisplay:
+SpeedDisplayOffset = $-OptionConfig
+	.db 1
+; Auto archive (0=Off, 1=On)
+AutoSaveState:
+AutoSaveStateOffset = $-OptionConfig
+	.db 1
+; Palette selection (0=Default, 1...=Manual)
+PaletteSelection:
+PaletteSelectionOffset = $-OptionConfig
+	.db 0
+; Time zone (0-31)
+TimeZone:
+TimeZoneOffset = $-OptionConfig
+	.db 0
+; Daylight saving time (0=Off, 1=On)
+DaylightSavingTime:
+DaylightSavingTimeOffset = $-OptionConfig
+	.db 0
+; Scaling mode (0=No scaling, 1=Fullscreen)
+ScalingMode:
+ScalingModeOffset = $-OptionConfig
+	.db 1
+; Skin display (0=Off, 1=On)
+SkinDisplay:
+SkinDisplayOffset = $-OptionConfig
+	.db 1
+; Turbo mode (0=Toggle, 1=Hold)
+TurboMode:
+TurboModeOffset = $-OptionConfig
+	.db 0
+; Scaling type (0=static, 1=scrolling)
+ScalingType:
+ScalingTypeOffset = $-OptionConfig
+	.db 1
+; Message display (0=Off, 1=On)
+MessageDisplay:
+MessageDisplayOffset = $-OptionConfig
+	.db 1
+; Adjust colors (0=Off, 1=On)
+AdjustColors:
+AdjustColorsOffset = $-OptionConfig
+	.db 1
+; Confirm state save/load (Bit 0=Load, Bit 1=Save)
+ConfirmStateOperation:
+ConfirmStateOperationOffset = $-OptionConfig
+	.db 3
+; Select preferred model (0=GB, 1=GBC, 2=GBA)
+PreferredModel:
+PreferredModelOffset = $-OptionConfig
+	.db 1
 	
+; Number of key bytes
+	.db key_config_count
+; Key configuration. Each is a GetCSC scan code.
+KeyConfig:
+KeyConfigOffset = $-OptionConfig
+TurboKey:
+TurboKeyOffset = $-OptionConfig
+	.db 51
+UndeletableKeysStartOffset = $-OptionConfig
+RightKey:
+RightKeyOffset = $-OptionConfig
+	.db 3
+LeftKey:
+LeftKeyOffset = $-OptionConfig
+	.db 2
+UpKey:
+UpKeyOffset = $-OptionConfig
+	.db 4
+DownKey:
+DownKeyOffset = $-OptionConfig
+	.db 1
+AKey:
+AKeyOffset = $-OptionConfig
+	.db 54
+BKey:
+BKeyOffset = $-OptionConfig
+	.db 48
+SelectKey:
+SelectKeyOffset = $-OptionConfig
+	.db 40
+StartKey:
+StartKeyOffset = $-OptionConfig
+	.db 55
+MenuKey:
+MenuKeyOffset = $-OptionConfig
+	.db 15
+UndeletableKeysEndOffset = $-OptionConfig
+SaveStateKey:
+SaveStateKeyOffset = $-OptionConfig
+	.db 42
+LoadStateKey:
+LoadStateKeyOffset = $-OptionConfig
+	.db 43
+StateKey:
+StateKeyOffset = $-OptionConfig
+	.db 44
+BrightnessUpKey:
+BrightnessUpKeyOffset = $-OptionConfig
+	.db 10
+BrightnessDownKey:
+BrightnessDownKeyOffset = $-OptionConfig
+	.db 11
+active_config_end:
+
+config_size = $ - active_config_start
+option_config_count = (KeyConfig-1) - FrameskipValue
+key_config_count = active_config_end - KeyConfig
+
 originalHardwareSettings:
 	; IntEnable
 	.dl 0
@@ -1830,127 +1946,12 @@ originalLcdSettings:
 	#include "lzf.asm"
 	
 	.echo "User RAM code size: ", $ - program_start
-	
-	; Pad to align vram_gbc_start
-	.block (7-$) & 15
-	
-; Active configuration info:
-config_start:
-	.dw config_end - ConfigVersion
-	
-ConfigVersion:
-	.db 1
-	
-; Number of option bytes
-	.db option_config_count
-; The currently chosen frameskip value.
-FrameskipValue:
-	.db 2
-	
-OptionConfig:
-; Frameskip type (0=Manual, 1=Auto, 2=Off)
-FrameskipType:
-	.db 1
-; Speed display (0=Never, 1=Turbo, 2=Slowdown, 3=Always)
-SpeedDisplay:
-	.db 1
-; Auto archive (0=Off, 1=On)
-AutoSaveState:
-	.db 1
-; Palette selection (0=Default, 1...=Manual)
-PaletteSelection:
-	.db 0
-; Time zone (0-31)
-TimeZone:
-	.db 0
-; Daylight saving time (0=Off, 1=On)
-DaylightSavingTime:
-	.db 0
-; Scaling mode (0=No scaling, 1=Fullscreen)
-ScalingMode:
-	.db 1
-; Skin display (0=Off, 1=On)
-SkinDisplay:
-	.db 1
-; Turbo mode (0=Toggle, 1=Hold)
-TurboMode:
-	.db 0
-; Scaling type (0=static, 1=scrolling)
-ScalingType:
-	.db 1
-; Message display (0=Off, 1=On)
-MessageDisplay:
-	.db 1
-; Adjust colors (0=Off, 1=On)
-AdjustColors:
-	.db 1
-; Confirm state save/load (Bit 0=Load, Bit 1=Save)
-ConfirmStateOperation:
-	.db 3
-; Select preferred model (0=GB, 1=GBC, 2=GBA)
-PreferredModel:
-	.db 1
-	
-; Number of key bytes
-	.db key_config_count
-; Key configuration. Each is a GetCSC scan code.
-KeyConfig:
-TurboKey:
-	.db 51
-UndeletableKeysStart:
-RightKey:
-	.db 3
-LeftKey:
-	.db 2
-UpKey:
-	.db 4
-DownKey:
-	.db 1
-AKey:
-	.db 54
-BKey:
-	.db 48
-SelectKey:
-	.db 40
-StartKey:
-	.db 55
-MenuKey:
-	.db 15
-UndeletableKeysEnd:
-SaveStateKey:
-	.db 42
-LoadStateKey:
-	.db 43
-StateKey:
-	.db 44
-BrightnessUpKey:
-	.db 10
-BrightnessDownKey:
-	.db 11
-	
-config_end:
-option_config_count = (KeyConfig-1) - FrameskipValue
-key_config_count = config_end - KeyConfig
-	
-; The RAM program ends here. Should be at an odd address.
+
+; The RAM program ends here.
 program_end:
 program_size = program_end - program_start
 	.echo "User RAM program size: ", program_size
 
-; Space for the game-specific config is located at the end of the program.
-game_config_start:
-GameFrameskipValue = game_config_start + (FrameskipValue - config_start)
-GameSkinDisplay = game_config_start + (SkinDisplay - config_start)
-GameMessageDisplay = game_config_start + (MessageDisplay - config_start)
-GamePreferredModel = game_config_start + (PreferredModel - config_start)
-GameOptionConfig = game_config_start + (OptionConfig - config_start)
-GameKeyConfig = game_config_start + (KeyConfig - config_start)
-game_config_end = game_config_start + (config_end - config_start)
-
-; The size of the save state is located after the game-specific config.
-;save_state_size_bytes = game_config_end
-
-;save_state_start = save_state_size_bytes + 3
 ; A saved copy of OAM/HRAM, when saving/loading state. 512 bytes in size.
 hmem_saved_offset = 0
 
