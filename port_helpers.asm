@@ -1183,21 +1183,27 @@ writeVBK_helper:
 	rra
 	jr z,_
 	call c,gbc_write_vram_catchup
-	ld hl,vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
+writeVBK_tilemap_bank_0_smc = $+1
+	ld hl,0 ;vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
 	ld (gbc_write_tilemap_bank_smc),hl
-	ld hl,vram_pixels_start-((vram_start*4) & $FFFFFF)
+writeVBK_pixels_bank_0_smc = $+1
+	ld hl,0 ;vram_pixels_start-((vram_start*4) & $FFFFFF)
 	ld (gbc_write_pixels_bank_smc),hl
-	ld a,(vram_gbc_base >> 8) & $FF
+writeVBK_base_0_smc = $+1
+	ld a,0 ;(vram_gbc_base >> 8) & $FF
 	ld (vram_bank_base_for_write+1),a
 	ld hl,vram_bank_base+1-z80codebase
 	jp.sis writeVBK_finish
 _
 	call c,gbc_write_vram_catchup
-	ld hl,vram_tiles_start-(((vram_start+$3800)*8) & $FFFFFF)+1
+writeVBK_tilemap_bank_1_smc = $+1
+	ld hl,0 ;vram_tiles_start-(((vram_start+$3800)*8) & $FFFFFF)+1
 	ld (gbc_write_tilemap_bank_smc),hl
-	ld hl,vram_pixels_start-(((vram_start+$2000)*4) & $FFFFFF)+4
+writeVBK_pixels_bank_1_smc = $+1
+	ld hl,0 ;vram_pixels_start-(((vram_start+$2000)*4) & $FFFFFF)+4
 	ld (gbc_write_pixels_bank_smc),hl
-	ld a,((vram_gbc_base + $2000) >> 8) & $FF
+writeVBK_base_1_smc = $+1
+	ld a,0 ;((vram_gbc_base + $2000) >> 8) & $FF
 	ld (vram_bank_base_for_write+1),a
 	ld hl,vram_bank_base+1-z80codebase
 	jp.sis writeVBK_finish
