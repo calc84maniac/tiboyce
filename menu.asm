@@ -12,6 +12,18 @@
 #define UNMAPPED_KEY 41
 
 ApplyConfiguration:
+	; Copy the global config into the active config
+	ld hl,(global_config_start)
+	ld de,OptionConfig-1
+	push de
+	 ld bc,config_size-1
+	 ldir
+	pop de
+	; If no ROM is loaded, our work here is done
+	ld a,(ROMName+1)
+	or a
+	ret z
+
 	; Display next frame always
 	ld a,$4F ;LD R,A
 	ld (z80codebase+updateSTAT_enable_catchup_smc),a
@@ -19,166 +31,83 @@ ApplyConfiguration:
 	ld (z80codebase+ppu_mode0_enable_catchup_smc),a
 	ld (z80codebase+ppu_mode2_enable_catchup_smc),a
 	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
-	
-	; Frameskip value
-	ld ix,FrameskipValue
-	call read_config_item
-	ld (speed_display_smc_0),a
-	inc a
-	ld (frameskip_value_smc),a
-	ld (skippable_frames),a
-	
-	; Frameskip type
-	call read_config_item
-	ld c,a
-	sub 2
-	jr nz,_
-	ld (speed_display_smc_0),a
-_
-	and $10
-	add a,$18
-	ld (frameskip_type_smc),a
-	ld a,c
-	or a
-	jr z,_
-	ld a,no_frameskip - (frameskip_type_smc+2)
-_
-	ld (frameskip_type_smc+1),a
-	
-	; Speed display
-	call read_config_item
-	ld c,a
-	sub 1
-	sbc a,a
-	and NoSpeedDisplay - YesSpeedDisplay
-	add a,YesSpeedDisplay - (speed_display_smc_1 + 1)
-	ld (speed_display_smc_1),a
-	ld a,c
-	sub 2
-	and $10
-	add a,$CE
-	ld (speed_display_smc_3),a
-	ld a,c
-	sub 3
-	and $10
-	add a,$18
-	ld (speed_display_smc_2),a
-	
-	; Auto Save State
-	call read_config_item
-	ld (should_auto_save),a
-	
-	; Palette selection
-	call read_config_item
-	ld hl,default_palette
-	or a
-	ld bc,0
-	jr z,_
-	APTR(ManualPaletteIndexTable-1)
-	ld c,a
-	add hl,bc
-_
-	push hl
-	
-	 ; Time zone
-	 call read_config_item
-	 ld c,a
-	 ; Daylight saving time
-	 call read_config_item
-	 APTR(TimeZoneOffsetTable)
-	 add hl,bc
-	 ld e,(hl)
-	 ld d,225
-	 mlt de
-	 sbc hl,hl
-	 or a
-	 jr z,_
-	 ld hl,60*60
-_
-	 sbc hl,de
-	 ld a,c
-	 cp 19
-	 jr nc,_
-	 add hl,de
-	 add hl,de
-_
-	 ld (timeZoneOffset),hl
-	
-	 ; Scaling mode
-	 call read_config_item
-	 ld (active_scaling_mode),a
-	 ; Skin display
-	 inc ix
-	
-	 ; Turbo toggle
-	 call read_config_item
-	 dec a
-	 and turbo_skip_toggle - (turbo_toggle_smc+1)
-	 ld (turbo_toggle_smc),a
-	 ld a,(turbo_active)
-	 add a,a
-	 add a,a
-	 add a,a
-	 add a,$20
-	 ld (turbo_keypress_smc),a
-	
-	 ; Scaling type
-	 call read_config_item
-	 ld (active_scaling_type),a
-	 ; Message display
-	 inc ix
-	pop hl
-	ld a,(currentSystemType)
-	or a
-	jr nz,_
-	; Disable color adjustment for classic palette
+
+	; Override global config with game-specific config
+	ld hl,(game_config_start)
+	ld b,(hl) ;option_config_count
+option_config_loop:
+	inc hl
+	inc de
 	ld a,(hl)
-	sub $1D
+	cp -1
+	jr z,_
+	ld (de),a
 _
-	; Adjust colors
-	call nz,read_config_item
-	push af
-	 ; Load palettes and setup color adjustment tables
-	 ld c,(hl)
-	 ACALL(LoadPalettes)
-	 ; BC=0
-	pop bc
-	; Set gamma setting based on color adjustment
-	ACALL(SetupGamma)
-	inc bc ;BC=0
-	
+	djnz option_config_loop
+
 	; Check for conflicting keys between configs
-	ld e,b
+	; C=0
+	inc hl
+	inc hl
 key_conflict_retry:
-	ld ix,KeyConfig
-	ld d,key_config_count
+	ld de,KeyConfig
+	ld b,key_config_count
+	push hl
 key_conflict_loop:
-	call read_config_item
-	jr nz,_
-	; This key is inherited from global, so make sure it has no conflict
-	; among game-specific keys
-	ld hl,GameKeyConfig
-	ld c,key_config_count
-	cpir
-	jr nz,_
-	; If a conflict was found, reset it to global and start over
-	dec hl
-	ld e,$FF
-	ld (hl),e
+	 ld a,(hl)
+	 cp -1
+	 jr nz,++_
+	 ; This key is inherited from global, so make sure it has no conflict
+	 ; among game-specific keys
+	 ld a,(de)
+	 cp UNMAPPED_KEY
+	 jr z,++_
+	 ex (sp),hl
+	 push hl
+	  push bc
+	   ld bc,key_config_count
+	   cpir
+	  pop bc
+	  jr nz,_
+	  ; If a conflict was found, reset it to global and start over
+	  dec hl
+	  ld c,$FF
+	  ld (hl),c
+	 pop hl
+	pop de
 	jr key_conflict_retry
 _
-	dec d
-	jr nz,key_conflict_loop
-	
-	push de
-	 ; Key configuration
+	 pop hl
+	 ex (sp),hl
+_
+	 inc hl
+	 inc de
+	 djnz key_conflict_loop
+	pop af
+	; Record whether any conflicts were removed
+	push bc
+
+	 ; Now override global config with game-specific config
+	 ld b,key_config_count
+key_config_loop:
+	 dec hl
+	 dec de
+	 ld a,(hl)
+	 cp -1
+	 jr z,_
+	 ld (de),a
+_
+	 djnz key_config_loop
+
+	 ; Key SMC configuration
 	 APTR(KeySMCList)
 	 ex de,hl
 	 ld hl,key_smc_turbo
-	 lea ix,ix-key_config_count
+	 ld ix,OptionConfig-key_config_count
 	 ld b,key_config_count
-key_config_loop:
-	 call read_config_item
+key_config_smc_loop:
+	 ld a,(ix+key_config_count+KeyConfigOffset)
+	 inc ix
 	 dec a
 	 ld c,a
 	 cpl
@@ -202,12 +131,133 @@ key_config_loop:
 	 inc hl
 _
 	 ld l,a
-	 djnz key_config_loop
+	 djnz key_config_smc_loop
+
+	 ; IX = OptionConfig
+	 ; Frameskip value
+	 ld a,(ix+FrameskipValueOffset)
+	 ld (speed_display_smc_0),a
+	 inc a
+	 ld (frameskip_value_smc),a
+	 ld (skippable_frames),a
+
+	 ; Frameskip type
+	 ld a,(ix+FrameskipTypeOffset)
+	 ld c,a
+	 sub 2
+	 jr nz,_
+	 ld (speed_display_smc_0),a
+_
+	 and $10
+	 add a,$18
+	 ld (frameskip_type_smc),a
+	 ld a,c
+	 or a
+	 jr z,_
+	 ld a,no_frameskip - (frameskip_type_smc+2)
+_
+	 ld (frameskip_type_smc+1),a
+
+	 ; Speed display
+	 ld a,(ix+SpeedDisplayOffset)
+	 ld c,a
+	 sub 1
+	 sbc a,a
+	 and NoSpeedDisplay - YesSpeedDisplay
+	 add a,YesSpeedDisplay - (speed_display_smc_1 + 1)
+	 ld (speed_display_smc_1),a
+	 ld a,c
+	 sub 2
+	 and $10
+	 add a,$CE
+	 ld (speed_display_smc_3),a
+	 ld a,c
+	 sub 3
+	 and $10
+	 add a,$18
+	 ld (speed_display_smc_2),a
+
+	 ; Auto Save State
+	 ld a,(ix+AutoSaveStateOffset)
+	 ld (should_auto_save),a
+	
+	 ; Time zone
+	 ld bc,0
+	 ld c,(ix+TimeZoneOffset)
+	 APTR(TimeZoneOffsetTable)
+	 add hl,bc
+	 ld e,(hl)
+	 ld d,225
+	 mlt de
+	 sbc hl,hl
+	 ; Daylight saving time
+	 ld a,(ix+DaylightSavingTimeOffset)
+	 or a
+	 jr z,_
+	 ld hl,60*60
+_
+	 sbc hl,de
+	 ld a,c
+	 cp 19
+	 jr nc,_
+	 add hl,de
+	 add hl,de
+_
+	 ld (timeZoneOffsetSeconds),hl
+
+	 ; Scaling mode
+	 ld a,(ix+ScalingModeOffset)
+	 ld (active_scaling_mode),a
+
+	 ; Turbo toggle
+	 ld a,(ix+TurboModeOffset)
+	 dec a
+	 and turbo_skip_toggle - (turbo_toggle_smc+1)
+	 ld (turbo_toggle_smc),a
+	 ld a,(turbo_active)
+	 add a,a
+	 add a,a
+	 add a,a
+	 add a,$20
+	 ld (turbo_keypress_smc),a
+	
+	 ; Scaling type
+	 ld a,(ix+ScalingTypeOffset)
+	 ld (active_scaling_type),a
+
+	 ; Palette selection
+	 ld a,(ix+PaletteSelectionOffset)
+	 ld hl,default_palette
+	 or a
+	 jr z,_
+	 APTR(ManualPaletteIndexTable-1)
+	 ld c,a
+	 add hl,bc
+_
+	 ld a,(currentSystemType)
+	 or a
+	 jr nz,_
+	 ; Disable color adjustment for classic palette
+	 ld a,(hl)
+	 sub $1D
+	 jr z,++_
+_
+	 ; Adjust colors
+	 ld a,(ix+AdjustColorsOffset)
+_
+	 push af
+	  ; Load palettes and setup color adjustment tables
+	  ld c,(hl)
+	  ACALL(LoadPalettes)
+	  ; BC=0
+	 pop bc
+	 ; Set gamma setting based on color adjustment
+	 ACALL(SetupGamma)
 	pop af
 	ret nc
 	ld a,ERROR_KEY_CONFLICT
 	AJUMP(DisplayWarning)
-	
+
 RefreshRomListFrame:
 	ld a,(romListFrameStart)
 	ld hl,(romTotalCount)
@@ -459,8 +509,7 @@ ShowConfirmStateOperation:
 	ld hl,(main_menu_selection)
 ShowConfirmRestartOperation:
 	; Return NZ if confirmation is disabled for this type
-	ld ix,ConfirmStateOperation
-	call read_config_item
+	ld a,(ConfirmStateOperation)
 	and l
 	dec a
 	ret m
@@ -582,54 +631,39 @@ _
 	jp GetRomDescriptionFromVAT
 	
 ItemSelectKey:
-	sub KeyConfig-OptionConfig
-	sbc hl,hl
-	ld l,a
-	ld a,(current_config)
-	or a
-	ld bc,KeyConfig
-	jr z,_
-	ld bc,GameKeyConfig
-_
-	add hl,bc
+	ACALL(GetOption)
 	push bc
-	 ld c,(hl)
-	 ld (hl),0
+	 ld a,(bc)
+	 push af
+	  xor a
+	  ld (bc),a
+	  ACALL(draw_current_menu)
+	  ACALL(WaitForKey)
+	 pop de
+	 jr nz,_
+	 ld a,d
+_
+	 ld e,a
+	 ld a,KeyConfigOffset
+	 ACALL(GetOption)
 	 push bc
-	  push hl
-	   ACALL(draw_current_menu)
-	   ACALL(WaitForKey)
-	  pop de
-	 pop bc
+	 pop hl
+	 ld bc,key_config_count
+	 ld a,e
+	 cpir
+	 jr nz,_
+	 ld a,d
+	 cp UNMAPPED_KEY
+	 jr z,_
+	 dec hl
+	 ld (hl),a
+	 ld a,e
+_
 	pop hl
-	jr nz,_
-	ld a,c
-_
-	ld b,a
-	ld a,c
-	cp UNMAPPED_KEY
-	ld a,b
-	jr z,RemapKey
-	ld b,key_config_count
-_
-	cp (hl)
-	jr nz,_
-	ld (hl),c
-_
-	inc hl
-	djnz --_
-_
-	ld (de),a
+	ld (hl),a
 	ACALL(draw_current_menu)
 	jr menu_loop
-	
-RemapKey:
-	ld bc,key_config_count
-	cpir
-	jr nz,-_
-	ld a,UNMAPPED_KEY
-	jr -_
-	
+
 CmdRestart:
 	; Use the Load State confirmation setting
 	ld l,1
@@ -803,26 +837,20 @@ _
 	ld (hl),a
 redraw_current_menu_trampoline:
 	jr redraw_current_menu
-	
+
 ItemChangeDigit:
 	ld e,a
-	ld hl,current_state
-	sub 2
-	jr nz,_
-	dec hl
-	or (hl) ;current_config
-	ld hl,FrameskipValue
-	jr z,_
-	ld c,(hl)
-	ld hl,GameFrameskipValue
-	ld a,(hl)
-	inc a
-	jr nz,_
-	ld (hl),c
-_
 	ld a,b
 	and 9
 	ld d,a
+	ld hl,current_state
+	ld a,e
+	sub 2
+	jr nz,_
+	ACALL(GetOption)
+	push bc
+	pop hl
+	ld (hl),a
 _
 	rrd
 	add a,d
@@ -833,28 +861,21 @@ _
 	call z,check_valid_state
 	jr z,-_
 	jr draw_current_menu_trampoline
-	
+
 ItemDeleteDigit:
-	cp 2
+	sub 2
 	jr nz,ItemDeleteState
-	ld a,(current_config)
-	dec a
-	ret nz
-	dec a
-	ld (GameFrameskipValue),a
-	jr draw_current_menu_trampoline
-	
 ItemDeleteKey:
 ItemDeleteOption:
 	ld d,a
 	ACALL(GetOption)
 	jr nz,ItemRevertGameSpecific
 	ld a,d
-	sub KeyConfig-OptionConfig
+	sub KeyConfigOffset
 	ret c
 	; Don't allow unmapping in-game buttons or menu
 	dec a
-	cp UndeletableKeysEnd-UndeletableKeysStart
+	cp UndeletableKeysEndOffset-UndeletableKeysStartOffset
 	ret c
 	ld a,(bc)
 	cp UNMAPPED_KEY
@@ -882,23 +903,18 @@ _
 	
 redraw_current_menu:
 	ACALL(RefreshRomListFrame)
-	
-	; Apply configuration if ROM is loaded (updates palette settings)
-	ld a,(ROMName+1)
-	or a
-	push af
-	 jr z,_
-	 ACALL(ApplyConfiguration)
-_
-	 ACALL(ClearMenuBuffer)
-	pop af
-	
+
+	; Apply configuration (updates palette and key settings)
+	ACALL(ApplyConfiguration)
+	ACALL(ClearMenuBuffer)
+
 	; Skip description display if on ROM list
 	ld hl,(current_menu)
 	dec l
 	jr z,draw_current_menu
 	
 	; Display only description if no ROM is loaded
+	ld a,(ROMName+1)
 	or a
 	ld c,35
 	jr z,draw_current_description
@@ -1181,11 +1197,11 @@ GetOption:
 	ld a,(hl)
 	jr z,++_
 	or a
-	ld hl,OptionConfig-1
+	ld hl,(global_config_start)
 	add hl,bc
 	ld a,(hl)
 	jr z,++_
-	ld hl,GameOptionConfig-1
+	ld hl,(game_config_start)
 	add hl,bc
 	ld b,a
 	ld a,(hl)
@@ -1208,22 +1224,16 @@ _
 	ret
 
 ItemDisplayDigit:
-	ld hl,current_state
-	add a,-2
-	jr nc,++_
-					; a = 0
-	dec hl				; hl = current_config
-	sub (hl)
+	cp 2
+	ld a,(current_state)
+	jr nz,_
+	xor a
+	ACALL(GetOption)
+	ld c,0
 	jr z,_
-					; a = -1
-	ld hl,GameFrameskipValue
-	sub (hl)
-	ld c,a
-	jr nz,++_
+	inc c
 _
-	ld hl,FrameskipValue
-_
-	ld a,(hl)
+	or a
 	sbc hl,hl
 	ld l,a
 ItemDisplayLink:
@@ -1317,6 +1327,7 @@ EmulationMenuIndex = ($-MenuList)/2
 	
 	.dw OptionConfigSelect+1
 OptionList:
+	.dw 1 ;OptionFrameskipValue+1
 	.dw OptionFrameskipType+1
 	.dw OptionSpeedDisplay+1
 	.dw OptionAutoSaveState+1
@@ -1493,25 +1504,25 @@ GraphicsMenu:
 
 	.db "",0
 	.db ITEM_OPTION
-	.db ScalingMode-OptionConfig
+	.db ScalingModeOffset
 	.db 55,0
 	.db "Scaling mode: %-10s",0
 
 	.db "Static: Scale absolutely.\nScrolling: Scale relative to tilemap.",0
 	.db ITEM_OPTION
-	.db ScalingType-OptionConfig
+	.db ScalingTypeOffset
 	.db 65,0
 	.db "Scaling type: %-9s",0
 
 	.db "Display a skin in \"no scaling\" mode.\nRequires the TIBoySkn.8xv AppVar.",0
 	.db ITEM_OPTION
-	.db SkinDisplay-OptionConfig
+	.db SkinDisplayOffset
 	.db 75,0
 	.db "Skin display: %-3s",0
 
 	.db "Off: Do not skip any frames.\nAuto: Skip up to N frames as needed.\nManual: Render 1 of each N+1 frames.",0
 	.db ITEM_OPTION
-	.db FrameskipType-OptionConfig
+	.db FrameskipTypeOffset
 	.db 95,0
 	.db "Frameskip type: %-6s",0
 
@@ -1523,25 +1534,25 @@ GraphicsMenu:
 
 	.db "Show percentage of real GB performance.\nTurbo: Display when turbo is activated.\nSlowdown: Display when below fullspeed.",0
 	.db ITEM_OPTION
-	.db SpeedDisplay-OptionConfig
+	.db SpeedDisplayOffset
 	.db 125,0
 	.db "Speed display: %-8s",0
 
 	.db "Display emulator message overlays.",0
 	.db ITEM_OPTION
-	.db MessageDisplay-OptionConfig
+	.db MessageDisplayOffset
 	.db 135,0
 	.db "Message display: %-3s",0
 
 	.db "Default: Use GBC game-specific palette.\nOthers: Use GBC manual palette.",0
 	.db ITEM_OPTION
-	.db PaletteSelection-OptionConfig
+	.db PaletteSelectionOffset
 	.db 155,0
 	.db "GB palette selection: %-10s",0
 
 	.db "Off: Use specified colors directly.\nGBC: Adjust to emulate a GBC display.\nGBA: Adjust to emulate a GBA display.",0
 	.db ITEM_OPTION
-	.db AdjustColors-OptionConfig
+	.db AdjustColorsOffset
 	.db 165,0
 	.db "Adjust colors: %-3s",0
 
@@ -1559,91 +1570,91 @@ ControlsMenu:
 
 	.db "",0
 	.db ITEM_KEY
-	.db RightKey-OptionConfig
+	.db RightKeyOffset
 	.db  55,0
 	.db "Right: %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db LeftKey-OptionConfig
+	.db LeftKeyOffset
 	.db  65,0
 	.db "Left:  %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db UpKey-OptionConfig
+	.db UpKeyOffset
 	.db  75,0
 	.db "Up:    %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db DownKey-OptionConfig
+	.db DownKeyOffset
 	.db  85,0
 	.db "Down:  %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db AKey-OptionConfig
+	.db AKeyOffset
 	.db 55,20
 	.db "A:      %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db BKey-OptionConfig
+	.db BKeyOffset
 	.db 65,20
 	.db "B:      %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db SelectKey-OptionConfig
+	.db SelectKeyOffset
 	.db 75,20
 	.db "Select: %-9s",0
 
 	.db "",0
 	.db ITEM_KEY
-	.db StartKey-OptionConfig
+	.db StartKeyOffset
 	.db 85,20
 	.db "Start:  %-9s",0
 
 	.db "Open the emulator menu.",0
 	.db ITEM_KEY
-	.db MenuKey-OptionConfig
+	.db MenuKeyOffset
 	.db 105,0
 	.db "Open menu:       %-9s",0
 
 	.db "Enable or toggle turbo mode.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db TurboKey-OptionConfig
+	.db TurboKeyOffset
 	.db 115,0
 	.db "Turbo mode:      %-9s",0
 
 	.db "Save state to the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db SaveStateKey-OptionConfig
+	.db SaveStateKeyOffset
 	.db 125,0
 	.db "Save state:      %-9s",0
 
 	.db "Load state from the current slot.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db LoadStateKey-OptionConfig
+	.db LoadStateKeyOffset
 	.db 135,0
 	.db "Load state:      %-9s",0
 
 	.db "Show or select the current state slot.\nPress a number while holding to select.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db StateKey-OptionConfig
+	.db StateKeyOffset
 	.db 145,0
 	.db "State slot:      %-9s",0
 
 	.db "Turn screen brightness up.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db BrightnessUpKey-OptionConfig
+	.db BrightnessUpKeyOffset
 	.db 155,0
 	.db "Brightness up:   %-9s",0
 
 	.db "Turn screen brightness down.\nPress DEL to unmap this key.",0
 	.db ITEM_KEY
-	.db BrightnessDownKey-OptionConfig
+	.db BrightnessDownKeyOffset
 	.db 165,0
 	.db "Brightness down: %-9s",0
 
@@ -1661,37 +1672,37 @@ EmulationMenu:
 
 	.db "Preferred Game Boy model to emulate.\nGBC will only be used if compatible.\nRequires game restart to take effect.",0
 	.db ITEM_OPTION
-	.db PreferredModel-OptionConfig
+	.db PreferredModelOffset
 	.db 55,0
 	.db "Preferred model: %-15s",0
 
 	.db "Automatically save state on ROM exit.\nState will be resumed upon next load.",0
 	.db ITEM_OPTION
-	.db AutoSaveState-OptionConfig
+	.db AutoSaveStateOffset
 	.db 75,0
 	.db "Auto save state: %-3s",0
 
 	.db "",0
 	.db ITEM_OPTION
-	.db ConfirmStateOperation-OptionConfig
+	.db ConfirmStateOperationOffset
 	.db 85,0
 	.db "Confirm state save/load: %-9s",0
 
 	.db "",0
 	.db ITEM_OPTION
-	.db TurboMode-OptionConfig
+	.db TurboModeOffset
 	.db 105,0
 	.db "Turbo mode: %-6s",0
 
 	.db "The time offset for games with clocks.\nShould match the time set in the OS.\nRelevant when sharing save files.",0
 	.db ITEM_OPTION
-	.db TimeZone-OptionConfig
+	.db TimeZoneOffset
 	.db 125,0
 	.db "Time zone: UTC%-6s",0
 
 	.db "Set to on if DST is currently active.",0
 	.db ITEM_OPTION
-	.db DaylightSavingTime-OptionConfig
+	.db DaylightSavingTimeOffset
 	.db 135,0
 	.db "Daylight Saving Time: %-3s",0
 

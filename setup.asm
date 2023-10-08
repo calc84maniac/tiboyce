@@ -3,6 +3,24 @@ Startup:
 	add hl,bc
 	ld (ArcBase),hl
 
+	; Align user memory so GBC VRAM is 16-byte aligned
+	ld hl,(asm_prgm_size)
+	ld de,userMem
+	add hl,de
+	ld de,-(2+config_size+2+config_size+3+vram_gbc_start_offset) & $FF
+	ld a,e
+	sub l
+	and $0F
+	ld e,a
+	ACALL(InsertMemSafe)
+	jr c,_
+
+	; Load the main config file over the defaults
+	ACALL(LoadConfigFile)
+_
+	jp c,_ErrMemory
+	ld (global_config_start),ix
+
 #ifdef NO_PORTS
 	; Get the calculator type from the OS header
 	ld hl,_OSHeader
@@ -44,7 +62,6 @@ _
 #endif
 
 	call _RunIndicOff
-	ACALL(LoadConfigFile)
 	
 CalculateEpochLoop:
 	; Grab current day count
@@ -310,23 +327,16 @@ ConvertMemToFile:
 	
 LoadROMAndRAMFailed:
 	push af
-	 ld hl,game_config_start
+	 ld hl,(game_config_start)
+	 dec hl
+	 dec hl
+	 dec hl
 	 ACALL(DelMemSafeSizeBytes)
 	pop af
 	ret
 	
 StartROM:
-	; Insert memory to hold the game config and initialize to default config
-	APTR(DefaultGameConfig)
-	push hl
-	 ld hl,game_config_start
-	 ld de,game_config_end - game_config_start
-	 ACALL(InsertMemSafe)
-	pop hl
-	ret c
-	ldir
-	
-	; Look up the game config file and apply it
+	; Generate the game-specific config file name
 	ld hl,ROMName
 	push hl
 	 xor a
@@ -341,11 +351,16 @@ _
 	 ld (hl),'g'
 	 inc hl
 	 ld (hl),a
+	 ; Get the default game-specific config data
+	 APTR(DefaultGameConfig)
+	 ex de,hl
 	pop hl
-	ACALL(LookUpAppvar)
-	ld de,game_config_start + (FrameskipValue - config_start)
 	ACALL(LoadConfigFileAny)
-	
+	ret c
+	ld (game_config_start),ix
+	lea hl,ix-1+config_size
+	ld (save_state_size_bytes),hl
+
 	ACALL_SAFERET(LoadROMAndRAMRestoreName)
 	jr c,LoadROMAndRAMFailed
 	
@@ -378,10 +393,13 @@ _
 	cp ERROR_NOT_ENOUGH_MEMORY
 	jr nz,RestartFromHere
 	ld hl,(cram_size)
-	ld de,(game_config_end - game_config_start) + 6
+	ld de,2+config_size+3+3
 	add hl,de
 	ex de,hl
-	ld hl,game_config_start
+	ld hl,(game_config_start)
+	dec hl
+	dec hl
+	dec hl
 	ACALL(DelMemSafe)
 OutOfMemoryFinish:
 	ld a,ERROR_NOT_ENOUGH_MEMORY
@@ -403,12 +421,8 @@ RestartFromHere:
 	add hl,bc
 	bit 7,(hl)
 	; If no support, default to GB
-	jr z,++_
-	ld a,(GamePreferredModel)
-	cp $FF
-	jr nz,_
+	jr z,_
 	ld a,(PreferredModel)
-_
 	or a
 _
 	push af
@@ -538,7 +552,7 @@ StartFromHere:
 	ld a,3
 	ld (main_menu_selection),a
 	
-	ld hl,SkinFileName
+	APTR(SkinFileName)
 	ACALL(LookUpAppvar)
 	ccf
 	jr c,_
@@ -2315,42 +2329,68 @@ _
 	inc hl
 	ld a,d
 	ret
-	
+
 LoadConfigFile:
-	ld hl,ConfigFileName
-	ACALL(LookUpAppvar)
-	ld de,FrameskipValue
+	APTR(ConfigFileName)
+	ld de,active_config_start
+	; Input: HL=appvar name, DE=default config data
+	; Output: C set if allocation failed,
+	;         Otherwise, IX points to option config start minus 1
 LoadConfigFileAny:
+	push hl
+	 push de
+	  ; Insert memory to hold the game config and initialize to default config
+	  ld hl,(asm_prgm_size)
+	  ld de,userMem
+	  add hl,de
+	  ld de,config_size+2
+	  ACALL(InsertMemSafe)
+	 pop hl
+	pop ix
 	ret c
-	
+	; Set size bytes
+	dec bc
+	dec bc
+	ld a,c
+	ld (de),a
+	inc de
+	ld a,b
+	ld (de),a
+	inc de
+	push de
+	 ldir
+	 lea hl,ix
+	 ACALL(LookUpAppvar)
+	pop ix
+	inc ix
+	ccf
+	ret nc
+
 	; Check the version byte
 	ld a,(hl)
 	inc hl
-	dec a
+	xor 1
 	ret nz
-	
+
 	ld bc,0
 	ld c,(hl)
 	inc hl
 	ld a,c
 	dec a
-	sub option_config_count
+	cp option_config_count
 	ret nc
+	lea de,ix+1+OptionConfigOffset
 	ldir
-	
-	cpl
-	ld c,a
-	ex de,hl
-	add hl,bc
-	ex de,hl
+
 	ld c,(hl)
 	inc hl
 	ld a,c
 	dec a
 	cp key_config_count
 	ret nc
-	inc de
+	lea de,ix+1+KeyConfigOffset
 	ldir
+	or a
 	ret
 
 SaveAutoStateFilesAndGameConfig:
@@ -2375,11 +2415,14 @@ _
 	
 	 ; Check if the config is still default
 	 APTR(DefaultGameConfig)
-	 ld de,game_config_start
+	 ld de,(game_config_start)
+	 dec de
 	 push de
-	  ld bc,game_config_end - game_config_start
+	  ld bc,config_size
 	  call memcmp
 	 pop de
+	 dec de
+	 dec de
 	pop hl
 	jr nz,SaveConfigFileAny
 	
@@ -2410,15 +2453,17 @@ DelMemSafe:
 	jp _DelMem
 	
 SaveConfigFile:
-	ld hl,ConfigFileName
-	ld de,config_start
+	APTR(ConfigFileName)
+	ld de,(global_config_start)
+	dec de
+	dec de
+	dec de
 SaveConfigFileAny:
 	push hl
 	 push de
 	  ACALL(LookUpAppvar)
 	 pop de
 	 jr c,_
-	
 	 dec hl
 	 dec hl
 	 inc bc
@@ -3380,7 +3425,7 @@ _
 	
 	push hl
 	 sbc hl,hl
-	 ld de,(timeZoneOffset)
+	 ld de,(timeZoneOffsetSeconds)
 	 sbc hl,de
 	 ex de,hl
 	pop hl
@@ -3400,7 +3445,7 @@ _
 	; Output: A,B,C = hours,minutes,seconds
 	;         HLIX = days
 ExtractUnixTimeStamp:
-	ld de,(timeZoneOffset)
+	ld de,(timeZoneOffsetSeconds)
 	add ix,de
 	jr nc,_
 	inc hl
@@ -3759,12 +3804,8 @@ _
 	ld (frame_dma_size_smc),hl
 	
 	ACALL(GeneratePixelCache)
-	
-	ld a,(GameSkinDisplay)
-	cp $FF
-	jr nz,_
+
 	ld a,(SkinDisplay)
-_
 	rra
 	jr nc,_
 	ld hl,(skin_file_ptr)
@@ -4366,10 +4407,8 @@ DefaultPaletteIndexTable:
 	.db $6C,$64,$85
 	
 DefaultGameConfig:
-; Size bytes
-	.dw config_end - ConfigVersion
 ; Version
-	.db 1	
+	.db 1
 ; Number of option bytes
 	.db option_config_count
 ; Option bytes defaulting to global
@@ -4378,7 +4417,15 @@ DefaultGameConfig:
 	.db key_config_count
 ; Key bytes defaulting to global
 	.block key_config_count, $FF
-	
+
+; The name of the config file.
+ConfigFileName:
+	.db appVarObj,"TIBoyCfg"
+
+; The name of the skin file.
+SkinFileName:
+	.db appVarObj,"TIBoySkn"
+
 #macro DEFINE_ERROR(name, text)
 	#define NUM_ERRORS eval(NUM_ERRORS+1)
 	buf(0)
