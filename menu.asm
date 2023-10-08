@@ -575,8 +575,6 @@ _
 	push bc
 	 cp 9
 	 jr z,++_
-	 cp 54
-	 jr z,++_
 	 jr ConfirmationDialogKeyLoop
 _
 	ld b,2
@@ -638,8 +636,15 @@ ItemSelectKey:
 	  xor a
 	  ld (bc),a
 	  ACALL(draw_current_menu)
-	  ACALL(WaitForKey)
+	  ; Direct key polling with no translation layer
+_
+	  call poll_single_key
+	  jr nz,-_
+_
+	  call poll_single_key
+	  jr z,-_
 	 pop de
+	 or a
 	 jr nz,_
 	 ld a,d
 _
@@ -732,8 +737,6 @@ _
 	jr c,menu_left_right
 	jr z,menu_up
 	cp 9-1
-	jr z,menu_select
-	cp 54-1
 	jr z,menu_select
 	cp 56-1
 	jr z,menu_delete
@@ -1126,40 +1129,66 @@ draw_mini_screen_row_loop:
 	ret
 	
 	; Returns key code in A, or 0 if ON is pressed.
-	; Intercepts plus/minus presses for brightness changes.
+	; Intercepts configured buttons for brightness changes.
+	; Translates configured A and B/Menu buttons to Enter and Clear.
 	; Also returns Z flag set if ON is pressed.
 WaitForKey:
 _
-	ld de,$000010
-	call ack_and_wait_for_interrupt
-	ACALL(GetKeyCode)
-	or a
+	call poll_single_key
 	jr nz,-_
 wait_for_key_loop:
-	ld de,$000010
-	call ack_and_wait_for_interrupt
-	ACALL(GetKeyCode)
-	sub 10
-	cp 2
-	jr c,wait_for_key_change_brightness
-	add a,10
-	ret nz
-	ld a,(mpIntMaskedStatus)
-	or a
+	call poll_single_key
 	jr z,wait_for_key_loop
-	ld (mpIntAcknowledge),a
-	xor a
+	; Disallow translation of del/enter/clear or arrow keys
+	cp 9+1
+	jr c,_
+	cp 15
+	jr z,_
+	cp 56
+	jr z,_
+	ld hl,BrightnessUpKey
+	cp (hl)
+	jr z,wait_for_key_increase_brightness
+	inc hl ;BrightnessDownKey
+	cp (hl)
+	jr z,wait_for_key_decrease_brightness
+	ld hl,AKey
+	cp (hl)
+	jr z,wait_for_key_force_enter
+	inc hl ;BKey
+	cp (hl)
+	jr z,wait_for_key_force_clear
+	inc hl ;SelectKey
+	inc hl ;StartKey
+	inc hl ;MenuKey
+	cp (hl)
+	jr z,wait_for_key_force_clear
+_
+	or a
 	ret
-	
-wait_for_key_change_brightness:
+
+wait_for_key_increase_brightness:
+	scf
+wait_for_key_decrease_brightness:
+	sbc a,a
 	add a,a
-	dec a
+	inc a
 	ld hl,mpBlLevel
 	add a,(hl)
 	jr z,wait_for_key_loop
 	ld (hl),a
 	jr wait_for_key_loop
-	
+
+wait_for_key_force_enter:
+	ld a,9
+	or a
+	ret
+
+wait_for_key_force_clear:
+	ld a,15
+	or a
+	ret
+
 GetKeyCode:
 	ld c,0
 	ld b,56
