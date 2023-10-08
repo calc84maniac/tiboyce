@@ -128,7 +128,7 @@ _
 	 ; Message display
 	 inc ix
 	pop hl
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld a,(currentSystemType)
 	or a
 	jr nz,_
 	; Disable color adjustment for classic palette
@@ -322,7 +322,7 @@ LoadPalettesNoColorAdjust:
 	mlt bc
 	add ix,bc
 	
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld a,(currentSystemType)
 	or a
 	ld a,d
 	rla
@@ -649,7 +649,7 @@ _
 	jr ItemSelectLink
 
 emulator_menu_ingame:
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld a,(currentSystemType)
 	or a
 	call z,convert_palette_for_menu
 	xor a

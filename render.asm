@@ -255,7 +255,8 @@ _
 	; Output: Value written to VRAM, cache updated if needed
 	; Destroys: AF, BC, DE, HL
 write_vram_and_expand:
-	ld hl,vram_base
+vram_base_for_write = $+1
+	ld hl,0 ;vram_base
 	add hl,bc
 	xor (hl)
 	jr z,write_vram_no_change
@@ -329,7 +330,8 @@ _
 	ld a,(hl)  ;A=[x][y]
 	add hl,hl
 	add hl,hl
-	ld de,vram_pixels_start-((vram_start*4) & $FFFFFF)
+gb_write_pixels_smc = $+1
+	ld de,0 ;vram_pixels_start-((vram_start*4) & $FFFFFF)
 	add hl,de
 	ex de,hl
 	rlca \ rlca \ rlca \ rlca  ;A=[y][x]
