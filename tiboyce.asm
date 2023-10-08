@@ -215,6 +215,17 @@
 	pop hl
 #endmacro
 
+; Puts a 512-byte-aligned signed offset into the save state into HL.
+; Destroys nothing.
+#macro STATE_PTR(offset)
+#if offset % 512 == 0
+	call SaveStatePtr
+	.db offset / 512
+#else
+	.error offset, " is not 512-byte aligned!"
+#endif
+#endmacro
+
 #macro SPI_START
 	#define SPI_BIT $80
 	#define SPI_VALUE $00
@@ -1099,7 +1110,28 @@ ArcPtr:
 	 ld hl,(ArcBase)
 	 add hl,de
 	ret
-	
+
+; Puts a 512-byte aligned pointer located in the save state in HL.
+; The 8-bit signed offset factor is stored at the return address.
+SaveStatePtr:
+	pop hl
+	inc hl
+	push hl
+	push af
+	 dec hl
+	 ld a,(hl)
+	 add a,a
+	 sbc hl,hl
+	 ld h,a
+	 ld l,3
+	 push de
+save_state_size_bytes = $+1
+	  ld de,game_config_end
+	  add hl,de
+	 pop de
+	pop af
+	ret
+
 ; Archives or unarchives a variable. Updates appvar in case of garbage collect.
 ; Returns carry set on failure.
 Arc_Unarc_Safe:
@@ -1283,7 +1315,7 @@ memcmp:
 	jr z,memcmp
 	ret
 	
-; Adds up BC bytes at HL. Output in IX.
+; Adds up BC bytes at HL. Output in IX, BC=0.
 checksum:
 	ld ix,0
 	lea de,ix
@@ -1583,7 +1615,7 @@ fastlog_dump_to_save:
 	sbc hl,de
 	ex de,hl
 	; Output to the auto save state file
-	ld hl,save_state_size_bytes
+	ld hl,(save_state_size_bytes)
 	ld bc,(hl)
 	add hl,bc
 	inc hl
@@ -1916,49 +1948,49 @@ GameKeyConfig = game_config_start + (KeyConfig - config_start)
 game_config_end = game_config_start + (config_end - config_start)
 
 ; The size of the save state is located after the game-specific config.
-save_state_size_bytes = game_config_end
+;save_state_size_bytes = game_config_end
 
-save_state_start = save_state_size_bytes + 3
+;save_state_start = save_state_size_bytes + 3
 ; A saved copy of OAM/HRAM, when saving/loading state. 512 bytes in size.
-hram_saved = save_state_start
+hmem_saved_offset = 0
 
 ; The start of saved registers, etc. Between the saved OAM and HRAM. 96 bytes in size.
-regs_saved = hram_saved + $00A0
+regs_saved_offset = hmem_saved_offset + $00A0
+
+; The start of saved IO registers and HRAM. 256 bytes in size.
+ioregs_saved_offset = hmem_saved_offset + $0100
 
 ; The checksum of cart RAM
-cart_ram_checksum = regs_saved + state_size - 3
+cart_ram_checksum_offset = regs_saved_offset + state_size - 3
 
 ; Start of Game Boy VRAM. 8KB in size. Must be 2-byte aligned.
-vram_start = hram_saved + $0200
+vram_start_offset = hmem_saved_offset + $0200
 ; Start of Game Boy Color VRAM. 16KB in size. Must be 16-byte aligned.
-vram_gbc_start = vram_start
-#if vram_gbc_start & $0F
+vram_gbc_start_offset = vram_start_offset
+#if vram_gbc_start_offset & $0F
 	.error "GBC VRAM is not 16-byte aligned!"
 #endif
 
 ; Start of Game Boy WRAM. 8KB in size.
-wram_start = vram_start + $2000
+wram_start_offset = vram_start_offset + $2000
 ; Start of Game Boy Color WRAM. 32KB in size.
-wram_gbc_start = vram_gbc_start + $4000
+wram_gbc_start_offset = vram_gbc_start_offset + $4000
 
 ; Base address of VRAM, can be indexed directly by Game Boy address.
-vram_base = vram_start - $8000
-vram_gbc_base = vram_gbc_start - $8000
+vram_base_offset = vram_start_offset - $8000
+vram_gbc_base_offset = vram_gbc_start_offset - $8000
 ; Base address of WRAM, can be indexed directly by Game Boy address.
-wram_base = wram_start - $C000
-wram_gbc_base = wram_gbc_start - $C000
+wram_base_offset = wram_start_offset - $C000
+wram_gbc_base_offset = wram_gbc_start_offset - $C000
 
 ; BG palette memory, used by save state only. 64 bytes in size.
-bg_palettes_saved = wram_gbc_start + $8000
+bg_palettes_saved_offset = wram_gbc_start_offset + $8000
 ; OBJ palette memory, used by save state only. 64 bytes in size.
-obj_palettes_saved = bg_palettes_saved + $0040
+obj_palettes_saved_offset = bg_palettes_saved_offset + $0040
 
 ; The size of the inserted cartridge RAM is located at the end of the main save state.
-save_state_end = wram_start + $2000
-save_state_gbc_end = obj_palettes_saved + $0040
-
-save_state_size = save_state_end - save_state_start
-save_state_gbc_size = save_state_gbc_end - save_state_start
+save_state_size = wram_start_offset + $2000
+save_state_gbc_size = obj_palettes_saved_offset + $0040
 
 arc_offset = $15
 arc_program_start = arc_offset+header_size

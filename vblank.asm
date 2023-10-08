@@ -44,7 +44,8 @@ frame_emulated_count = $+1
 	    ld a,144
 	    call draw_sprites
 	    call sync_frame_flip
-	    ld a,(regs_saved + STATE_SYSTEM_TYPE)
+currentSystemType = $+1
+	    ld a,0
 	    or a
 	    call z,convert_palette
 _

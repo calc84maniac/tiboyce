@@ -224,8 +224,8 @@ coherency_handler_wram:
 	 push de
 	  ld de,(ix)
 	  ld bc,(ix+2)
-coherency_handler_wram_smc = $+4
-	  ld.lil ix,wram_base
+coherency_handler_wram_smc = $+3
+	  ld.lil ix,0 ;wram_base
 	  jp.lil check_coherency_helper
 
 coherency_handler_hram:

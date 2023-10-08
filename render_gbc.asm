@@ -169,7 +169,7 @@ _
 	; Destroys: AF, BC, DE, HL
 gbc_write_vram_and_expand:
 vram_bank_base_for_write = $+1
-	ld hl,vram_base
+	ld hl,0
 	add hl,bc
 	xor (hl)
 	jr z,gbc_write_vram_no_change
@@ -183,7 +183,7 @@ gbc_write_tilemap_for_dma:
 	add hl,hl
 	add hl,hl
 gbc_write_tilemap_bank_smc = $+1
-	ld bc,vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
+	ld bc,0 ;vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
 	add hl,bc
 	srl l
 	jr c,gbc_write_vram_tile_attrs
@@ -279,7 +279,7 @@ gbc_write_pixels_for_dma:
 	add hl,hl
 	add hl,hl
 gbc_write_pixels_bank_smc = $+1
-	ld de,vram_pixels_start-((vram_start*4) & $FFFFFF)
+	ld de,0 ;vram_pixels_start-((vram_start*4) & $FFFFFF)
 	add hl,de
 	ex de,hl
 	rlca \ rlca \ rlca \ rlca  ;A=[y][x]

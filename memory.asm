@@ -77,7 +77,7 @@ vram_banked_read_handler:
 	ex af,af'
 vram_banked_read_any:
 vram_bank_base_for_read = $+2+z80codebase
-	ld.lil hl,vram_base
+	ld.lil hl,0
 	add.l hl,bc
 	ex af,af'
 	ld.l a,(hl)
@@ -102,7 +102,7 @@ wram_banked_read_handler:
 	ex af,af'
 wram_banked_read_any:
 wram_bank_base_for_read = $+2+z80codebase
-	ld.lil hl,wram_gbc_base
+	ld.lil hl,0
 _
 	add.l hl,bc
 	ex af,af'
@@ -115,7 +115,7 @@ wram_mirror_banked_read_any:
 	
 wram_unbanked_read_any:
 wram_unbanked_base_for_read = $+2+z80codebase
-	ld.lil hl,wram_base
+	ld.lil hl,0 ;wram_base
 _
 	add.l hl,bc
 	ex af,af'
@@ -293,7 +293,7 @@ rom_trimmed_base = $+2+z80codebase
 vram_banked_get_read_ptr:
 	MATCH_LSB(vram_banked_get_ptr, vram_banked_read_any)
 vram_bank_base = $+2+z80codebase
-	ld.lil hl,vram_base
+	ld.lil hl,0
 	add.l hl,de
 	ex af,af'
 	ret
@@ -321,7 +321,7 @@ cram_rtc_get_read_ptr_finish:
 wram_banked_get_ptr:
 	MATCH_LSB(wram_banked_get_ptr, wram_banked_read_any)
 wram_bank_base = $+2+z80codebase
-	ld.lil hl,wram_gbc_base
+	ld.lil hl,0
 _
 	add.l hl,de
 	ex af,af'
@@ -332,13 +332,13 @@ _
 wram_mirror_banked_get_ptr:
 	MATCH_LSB(wram_mirror_banked_get_ptr, wram_mirror_banked_read_any)
 wram_mirror_bank_base = $+2+z80codebase
-	ld.lil hl,wram_gbc_base - $2000
+	ld.lil hl,0
 	jr -_
 	
 wram_unbanked_get_ptr:
 	MATCH_LSB(wram_unbanked_get_ptr, wram_unbanked_read_any)
 wram_unbanked_base = $+2+z80codebase
-	ld.lil hl,wram_base
+	ld.lil hl,0 ;wram_base
 _
 	add.l hl,de
 	ex af,af'
@@ -349,7 +349,7 @@ _
 wram_mirror_unbanked_get_ptr:
 	MATCH_LSB(wram_mirror_unbanked_get_ptr, wram_mirror_unbanked_read_any)
 wram_mirror_unbanked_base = $+2+z80codebase
-	ld.lil hl,wram_base-$2000
+	ld.lil hl,0 ;wram_base - $2000
 	jr -_
 	
 shadow_stack_get_ptr:
@@ -529,7 +529,7 @@ wram_banked_write_handler:
 wram_banked_write_any:
 	MATCH_LSB(wram_banked_write_any, wram_banked_get_ptr)
 wram_bank_base_for_write = $+2+z80codebase
-	ld.lil hl,wram_gbc_base
+	ld.lil hl,0
 _
 	add.l hl,bc
 	ex af,af'
@@ -544,7 +544,7 @@ wram_mirror_banked_write_any:
 wram_unbanked_write_any:
 	MATCH_LSB(wram_unbanked_write_any, wram_unbanked_get_ptr)
 wram_unbanked_base_for_write = $+2+z80codebase
-	ld.lil hl,wram_base
+	ld.lil hl,0 ;wram_base
 _
 	add.l hl,bc
 	ex af,af'
@@ -648,14 +648,14 @@ _
 	; LUT for the middle byte of WRAM (mirror) bank bases
 	.block (mem_write_any_routines+256-8)-$
 wram_bank_base_lut:
-	.db ((wram_gbc_base + $0000 - $2000) >> 8) & $FF
-	.db ((wram_gbc_base + $0000 - $2000) >> 8) & $FF
-	.db ((wram_gbc_base + $1000 - $2000) >> 8) & $FF
-	.db ((wram_gbc_base + $2000 - $2000) >> 8) & $FF
-	.db ((wram_gbc_base + $3000 - $2000) >> 8) & $FF
-	.db ((wram_gbc_base + $4000 - $2000) >> 8) & $FF
-	.db ((wram_gbc_base + $5000 - $2000) >> 8) & $FF
-	.db ((wram_gbc_base + $6000 - $2000) >> 8) & $FF
+	.db $00-$20 ;((wram_gbc_base + $0000 - $2000) >> 8) & $FF
+	.db $00-$20 ;((wram_gbc_base + $0000 - $2000) >> 8) & $FF
+	.db $10-$20 ;((wram_gbc_base + $1000 - $2000) >> 8) & $FF
+	.db $20-$20 ;((wram_gbc_base + $2000 - $2000) >> 8) & $FF
+	.db $30-$20 ;((wram_gbc_base + $3000 - $2000) >> 8) & $FF
+	.db $40-$20 ;((wram_gbc_base + $4000 - $2000) >> 8) & $FF
+	.db $50-$20 ;((wram_gbc_base + $5000 - $2000) >> 8) & $FF
+	.db $60-$20 ;((wram_gbc_base + $6000 - $2000) >> 8) & $FF
 	
 	#include "ports.asm"
 	

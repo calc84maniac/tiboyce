@@ -416,7 +416,7 @@ _
 	 jr z,_
 	 ld bc,save_state_gbc_size + 1
 _
-	 ld hl,save_state_size_bytes
+	 ld hl,(save_state_size_bytes)
 	 ld de,(hl)
 	 ld (hl),bc
 	 inc hl
@@ -456,7 +456,8 @@ RestartFromHereTrampoline:
 	
 StartROMInitStateContinue:
 	 push de
-	 pop hl
+	 pop ix
+	 lea hl,ix
 	 inc de
 	 dec bc
 	 ld (hl),0
@@ -473,7 +474,10 @@ StartROMInitStateContinue:
 	 ld (cram_start),hl
 _
 	 APTR(hmem_init)
-	 ld de,hram_saved + $0100
+	 inc b ;BC=ioregs_saved_offset
+	 add ix,bc
+	 dec b
+	 lea de,ix
 	 ld c,hmem_init_size
 	 ldir
 	 ;HL=hram_init
@@ -494,30 +498,23 @@ _
 	pop af
 	ld c,regs_init_gbc - regs_init
 	jr z,_
-	ld e,a
 	add hl,bc
 	; Update registers which are different on GBC
-	ld a,$7E
-	ld (hram_saved + $0100 + (KEY1-ioregs)),a
-	inc a ;A=$7F
-	ld (hram_saved + $0100 + (SC-ioregs)),a
-	rlca ;A=$FE
-	ld (hram_saved + $0100 + (VBK-ioregs)),a
-	; Set carry for GBA back-compat
-	add a,e
-	ld a,$F8
-	ld (hram_saved + $0100 + (SVBK-ioregs)),a
+	inc (ix + (SC-ioregs))
+	ld (ix + (KEY1-ioregs)),$7E
+	dec (ix + (VBK-ioregs))
+	ld (ix + (SVBK-ioregs)),$F8
+	; NZ for GBA back-compat
+	dec a
 _
-	ld de,regs_saved
+	ld a,(hl) ;STATE_SYSTEM_TYPE
+	ld (currentSystemType),a
+	lea de,ix + (regs_saved_offset - ioregs_saved_offset)
 	ldir
-	jr nc,_
+	jr z,_
 	; For GBA back-compat, update the F and B registers
-	ld hl,regs_saved + STATE_REG_AF
-	ld (hl),c ;0
-	inc hl
-	inc hl ;STATE_REG_BC
-	inc hl
-	inc (hl)
+	ld (ix + (regs_saved_offset+STATE_REG_AF - ioregs_saved_offset)),c
+	inc (ix + (regs_saved_offset+STATE_REG_BC+1 - ioregs_saved_offset))
 _
 	
 StartFromHereCleanFrame:
@@ -532,9 +529,10 @@ StartFromHereCleanFrame:
 	
 StartFromHere:
 	ld hl,(save_state_size_bytes)
-	ld a,l
+	ld a,(hl)
 	dec a
-	or h
+	inc hl
+	or (hl)
 	jr z,RestartFromHereTrampoline
 	
 	ld a,3
@@ -549,7 +547,7 @@ _
 	ld (skin_file_ptr),hl
 	jr nc,++_
 	; If found and system type is GBC, check if there's a second skin in the skin file
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld a,(currentSystemType)
 	or a
 	jr z,++_
 	; Skip over the palette
@@ -610,9 +608,9 @@ _
 	ld bc,myz80stack_top - 1
 	ld (hl),l
 	ldir
-	ld hl,hram_saved
+	STATE_PTR(hmem_saved_offset)
 	inc d
-	ld b,2
+	ld b,$0200 >> 8
 	ldir
 	
 	APTR(z80code)
@@ -826,7 +824,7 @@ _
 	ld mb,a
 	
 	; Load BG and OBJ palettes for GBC
-	ld hl,bg_palettes_saved
+	STATE_PTR(bg_palettes_saved_offset)
 	ld de,z80codebase + gbc_bg_palette_data
 	ld a,64
 	ld c,a
@@ -838,7 +836,7 @@ _
 	
 	; Here carry is set for GBC or reset for GB
 	ld ix,vram_tiles_start + 128
-	ld hl,vram_start + $1800
+	STATE_PTR(vram_start_offset + $1800)
 	ld c,a ;64
 SetupTilemapCacheOuterLoop:
 	ld b,$20
@@ -870,8 +868,8 @@ _
 	jr nz,SetupTilemapCacheOuterLoop
 	
 	jr nc,SetupTilemapCacheDone
-	
-	ld hl,vram_gbc_start + $2000 + $1800
+
+	STATE_PTR(vram_gbc_start_offset + $2000 + $1800)
 	ld ixh,(vram_tiles_start >> 8) & $FF
 	ld c,a ;$40
 	
@@ -1267,8 +1265,9 @@ _
 	
 	; Update rtc_last
 	call.il update_rtc_helper
-	
-	ld ix,save_state_size_bytes - 44
+
+	ld ix,(save_state_size_bytes)
+	lea ix,ix-44
 	ld bc,(ix+44)
 	add ix,bc
 	ld bc,(ix+46)
@@ -1787,78 +1786,122 @@ _
 _
 	ld (recompile_ram_unbanked_range_smc),a
 	ldir
-	jr z,_
-	ld a,lcdc_write_no_sprite_change_gb - (lcdc_write_sprite_change_smc_2+1)
-	ld ix,write_vram_last_slice
-	ld de,write_vram_catchup
-	ld bc,render_save_spl
-	ld hl,scanline_do_render
-	AJUMP(SetupLoadStateNoGBC)
-_
-	
 	; Set up VRAM and WRAM banks
-	bit 0,(iy-ioregs+VBK)
-	ld hl,vram_tiles_start-(((vram_start+$1800)*8) & $FFFFFF)
-	ld de,vram_pixels_start-((vram_start*4) & $FFFFFF)
-	ld a,(vram_gbc_base >> 8) & $FF
-	jr z,_
-	ld hl,vram_tiles_start-(((vram_start+$3800)*8) & $FFFFFF)+1
-	ld de,vram_pixels_start-(((vram_start+$2000)*4) & $FFFFFF)+4
-	ld a,((vram_gbc_base + $2000) >> 8) & $FF
+	STATE_PTR(vram_base_offset) ;== vram_gbc_base_offset
+	push hl
+	 jr z,_
+	 ld (vram_base_for_write),hl
+	 add hl,hl
+	 add hl,hl ; Sets carry
+	 ex de,hl
+	 ld hl,vram_pixels_start-((vram_start_offset-vram_base_offset)*4)+1
+	 sbc hl,de
+	 ld (gb_write_pixels_smc),hl
+	 STATE_PTR(wram_base_offset)
+	 push hl
+	  ld a,lcdc_write_no_sprite_change_gb - (lcdc_write_sprite_change_smc_2+1)
+	  ld ix,write_vram_last_slice
+	  ld de,write_vram_catchup
+	  ld bc,render_save_spl
+	  ld hl,scanline_do_render
+	  AJUMP(SetupLoadStateNoGBC)
 _
-	ld (gbc_write_tilemap_bank_smc),hl
-	ld (gbc_write_pixels_bank_smc),de
-	ld (vram_bank_base_for_write+1),a
-	ld hl,wram_mirror_unbanked_base+1
-	ld (hl),((wram_gbc_base-$2000) >> 8) & $FF
-	ld l,(vram_bank_base + 1) & $FF
-	ld (hl),a
-	dec h \ dec h ;vram_bank_base_for_read
-	ld (hl),a
-	ld h,wram_bank_base_lut >> 8
-	ld l,(iy-ioregs+SVBK)
-	ld a,(hl)
-	ld (wram_mirror_bank_base+1),a
-	add a,$20
-	ld l,(wram_bank_base_for_write+1) & $FF
-	ld (hl),a
-	dec h \ dec h ;wram_bank_base
-	ld (hl),a
-	dec h \ dec h ;wram_bank_base_for_read
-	ld (hl),a
-	ld a,(wram_gbc_base >> 8) & $FF
-	ld (z80codebase+coherency_handler_wram_smc),a
-	ld l,(wram_unbanked_base_for_read + 1) & $FF
-	ld (hl),a
-	inc h \ inc h ;wram_unbanked_base
-	ld (hl),a
-	inc h \ inc h ;wram_unbanked_base_for_write
-	ld (hl),a
+	 ld a,h
+	 ld (writeVBK_base_0_smc),a
+	 add hl,hl
+	 add hl,hl ; Sets carry
+	 ex de,hl
+	 ld hl,vram_pixels_start-((vram_gbc_start_offset-vram_gbc_base_offset)*4)+1
+	 sbc hl,de
+	 ld (writeVBK_pixels_bank_0_smc),hl
+	 push hl
+	  ld de,-($2000*4)+4
+	  add hl,de
+	  ld (writeVBK_pixels_bank_1_smc),hl
+	  bit 0,(iy-ioregs+VBK)
+	  jr z,_
+	 pop de
+	 push hl
+_
+	  add hl,hl
+	  ld de,vram_tiles_start - (((vram_pixels_start+4)*2) & $FFFFFF) - ($1800*8) + 1
+	  add hl,de
+	  ld (writeVBK_tilemap_bank_1_smc),hl
+	  ex de,hl
+	  ld hl,($2000*8)-1
+	  add hl,de
+	  ld (writeVBK_tilemap_bank_0_smc),hl
+	  jr z,_
+	  ex de,hl
+_
+	  ld (gbc_write_tilemap_bank_smc),hl
+	 pop hl
+	 ld (gbc_write_pixels_bank_smc),hl
+	pop de
+	ld hl,$2000
+	add hl,de
+	ld a,h
+	ld (writeVBK_base_1_smc),a
+	jr nz,_
+	ex de,hl
+_
+	push hl
+	 ld (vram_bank_base_for_write),hl
+	 STATE_PTR(wram_gbc_base_offset)
+	 push hl
+	  ld de,z80codebase+wram_bank_base_lut
+_
+	  ld a,(de)
+	  add a,h
+	  ld (de),a
+	  inc e
+	  jr nz,-_
+	  ld e,(iy-ioregs+SVBK)
+	  ld a,(de)
+	  ld h,a
+	  ld (wram_mirror_bank_base),hl
+	  add a,$20
+	  ld h,a
+	  ld (wram_bank_base_for_read),hl
+	  ld (wram_bank_base),hl
+	  ld (wram_bank_base_for_write),hl
+
+	  ld hl,gbc_write_vram_and_expand
+	  ld (gbc_write_vram_and_expand_smc_1),hl
+	  ld (gbc_write_vram_and_expand_smc_2),hl
+	  ld (gbc_write_vram_and_expand_smc_3),hl
+	  ld (gbc_write_vram_and_expand_smc_4),hl
+	  ld hl,gbc_write_vram_and_expand_catchup
+	  ld (gbc_write_vram_and_expand_catchup_smc_1),hl
+	  ld (gbc_write_vram_and_expand_catchup_smc_2),hl
+	  ld (gbc_write_vram_and_expand_catchup_smc_3),hl
+	  ld (gbc_write_vram_and_expand_catchup_smc_4),hl
 	
-	ld hl,gbc_write_vram_and_expand
-	ld (gbc_write_vram_and_expand_smc_1),hl
-	ld (gbc_write_vram_and_expand_smc_2),hl
-	ld (gbc_write_vram_and_expand_smc_3),hl
-	ld (gbc_write_vram_and_expand_smc_4),hl
-	ld hl,gbc_write_vram_and_expand_catchup
-	ld (gbc_write_vram_and_expand_catchup_smc_1),hl
-	ld (gbc_write_vram_and_expand_catchup_smc_2),hl
-	ld (gbc_write_vram_and_expand_catchup_smc_3),hl
-	ld (gbc_write_vram_and_expand_catchup_smc_4),hl
-	
-	ld a,lcdc_write_no_sprite_change_gbc - (lcdc_write_sprite_change_smc_2+1)
-	ld ix,gbc_write_vram_last_slice
-	ld de,gbc_write_vram_catchup
-	ld bc,gbc_render_save_spl
-	ld hl,gbc_scanline_do_render
+	  ld a,lcdc_write_no_sprite_change_gbc - (lcdc_write_sprite_change_smc_2+1)
+	  ld ix,gbc_write_vram_last_slice
+	  ld de,gbc_write_vram_catchup
+	  ld bc,gbc_render_save_spl
+	  ld hl,gbc_scanline_do_render
 SetupLoadStateNoGBC:
-	ld (lcdc_write_sprite_change_smc_2),a
-	ld (gbc_write_vram_last_slice_smc),ix
-	ld (gbc_write_vram_catchup_smc),de
-	ld (gbc_render_save_spl_smc),bc
-	ld (gbc_scanline_do_render_smc_1),hl
-	ld (gbc_scanline_do_render_smc_2),hl
-	
+	  ld (lcdc_write_sprite_change_smc_2),a
+	  ld (gbc_write_vram_last_slice_smc),ix
+	  ld (gbc_write_vram_catchup_smc),de
+	  ld (gbc_render_save_spl_smc),bc
+	  ld (gbc_scanline_do_render_smc_1),hl
+	  ld (gbc_scanline_do_render_smc_2),hl
+	 pop hl
+	 ld (wram_unbanked_base_for_read),hl
+	 ld (wram_unbanked_base),hl
+	 ld (wram_unbanked_base_for_write),hl
+	 ld (z80codebase+coherency_handler_wram_smc),hl
+	 ld a,h
+	 sub $20
+	 ld h,a
+	 ld (wram_mirror_unbanked_base),hl
+	pop hl
+	ld (vram_bank_base_for_read),hl
+	ld (vram_bank_base),hl
+
 	ACALL(IdentifyDefaultPalette)
 	ACALL(ApplyConfiguration)
 	
@@ -1946,7 +1989,7 @@ ExitEmulation:
 	add.s hl,de
 	ld bc,-CYCLES_PER_VBLANK
 	; Double the offset amount in double speed
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld a,(currentSystemType)
 	rrca
 	and (ix-ioregs+KEY1)
 _
@@ -2050,14 +2093,14 @@ _
 	ldir
 	
 	; Save system type
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld a,(currentSystemType)
 	ld (ix-state_size+STATE_SYSTEM_TYPE),a
 	or a
 	jr z,_
 	; Save palette data on GBC
-	ld de,bg_palettes_saved
-	inc h ;gbc_bg_palette_data
-	ld l,gbc_bg_palette_data & $FF
+	STATE_PTR(bg_palettes_saved_offset)
+	ex de,hl
+	ld hl,z80codebase + gbc_bg_palette_data
 	ld c,64
 	ldir
 	inc h ;gbc_obj_palette_data
@@ -2080,7 +2123,9 @@ _
 	
 	; Copy into the state file
 	ld l,c
-	ld de,hram_saved
+	ex de,hl
+	STATE_PTR(hmem_saved_offset)
+	ex de,hl
 	ld b,$0200 >> 8
 	ldir
 	
@@ -2090,7 +2135,8 @@ ExitEmulationWithoutState:
 	or a
 	jr z,ExitEmulationNoRTC
 	call.il update_rtc_helper
-	ld ix,save_state_size_bytes - 44
+	ld ix,(save_state_size_bytes)
+	lea ix,ix-44
 	ld bc,(ix+44)
 	add ix,bc
 	ld bc,(ix+46)
@@ -2166,9 +2212,10 @@ _
 	cp ERROR_NOT_ENOUGH_MEMORY
 	jr nz,_
 	ld hl,(save_state_size_bytes)
-	ld a,l
+	ld a,(hl)
 	dec a
-	or h
+	inc hl
+	or (hl)
 	jr z,StartFromHereTrampoline
 	ld a,ERROR_NOT_ENOUGH_MEMORY
 _
@@ -2518,7 +2565,7 @@ _
 	 inc de
 	 inc de
 	 inc de
-	 ld hl,save_state_size_bytes
+	 ld hl,(save_state_size_bytes)
 	 ACALL(InsertMemSafe)
 	pop bc
 	ret c
@@ -2552,7 +2599,7 @@ LoadRAMAny:
 	ACALL(DecompressFile)
 
 LoadRAMNoVar:
-	ld hl,save_state_size_bytes
+	ld hl,(save_state_size_bytes)
 	ld de,(hl)
 	add hl,de
 	inc hl
@@ -2823,7 +2870,7 @@ _
 	ret
 
 SaveStateFiles:
-	ld hl,save_state_size_bytes
+	ld hl,(save_state_size_bytes)
 	ld de,(hl)
 	inc hl
 	inc hl
@@ -2842,7 +2889,10 @@ SaveStateFiles:
 	 inc.s bc
 	 inc bc
 	 call checksum
-	 ld (cart_ram_checksum),ix
+	 ld hl,(save_state_size_bytes)
+	 inc b ;BC = cart_ram_checksum_offset + 3
+	 add hl,bc
+	 ld (hl),ix
 	
 	 ACALL(GetStateRAMFileName)
 	 ACALL(LookUpAppvar) 
@@ -2893,7 +2943,7 @@ SaveState:
 	 jr nz,SaveAutoState
 	
 SaveAutoStateDeleteMem:
-	 ld hl,save_state_size_bytes
+	 ld hl,(save_state_size_bytes)
 	 ACALL(DelMemSafeSizeBytes)
 	 
 ArchiveSaveRAM:
@@ -2921,7 +2971,7 @@ SaveManualState:
 	 ld (hl),a
 	 
 SaveAutoState:
-	 ld hl,save_state_size_bytes
+	 ld hl,(save_state_size_bytes)
 	 push hl
 	  ACALL(CompressFile)
 	 pop de
@@ -3013,7 +3063,8 @@ _
 	 ACALL(DecompressFile)
 	pop ix
 	; Only load Game Boy or Game Boy Color
-	ld a,(decompress_buffer + (regs_saved + STATE_SYSTEM_TYPE - save_state_start))
+	ld a,(decompress_buffer + (regs_saved_offset + STATE_SYSTEM_TYPE))
+	ld (currentSystemType),a
 	or a
 	ld hl,save_state_size
 	jr z,LoadStateValidateSize
@@ -3030,7 +3081,7 @@ LoadStateValidateSize:
 	 ACALL(GetStateRAMFileName)
 	pop bc
 	; Validate the checksum
-	ld hl,(decompress_buffer + (cart_ram_checksum - save_state_start))
+	ld hl,(decompress_buffer + cart_ram_checksum_offset)
 	lea de,ix
 	or a
 	sbc hl,de
@@ -3040,10 +3091,15 @@ LoadStateValidateSize:
 	inc bc
 	push bc
 	 ld hl,(save_state_size_bytes)
-	 sbc hl,bc
-	 ex de,hl
-	 ld hl,save_state_start
+	 ld de,(hl)
+	 inc hl
+	 inc hl
+	 inc hl
+	 ; HL = save_state_start
 	 push hl
+	  ex de,hl
+	  sbc hl,bc
+	  ex de,hl
 	  jr nc,_
 	  or a
 	  sbc hl,hl
@@ -3059,7 +3115,8 @@ _
 	 pop de
 	pop bc
 _
-	ld (save_state_size_bytes),bc
+	ld hl,(save_state_size_bytes)
+	ld (hl),bc
 	dec bc
 	ld hl,decompress_buffer
 	ldir
@@ -3533,10 +3590,10 @@ _
 	ccf
 	jr c,GeneratePixelCache
 	
-	ld hl,vram_start
+	STATE_PTR(vram_start_offset)
 	ld de,vram_pixels_start
 	ld c,e
-	ld a,(regs_saved + STATE_SYSTEM_TYPE)
+	ld a,(currentSystemType)
 	inc a
 	ld b,a
 	ld ixh,a
@@ -3583,7 +3640,7 @@ GeneratePixelCacheContinue:
 	dec ixh
 	ret z
 	; Generate the second bank on GBC
-	ld hl,vram_gbc_start + $2000
+	STATE_PTR(vram_gbc_start_offset + $2000)
 	ld de,vram_pixels_start + 4
 	jr GeneratePixelCacheOuterLoop
 	
