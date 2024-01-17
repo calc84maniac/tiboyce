@@ -3727,9 +3727,11 @@ GeneratePixelCacheGBC:
 	
 SetScalingMode:
 	; Disable GRAM access from DMA to allow a clean buffer rewrite
-	SPI_TRANSFER_CMD(1, $B0) ; RAM Control
+	; Also set 16bpp LSB behavior, just in case
+	SPI_TRANSFER_CMD(2, $B0) ; RAM Control
 	SPI_PARAM($02)           ;  RAM access from SPI, VSYNC interface
-	
+	SPI_PARAM($F0)           ;  Green LSB intensity
+
 	ld hl,scanlineLUT_2
 	ld (scanlineLUT_ptr),hl
 	ld (scanlineLUT_sprite_ptr),hl
@@ -4230,6 +4232,7 @@ spiSetupCommandDescriptors:
 	.db 4,$2A ; Column address set
 	.db 4,$2B ; Row address set
 	.db 1,$B0 ; RAM Control
+	.db 1,$3A ; Interface pixel format
 	.db 6,$33 ; Vertical scroll parameters
 	.db 3,$E4 ; Gate control
 	.db 1,$C6 ; Frame rate control
@@ -4245,6 +4248,8 @@ spiSetupDefault:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($11)   ;  RGB Interface
+	; 3A             ; Interface pixel format
+	SPI_PARAM($66)   ;  RGB 18bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
@@ -4269,6 +4274,8 @@ spiSetupScanFirst:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
+	; 3A             ; Interface pixel format
+	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
@@ -4292,6 +4299,8 @@ spiSetupVsyncInterface:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
+	; 3A             ; Interface pixel format
+	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
@@ -4315,6 +4324,8 @@ spiSetupNoScale:
 	SPI_PARAM16(191) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
+	; 3A             ; Interface pixel format
+	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
@@ -4338,6 +4349,8 @@ spiSetupDoubleScale:
 	SPI_PARAM16(239) ;  Lower bound
 	; B0             ; RAM Control
 	SPI_PARAM($12)   ;  VSYNC Interface
+	; 3A             ; Interface pixel format
+	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(160) ;  Top fixed area
 	SPI_PARAM16(160) ;  Scrolling area
