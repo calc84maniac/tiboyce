@@ -618,9 +618,9 @@ vram_tiles_start = (pixelShadow | $FF) + 1
 
 ; LUT for LSB of green component adjustment.
 ; Input: Bit 7: Bit 2 of G
-;        Bits 6-4: Bits 5-3 of B
+;        Bits 6-4: Bits 4-2 of B
 ;        Bits 3-2: Bits 1-0 of G
-;        Bits 1-0: Bits 5-4 of G
+;        Bits 1-0: Bits 4-3 of G
 ; Must be 256-byte aligned and precede adjust_color_lut.
 adjust_green_lsb_lut = vram_tiles_start + $4000
 
