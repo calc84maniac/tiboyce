@@ -620,7 +620,7 @@ _
 	ld bc,(ix)
 	ld l,c
 	ld a,b
-	and h ;$7C
+	and h ;$73
 	or (hl)
 	ld l,a
 	dec h ;adjust_green_lsb_lut
@@ -649,7 +649,7 @@ _
 	ld bc,(ix-2)
 	ld l,c
 	ld a,b
-	and h ;$7C
+	and h ;$73
 	or (hl)
 	ld l,a
 	dec h ;adjust_green_lsb_lut
