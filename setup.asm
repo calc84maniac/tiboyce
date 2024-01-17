@@ -2754,16 +2754,17 @@ LoadROMPageLoop:
 	  ex de,hl
 	  add hl,bc
 	  ex de,hl
-	  bit 7,d
-	  dec de
 	  add hl,de
-	  ld (ix),d
 	  ; If the page isn't full, track which byte was trimmed
+	  bit 7,d
 	  jr nz,_
+	  dec hl
 	  ld e,(hl)
+	  inc hl
 	  ld (rom_trim_value),de
 _
-	  inc hl
+	  dec d
+	  ld (ix),d
 	  ex (sp),hl
 	  inc bc
 	  inc bc
