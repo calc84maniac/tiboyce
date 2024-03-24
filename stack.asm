@@ -282,6 +282,9 @@ shift_stack_window_higher_check_overlap:
 	ld h,mem_read_lut >> 8
 	ld a,(hl)
 	inc l
+	; Don't cross over between trimmed slices
+	cp rom_trimmed_get_ptr & $FF
+	jr z,shift_stack_window_higher_overlap
 	cp (hl)
 	jr z,shift_stack_window_higher_finish
 #ifdef SHADOW_STACK
@@ -306,6 +309,9 @@ shift_stack_window_higher_2_check_overlap:
 	ld h,mem_read_lut >> 8
 	ld a,(hl)
 	inc l
+	; Don't cross over between trimmed slices
+	cp rom_trimmed_get_ptr & $FF
+	jr z,shift_stack_window_higher_overlap
 	cp (hl)
 	jr z,shift_stack_window_higher_2_finish
 #ifdef SHADOW_STACK
@@ -406,8 +412,11 @@ shift_stack_window_lower_check_overlap:
 	inc hl
 	ld c,(hl)
 	ld a,(bc)
-	ld l,a
 	inc c
+	; Don't cross over between trimmed slices
+	cp rom_trimmed_get_ptr & $FF
+	jr z,shift_stack_window_lower_overlap
+	ld l,a
 	ld a,(bc)
 	cp l
 	jr z,shift_stack_window_lower_finish
@@ -442,8 +451,11 @@ shift_stack_window_lower_2_check_overlap:
 	inc hl
 	ld c,(hl)
 	ld a,(bc)
-	ld l,a
 	inc c
+	; Don't cross over between trimmed slices
+	cp rom_trimmed_get_ptr & $FF
+	jr z,shift_stack_window_lower_overlap
+	ld l,a
 	ld a,(bc)
 	cp l
 	jr z,shift_stack_window_lower_finish
@@ -500,6 +512,7 @@ set_gb_stack:
 	 ld a,e
 	 sub l
 	 ld e,a
+mbc_fix_sp_full_continue:
 	 ; Get the memory region directly preceding the stack pointer
 	 ld.lil hl,z80codebase+mem_read_lut
 	 ld l,b
@@ -509,6 +522,8 @@ set_gb_stack:
 	 ld.l iy,(hl)
 	 ; Calculate the 24-bit stack window base
 	 add.l iy,bc
+	 jr c,fixup_gb_address_stack
+fixup_gb_address_stack_continue:
 	 ; Check if the type of stack region changed, to apply SMC
 	 ld a,l
 	 ; Special-case the $FF00 area
@@ -536,6 +551,19 @@ set_gb_stack_region_finish:
 	 exx
 	pop af
 	ret
+
+	 ; Used when an MBC change may cause an SP region change, e.g. trimmed to untrimmed ROM
+mbc_fix_sp_full:
+	 ld e,iyl
+	 ld hl,(stack_window_base)
+	 ld bc,$0080
+	 add hl,bc
+	 ld b,h
+	 ld c,l
+	 jr mbc_fix_sp_full_continue	
+
+fixup_gb_address_stack:
+	 jp.lil fixup_gb_address_stack_helper
 
 	 ; Apply SMC as needed to stack accesses when SP changes banks.
 set_gb_stack_region:

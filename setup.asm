@@ -1040,15 +1040,14 @@ _
 	ld hl,(rom_start)
 	ld (rom_unbanked_base),hl
 	ld (rom_unbanked_base_for_read),hl
-	
-	ld a,(rom_trim_value)
-	ld (z80codebase+rom_trimmed_read_value),a
-	inc a
-	jr nz,_
-	; Big hack, read $FF from the end of the boot code
-	ld hl,$020000-$8000
-	ld (rom_trimmed_base),hl
-_
+	dec hl
+	ld b,(hl)
+	dec hl
+	ld c,(hl)
+	inc hl
+	add hl,bc
+	ld a,(hl)
+	ld (rom_bank0_trim_value),a
 	
 	ld a,(iy-state_size+STATE_ROM_BANK)
 	ld (z80codebase+curr_rom_bank),a
@@ -1098,6 +1097,11 @@ _
 	
 	xor a
 	ld (exitReason),a
+	; Invalidate the direct read buffers
+	ld hl,direct_read_buffer_normal
+	ld (hl),a
+	inc h ;direct_read_buffer_stack
+	ld (hl),a
 	
 	ld hl,(cram_start)
 	ld bc,$A000
@@ -2755,14 +2759,6 @@ LoadROMPageLoop:
 	  add hl,bc
 	  ex de,hl
 	  add hl,de
-	  ; If the page isn't full, track which byte was trimmed
-	  bit 7,d
-	  jr nz,_
-	  dec hl
-	  ld e,(hl)
-	  inc hl
-	  ld (rom_trim_value),de
-_
 	  dec d
 	  ld (ix),d
 	  ex (sp),hl
