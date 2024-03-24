@@ -932,8 +932,7 @@ lookup_code_in_block:
 	add.s hl,de
 	push de
 	 ex de,hl
-	 GET_BASE_ADDR_FAST
-	 add hl,de
+	 GET_GB_ADDR_FAST
 	 ld de,opcoderecsizes
 lookup_found_loop:
 	 ; Get current opcode
@@ -1444,8 +1443,11 @@ check_coherency_helper_generic:
 	 inc h ;mem_get_ptr_routines
 	 inc l \ inc l
 	 ld ix,(hl)
+	 add ix,de
+	 jr nc,check_coherency_helper_any
+	 call fixup_gb_address_ix
 	 jr check_coherency_helper_any
-	
+
 check_coherency_helper_hram:
 	ld ix,hram_base
 check_coherency_helper:
@@ -1460,8 +1462,8 @@ check_coherency_helper:
 	inc hl
 	inc hl
 	push hl
-check_coherency_helper_any:
 	 add ix,de
+check_coherency_helper_any:
 	 sbc hl,hl
 	 add hl,sp
 	 ex de,hl
@@ -1772,22 +1774,28 @@ generate_opcodes:
 	 ld a,(hl)
 	 dec l
 	 ld l,(hl)
+	 ; Don't allow blocks to cross trimmed slices
+	 cp rom_trimmed_get_ptr & $FF
+	 jr z,_
 	 cp l
-	 ld a,c  ;MAX_OPCODE_BYTES_PER_BLOCK
 	 jr z,++_
+_
 	 ; On region change, clamp input boundary to 256-byte range
-	 add a,e
+	 ld a,e
+	 add a,c ;MAX_OPCODE_BYTES_PER_BLOCK
 	 jr nc,_
 	 xor a
-_
 	 sub e
+	 ld c,a
 _
+	 ld a,c
 	 ld (opgen_byte_limit_smc),a
 	 inc h ;mem_get_ptr_routines
 	 inc l \ inc l
 	 ld hl,(hl)
 	 ex de,hl
 	 add hl,de
+	 call c,fixup_gb_address_swapped
 	 ex de,hl
 	 ; Define input boundary
 	 add a,e
@@ -2014,6 +2022,7 @@ _
 	   ld c,b ;C=0
 	   ld b,a
 	   add hl,bc
+	   call c,fixup_gb_address_bc
 	  pop bc
 	  ; Copy the remaining opcode bytes from the new memory region
 	  ldir

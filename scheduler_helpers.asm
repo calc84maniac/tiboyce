@@ -1,3 +1,7 @@
+overlapped_op_1_1_fixup:
+	call fixup_gb_address_bc
+	jr overlapped_op_1_1_fixup_continue
+
 overlapped_op_1_1_mismatch:
 	lea hl,ix-3
 	ld (hl),a
@@ -52,6 +56,8 @@ handle_overlapped_op_1_1_helper:
 	inc l \ inc l
 	ld hl,(hl)
 	add hl,bc
+	jr c,overlapped_op_1_1_fixup
+overlapped_op_1_1_fixup_continue:
 	cp (hl)
 	jr nz,overlapped_op_1_1_mismatch
 	ld a,(ix-1)
@@ -85,6 +91,8 @@ handle_overlapped_op_1_2_helper:
 	inc l \ inc l
 	ld hl,(hl)
 	add hl,bc
+	jr c,overlapped_op_1_2_fixup
+overlapped_op_1_2_fixup_continue:
 	ld bc,(hl)
 	ld h,a
 	ld l,(ix-4)
@@ -118,6 +126,8 @@ handle_overlapped_op_2_1_helper:
 	inc l \ inc l
 	ld hl,(hl)
 	add hl,bc
+	jr c,overlapped_op_2_1_fixup
+overlapped_op_2_1_fixup_continue:
 	cp (hl)
 	jr nz,overlapped_op_2_1_mismatch
 	ld a,(ix-1)
@@ -160,6 +170,14 @@ schedule_overlapped_event_helper:
 	ld a,e
 	jp.sis schedule_event_finish
 
+overlapped_op_1_2_fixup:
+	call fixup_gb_address_bc
+	jr overlapped_op_1_2_fixup_continue
+
+overlapped_op_2_1_fixup:
+	call fixup_gb_address_bc
+	jr overlapped_op_2_1_fixup_continue
+
 ; Inputs: DE = Game Boy address of jump instruction
 ;         IX = HL' = starting recompiled address
 ;         BCU = 0
@@ -170,9 +188,7 @@ schedule_jump_event_helper:
 	dec b
 	dec b
 schedule_jump_event_helper_adjusted:
-	GET_BASE_ADDR_FAST
-	ex de,hl
-	add hl,de
+	GET_GB_ADDR_FAST_SWAPPED
 	bit 7,(hl)
 	inc hl
 	jr nz,schedule_jump_event_absolute
@@ -245,9 +261,7 @@ schedule_event_later_resolved_pushed:
 ;         B = cycles until end of sub-block (including conditional branch cycles)
 ;         C = cycle count at end of sub-block (>= 0)
 schedule_subblock_event_helper:
-	GET_BASE_ADDR_FAST
-	ex de,hl
-	add hl,de
+	GET_GB_ADDR_FAST_SWAPPED
 	ld a,(hl)
 	rlca
 	jr nc,_
@@ -299,16 +313,14 @@ schedule_jump_event_relative_slow:
 ;         B = cycles until end of sub-block (plus jump cycles, if applicable)
 ;         C = cycle count at end of sub-block (>= 0)
 schedule_call_event_helper:
-	GET_BASE_ADDR_FAST
-	add hl,de
+	GET_GB_ADDR_FAST
 	inc e
 	jr nz,schedule_call_event_fast
 schedule_jump_event_absolute_slow:
 	; Handle possibly overlapped memory region
 	ld a,(hl)
 	inc d
-	GET_BASE_ADDR_FAST
-	add hl,de
+	GET_GB_ADDR_FAST
 	ld e,a
 	jr schedule_event_helper_slow_finish
 
@@ -323,8 +335,7 @@ schedule_slow_jump_event_helper:
 	add a,2
 	jr c,schedule_bridge_event_slow
 	inc.s de
-	GET_BASE_ADDR_FAST
-	add hl,de
+	GET_GB_ADDR_FAST
 	inc a
 	jr z,schedule_jump_event_relative_slow
 	; Check if jump target may overlap memory regions
@@ -358,6 +369,8 @@ schedule_event_later:
 	GET_BASE_ADDR_FAST
 	push hl
 	 add hl,de
+	 jr c,schedule_event_fixup_address
+schedule_event_fixup_address_continue:
 	 ld de,opcounttable
 	 ld b,e
 	 push bc
@@ -390,6 +403,12 @@ schedule_event_now:
 	; This is a code path that could target the flush handler
 flush_event_smc_2 = $+1
 	jp.sis do_event_pushed
+
+schedule_event_fixup_address:
+	pop de
+	call fixup_gb_address_swapped
+	push de
+	 jr schedule_event_fixup_address_continue
 
 #ifdef VALIDATE_SCHEDULE
 validate_schedule_resolved:
@@ -449,8 +468,7 @@ validate_schedule_nops:
 	push bc
 	 ld b,a
 	 ld ix,opcounttable
-	 GET_BASE_ADDR_FAST
-	 add hl,de
+	 GET_GB_ADDR_FAST
 _
 	 ld a,(hl)
 	 ld ixl,a

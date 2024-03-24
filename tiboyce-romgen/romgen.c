@@ -318,14 +318,13 @@ uint8_t *read_rom(const char *filename, size_t *length_out) {
 uint16_t get_page_length(uint8_t *page, size_t remaining) {
 	uint16_t full_length = (remaining < 0x4000) ? (uint16_t)remaining : 0x4000;
 	uint16_t page_length = full_length;
-	uint8_t byte = page[--page_length];
-	if (byte != 0x00 && byte != 0xFF)
-		return page_length + 1;
-	while (page_length > 0 && page[--page_length] == byte)
-		;
-	if (page[page_length] == byte)
+	uint8_t trim_byte = page[page_length - 1];
+	do {
+		page_length--;
+	} while (page_length > 0 && page[page_length - 1] == trim_byte);
+	if (page_length == 0 && trim_byte == 0)
 		return 0;
-	return min(page_length + 1 + 256, full_length);
+	return (page_length & 0xFF ? page_length | 0xFF : page_length) + 1;
 }
 
 int pageinfo_comparator(const void *p1, const void *p2) {

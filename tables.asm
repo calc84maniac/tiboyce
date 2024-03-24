@@ -1267,7 +1267,7 @@ rom_bank_fill_routines:
 rom_bank_fill_rem_0:
 	ld sp,(mbc_change_rom_bank_smc)
 	jp.sis nz,mbc_no_fix_sp
-	jr rom_bank_fill_fix_sp
+	jp.sis mbc_fix_sp_full
 
 	push bc
 	push bc
@@ -1294,9 +1294,7 @@ rom_bank_fill_rem_1:
 	push bc
 	ld sp,(mbc_change_rom_bank_smc)
 	jp.sis nz,mbc_no_fix_sp
-rom_bank_fill_fix_sp:
-	ld hl,(rom_bank_base)
-	jp.sis mbc_fix_sp
+	jp.sis mbc_fix_sp_full
 
 	push bc
 	push bc
@@ -1323,7 +1321,7 @@ rom_bank_fill_rem_2:
 	push bc
 	ld sp,(mbc_change_rom_bank_smc)
 	jp.sis nz,mbc_no_fix_sp
-	jr rom_bank_fill_fix_sp
+	jp.sis mbc_fix_sp_full
 
 rom_bank_fill_exactly_1:
 	ld hl,-1
@@ -1331,7 +1329,7 @@ rom_bank_fill_exactly_1:
 	ld (hl),c
 	ld sp,(mbc_change_rom_bank_smc)
 	jp.sis nz,mbc_no_fix_sp
-	jr rom_bank_fill_fix_sp
+	jp.sis mbc_fix_sp_full
 
 	.block (rom_bank_fill_routines+192) - $
 	.db rom_bank_fill_rem_0-21 - rom_bank_fill_routines

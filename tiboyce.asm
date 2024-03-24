@@ -105,7 +105,7 @@
 ; The base plus the address can be used to directly read GB memory.
 ;
 ; Inputs:  DE = GB address
-; Outputs: HL = base pointer
+; Outputs: HL = base pointer, or $FFFFFF if memory isn't readable
 ; Destroys: F
 #macro GET_BASE_ADDR_NO_ASSERT
 	ld hl,z80codebase+mem_read_lut
@@ -124,6 +124,31 @@
 	jr c,$
 #endif
 	GET_BASE_ADDR_NO_ASSERT
+#endmacro
+
+; Gets the 24-bit direct pointer for a given Game Boy address.
+; If memory wasn't already readable, ensures the address is fixed up.
+;
+; Inputs:  DE = GB address
+; Outputs: HL = direct pointer, carry reset
+; Destroys: F
+#macro GET_GB_ADDR_FAST
+	GET_BASE_ADDR_FAST
+	add hl,de
+	call c,fixup_gb_address
+#endmacro
+
+; Gets the 24-bit base pointer and direct pointer for a given Game Boy address.
+; If memory wasn't already readable, ensures the address is fixed up.
+;
+; Inputs:  DE = GB address
+; Outputs: DE = base pointer, HL = direct pointer, carry reset
+; Destroys: F
+#macro GET_GB_ADDR_FAST_SWAPPED
+	GET_BASE_ADDR_FAST
+	ex de,hl
+	add hl,de
+	call c,fixup_gb_address_swapped
 #endmacro
 
 #macro ASSERT_NC
@@ -654,11 +679,23 @@ vram_pixels_start = adjust_green_msb_lut + 256
 ; 160 * 144 = 22.5 KB in size.
 mini_frame_backup = vram_pixels_start
 
+; A buffer for direct stack reads of ROM data not contained in an appvar.
+; If the first byte is 0, the buffer is invalid (mpZeroPage is used instead).
+; If the first byte is not 0, the rest of the buffer is filled with that byte.
+; 256 bytes in size. Must be 256-byte aligned.
+direct_read_buffer_normal = vram_pixels_start + $6000
+
+; A buffer for direct stack reads of ROM data not contained in an appvar.
+; If the first byte is 0, the buffer is invalid (mpZeroPage is used instead).
+; If the first byte is not 0, the rest of the buffer is filled with that byte.
+; 256 bytes in size. Must be 256-byte aligned and follow the non-stack buffer.
+direct_read_buffer_stack = direct_read_buffer_normal + 256
+
 ; Start of recompiler struct index lookup table. 512 bytes in size.
 ; The first 256 bytes are the LSBs and the next 256 are the MSBs.
 ; The lookup table is indexed by the high byte of a JIT address,
 ; and each pointer gives the last struct entry touching that range.
-recompile_index_LUT = vram_pixels_start + $6000
+recompile_index_LUT = direct_read_buffer_stack + 256
 
 ; Start of recompiler cached jump index lookup table. 512 bytes in size.
 ; The first 256 bytes are the LSBs and the next 256 are the MSBs.
@@ -1649,9 +1686,6 @@ cram_size:
 ; The start address of Game Boy cartridge RAM.
 cram_start:
 	.dl 0
-; The byte trimmed from the end of ROM banks ($00 or $FF).
-rom_trim_value:
-	.db 0
 ; The cartridge's Memory Bank Controller type.
 mbc:
 	.db 0
