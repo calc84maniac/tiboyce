@@ -50,8 +50,7 @@ identify_waitloop:
 	inc sp
 #endif
 	
-	GET_BASE_ADDR_FAST
-	add hl,de
+	GET_GB_ADDR_FAST
 	lea de,ix
 	xor a
 	ld (waitloop_length_smc),a

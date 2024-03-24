@@ -53,8 +53,6 @@ try_unlock_sha:
 	.block (mem_read_any_routines+(6*4)-1)-$
 	
 	; Read-only regions come first for detection by stack handling
-rom_banked_read_handler:
-	ex af,af'
 rom_banked_read_any:
 rom_bank_base_for_read = $+2+z80codebase
 	ld.lil hl,0
@@ -70,14 +68,10 @@ rom_unbanked_base_for_read = $+2+z80codebase
 	ex af,af'
 	ld.l a,(hl)
 	ret
+	nop
 	
 rom_trimmed_read_any:
-	ex af,af'
-rom_trimmed_read_value = $+1
-	ld a,0
-	ret
-	nop
-	nop
+	jp.lil rom_trimmed_read_any_helper
 	
 vram_banked_read_handler:
 	ex af,af'
@@ -260,15 +254,14 @@ mbc_rom_bank_get_write_ptr:
 	
 mbc_cram_bank_get_write_ptr:
 	jp nz,patch_hl_mbc_access
+_
 	scf
 	ex af,af'
 	ret
 	
 mbc_specific_get_write_ptr:
 	jp nz,patch_hl_mbc_access
-	scf
-	ex af,af'
-	ret
+	jr -_
 	
 rom_banked_get_ptr:
 	MATCH_LSB(rom_banked_get_ptr, rom_banked_read_any)
@@ -287,15 +280,15 @@ rom_unbanked_base = $+2+z80codebase
 	add.l hl,de
 	ex af,af'
 	ret
-	nop
-	nop
+rom_trimmed_get_ptr_impl:
+	jp do_rom_trimmed_get_ptr
 	
 rom_trimmed_get_ptr:
 	MATCH_LSB(rom_trimmed_get_ptr, rom_trimmed_read_any)
 rom_trimmed_base = $+2+z80codebase
-	ld.lil hl,mpZeroPage
-	ex af,af'
-	ret
+	jr rom_trimmed_get_ptr_impl
+	.dl $FFFFFF
+	nop
 	
 vram_banked_get_read_ptr:
 	MATCH_LSB(vram_banked_get_ptr, vram_banked_read_any)
@@ -994,6 +987,9 @@ _
 _
 	pop af
 	jr op_read_de_normal_swapped
+	
+do_rom_trimmed_get_ptr:
+	jp.lil rom_trimmed_get_ptr_helper
 	
 do_cram_open_bus_read_any:
 	; Get the return address

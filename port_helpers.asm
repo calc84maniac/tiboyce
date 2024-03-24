@@ -182,8 +182,7 @@ dma_write_helper:
 	res 5,a
 _
 	ld d,a
-	GET_BASE_ADDR_FAST
-	add hl,de
+	GET_GB_ADDR_FAST
 	ld de,hram_start
 	ld c,$A0
 	ldir

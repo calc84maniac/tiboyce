@@ -15,6 +15,7 @@ decode_jump_helper:
 	cp c
 	ld hl,(hl)
 	add hl,de
+	call c,fixup_gb_address_update_overlap
 	jr nz,decode_jump_maybe_overlap
 	; Check whether original opcode was JR or JP
 	bit 7,b
@@ -58,6 +59,9 @@ decode_jump_common:
 	ld a,(hl)
 	cp c
 	jr nz,decode_jump_bank_switch
+	; Don't allow direct jumps between trimmed slices
+	cp rom_trimmed_get_ptr & $FF
+	jr z,decode_jump_bank_switch
 	push bc
 	 push de
 	  call lookup_code_link_internal
@@ -80,6 +84,9 @@ decode_block_bridge_helper:
 	ld l,(ix+3)
 	cp (hl)
 	jr nz,decode_jump_bank_switch
+	; Don't allow direct execution across trimmed slices
+	cp rom_trimmed_get_ptr & $FF
+	jr z,decode_jump_bank_switch
 	; If there's no overlap but extra cycles are present, emit a slow jump
 	inc b
 	djnz decode_jump_bank_switch_fixed
@@ -113,6 +120,7 @@ decode_jump_maybe_overlap:
 	; Get the second immediate byte (always in the next region)
 	inc e
 	add hl,de
+	call c,fixup_gb_address
 	ld d,(hl)
 	jr z,_
 	; If the first byte overlapped, get it from the next region
@@ -126,6 +134,7 @@ decode_slow_jump_for_jp:
 decode_overlapped_jr:
 	; Switch to next region unconditionally
 	add hl,de
+	call c,fixup_gb_address
 	; Get low byte of JR, offset from $xx01
 	ld e,(hl)
 	inc e
@@ -143,8 +152,10 @@ decode_slow_jump:
 	cp c
 	jr z,decode_jump_bank_switch_fixed
 decode_jump_bank_switch:
-	cp rom_banked_get_ptr & $FF
-	jr nz,decode_jump_bank_switch_fixed
+	; Check the actual target memory region, to handle trimmed slices properly
+	ld a,d
+	add a,$40
+	jp po,decode_jump_bank_switch_fixed
 	ld hl,do_rom_bank_jump
 	ld a,(z80codebase+curr_rom_bank)
 	jr decode_jump_bank_switch_continue
@@ -171,12 +182,10 @@ decode_jump_bank_switch_continue:
 	
 decode_call_helper:
 	push hl
-	 GET_BASE_ADDR_FAST
-	 add hl,de
+	 GET_GB_ADDR_FAST
 	 ld a,(hl)
 	 dec de
-	 GET_BASE_ADDR_FAST
-	 add hl,de
+	 GET_GB_ADDR_FAST
 	 dec de
 	 ld b,d
 	 ld e,(hl)
@@ -248,15 +257,13 @@ banked_jump_mismatch_helper:
 	   add a,2
 	   jr c,banked_jump_mismatch_untaken
 	   inc de
-	   GET_BASE_ADDR_FAST
-	   add hl,de
+	   GET_GB_ADDR_FAST
 	   inc de
 	   ; Check whether it's JP or JR
 	   inc a
 	   jr z,banked_jump_mismatch_jr
 	   ld a,(hl)
-	   GET_BASE_ADDR_FAST
-	   add hl,de
+	   GET_GB_ADDR_FAST
 	   ld d,(hl)
 	   ld e,a
 	   jr banked_jump_mismatch_resolved
@@ -298,15 +305,13 @@ banked_call_mismatch_helper:
 	   ld.s (hl),a  ; Update bank value
 	   dec de
 	   dec.s de
-	   GET_BASE_ADDR_FAST
-	   add hl,de
+	   GET_GB_ADDR_FAST
 	   ld a,(hl)
 	   inc hl
 	   inc e
 	   jr nz,_
 	   inc d
-	   GET_BASE_ADDR_FAST
-	   add hl,de
+	   GET_GB_ADDR_FAST
 _
 	   ld d,(hl)
 	   ld e,a

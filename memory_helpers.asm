@@ -233,6 +233,7 @@ hdma_single_transfer:
 	  inc l \ inc l
 	  ld ix,(hl)
 	  add ix,de
+	  call c,fixup_gb_address_ix
 	  ld e,c
 	  and $1F
 	  add a,$80
@@ -277,4 +278,145 @@ hdma_single_transfer_finish:
 	 ex de,hl
 	pop hl
 	add.s hl,bc
+	ret
+
+	; Input: AF' swapped, BC=base address
+	; Output: AF' unswapped, A=read value
+	; Destroys: HL, F'
+rom_trimmed_read_any_helper:
+	scf
+	call fixup_gb_address_bc
+	ld a,(hl)
+	ex af,af'
+	pop.s hl
+	jp.s (hl)
+
+	; Input: AF' swapped, DE=base address
+	; Output: AF' unswapped, HL=direct address, shadow carry reset
+	; Destroys: None
+rom_trimmed_get_ptr_helper:
+	call fixup_gb_address_normal
+	jp.sis z80_swap_af_ret
+
+	; Input: HL=incorrect direct address, DE=incorrect base address, carry set
+	; Output: HL=direct address, DE=base address, carry reset
+	; Destroys: F
+fixup_gb_address_swapped:
+	or a
+	sbc hl,de
+	ex de,hl
+	call fixup_gb_address_normal
+	sbc hl,de
+	ex de,hl
+	add hl,de
+	ret
+
+	; Input: DE=GB address, carry set
+	; Output: IX=direct address, carry reset
+	; Destroys: HL
+fixup_gb_address_ix:
+	call fixup_gb_address
+	push hl
+	pop ix
+	ret
+
+	; Input: BC=GB address, carry set
+	; Output: HL=direct address, carry reset
+fixup_gb_address_bc:
+	push de
+	 push bc
+	 pop de
+	 call fixup_gb_address
+	pop de
+	ret
+
+	; Input: BC=GB address, L=region
+	; Output: IY=direct address, L=adjusted region
+	; Destroys: AF
+fixup_gb_address_stack_helper:
+	push hl
+	 or a
+	 call fixup_gb_address_bc
+	 ex (sp),hl
+	pop iy
+	; Ensure trimmed slices in the banked area are treated as banked
+	ld a,b
+	add a,$40
+	jp.sis po,fixup_gb_address_stack_continue
+	ld l,rom_bank_base & $FF
+	jp.sis fixup_gb_address_stack_continue
+
+	; Input: DE=GB address, A=region, Z set if next region matches
+	; Output: HL=direct address, carry reset, Z set if overlap is allowed
+	; Destroys: None
+fixup_gb_address_update_overlap:
+	jr nz,fixup_gb_address
+	; Disallow overlap across trimmed slices
+	cp rom_trimmed_get_ptr & $FF
+	jr nz,_
+	.db $FE ;CP $BF to reset Z
+_
+	cp a ; Set Z
+fixup_gb_address_normal:
+	scf
+	; Input: DE=GB address, carry set=normal, carry reset=stack
+	; Output: HL=direct address, carry reset
+	; Destroys: None
+fixup_gb_address:
+	push af
+	 push de
+	  ld hl,direct_read_buffer_stack
+	  ld a,h
+	  sbc a,l
+	  ld h,a
+#ifdef DEBUG
+	  bit 7,d
+	  jr z,$
+#endif
+	  bit 6,d
+rom_bank0_trim_value = $+1
+	  ld a,0
+	  jr z,_
+	  push hl
+	   ; Get the trim value from the end of the appvar bank data
+	   ld hl,(rom_bank_base)
+	   ld de,$4000-2
+	   add hl,de
+	   ld e,(hl)
+	   inc hl
+	   ld d,(hl)
+	   add hl,de
+	   ld a,(hl)
+	  pop hl
+_
+	  ; Special case for trim value 0, use the zero page
+	  or a
+	  jr z,fixup_gb_address_zero
+	  ; Check if the buffer is already filled with this trim value
+	  cp (hl)
+	  jr z,_
+	  ld (hl),a
+	  push hl
+	  pop de
+	  inc de
+	  push bc
+	   ld bc,255
+	   ldir
+	  pop bc
+	  or a
+_
+	 pop de
+	 ld l,e
+	 sbc hl,de
+	pop af
+	add hl,de
+	ASSERT_NC
+	ret
+
+fixup_gb_address_zero:
+	  ld hl,mpZeroPage
+	 pop de
+	pop af
+	add hl,de
+	ASSERT_NC
 	ret

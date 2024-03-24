@@ -30,7 +30,7 @@ mbc_change_rom_bank_smc = $+1
 	ld a,(z80codebase+curr_gb_stack_region)
 	cp rom_bank_base & $FF
 	jp.sis nz,mbc_no_fix_sp
-	jp.sis mbc_fix_sp
+	jp.sis mbc_fix_sp_full
 	
 mbc_change_rom_bank_trim_msb:
 	ld (curr_rom_bank_trim_msb),a
