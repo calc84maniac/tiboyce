@@ -136,67 +136,38 @@ _
 ophandlerDAA:
 	; Save input A value
 	ld l,a
-	; Split execution path on input carry, to extract both H and N
-	jr nc,ophandlerDAA_no_carry
-	; Map a value based on input H and N flags:
-	;   N=0, H=0 -> $A6
-	;   N=0, H=1 -> $AA
-	;   N=1, H=0 -> $06
-	;   N=1, H=1 -> $00
-	ld a,$66
+	; Adjust a value with no invalid nibbles
+	; Input C flag goes into bit 7, bit 0 is always non-zero
+	; If N=0, input H flag goes into bit 3
+	ld a,$57
 	daa
-	; Invert N flag into C, and if N=0, put the H flag in H, else put it in Z
-	add a,a
+	ld h,a
+	; Set Z=1 if N=0
+	ld a,$9A
+	daa
 	; Restore input A value
 	ld a,l
-	jr c,ophandlerDAA_add
-	; Case for N=1, C=1
-	jr nz,_
-	; Subtract the adjustment for H=1
-	sub 6
-_
-	; Subtract the adjustment for C=1, set N flag, reset H flag, update Z flag
-	sub $60
-	ret c
-	jr z,_
-	; If Z flag need not be set, set C/N flags, reset H/Z flags
-	cp $A0
-	ret
-_
-	; If Z flag must be set, set C/N/Z flags, reset H flag
-	sub $A0
-	daa
+	jr z,ophandlerDAA_add
+	; Calculate the final result (plus 1) using the adjusted value
+	add a,h
+	sub $57-1
+	; Restore input C flag
+	add hl,hl
+	; If the result is zero, set N=1,Z=1,H=0
+	dec a
+	ret z
+	; Set N=1,Z=0,H=0 which works since bit 1 of H is non-zero
+	dec h
 	ret
 
-ophandlerDAA_no_carry:
-	; Map a value based on input H and N flags:
-	;   N=0, H=0 -> $46
-	;   N=0, H=1 -> $4A
-	;   N=1, H=0 -> $86
-	;   N=1, H=1 -> $80
-	ld a,$E6
-	daa
-	; Put the N flag in C, and if N=0, put the H flag in H, else put it in Z
-	add a,a
-	; Restore input A value
-	ld a,l
-	jr c,ophandlerDAA_sub_no_carry
 ophandlerDAA_add:
-	; N=0, C and H were restored
+	; Set N=0, restore input C,H flags
+	add hl,hl
+	; Do DAA normally
 	daa
 	; Reset H and N, preserve C and Z
 	rla
 	rra
-	ret
-
-ophandlerDAA_sub_no_carry:
-	; Case for N=1, C=0
-	jr nz,_
-	; Subtract the adjustment for H=1
-	sub 6
-_
-	; Set N, reset H and C, update Z
-	sub 0
 	ret
 
 
