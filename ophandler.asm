@@ -137,20 +137,20 @@ ophandlerDAA:
 	; Save input A value
 	ld l,a
 	; Adjust a value with no invalid nibbles
-	; Input C flag goes into bit 7, bit 0 is always non-zero
-	; If N=0, input H flag goes into bit 3
-	ld a,$57
+	; Input C flag goes into bit 7, input H flag goes into bit 3
+	; Note: bit 0 is always non-zero
+	ld a,$35
 	daa
 	ld h,a
-	; Set Z=1 if N=0
+	; Set Z=1 if N=0, A=$34 if N=1, always sets carry
 	ld a,$9A
 	daa
-	; Restore input A value
-	ld a,l
 	jr z,ophandlerDAA_add
-	; Calculate the final result (plus 1) using the adjusted value
-	add a,h
-	sub $57-1
+	; Change the adjustment value offset to 1 by subtracting $34
+	cpl
+	adc a,h
+	; Calculate the final result (plus 1) using the adjustment value
+	add a,l
 	; Restore input C flag
 	add hl,hl
 	; If the result is zero, set N=1,Z=1,H=0
@@ -161,6 +161,8 @@ ophandlerDAA:
 	ret
 
 ophandlerDAA_add:
+	; Restore input A value
+	ld a,l
 	; Set N=0, restore input C,H flags
 	add hl,hl
 	; Do DAA normally
