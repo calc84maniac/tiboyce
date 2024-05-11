@@ -2284,9 +2284,10 @@ _opgenSTOP:
 	ld (hl),ophandlerSTOP & $FF
 	inc hl
 	ld (hl),ophandlerSTOP >> 8
-	; Emit the address following the STOP instruction
+	; Emit the address following the ignored byte after the STOP instruction
 	inc de
 	call opgen_emit_gb_address
+	dec de
 	dec de
 	jr opgen_reset_cycle_count
 	
@@ -2348,6 +2349,7 @@ _opgenHALT_STOP:
 	ex de,hl
 	ld (hl),$CD
 	inc hl
+	inc de
 	bit 6,c
 	jr z,_opgenSTOP
 	ld (hl),decode_halt & $FF
@@ -2359,7 +2361,6 @@ _opgenHALT_STOP:
 	inc hl
 	inc hl
 	; Emit the address following the HALT instruction
-	inc de
 	call opgen_emit_gb_address
 	; Read the first byte of the bugged instruction
 	ld a,(de)
