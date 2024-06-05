@@ -371,7 +371,7 @@ fixup_gb_address:
 	  ld h,a
 #ifdef DEBUG
 	  bit 7,d
-	  jr z,$
+	  jr nz,$
 #endif
 	  bit 6,d
 rom_bank0_trim_value = $+1

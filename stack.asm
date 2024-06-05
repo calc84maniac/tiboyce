@@ -458,7 +458,7 @@ shift_stack_window_lower_2_check_overlap:
 	ld l,a
 	ld a,(bc)
 	cp l
-	jr z,shift_stack_window_lower_finish
+	jr z,shift_stack_window_lower_2_finish
 #ifdef SHADOW_STACK
 	; Check and see if we want to try shifting the shadow stack
 	ld a,l

@@ -625,6 +625,8 @@ do_push_overflow_for_rst_slow:
 	add a,(hl)
 	inc hl
 	exx
+	; Remove JIT return address from callstack cache
+	pop hl
 decode_rst_return:
 	jr nc,_
 	inc d
