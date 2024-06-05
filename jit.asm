@@ -300,9 +300,11 @@ jit_stack_overflow_helper:
 	add.s hl,sp
 	ld.s sp,hl
 	; Move the ADL stack contents, which are variable size
-	ld hl,myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL) - 1
+	ld hl,myADLstack - (CALL_STACK_DEPTH * CALL_STACK_ENTRY_SIZE_ADL) - 2
 	ld de,myADLstack - 1
 	sbc hl,sp
+	jr c,runtime_error
+	inc hl
 	ld b,h
 	ld c,l
 	add hl,sp
