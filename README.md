@@ -102,6 +102,7 @@ When editing the per-game configuration, changing an option will override the gl
     *   Static: The same horizontal lines on the screen are always expanded. This appears consistent but may cause shimmering effects when scrolling vertically.
     *   Scrolling: Attempts to expand the same lines relative to the game's scrolling background. This reduces scrolling artifacts but may cause sudden shifts.
 *   Skin display: Choose whether to display a skin in no scaling mode. Requires the `TIBoySkn.8xv` file.
+*   Screen rotation: Rotates the screen 180 degrees to hold the calculator upside down with the arrow keys on the left. Also rotates the arrow keys in the controls.
 *   Frameskip type: Choose the type of frameskip.
     *   Auto: Skip up to N frames as needed, or fewer if there is enough processing time. Always skips N frames when turbo mode is active.
     *   Manual: Always skip N frames, so 1 of every N+1 frames is rendered.
