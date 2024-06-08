@@ -95,21 +95,18 @@ When editing the per-game configuration, changing an option will override the gl
 *   Scaling mode: Choose the display mode.
     *   No scaling: Displays pixel-accurate and has slightly better performance, but appears small.
     *   Fullscreen: Fills the screen, but has a squished aspect ratio and uses interlaced scan.
-*   Scaling type: Choose the scaling method to use for fullscreen mode.
-    *   Static: The same horizontal lines on the screen are always doubled. This appears consistent but may cause shimmering effects when scrolling vertically.
-    *   Scrolling: Attempts to double the same lines relative to the game's scrolling background. This reduces scrolling artifacts but may cause sudden shifts.
+*   Scaling method: Choose the method of upscaling to use for fullscreen mode.
+    *   Nearest: Nearest-neighbor upscaling, pixels are sharp but appear unevenly sized.
+    *   Linear: Linear upscaling with flicker-based blending, more consistent pixel size but runs slightly slower.
+*   Scale tracking: Choose the type of scale tracking to use for fullscreen mode.
+    *   Static: The same horizontal lines on the screen are always expanded. This appears consistent but may cause shimmering effects when scrolling vertically.
+    *   Scrolling: Attempts to expand the same lines relative to the game's scrolling background. This reduces scrolling artifacts but may cause sudden shifts.
 *   Skin display: Choose whether to display a skin in no scaling mode. Requires the `TIBoySkn.8xv` file.
 *   Frameskip type: Choose the type of frameskip.
     *   Auto: Skip up to N frames as needed, or fewer if there is enough processing time. Always skips N frames when turbo mode is active.
     *   Manual: Always skip N frames, so 1 of every N+1 frames is rendered.
     *   Off: Never skip frames. May cause lag depending on the game.
 *   Frameskip value: Choose the value of N described above, from 0 to 9. Ignored if frameskip is off.
-*   Speed display: Choose when to show an indicator of the percentage of actual game speed.
-    *   Never: Never display.
-    *   Turbo: Display when turbo mode is active. Note this may be below 100% if the game cannot be emulated at full speed.
-    *   Slowdown: Display when turbo mode is active, or when running below 100% speed.
-    *   Always: Always display.
-*   Message display: Choose whether to display emulator message overlays, for example when a save state is loaded.
 *   GB palette selection: Chooses GBC-style colorization options to apply to original Game Boy games.
     *   Default: Use the official palette for a game as a GBC would select. If no official palette exists, reverts to Classic.
     *   Classic: Use a green-ish palette to evoke the feel of an original Game Boy.
@@ -131,9 +128,15 @@ Emulator shortcut buttons, aside from the menu and quick exit buttons, may be un
     *   GBA back-compat: Same as Game Boy Color, but tells the game that it is running on a Game Boy Advance.
 *   Auto save state: Choose whether to create an auto save state when exiting a game. This state is separate from slots 0-9, and is automatically loaded the next time the game is started.
 *   Confirm state save/load: Choose whether to prompt for confirmation when loading a state and/or overwriting a state. Useful to prevent accidental loss of progress. Restarting the game is also considered as loading a state.
+*   Message display: Choose whether to display emulator message overlays, for example when a save state is loaded.
 *   Turbo mode: Choose how turbo mode is activated.
     *   Toggle: Press the turbo button once to toggle the turbo mode on or off.
     *   Hold: Hold the turbo button to turn turbo mode on, and release the button to turn it off.
+*   Speed display: Choose when to show an indicator of the percentage of actual game speed.
+    *   Never: Never display.
+    *   Turbo: Display when turbo mode is active. Note this may be below 100% if the game cannot be emulated at full speed.
+    *   Slowdown: Display when turbo mode is active, or when running below 100% speed.
+    *   Always: Always display.
 *   Time zone: For games using real-time clock functionality, choose the time zone used relative to the time set in the calculator OS. Relevant when [Converting Save Files](#converting-save-files).
 *   Daylight Saving Time: Turn this option on or off after adjusting the time in the calculator OS to keep the game clock consistent.
 
