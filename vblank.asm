@@ -948,27 +948,18 @@ scale_remaining_fills = $+1
 active_scaling_method = $+1
 	ld a,0
 	rra
-	jr nc,+++_
+	jr nc,++_
 	ld a,(frame_real_count)
 	rra
 	push af
-	 ld de,gramDrawBufferLeftParams
+	 ld de,gramDrawBufferCommandDescriptors
+	 ld hl,gramDrawBufferLeftParams - gramDrawBufferCommandDescriptors
 	 jr nc,_
-	 ld de,gramDrawBufferRightParams
+	 add hl,hl ;gramDrawBufferRightParams - gramDrawBufferCommandDescriptors
 _
-	 ld a,$2A ; Column address set
-	 ld b,5
-	 call spiTransferCommand
-	 ; Check if VSYNC was reached before this command completed
-	 ld hl,mpLcdRis
-	 bit 2,(hl)
-	 jr z,_
-	 SPI_TRANSFER_CMD(1, $B0) ; RAM Control
-	 SPI_PARAM($02)           ;  RAM access from SPI, VSYNC interface
-	 SPI_TRANSFER_CMD(0, $2C) ; Reset to window start
-	 SPI_TRANSFER_CMD(1, $B0) ; RAM Control
-	 SPI_PARAM($12)           ;  RAM access from RGB, VSYNC interface           
-_
+	 add hl,de
+	 ex de,hl
+	 call spiTransferCommandList
 	pop af
 _
 	ld hl,(current_display)
@@ -1608,12 +1599,26 @@ gramScrollRightParams:
 	; 37             ; Vertical scroll amount
 	SPI_PARAM16(320) ;  Mirror right side to left side
 
-gramDrawBufferLeftParams:
-	; 2A             ; Column address set
-	SPI_PARAM16(0)   ;  Left bound
-	SPI_PARAM16(159) ;  Right bound
-
 gramDrawBufferRightParams:
 	; 2A             ; Column address set
 	SPI_PARAM16(160) ;  Left bound
 	SPI_PARAM16(319) ;  Right bound
+	; B0             ; RAM Control
+	SPI_PARAM($02)   ;  RAM access from SPI, VSYNC Interface
+	; B0             ; RAM Control
+	SPI_PARAM($12)   ;  RAM access from RGB, VSYNC Interface
+
+gramDrawBufferLeftParams:
+	; 2A             ; Column address set
+	SPI_PARAM16(0)   ;  Left bound
+	SPI_PARAM16(159) ;  Right bound
+	; B0             ; RAM Control
+	SPI_PARAM($02)   ;  RAM access from SPI, VSYNC Interface
+	; B0             ; RAM Control
+	SPI_PARAM($12)   ;  RAM access from RGB, VSYNC Interface
+
+gramDrawBufferCommandDescriptors:
+	.db 4,$2A ; Column address set
+	.db 1,$B0 ; RAM Control
+	.db 1,$B0 ; RAM Control
+	.db -1

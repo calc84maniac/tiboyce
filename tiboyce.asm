@@ -1503,19 +1503,6 @@ spiTransferCommand:
 	; Start SPI transfer
 	ld hl,mpSpiTransfer
 	ld (hl),1
-#ifdef CEMU
-	; Fill SPI FIFO and transfer at the same time
-	ld l,mpSpiFifo & $FF
-	or a
-_
-	rla \ rla \ rla \ ld (hl),a
-	rla \ rla \ rla \ ld (hl),a
-	rla \ rla \ rla \ ld (hl),a
-	ld a,(de)
-	inc de
-	scf
-	djnz -_
-#else
 	; Fill SPI FIFO and transfer at the same time
 	ld l,(mpSpiFifo + 1) & $FF
 	ld (hl),h
@@ -1527,7 +1514,6 @@ _
 	ld a,(de)
 	inc de
 	djnz -_
-#endif
 	dec de
 	; Wait for transfer to complete
 	ld l,(mpSpiStatus + 1) & $FF
