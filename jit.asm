@@ -371,7 +371,7 @@ Z80InvalidOpcode_helper:
 	ld a,(ERROR_INVALID_OPCODE << 2) + 5
 	jr runtime_error_finish
 runtime_error:
-#ifdef CEMU
+#ifdef DEBUG
 	; Open debugger on CEmu
 	ld (exitReason),a
 	ld a,2
