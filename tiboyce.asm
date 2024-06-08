@@ -1824,7 +1824,11 @@ PreferredModelOffset = $-OptionConfig
 ScalingMethod:
 ScalingMethodOffset = $-OptionConfig
 	.db 0
-	
+; Screen rotation (0=None, 1=Rotated)
+ScreenRotation:
+ScreenRotationOffset = $-OptionConfig
+	.db 0
+
 ; Number of key bytes
 	.db key_config_count
 ; Key configuration. Each is a GetCSC scan code.
@@ -1915,6 +1919,10 @@ originalLcdSettings:
 	; SPI settings
 	.dw spiSetupDefault
 	
+screenRotationParam:
+	; C6             ; Memory Data Address Control
+	SPI_PARAM($08)   ;  BGR Swap
+
 ; These files are loaded into RAM.
 #ifndef NO_PORTS
 	#include "unlock_helpers.asm"

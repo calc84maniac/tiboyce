@@ -11,6 +11,42 @@
 
 #define UNMAPPED_KEY 41
 
+SetupOriginalGamma:
+	xor a
+	ld (ScreenRotation),a
+	ld b,3
+SetupGamma:
+	ld c,spiGammaConfigSize
+	mlt bc
+	ld hl,spiGammaUniform
+	add hl,bc
+	SPI_TRANSFER_CMDS(spiGammaCommandDescriptors)
+	ex de,hl
+	ld de,mpLcdPalette + (BLUE * 2)
+	ld c,menuPaletteSize
+	ldir
+	; Write black and white to the palette
+	ex de,hl
+	ld (hl),c
+	inc hl
+	dec bc
+	ld (hl),bc
+	inc (hl)
+ApplyScreenRotation:
+	ld a,(ScreenRotation)
+	rra
+	sbc a,a
+	and $D4 ;MY=MX=ML=MH=1
+	or $08 ;BGR=1
+	ld hl,screenRotationParam
+	cp (hl)
+	ret z
+	ld (hl),a
+	ex de,hl
+	ld a,$36 ; Memory Data Address Control
+	ld b,2
+	jp spiTransferCommand
+
 ApplyConfiguration:
 	; Copy the global config into the active config
 	ld hl,(global_config_start)
@@ -19,10 +55,10 @@ ApplyConfiguration:
 	 ld bc,config_size-1
 	 ldir
 	pop de
-	; If no ROM is loaded, our work here is done
+	; If no ROM is loaded, our work here is done, but apply screen rotation
 	ld a,(ROMName+1)
 	or a
-	ret z
+	jr z,ApplyScreenRotation
 
 	; Display next frame always
 	ld a,$4F ;LD R,A
@@ -88,15 +124,28 @@ _
 	push bc
 
 	 ; Now override global config with game-specific config
+	 ld a,(ScreenRotation)
+	 rrca
+	 rlca
+	 rla
+	 ld c,a
 	 ld b,key_config_count
 key_config_loop:
 	 dec hl
 	 dec de
 	 ld a,(hl)
 	 cp -1
-	 jr z,_
-	 ld (de),a
+	 jr nz,_
+	 ld a,(de)
 _
+	 ; Optionally rotate arrow keys
+	 dec a
+	 cp 4
+	 jr nc,_
+	 xor c
+_
+	 inc a
+	 ld (de),a
 	 djnz key_config_loop
 
 	 ; Key SMC configuration
@@ -484,27 +533,6 @@ load_single_palette_output_loop:
 	  ldir
 	 pop ix
 	pop af
-	ret
-	
-SetupOriginalGamma:
-	ld b,3
-SetupGamma:
-	ld c,spiGammaConfigSize
-	mlt bc
-	ld hl,spiGammaUniform
-	add hl,bc
-	SPI_TRANSFER_CMDS(spiGammaCommandDescriptors)
-	ex de,hl
-	ld de,mpLcdPalette + (BLUE * 2)
-	ld c,menuPaletteSize
-	ldir
-	; Write black and white to the palette
-	ex de,hl
-	ld (hl),c
-	inc hl
-	dec bc
-	ld (hl),bc
-	inc (hl)
 	ret
 	
 BackupAndShowConfirmStateOperation:
@@ -1201,7 +1229,15 @@ wait_for_key_loop:
 	cp (hl)
 	jr z,wait_for_key_force_clear
 _
-	or a
+	dec a
+	cp 4
+	jr nc,_
+	ld hl,ScreenRotation
+	bit 0,(hl)
+	jr z,_
+	xor 3
+_
+	inc a
 	ret
 
 wait_for_key_increase_brightness:
@@ -1408,6 +1444,7 @@ OptionList:
 	.dw OptionConfirmState+1
 	.dw OptionPreferredModel+1
 	.dw OptionScalingMethod+1
+	.dw OptionScreenRotation+1
 	
 CmdList:
 ReturnExitReason = ($-CmdList)/2
@@ -1592,28 +1629,34 @@ GraphicsMenu:
 	.db 85,0
 	.db "Skin display: %-3s",0
 
+	.db "Rotates the screen to swap controls.\nAutomatically flips arrow key inputs.",0
+	.db ITEM_OPTION
+	.db ScreenRotationOffset
+	.db 95,0
+	.db "Screen rotation: %-3s",0
+
 	.db "Off: Do not skip any frames.\nAuto: Skip up to N frames as needed.\nManual: Render 1 of each N+1 frames.",0
 	.db ITEM_OPTION
 	.db FrameskipTypeOffset
-	.db 105,0
+	.db 115,0
 	.db "Frameskip type: %-6s",0
 
 	.db "",0
 	.db ITEM_DIGIT
 	.db 2
-	.db 115,0
+	.db 125,0
 	.db "Frameskip value: %u",0
 
 	.db "Default: Use GBC game-specific palette.\nOthers: Use GBC manual palette.",0
 	.db ITEM_OPTION
 	.db PaletteSelectionOffset
-	.db 135,0
+	.db 145,0
 	.db "GB palette selection: %-10s",0
 
 	.db "Off: Use specified colors directly.\nGBC: Adjust to emulate a GBC display.\nGBA: Adjust to emulate a GBA display.",0
 	.db ITEM_OPTION
 	.db AdjustColorsOffset
-	.db 145,0
+	.db 155,0
 	.db "Adjust colors: %-3s",0
 
 	.db "Return to the main menu.",0
@@ -1810,6 +1853,7 @@ OptionAutoSaveState:
 OptionDST:
 OptionSkinDisplay:
 OptionMessageDisplay:
+OptionScreenRotation:
 	.db 2
 	.db "off",0
 	.db "on",0
