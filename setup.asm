@@ -4144,11 +4144,7 @@ customHardwareSettings:
 	;mpRtcCtrl
 	.db $83
 	;mpSpiDivider
-#ifdef CEMU
-	.dl $020001
-#else
 	.dl $080001
-#endif
 #ifndef NO_PORTS
 	; Stack protector
 	.dl z80codebase + myz80stack_top + 3
@@ -4158,11 +4154,7 @@ lcdSettingsSkin:
 	; LcdTiming0
 	.db $FC,$00,$00,$00 ; PPL=1024, HSW=1, HBP=1, HFP=1 (total=1027)
 	; LcdTiming1
-#ifdef CEMU
-	.db $4A,$00,$03,$F2 ; LPP=75, VSW=1, VBP=242, VFP=3 (total=321)
-#else
-	.db $4A,$00,$03,$C4 ; LPP=75, VSW=1, VBP=196, VFP=3 (total=275)
-#endif
+	.db $4A,$00,$03,$C1 ; LPP=75, VSW=1, VBP=193, VFP=3 (total=272)
 	; LcdTiming2
 	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
 	; LcdCtrl
@@ -4174,11 +4166,7 @@ lcdSettingsMenu:
 	; LcdTiming0
 	.db $FC,$00,$00,$00 ; PPL=1024, HSW=1, HBP=1, HFP=1 (total=1027)
 	; LcdTiming1
-#ifdef CEMU
-	.db $4A,$00,$03,$F2 ; LPP=75, VSW=1, VBP=242, VFP=3 (total=321)
-#else
-	.db $4A,$00,$C7,$00 ; LPP=75, VSW=1, VBP=0, VFP=199 (total=275)
-#endif
+	.db $4A,$00,$DC,$00 ; LPP=75, VSW=1, VBP=0, VFP=220 (total=296)
 	; LcdTiming2
 	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
 	; LcdCtrl
@@ -4187,42 +4175,24 @@ lcdSettingsMenu:
 	.dw spiSetupVsyncInterface
 	
 lcdSettings8BitNoScale:
-#ifdef CEMU
-	; LcdTiming0
-	.db $44,$03,$04,$0D ; PPL=288, HSW=4, HBP=14, HFP=5 (total=311)
-	; LcdTiming1
-	.db $4F,$00,$F2,$00 ; LPP=80, VSW=1, VBP=0, VFP=242 (total=323)
-	; LcdTiming2
-	.db $02,$78,$1F,$01 ; PCD=4, CPL=288
-#else
 	; LcdTiming0
 	.db $BC,$03,$3D,$1F ; PPL=768, HSW=4, HBP=32, HFP=62 (total=866)
 	; LcdTiming1
 	.db $1D,$00,$C9,$00 ; LPP=30, VSW=1, VBP=0, VFP=201 (total=232)
 	; LcdTiming2
 	.db $00,$78,$FF,$02 ; PCD=2, CPL=768
-#endif
 	; LcdCtrl
 	.dl $013C27
 	; SPI settings
 	.dw spiSetupNoScale
 	
 lcdSettings8BitStretched:
-#ifdef CEMU
-	; LcdTiming0
-	.db $60,$01,$0E,$0F ; PPL=400, HSW=2, HBP=16, HFP=15 (total=433)
-	; LcdTiming1
-	.db $5F,$00,$FF,$70 ; LPP=96, VSW=1, VBP=112, VFP=255 (total=464)
-	; LcdTiming2
-	.db $00,$78,$8F,$01 ; PCD=2, CPL=400
-#else
 	; LcdTiming0
 	.db $C4,$03,$1D,$1F ; PPL=800, HSW=4, HBP=32, HFP=30 (total=866)
 	; LcdTiming1
 	.db $2F,$00,$B7,$00 ; LPP=48, VSW=1, VBP=0, VFP=183 (total=232)
 	; LcdTiming2
 	.db $00,$78,$1F,$03 ; PCD=2, CPL=800
-#endif
 	; LcdCtrl
 	.dl $013C27
 	; SPI settings
@@ -4285,7 +4255,7 @@ spiSetupScanFirst:
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($10)   ;  No interlace
 	; C6             ; Frame rate control
-	SPI_PARAM(17)    ;  522 clocks per line
+	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(1)     ;  Back porch
 	SPI_PARAM(1)     ;  Front porch
@@ -4310,7 +4280,7 @@ spiSetupVsyncInterface:
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($10)   ;  No interlace
 	; C6             ; Frame rate control
-	SPI_PARAM(17)    ;  522 clocks per line
+	SPI_PARAM(18)    ;  538 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(127)   ;  Back porch
 	SPI_PARAM(1)     ;  Front porch
@@ -4335,7 +4305,7 @@ spiSetupNoScale:
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($10)   ;  No interlace
 	; C6             ; Frame rate control
-	SPI_PARAM(16)    ;  506 clocks per line
+	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(1)     ;  Back porch
 	SPI_PARAM(1)     ;  Front porch
@@ -4360,9 +4330,9 @@ spiSetupDoubleScale:
 	SPI_PARAM($00)   ;  Start line 0
 	SPI_PARAM($14)   ;  Interlace
 	; C6             ; Frame rate control
-	SPI_PARAM(9)     ;  394 clocks per line
+	SPI_PARAM(8)     ;  378 clocks per line
 	; B2             ; Porch control
-	SPI_PARAM(87)    ;  Back porch
+	SPI_PARAM(99)    ;  Back porch
 	SPI_PARAM(1)     ;  Front porch
 	
 hmem_init:
