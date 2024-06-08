@@ -1,5 +1,5 @@
 ; Copyright 2015-2022 Matt "MateoConLechuga" Waltz
-; Copyright 2023 Brendan "calc84maniac" Fletcher
+; Copyright 2024 Brendan "calc84maniac" Fletcher
 ;
 ; Redistribution and use in source and binary forms, with or without
 ; modification, are permitted provided that the following conditions are met:
@@ -46,7 +46,7 @@ port_setup_find_loop:
 	cp $B4
 	jr nz,port_setup_find_loop
 	ld (port_new_target),hl
-	ld de,port_new_unlock
+	ld de,port_new_unlock+1
 	jr port_setup_find_loop
 port_setup_found_ed41:
 	ld (port_old_target),hl
@@ -54,11 +54,13 @@ port_setup_found_ed41:
 	pop ix
 	bit 0,(ix+5)
 	jr nz,port_setup_find_loop
-	ld de,port_old_unlock
+	ld de,port_old_unlock+1
 port_setup_finish:
-	ld hl,(ArcBase)
+	ld hl,port_unlock_code_offset
+	ld (hl),e
+	inc hl
+	ld (hl),d
 	add hl,de
-	ld (port_unlock_code),hl
 	ret
 
 port_old_unlock:
