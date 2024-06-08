@@ -1,5 +1,5 @@
 ; Copyright 2015-2022 Matt "MateoConLechuga" Waltz
-; Copyright 2023 Brendan "calc84maniac" Fletcher
+; Copyright 2024 Brendan "calc84maniac" Fletcher
 ;
 ; Redistribution and use in source and binary forms, with or without
 ; modification, are permitted provided that the following conditions are met:
@@ -36,8 +36,9 @@ port_unlock:
 	ld (port_read),hl
 	inc h
 	ld (port_write),hl
-port_unlock_code = $+1
-	jp 0
+	call ArcJump
+port_unlock_code_offset = $
+	.dw 0
 
 port_lock:
 port_lock_value = $+1
