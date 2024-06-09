@@ -1109,6 +1109,8 @@ _
 	
 	xor a
 	ld (exitReason),a
+	; Prevent scale fill after palette initialization
+	ld (scale_remaining_fills),a
 	; Invalidate the direct read buffers
 	ld hl,direct_read_buffer_normal
 	ld (hl),a
@@ -3777,9 +3779,7 @@ _
 	dec a
 	jr nz,-_
 	ACALL(GeneratePixelCache)
-	
-	call do_scale_fill
-	
+
 	APTR(lcdSettings8BitStretched)
 	ACALL(SetLcdSettingsFirstBuffer)
 	jp do_frame_flip_for_setup
@@ -4206,9 +4206,9 @@ spiSetupCommandDescriptors:
 	.db 6,$33 ; Vertical scroll parameters
 	.db 3,$E4 ; Gate control
 	.db 1,$C6 ; Frame rate control
-	.db 2,$B2 ; Porch control
+	.db 1,$B2 ; Porch control
 	.db -1
-	
+
 spiSetupDefault:
 	; 2A             ; Column address set
 	SPI_PARAM16(0)   ;  Left bound
@@ -4232,9 +4232,8 @@ spiSetupDefault:
 	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(12)    ;  Back porch
-	SPI_PARAM(12)    ;  Front porch
 spiSetupSize = $ - spiSetupDefault
-	
+
 spiSetupScanFirst:
 	; 2A             ; Column address set
 	SPI_PARAM16(0)   ;  Left bound
@@ -4258,8 +4257,7 @@ spiSetupScanFirst:
 	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(1)     ;  Back porch
-	SPI_PARAM(1)     ;  Front porch
-	
+
 spiSetupVsyncInterface:
 	; 2A             ; Column address set
 	SPI_PARAM16(0)   ;  Left bound
@@ -4283,8 +4281,7 @@ spiSetupVsyncInterface:
 	SPI_PARAM(18)    ;  538 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(127)   ;  Back porch
-	SPI_PARAM(1)     ;  Front porch
-	
+
 spiSetupNoScale:
 	; 2A             ; Column address set
 	SPI_PARAM16(80)  ;  Left bound
@@ -4308,8 +4305,7 @@ spiSetupNoScale:
 	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(1)     ;  Back porch
-	SPI_PARAM(1)     ;  Front porch
-	
+
 spiSetupDoubleScale:
 	; 2A             ; Column address set
 	SPI_PARAM16(0)   ;  Left bound
@@ -4333,8 +4329,7 @@ spiSetupDoubleScale:
 	SPI_PARAM(8)     ;  378 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(99)    ;  Back porch
-	SPI_PARAM(1)     ;  Front porch
-	
+
 hmem_init:
 	.db $CF,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
 	.db $80,$BF,$F3,$FF,$BF,$FF,$3F,$00,$FF,$BF,$7F,$FF,$9F,$FF,$BF,$FF
