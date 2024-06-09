@@ -1,9 +1,8 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
-TARGET = convertsav
+TARGET = tiboyce-convertsav
 SRCS = convertsav.c lzf_c.c lzf_d.c
 HEADERS = lzf.h lzfP.h
-OBJS = $(SRCS:.c=.o)
 all: $(TARGET)
 $(TARGET): $(SRCS) $(HEADERS)
 	$(CC) $(CFLAGS) -o $@ $(SRCS)
