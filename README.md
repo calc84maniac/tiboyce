@@ -194,7 +194,7 @@ spasm -E -A tiboyce.asm TIBoyDat.8xv
 
 spasm -E -A skin.asm TIBoySkn.8xv
 ```
-To build the rom generation tool, use the provided Visual Studio solution in the [tiboyce-romgen](tiboyce-romgen) directory, or you can build the source for any platform with your C compiler of choice.
+To build the rom generation tool, use the provided Visual Studio solution in the [tiboyce-romgen](tiboyce-romgen) directory, or use the Makefile to build with GCC or your C compiler of choice.
 
 The same applies to the save converter in the [tiboyce-convertsav](tiboyce-convertsav) directory.
 
