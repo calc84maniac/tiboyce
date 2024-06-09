@@ -35,30 +35,36 @@ _
 #endif
 	
 SetEmulatorMessage:
-	ld a,120
+	ld a,120+128
 	
-	; Call like printf, DE=format string (offset into appvar), A=duration
+	; Call like printf, DE=format string (offset into appvar), A=duration+128
 SetEmulatorMessageWithDuration:
 	ld ix,(ArcBase)
 	add ix,de
 	ex (sp),ix
 	ld hl,emulatorMessageDuration
 	ld (hl),a
+	ld a,(MessageDisplay)
+	or a
+	jr nz,_
+	ld (hl),a
+_
 	inc hl ;emulatorMessageText
 	push hl
-	 ld a,(MessageDisplay)
-	 or a
 	 call nz,_sprintf
 	pop hl
 	ex (sp),ix
-	jp reset_preserved_area
+	ret
 	
 PutEmulatorMessage:
-	ld a,BLACK
-	call SetStringBgColor
+	ld hl,emulatorMessageDuration
+	xor a
+	cp (hl)
+	jp z,reset_preserved_area
+	res 7,(hl)
+	inc hl ;emulatorMessageText
 	; Modify PutChar to use a 160-pixel wide buffer
 	push hl
-	 xor a
 	 ld hl,PutChar_SmallBufferSMC1
 	 ld (hl),a			; nop
 #if (PutChar_SmallBufferSMC1>>8)!=(PutChar_SmallBufferSMC2>>8)
@@ -68,6 +74,8 @@ PutEmulatorMessage:
 	 ld (hl),(160-8)/2
 	 ld c,a
 	 ld b,a
+	 ld a,BLACK
+	 call SetStringBgColor
 	 ld a,WHITE
 	 ex (sp),hl
 	 ACALL(PutStringColorXY)
@@ -83,7 +91,7 @@ PutEmulatorMessage:
 	ld hl,(cursorCol)
 	add hl,hl
 	ld h,10
-	jp PutEmulatorMessageRet
+	jp set_preserved_area
 
 	; Call like printf, A=color, D=x (column), E=y
 PutStringFormatColorXYIgnoreInvalid:

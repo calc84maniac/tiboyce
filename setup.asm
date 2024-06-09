@@ -413,8 +413,7 @@ StartROMAutoStateNoError:
 	
 RestartFromHere:
 	xor a
-	ld (emulatorMessageText),a
-	call reset_preserved_area
+	ld (emulatorMessageDuration),a
 	; Check for GBC support
 	ld hl,(rom_start)
 	ld bc,$0143
@@ -2239,7 +2238,7 @@ _
 	scf
 	jr z,ExitDone
 	xor a
-	ld (emulatorMessageText),a
+	ld (emulatorMessageDuration),a
 StartFromHereTrampoline:
 	AJUMP(StartFromHere)
 ExitOrDelete:
@@ -3631,6 +3630,11 @@ _
 	ret
 
 GeneratePixelCache:
+	ACALL(PutEmulatorMessage)
+	ld hl,gb_frame_buffer_2
+	ld (current_buffer),hl
+	or a
+_
 	; Fill in the scanline sprite count pointers
 	ld de,scanline_sprite_counts+144
 	ld b,144
@@ -3640,7 +3644,7 @@ _
 	ld (ix),de
 	djnz -_
 	ccf
-	jr c,GeneratePixelCache
+	jr c,--_
 	
 	STATE_PTR(vram_start_offset)
 	ld de,vram_pixels_start
@@ -3738,12 +3742,12 @@ SetScalingMode:
 	ld (scanlineLUT_ptr),hl
 	ld (scanlineLUT_sprite_ptr),hl
 	ld (scanlineLUT_palette_ptr),hl
-	ld hl,gb_frame_buffer_2
-	ld (current_buffer),hl
 	ld ix,scanlineLUT_1
+	ld hl,gb_frame_buffer_1
+	ld (current_display),hl
+	ld (current_buffer),hl
+	ex de,hl
 	ld hl,mini_frame_backup
-	ld de,gb_frame_buffer_1
-	ld (current_display),de
 	xor a
 	ld (frame_real_count),a
 	ld (frame_emulated_count),a
