@@ -49,11 +49,14 @@ currentSystemType = $+1
 	    or a
 	    call z,convert_palette
 _
-	    
+	    ld a,(emulatorMessageDuration)
+	    rla
+	    jr c,PutNewEmulatorMessage
 preservedAreaHeight = $+1
 	    ld a,0
 	    or a
-	    jr z,_
+speed_display_smc_1 = $+1
+	    jr z,NoSpeedDisplay ;smc'd to YesSpeedDisplay
 	    ld hl,(current_display)
 	    ld de,(current_buffer)
 PreservedAreaCopyLoop:
@@ -69,13 +72,10 @@ preserve_copy_smc = $+1
 	    dec a
 	    jr nz,PreservedAreaCopyLoop
 	    jr NoSpeedDisplay
-	
-_
-	    ld hl,emulatorMessageText
-	    or (hl)
-speed_display_smc_1 = $+1
-	    jr z,NoSpeedDisplay ;smc'd to YesSpeedDisplay
-	    AJUMP(PutEmulatorMessage)
+
+PutNewEmulatorMessage:
+	    ACALL(PutEmulatorMessage)
+	    jr NoSpeedDisplay
 YesSpeedDisplay:
 	    ld a,(turbo_active)
 	    or a
@@ -118,7 +118,6 @@ _
 	    djnz -_
 	    ld l,c
 	    ld h,6
-PutEmulatorMessageRet:
 	    call set_preserved_area
 NoSpeedDisplay:
 
@@ -297,7 +296,6 @@ key_smc_menu = $+2
 	    jr nz,do_exit_trampoline
 state_operation_denied:
 	    ACALL(SetScalingMode)
-	    call reset_preserved_area
 	    jr keys_done
 _
 	    ld a,2
@@ -329,7 +327,7 @@ key_smc_state_slot = $+2
 	    ld de,StateSlotMessage
 load_state_not_found:
 	    push hl
-	     ld a,30
+	     ld a,30+128
 	     ACALL(SetEmulatorMessageWithDuration)
 	    pop hl
 	    jr keys_done
@@ -803,14 +801,12 @@ frame_excess_count = $+1
 	 ld (frame_excess_count),a
 _
 	 ld hl,emulatorMessageDuration
-	 xor a
-	 cp (hl)
+	 ld b,(hl)
+	 ld a,b
+	 or a
 	 jr z,_
 	 dec (hl)
-	 jr nz,_
-	 inc hl ;emulatorMessageText
-	 ld (hl),a
-	 call reset_preserved_area
+	 call z,reset_preserved_area
 _
 	pop af
 	ret nc
@@ -841,10 +837,13 @@ _
 	ld (de),a
 	sbc hl,hl
 	ld (frame_emulated_count),hl
+	ld a,b
+	or a
+	ret nz
 	;FALLTHROUGH
 	
+	; Carry must be reset
 reset_preserved_area:
-	or a
 	sbc hl,hl
 	
 	; H = height, L = width / 4
