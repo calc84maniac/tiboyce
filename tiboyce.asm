@@ -372,7 +372,7 @@ _sprintf = $0000BC
 __frameset0 = $000130
 _GetFieldSizeFromType = $00030C
 _FindField = $000314
-_boot_InitializeHardware = $000384
+_Delay10ms = $0003B4
 _OSHeader = $020000
 _Mov9ToOP1 = $020320
 _MemChk = $0204FC
@@ -386,7 +386,7 @@ _ErrMemory = $020768
 _JError = $020790
 _PushErrorHandler = $020798
 _PopErrorHandler = $02079C
-_ClrLCDFull = $020808
+_ClrScrnFull = $020810
 _HomeUp = $020828
 _RunIndicOff = $020848
 _DelVarArc = $021434
@@ -493,12 +493,11 @@ mpKeypadGrp7 = $F5001E
 
 mpBlLevel = $F60024
 
-mpSpiConfig = $F80000
-mpSpiDivider = $F80004
-mpSpiTransfer = $F80008
+mpSpiCtrl0 = $F80000
+mpSpiCtrl1 = $F80004
+mpSpiCtrl2 = $F80008
 mpSpiStatus = $F8000C
-mpSpiUnknown1 = $F80010
-mpSpiUnknown2 = $F80014
+mpSpiIntCtrl = $F80010
 mpSpiFifo = $F80018
 
 #ifdef DEBUG
@@ -1452,7 +1451,45 @@ MulHLIXBy24:
 	push hl \ pop de
 	add ix,ix \ adc hl,hl
 	ret
-	
+
+	; Input: A=vertical compare (mask $30)
+	; Output: HL=mpLcdIcr
+	; Destroys: AF
+lcdWaitFrontPorch:
+	ld a,$30
+lcdWait:
+	ld hl,mpLcdCtrl+1
+	ld l,(hl)
+	xor l
+	and $30
+	xor l
+	ld (mpLcdCtrl+1),a
+	ld a,l
+	ld l,mpLcdIcr & $FF
+	ld (hl),l
+	ld l,mpLcdRis & $FF
+_
+	bit 3,(hl)
+	jr z,-_
+	ld l,(mpLcdCtrl+1) & $FF
+	ld (hl),a
+	ld l,mpLcdIcr & $FF
+	ld (hl),l
+	ret
+
+startMenuDraw:
+startMenuDrawSMC = $
+	ld a,(mpLcdRis)
+	cpl
+	and $0C
+	call nz,lcdWaitFrontPorch
+	SPI_TRANSFER_CMD(1, $B0) ; RAM Control
+	SPI_PARAM($01)           ;  RAM access from SPI, RGB interface
+startMenuDrawParamSMC = $-1
+	ld a,$C9 ;RET
+	ld (startMenuDrawSMC),a
+	ret
+
 	; Input: Descriptor offset at return address, HL=parameter offset
 spiTransferCommandListArc:
 	ex (sp),hl
@@ -1501,7 +1538,7 @@ spiTransferCommandInline:
 	; Destroys: AF, HL
 spiTransferCommand:
 	; Start SPI transfer
-	ld hl,mpSpiTransfer
+	ld hl,mpSpiCtrl2
 	ld (hl),1
 	; Fill SPI FIFO and transfer at the same time
 	ld l,(mpSpiFifo + 1) & $FF
@@ -1526,7 +1563,7 @@ _
 	bit 2,(hl)
 	jr nz,-_
 	; Disable transfer
-	ld l,mpSpiTransfer & $FF
+	ld l,mpSpiCtrl2 & $FF
 	ld (hl),h
 	ret
 	
@@ -1722,6 +1759,9 @@ current_item_ptr:
 	.dl 0
 ; The pointer to the active ROM description.
 current_description = asm_data_ptr1
+; Whether the current screen mode is the menu mode.
+menu_mode:
+	.db 0
 ; A backup of the selected main menu option.
 main_menu_selection:
 	.db 1
@@ -1904,7 +1944,7 @@ originalHardwareSettings:
 	.db 0
 	;mpRtcCtrl
 	.db 0
-	;mpSpiDivider
+	;mpSpiCtrl1
 	.dl 0
 #ifndef NO_PORTS
 	; Stack protector
@@ -1912,12 +1952,12 @@ originalHardwareSettings:
 #endif
 	
 originalLcdSettings:
-	; LcdTiming0
-	.block 12
 	; LcdCtrl
 	.dl 0
 	; SPI settings
 	.dw spiSetupDefault
+	; LcdTiming0
+	.block 12
 	
 screenRotationParam:
 	; C6             ; Memory Data Address Control

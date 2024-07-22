@@ -140,20 +140,52 @@ _
 	sbc hl,bc
 	ld (epochDayCount),hl
 	
-	ACALL(BackupOriginalHardwareSettings)
+	; Backup original hardware settings
+	ld ix,originalHardwareSettings
+	ld hl,(mpIntEnable)
+	ld (ix+0),hl
+	ld hl,(mpIntLatch)
+	ld (ix+3),hl
+	ld a,(mpFlashWaitStates)
+	ld (ix+6),a
+	ld a,mb
+	ld (ix+7),a
+	ld a,(mpKeypadScanMode)
+	ld (ix+8),a
+	ld a,(mpKeypadIntMask)
+	ld (ix+9),a
+	ld a,(mpLcdImsc)
+	ld (ix+10),a
+	ld a,(mpRtcCtrl)
+	ld (ix+11),a
+	ld hl,(mpSpiCtrl1)
+	ld (ix+12),hl
 	; Backup original LCD settings
+	ld hl,(mpLcdCtrl)
+	ld (ix-originalHardwareSettings+originalLcdSettings),hl
 	ld hl,mpLcdTiming0
-	ld de,originalLcdSettings
+	lea de,ix-originalHardwareSettings+originalLcdSettings+5
 	ld bc,12
 	ldir
-	ld hl,(mpLcdCtrl)
-	ex de,hl
-	ld (hl),de
-	
-	; Reinitialize hardware, this is slightly slow but should return SPI to a
-	; known state on Python Edition models.
-	call _boot_InitializeHardware
-	
+
+	; Magic initialization sequence to return SPI to a known state on Python models
+	ld de,$1828
+_
+	ld (mpSpiCtrl0),de
+	ld hl,$0C
+	ld (mpSpiCtrl2),hl
+	nop
+	ld hl,$40
+	ld (mpSpiCtrl2),hl
+	call _Delay10ms
+	bit 0,e
+	ld e,$2B
+	jr z,-_
+	ld l,$21
+	ld (mpSpiIntCtrl), hl
+	ld hl,$100
+	ld (mpSpiCtrl2), hl
+
 	ld hl,GlobalErrorHandler
 	call _PushErrorHandler
 	
@@ -238,7 +270,7 @@ RestoreHomeScreen:
 	; Mark graph dirty
 	set graphDraw,(iy+graphFlags)
 	; Restore the frame buffer
-	call _ClrLCDFull
+	call _ClrScrnFull
 	call _DrawStatusBar
 	call _HomeUp
 	; Restore screen brightness
@@ -3026,6 +3058,16 @@ SaveAutoState:
 	 ACALL_SAFERET(ArchiveWithWarning)
 	 jr ArchiveSaveRAM
 
+_
+	  ACALL(SetCustomHardwareSettings)
+	 pop hl
+	pop af
+	ACALL(DisplayErrorAny)
+	push af
+	 ACALL(RestoreOriginalHardwareSettings)
+	pop af
+	ret
+
 	; A = error code
 	; (errorArg) = error argument
 	; Returns A=0 and Z flag set if ON was pressed
@@ -3033,14 +3075,18 @@ DisplayError:
 	APTR(error_text)
 DisplayErrorAny:
 	push af
-	 push hl
+	 ; Check if interrupts are enabled
+	 ld a,i
+	 push af
+	  ex (sp),hl
+	  bit 2,l
+	  jr nz,-_
 	  ACALL(ClearMenuBuffer)
 	 pop hl
 	 push bc
 	  ld a,WHITE
 	  ld bc,1<<8|5
 	  ACALL(PutStringColorXY)
-	   
 	  APTR(error_messages)
 	 pop bc
 	pop de
@@ -3058,22 +3104,8 @@ _
 	  ACALL(PutStringFormat)
 	 pop hl
 	pop hl
-	
-	; If already in the menu, just wait for a key
-	APTR(WaitForKey)
-	push hl
-	 ld a,i
-	 ret po
-	 
-	 ; Otherwise, switch to the menu state and back
-	 ACALL(SetCustomHardwareSettings)
-	 ACALL(SetMenuWindow)
-	pop hl
-	call CallHL
-	push af
-	 ACALL(RestoreOriginalHardwareSettings)
-	pop af
-	ret
+	ACALL(EndMenuDraw)
+	AJUMP(WaitForKey)
 	
 LoadStateInvalid:
 	ld a,ERROR_FILE_INVALID
@@ -3468,30 +3500,7 @@ _
 	 call DivHLIXByC
 	pop bc
 	ret
-	
-BackupOriginalHardwareSettings:
-	ld ix,originalHardwareSettings
-BackupHardwareSettings:
-	ld hl,(mpIntEnable)
-	ld (ix+0),hl
-	ld hl,(mpIntLatch)
-	ld (ix+3),hl
-	ld a,(mpFlashWaitStates)
-	ld (ix+6),a
-	ld a,mb
-	ld (ix+7),a
-	ld a,(mpKeypadScanMode)
-	ld (ix+8),a
-	ld a,(mpKeypadIntMask)
-	ld (ix+9),a
-	ld a,(mpLcdImsc)
-	ld (ix+10),a
-	ld a,(mpRtcCtrl)
-	ld (ix+11),a
-	ld hl,(mpSpiDivider)
-	ld (ix+12),hl
-	ret
-	
+
 SetCustomHardwareSettings:
 	; Disable interrupts before placing code in VRAM
 	di
@@ -3516,6 +3525,8 @@ RestoreOriginalLcdSettings:
 	; Don't overwrite any VRAM since we don't need a halt implementation
 	ACALL(SetCustomHardwareSettingsNoHalt)
 	ACALL(SetupOriginalGamma)
+	xor a
+	ld (menu_mode),a
 	ld hl,originalLcdSettings
 	ld de,vRam
 	ACALL(SetLcdSettings)
@@ -3541,7 +3552,7 @@ RestoreHardwareSettings:
 	ld a,(ix+11)
 	ld (mpRtcCtrl),a
 	ld hl,(ix+12)
-	ld (mpSpiDivider),hl
+	ld (mpSpiCtrl1),hl
 #ifdef NO_PORTS
 	ret nc
 	ei
@@ -3577,9 +3588,23 @@ backup_mini_screen_row_loop:
 	dec a
 	jr nz,backup_mini_screen_row_loop
 	ret
-	
-SetMenuWindow:
+
+EndMenuDrawFast:
+	ld a,4
+	ld (mpLcdIcr),a
+	call lcdWaitFrontPorch
+	SPI_TRANSFER_CMD(1, $B0) ; RAM Control
+	SPI_PARAM($12)           ;  RAM access from RGB, VSYNC interface
+	ret
+
+EndMenuDraw:
+	ld a,$3A ;LD A,()
+	ld (startMenuDrawSMC),a
+	ld hl,menu_mode
 	xor a
+	cp (hl)
+	jr nz,EndMenuDrawFast
+	inc (hl)
 	ld (scale_remaining_fills),a
 	APTR(lcdSettingsMenu)
 SetLcdSettingsFirstBuffer:
@@ -3591,43 +3616,54 @@ SetLcdSettingsFirstBuffer:
 	;     DE = new LCD base address
 SetLcdSettings:
 	push hl
-	 ; Reset interrupt mask
-	 ld a,8
-	 ld hl,mpLcdImsc
-	 ld (hl),a
 	 ; Wait for DMA completion
-	 ld l,mpLcdIcr & $FF
-	 ld (hl),a
-	 ld l,mpLcdMis & $FF
-_
-	 tst a,(hl)
-	 jr z,-_
-	 ld l,mpLcdIcr & $FF
-	 ld (hl),a
+	 call lcdWaitFrontPorch
 
 	 ; Set DMA base address
 	 ex de,hl
 	 ld (mpLcdBase),hl
 	pop hl
-	
-	; Set timing parameters
-	ld e,mpLcdTiming0 & $FF
-	ld bc,12
-	ldir
-	
+
 	; Set LCD control
 	ld e,mpLcdCtrl & $FF
-	ld c,3
+	ld bc,3
 	ldir
-	
-	; Get SPI settings address
-	ld hl,(hl)
-	SPI_TRANSFER_CMDS(spiSetupCommandDescriptors)
 
-	; Initialize vertical scroll amount to 0 for all modes
-	SPI_TRANSFER_CMD(2, $37) ; Vertical scroll amount
-	SPI_PARAM16(0)
-	ret
+	; Get SPI settings address
+	push hl
+	 ld hl,(hl)
+	 SPI_TRANSFER_CMDS(spiSetupCommandDescriptors)
+	 push de
+	  ; Initialize vertical scroll amount to 0 for all modes
+	  SPI_TRANSFER_CMD(2, $37) ; Vertical scroll amount
+	  SPI_PARAM16(0)
+	 pop de
+	pop hl
+	inc hl
+	inc hl
+	push de
+	 push hl
+	  ; Save current display mode to use when setting SPI RAM access
+	  dec de
+	  ld a,(de)
+	  res 4,a
+	  ld hl,startMenuDrawParamSMC
+	  ; Check if previous display mode was vsync
+	  bit 1,(hl)
+	  ld (hl),a
+	  ld de,mpLcdTiming0
+	  ld bc,12
+	  ; Wait for vsync if the previous display mode was vsync
+	  ld a,b ;0
+	  call nz,lcdWait
+	 ; Set timing parameters
+	 pop hl
+	 ldir
+	; Set interlace mode
+	pop de
+	ld b,4
+	ld a,$E4 ; Gate Control
+	jp spiTransferCommand
 
 GeneratePixelCache:
 	ACALL(PutEmulatorMessage)
@@ -3749,6 +3785,7 @@ SetScalingMode:
 	ex de,hl
 	ld hl,mini_frame_backup
 	xor a
+	ld (menu_mode),a
 	ld (frame_real_count),a
 	ld (frame_emulated_count),a
 	ld (frame_excess_count),a
@@ -4147,7 +4184,7 @@ customHardwareSettings:
 	.db 8
 	;mpRtcCtrl
 	.db $83
-	;mpSpiDivider
+	;mpSpiCtrl1
 	.dl $080001
 #ifndef NO_PORTS
 	; Stack protector
@@ -4155,62 +4192,61 @@ customHardwareSettings:
 #endif
 
 lcdSettingsSkin:
+	; LcdCtrl
+	.dl $013C25
+	; SPI settings
+	.dw spiSetupScanFirst
 	; LcdTiming0
 	.db $FC,$00,$00,$00 ; PPL=1024, HSW=1, HBP=1, HFP=1 (total=1027)
 	; LcdTiming1
 	.db $4A,$00,$03,$C1 ; LPP=75, VSW=1, VBP=193, VFP=3 (total=272)
 	; LcdTiming2
 	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
-	; LcdCtrl
-	.dl $013C25
-	; SPI settings
-	.dw spiSetupScanFirst
 	
 lcdSettingsMenu:
+	; LcdCtrl
+	.dl $013C27
+	; SPI settings
+	.dw spiSetupVsyncInterface
 	; LcdTiming0
 	.db $FC,$00,$00,$00 ; PPL=1024, HSW=1, HBP=1, HFP=1 (total=1027)
 	; LcdTiming1
 	.db $4A,$00,$DC,$00 ; LPP=75, VSW=1, VBP=0, VFP=220 (total=296)
 	; LcdTiming2
 	.db $00,$78,$FF,$03 ; PCD=2, CPL=1024
+	
+lcdSettings8BitNoScale:
 	; LcdCtrl
 	.dl $013C27
 	; SPI settings
-	.dw spiSetupVsyncInterface
-	
-lcdSettings8BitNoScale:
+	.dw spiSetupNoScale
 	; LcdTiming0
 	.db $BC,$03,$3D,$1F ; PPL=768, HSW=4, HBP=32, HFP=62 (total=866)
 	; LcdTiming1
 	.db $1D,$00,$C9,$00 ; LPP=30, VSW=1, VBP=0, VFP=201 (total=232)
 	; LcdTiming2
 	.db $00,$78,$FF,$02 ; PCD=2, CPL=768
+	
+lcdSettings8BitStretched:
 	; LcdCtrl
 	.dl $013C27
 	; SPI settings
-	.dw spiSetupNoScale
-	
-lcdSettings8BitStretched:
+	.dw spiSetupDoubleScale
 	; LcdTiming0
 	.db $C4,$03,$1D,$1F ; PPL=800, HSW=4, HBP=32, HFP=30 (total=866)
 	; LcdTiming1
 	.db $2F,$00,$B7,$00 ; LPP=48, VSW=1, VBP=0, VFP=183 (total=232)
 	; LcdTiming2
 	.db $00,$78,$1F,$03 ; PCD=2, CPL=800
-	; LcdCtrl
-	.dl $013C27
-	; SPI settings
-	.dw spiSetupDoubleScale
 	
 spiSetupCommandDescriptors:
 	.db 4,$2A ; Column address set
 	.db 4,$2B ; Row address set
-	.db 1,$B0 ; RAM Control
 	.db 1,$3A ; Interface pixel format
 	.db 6,$33 ; Vertical scroll parameters
-	.db 3,$E4 ; Gate control
 	.db 1,$C6 ; Frame rate control
 	.db 1,$B2 ; Porch control
+	.db 1,$B0 ; RAM Control
 	.db -1
 
 spiSetupDefault:
@@ -4220,22 +4256,22 @@ spiSetupDefault:
 	; 2B             ; Row address set
 	SPI_PARAM16(0)   ;  Upper bound
 	SPI_PARAM16(239) ;  Lower bound
-	; B0             ; RAM Control
-	SPI_PARAM($11)   ;  RGB Interface
 	; 3A             ; Interface pixel format
 	SPI_PARAM($66)   ;  RGB 18bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
 	SPI_PARAM16(0)   ;  Bottom fixed area
-	; E4             ; Gate Control
-	SPI_PARAM($27)   ;  320 lines
-	SPI_PARAM($00)   ;  Start line 0
-	SPI_PARAM($10)   ;  No interlace
 	; C6             ; Frame rate control
 	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(12)    ;  Back porch
+	; B0             ; RAM Control
+	SPI_PARAM($11)   ;  RGB Interface
+	; E4             ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
 spiSetupSize = $ - spiSetupDefault
 
 spiSetupScanFirst:
@@ -4245,22 +4281,22 @@ spiSetupScanFirst:
 	; 2B             ; Row address set
 	SPI_PARAM16(0)   ;  Upper bound
 	SPI_PARAM16(239) ;  Lower bound
-	; B0             ; RAM Control
-	SPI_PARAM($12)   ;  VSYNC Interface
 	; 3A             ; Interface pixel format
 	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
 	SPI_PARAM16(0)   ;  Bottom fixed area
-	; E4             ; Gate Control
-	SPI_PARAM($27)   ;  320 lines
-	SPI_PARAM($00)   ;  Start line 0
-	SPI_PARAM($10)   ;  No interlace
 	; C6             ; Frame rate control
 	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(1)     ;  Back porch
+	; B0             ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	; E4             ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
 
 spiSetupVsyncInterface:
 	; 2A             ; Column address set
@@ -4269,22 +4305,22 @@ spiSetupVsyncInterface:
 	; 2B             ; Row address set
 	SPI_PARAM16(0)   ;  Upper bound
 	SPI_PARAM16(239) ;  Lower bound
-	; B0             ; RAM Control
-	SPI_PARAM($12)   ;  VSYNC Interface
 	; 3A             ; Interface pixel format
 	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
 	SPI_PARAM16(0)   ;  Bottom fixed area
-	; E4             ; Gate Control
-	SPI_PARAM($27)   ;  320 lines
-	SPI_PARAM($00)   ;  Start line 0
-	SPI_PARAM($10)   ;  No interlace
 	; C6             ; Frame rate control
 	SPI_PARAM(18)    ;  538 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(127)   ;  Back porch
+	; B0             ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	; E4             ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
 
 spiSetupNoScale:
 	; 2A             ; Column address set
@@ -4293,22 +4329,22 @@ spiSetupNoScale:
 	; 2B             ; Row address set
 	SPI_PARAM16(48)  ;  Upper bound
 	SPI_PARAM16(191) ;  Lower bound
-	; B0             ; RAM Control
-	SPI_PARAM($12)   ;  VSYNC Interface
 	; 3A             ; Interface pixel format
 	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(0)   ;  Top fixed area
 	SPI_PARAM16(320) ;  Scrolling area
 	SPI_PARAM16(0)   ;  Bottom fixed area
-	; E4             ; Gate Control
-	SPI_PARAM($27)   ;  320 lines
-	SPI_PARAM($00)   ;  Start line 0
-	SPI_PARAM($10)   ;  No interlace
 	; C6             ; Frame rate control
 	SPI_PARAM(15)    ;  490 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(1)     ;  Back porch
+	; B0             ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	; E4             ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($10)   ;  No interlace
 
 spiSetupDoubleScale:
 	; 2A             ; Column address set
@@ -4317,22 +4353,22 @@ spiSetupDoubleScale:
 	; 2B             ; Row address set
 	SPI_PARAM16(0)   ;  Upper bound
 	SPI_PARAM16(239) ;  Lower bound
-	; B0             ; RAM Control
-	SPI_PARAM($12)   ;  VSYNC Interface
 	; 3A             ; Interface pixel format
 	SPI_PARAM($56)   ;  RGB 16bpp / MCU 18bpp
 	; 33             ; Vertical scroll parameters
 	SPI_PARAM16(160) ;  Top fixed area
 	SPI_PARAM16(160) ;  Scrolling area
 	SPI_PARAM16(0)   ;  Bottom fixed area
-	; E4             ; Gate Control
-	SPI_PARAM($27)   ;  320 lines
-	SPI_PARAM($00)   ;  Start line 0
-	SPI_PARAM($14)   ;  Interlace
 	; C6             ; Frame rate control
 	SPI_PARAM(8)     ;  378 clocks per line
 	; B2             ; Porch control
 	SPI_PARAM(99)    ;  Back porch
+	; B0             ; RAM Control
+	SPI_PARAM($12)   ;  VSYNC Interface
+	; E4             ; Gate Control
+	SPI_PARAM($27)   ;  320 lines
+	SPI_PARAM($00)   ;  Start line 0
+	SPI_PARAM($14)   ;  Interlace
 
 hmem_init:
 	.db $CF,0,$7E,$FF,0,$00,$00,$F8,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E1
