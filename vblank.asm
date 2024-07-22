@@ -29,8 +29,8 @@ frame_emulated_count = $+1
 	   push iy
 	    ; Finish rendering, if applicable
 	    ld a,(z80codebase+updateSTAT_enable_catchup_smc)
-	    and 1
-	    jp z,skip_this_frame
+	    rra
+	    jp nc,skip_this_frame
 	    
 	    ; Finish rendering the frame
 	    ld a,144
@@ -127,11 +127,8 @@ NoSpeedDisplay:
 	    bit 2,a
 	    call z,do_frame_flip
 
-	    xor a
-	    ; Signify frame was rendered
-	    scf
 skip_this_frame:
-
+	    xor a
 	    ld hl,frame_excess_count
 turbo_active = $+1
 	    ld b,1
@@ -141,15 +138,12 @@ turbo_active = $+1
 	    ; Handle frame synchronization
 	    dec (hl)
 	    jp p,no_frame_sync
-	    ; If we didn't render, save for later
-	    jr nc,frame_sync_later
 frame_sync_loop:
 	    push hl
 	     call sync_frame_flip_wait
 	    pop hl
 	    bit 7,(hl)
 	    jr nz,frame_sync_loop
-frame_sync_later:
 	    ; Set Z
 	    xor a
 no_frame_sync:
