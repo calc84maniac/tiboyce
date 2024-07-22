@@ -7,7 +7,7 @@
 
 #include "lzf.h"
 
-#define offset_of(STRUCTPTR, MEMBER) ((uint8_t*)(&(STRUCTPTR)->MEMBER) - (uint8_t*)(STRUCTPTR))
+#define offset_of(STRUCTPTR, MEMBER) ((size_t)((char*)(&(STRUCTPTR)->MEMBER) - (char*)(STRUCTPTR)))
 
 enum VAR_TYPE {
 	TYPE_APPVAR = 0x15
@@ -28,7 +28,7 @@ enum FILE_TYPE {
 struct tidata {
 	uint16_t data_length;
 	uint16_t var_length;
-	uint8_t var_data[0];
+	uint8_t var_data[];
 };
 
 struct tivar {
