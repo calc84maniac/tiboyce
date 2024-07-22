@@ -59,7 +59,7 @@ struct tivar {
 	uint8_t flag;
 	uint16_t data_length_2;
 	uint16_t var_length;
-	uint8_t var_data[0];
+	uint8_t var_data[];
 };
 
 struct tifile {
@@ -75,13 +75,13 @@ struct tifile *open_tifile(enum VAR_TYPE type, const char *name, enum VAR_FLAG f
 	if (file == NULL)
 		return NULL;
 
-	strcpy(file->signature, "**TI83F*\x1A\x0A");
+	strcpy((char *)file->signature, "**TI83F*\x1A\x0A");
 	memset(file->comment, '\0', sizeof(file->comment));
 	file->file_length = sizeof(file->data);
 
 	file->data.header_length = (uint16_t)(offset_of(&file->data, data_length_2) - offset_of(&file->data, data_length));
 	file->data.type = type;
-	strncpy(file->data.name, name, sizeof(file->data.name));
+	strncpy((char *)file->data.name, name, sizeof(file->data.name));
 	file->data.version = 0;
 	file->data.flag = flag;
 	file->data.var_length = 0;
@@ -164,7 +164,7 @@ void write_error(const char *filename, struct zip_t *zip) {
 
 bool write_tifile(struct tifile *file, const char *extension, struct zip_t *zip, uint32_t *crc_accumulator) {
 	char filename[13] = {0};
-	strncpy(filename, file->data.name, sizeof(file->data.name));
+	memcpy(filename, (const char *)file->data.name, sizeof(file->data.name));
 	strcat(filename, extension);
 	printf("Writing AppVar %s (var length = %d bytes)\n", filename, (int)file->data.var_length);
 
@@ -401,6 +401,7 @@ void exit_pause(void) {
 }
 
 int main(int argc, char **argv) {
+	(void)argc;
 	char outname_prompt[7];
 	char title_prompt[256];
 	char *romfilename = NULL;
@@ -580,7 +581,7 @@ int main(int argc, char **argv) {
 	}
 
 	char default_title[16];
-	strncpy(default_title, &rom[0x0134], sizeof(default_title));
+	strncpy(default_title, (const char *)&rom[0x0134], sizeof(default_title));
 	default_title[sizeof(default_title) - 1] = '\0';
 	printf("Opened ROM: %s\n", default_title);
 
@@ -589,7 +590,7 @@ int main(int argc, char **argv) {
 	}
 
 	for (char *c = title; *c != '\0'; c++) {
-		if (*c < ' ' || *c > 0x7F) {
+		if ((uint8_t)*c < ' ' || (uint8_t)*c > 0x7F) {
 			*c = '?';
 		}
 	}
