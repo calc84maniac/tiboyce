@@ -348,6 +348,7 @@ _
 	ret
 	
 ClearMenuBuffer:
+	call startMenuDraw
 	ld hl,menu_frame_buffer
 	ld (current_buffer),hl
 	MEMSET_FAST_TAIL(menu_frame_buffer, 320*240, BLUE)
@@ -553,9 +554,6 @@ ShowConfirmRestartOperation:
 	jr z,_
 	ld de,ConfirmSaveState
 _
-	push de
-	 ACALL(SetMenuWindow)
-	pop de
 	ld hl,(current_state)
 ShowConfirmationDialog:
 	push hl
@@ -572,6 +570,9 @@ ShowConfirmationDialog:
 	ld b,2
 	ld c,b
 ConfirmationDialogDisplayLoop:
+	push bc
+	 call startMenuDraw
+	pop bc
 	ld hl,1<<8|20
 	ld (cursorRowCol),hl
 	APTR(ConfirmText)
@@ -593,6 +594,7 @@ _
 	 pop bc
 	 dec c
 	 jr nz,--_
+	 ACALL(EndMenuDraw)
 ConfirmationDialogKeyLoop:
 	 ACALL(WaitForKey)
 	pop bc
@@ -735,7 +737,6 @@ emulator_menu:
 	 .db $3E ;LD A,
 emulator_menu_no_backup:
 	push af
-	 ACALL(SetMenuWindow)
 	 ; If the state slot was changed, verify load state is valid
 	 ld hl,main_menu_selection
 	 ld b,(hl)
@@ -997,8 +998,9 @@ draw_current_description:
 	ld hl,(current_description)
 	ld a,MAGENTA
 	ACALL(PutNStringColorXY)
-	
+
 draw_current_menu:
+	call startMenuDraw
 	; Erase the help text
 	MEMSET_FAST(menu_frame_buffer+(320*205), 320*30, BLUE)
 	
@@ -1008,7 +1010,6 @@ draw_current_menu:
 	push af
 	
 	 ; HL = menu structure, C = highlighted item index
-draw_menu:
 	 ld b,(hl)
 	 inc hl
 	 inc b
@@ -1104,7 +1105,7 @@ _
 	; Special handling for controls menu
 	ld a,(current_menu)
 	cp ControlsMenuIndex
-	ret nz
+	jr nz,end_menu_draw
 	ld a,c
 	cp 5
 	jr z,_
@@ -1112,14 +1113,14 @@ _
 	cp 4
 	jr z,++_
 	cp 9
-	ret nz
+	jr nz,end_menu_draw
 	ld (menuNextItem),a
-	ret
+	jr end_menu_draw
 _
 	ld a,16
 _
 	ld (menuPrevItem),a
-	ret
+	jr end_menu_draw
 
 draw_rom_list:
 	; Draw the ROM list
@@ -1162,7 +1163,9 @@ _
 	djnz draw_rom_list_loop
 	APTR(LoadRomNoRomsText)
 	ld a,GRAY
-	AJUMP(PutStringColor)
+	ACALL(PutStringColor)
+end_menu_draw:
+	AJUMP(EndMenuDraw)
 	
 draw_rom_list_loop:
 	dec c
@@ -1177,7 +1180,7 @@ _
 	pop bc
 	lea iy,iy+3
 	djnz draw_rom_list_loop
-	ret
+	jr end_menu_draw
 	
 draw_mini_screen:
 	ld hl,mini_frame_backup
