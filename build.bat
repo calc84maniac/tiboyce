@@ -11,7 +11,7 @@ set "build=build"
 if not exist %build% mkdir %build%
 
 @echo on
-%as% -DVERSION=\"%version%\" tiboyce.asm %build%/TIBoyDat.8xv || goto exit
+%as% -DVERSION="\"%version%\"" tiboyce.asm %build%/TIBoyDat.8xv || goto exit
 %as% launcher.asm %build%/TIBOYCE.8xp || goto exit
 %as% skin.asm %build%/TIBoySkn.8xv || goto exit
 @echo off
