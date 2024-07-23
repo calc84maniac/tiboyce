@@ -182,18 +182,11 @@ If you get a missing DLL error when running the command-line utility, you may ne
 
 ## Build Instructions
 
-To build the emulator from source, first grab the latest release of [SPASM-ng](https://github.com/alberthdev/spasm-ng/releases).
+To build the emulator:
+1.  Obtain [SPASM-ng](https://github.com/alberthdev/spasm-ng). Commit [5f0786d](https://github.com/alberthdev/spasm-ng/commit/5f0786d38f064835be674d4b7df42969967bb73c) is required to build TI-Boy CE successfully. As of July 22 2024, there is no official release containing this commit; see https://github.com/alberthdev/spasm-ng/issues/88.
+2.  Name the SPASM-ng executable "spasm" and place it in the repo root directory or somewhere in the executable search path.
+3.  From the repo root directory, run `build.bat` if on Windows or `build.sh` if on some other OS.
 
-A build newer than SPASM-ng v0.5-beta.3 is required to build TI-Boy CE properly; currently, there is not a release corresponding to that so you must build it yourself.
-
-For simplicity's sake, I'll call the name of the executable `spasm` below. Run the following to produce the emulator files:
-```
-spasm -E -A launcher.asm TIBOYCE.8xp
-
-spasm -E -A tiboyce.asm TIBoyDat.8xv
-
-spasm -E -A skin.asm TIBoySkn.8xv
-```
 To build the rom generation tool, use the provided Visual Studio solution in the [tiboyce-romgen](tiboyce-romgen) directory, or use the Makefile to build with GCC or your C compiler of choice.
 
 The same applies to the save converter in the [tiboyce-convertsav](tiboyce-convertsav) directory.
