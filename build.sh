@@ -1,5 +1,7 @@
 #!/bin/sh
+set -e
 
+version=$(git describe --tags)
 as="spasm -E -T -L -A"
 build="build"
 
@@ -7,6 +9,6 @@ mkdir -p $build
 
 set -x
 
+$as -DVERSION=\"$version\" tiboyce.asm $build/TIBoyDat.8xv
 $as launcher.asm $build/TIBOYCE.8xp
-$as tiboyce.asm $build/TIBoyDat.8xv
 $as skin.asm $build/TIBoySkn.8xv
