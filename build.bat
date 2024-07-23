@@ -1,7 +1,7 @@
 @echo off
 set exit_timeout=-1
 
-for /f %%i in ('git describe --tags') do set "version=%%i" && goto version_ok
+for /f %%i in ('git describe --tags "--dirty=*"') do set "version=%%i" && goto version_ok
 goto exit
 :version_ok
 

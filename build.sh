@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-version=$(git describe --tags)
+version=$(git describe --tags --dirty=*)
 as="spasm -E -T -L -A"
 build="build"
 
