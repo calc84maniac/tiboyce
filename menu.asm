@@ -55,6 +55,9 @@ ApplyConfiguration:
 	 ld bc,config_size-1
 	 ldir
 	pop de
+	; Prevent scale fill after palette initialization
+	xor a
+	ld (scale_remaining_fills),a
 	; If no ROM is loaded, our work here is done, but apply screen rotation
 	ld a,(ROMName+1)
 	or a
