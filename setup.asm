@@ -1140,8 +1140,6 @@ _
 	
 	xor a
 	ld (exitReason),a
-	; Prevent scale fill after palette initialization
-	ld (scale_remaining_fills),a
 	; Invalidate the direct read buffers
 	ld hl,direct_read_buffer_normal
 	ld (hl),a
@@ -3590,7 +3588,6 @@ backup_mini_screen_row_loop:
 	ret
 
 EndMenuDrawFast:
-	ld a,4
 	ld (mpLcdIcr),a
 	call lcdWaitFrontPorch
 	SPI_TRANSFER_CMD(1, $B0) ; RAM Control
@@ -3598,14 +3595,13 @@ EndMenuDrawFast:
 	ret
 
 EndMenuDraw:
-	ld a,$3A ;LD A,()
-	ld (startMenuDrawSMC),a
-	ld hl,menu_mode
-	xor a
+	ld hl,startMenuDrawSMC
+	ld (hl),$3A ;LD A,()
+	dec hl ;menu_mode
+	ld a,4
 	cp (hl)
-	jr nz,EndMenuDrawFast
-	inc (hl)
-	ld (scale_remaining_fills),a
+	jr z,EndMenuDrawFast
+	ld (hl),a
 	APTR(lcdSettingsMenu)
 SetLcdSettingsFirstBuffer:
 	ld de,menu_frame_buffer
@@ -3653,12 +3649,18 @@ SetLcdSettings:
 	  ld (hl),a
 	  ld de,mpLcdTiming0
 	  ld bc,12
-	  ; Wait for vsync if the previous display mode was vsync
 	  ld a,b ;0
+#ifndef CEMU
+	  ; Wait for vsync if the previous display mode was vsync
 	  call nz,lcdWait
+#endif
 	 ; Set timing parameters
 	 pop hl
 	 ldir
+#ifdef CEMU
+	 ; Wait for vsync if the previous display mode was vsync
+	 call nz,lcdWait
+#endif
 	; Set interlace mode
 	pop de
 	ld b,4

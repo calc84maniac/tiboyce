@@ -1477,6 +1477,9 @@ _
 	ld (hl),l
 	ret
 
+; Whether the current screen mode is the menu mode.
+menu_mode:
+	.db 0
 startMenuDraw:
 startMenuDrawSMC = $
 	ld a,(mpLcdRis)
@@ -1759,9 +1762,6 @@ current_item_ptr:
 	.dl 0
 ; The pointer to the active ROM description.
 current_description = asm_data_ptr1
-; Whether the current screen mode is the menu mode.
-menu_mode:
-	.db 0
 ; A backup of the selected main menu option.
 main_menu_selection:
 	.db 1
