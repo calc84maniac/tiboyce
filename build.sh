@@ -1,5 +1,5 @@
 #!/bin/sh
-set -e
+set -ex
 
 version=$(git describe --tags --dirty=*)
 as="spasm -E -T -L -A"

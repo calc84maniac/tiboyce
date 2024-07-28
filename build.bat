@@ -1,5 +1,6 @@
 @echo off
 set exit_timeout=-1
+@echo on
 
 for /f %%i in ('git describe --tags "--dirty=*"') do set "version=%%i" && goto version_ok
 goto exit
@@ -10,12 +11,11 @@ set "build=build"
 
 if not exist "%build%" mkdir "%build%"
 
-@echo on
 %as% -DVERSION="\"%version%\"" tiboyce.asm "%build%/TIBoyDat.8xv" || goto exit
 %as% launcher.asm "%build%/TIBOYCE.8xp" || goto exit
 %as% skin.asm "%build%/TIBoySkn.8xv" || goto exit
-@echo off
 
+@echo off
 echo.
 echo Success!
 set exit_timeout=5
