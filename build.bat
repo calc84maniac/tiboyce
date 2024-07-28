@@ -2,16 +2,14 @@
 set exit_timeout=-1
 @echo on
 
-for /f %%i in ('git describe --tags "--dirty=*"') do set "version=%%i" && goto version_ok
-goto exit
-:version_ok
-
+set version_arg=
+for /f %%i in ('git describe --tags "--dirty=*"') do set "version_arg="-DVERSION=\"%%i\"""
 set "as=spasm -E -T -L -A %*"
 set "build=build"
 
 if not exist "%build%" mkdir "%build%"
 
-%as% -DVERSION="\"%version%\"" tiboyce.asm "%build%/TIBoyDat.8xv" || goto exit
+%as% %version_arg% tiboyce.asm "%build%/TIBoyDat.8xv" || goto exit
 %as% launcher.asm "%build%/TIBOYCE.8xp" || goto exit
 %as% skin.asm "%build%/TIBoySkn.8xv" || goto exit
 
