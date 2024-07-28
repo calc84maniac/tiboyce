@@ -3,7 +3,7 @@ set exit_timeout=-1
 @echo on
 
 set version_arg=
-for /f %%i in ('git describe --tags "--dirty=*"') do set "version_arg="-DVERSION=\"%%i\"""
+for /f %%i in ('git describe --tags "--dirty=*" "--abbrev=7"') do set "version_arg="-DVERSION=\"%%i\"""
 set "as=spasm -E -T -L -A"
 set "build=build"
 
