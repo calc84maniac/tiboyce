@@ -6,7 +6,7 @@ for /f %%i in ('git describe --tags "--dirty=*"') do set "version=%%i" && goto v
 goto exit
 :version_ok
 
-set "as=spasm -E -T -L -A"
+set "as=spasm -E -T -L -A %*"
 set "build=build"
 
 if not exist "%build%" mkdir "%build%"
