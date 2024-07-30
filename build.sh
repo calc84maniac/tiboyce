@@ -1,10 +1,10 @@
 #!/bin/bash
+as="spasm -E -A"
+build="build"
 set -x
 
 version_arg="-DVERSION=\"$(git describe --tags --dirty=* --abbrev=7)\"" || unset version_arg
 set -e
-as="spasm -E -T -L -A"
-build="build"
 
 mkdir -p "$build"
 

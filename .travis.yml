@@ -8,9 +8,9 @@ script:
   - cd ..
   - ./build.sh
   - cd tiboyce-romgen
-  - gcc -std=c99 -O2 -W -Wall -Wextra -Wno-pointer-sign -Wno-unused-parameter -o romgen romgen.c zip.c
+  - make -j2
   - cd ../tiboyce-convertsav
-  - gcc -std=c99 -O2 -W -Wall -Wextra -Wno-pointer-sign -Wno-unused-parameter -o convertsav convertsav.c lzf_c.c lzf_d.c
+  - make -j2
 
 notifications:
   irc:

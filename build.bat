@@ -1,11 +1,11 @@
 @echo off
 set exit_timeout=-1
+set version_arg=
+set "as=spasm -E -A"
+set "build=build"
 @echo on
 
-set version_arg=
 for /f %%i in ('git describe --tags "--dirty=*" "--abbrev=7"') do set "version_arg="-DVERSION=\"%%i\"""
-set "as=spasm -E -T -L -A"
-set "build=build"
 
 if not exist "%build%" mkdir "%build%"
 
@@ -21,6 +21,6 @@ set exit_timeout=5
 :exit
 @echo off
 @REM Pause if not run from cmd so the window persists and the user can see the output.
-@REM https://superuser.com/a/1688485
-if /i not "%CMDCMDLINE:"=%" == "%COMSPEC%" timeout /t %exit_timeout%
+@REM https://stackoverflow.com/a/18501554
+if /I %0 EQU "%~dpnx0" timeout /t %exit_timeout%
 exit /b
