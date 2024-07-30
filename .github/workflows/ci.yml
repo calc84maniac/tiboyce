@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [ gh-pages ]
+  pull_request:
+    branches-ignore: [ gh-pages ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout git repo
+      uses: actions/checkout@v4
+
+    - name: Checkout SPASM-ng latest
+      uses: actions/checkout@v4
+      with:
+        repository: alberthdev/spasm-ng
+        path: spasm-ng
+
+    - name: Build SPASM-ng and add to PATH
+      run: |
+        make NO_APPSIGN=1 -j2
+        echo "$GITHUB_WORKSPACE/spasm-ng" >> $GITHUB_PATH
+      working-directory: ./spasm-ng
+
+    - name: Build TI-Boy CE
+      run: ./build.sh
+
+    - name: Build ROM converter
+      run: make -j2
+      working-directory: ./tiboyce-romgen
+
+    - name: Build save converter
+      run: make -j2
+      working-directory: ./tiboyce-convertsav
