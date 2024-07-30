@@ -1,3 +1,8 @@
+#ifndef VERSION
+; "*" indicates a potentially modified, or "dirty" in Git terminology, version.
+#define VERSION "v0.3.0*"
+#endif
+
 #ifdef FASTLOG
 #define FASTLOG_EVENT_RUNTIME_ERROR $DE
 #define FASTLOG_EVENT_INVALID_OPCODE $AD
