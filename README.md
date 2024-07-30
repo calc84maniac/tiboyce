@@ -1,6 +1,6 @@
 # TI-Boy CE
 
-[![Build Status](https://travis-ci.org/calc84maniac/tiboyce.svg)](https://travis-ci.org/calc84maniac/tiboyce)
+[![Build Status](https://github.com/calc84maniac/tiboyce/actions/workflows/ci.yml/badge.svg)](https://github.com/calc84maniac/tiboyce/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 TI-Boy CE is a Game Boy emulator for the TI-84 Plus CE and the TI-83 Premium CE graphing calculators.
