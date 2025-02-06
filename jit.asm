@@ -1612,7 +1612,8 @@ rerecompile_popped:
 	FASTLOG_EVENT(RERECOMPILE, 5)
 	inc sp
 #endif
-	
+	call sync_frame_flip
+
 	ld hl,(ix)
 	inc.s hl
 	ld de,z80codebase + RAM_PREFIX_SIZE - 1
