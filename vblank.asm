@@ -169,13 +169,7 @@ frameskip_value_smc = $+1
 _
 	    ld a,$4F-$7E
 frameskip_end:
-	    ;LD R,A if frame should be rendered, otherwise RSMIX
-	    add a,$7E
-	    ld (z80codebase+updateSTAT_enable_catchup_smc),a
-	    ld (z80codebase+updateSTAT_full_enable_catchup_smc),a
-	    ld (z80codebase+ppu_mode0_enable_catchup_smc),a
-	    ld (z80codebase+ppu_mode2_enable_catchup_smc),a
-	    ld (z80codebase+ppu_lyc_enable_catchup_smc),a
+	    call apply_frameskip_smc_offset
 
 parse_keys:
 	    ; Get keys
@@ -188,14 +182,15 @@ turbo_keypress_smc = $
 	    jr z,_
 turbo_toggle_smc = $+1
 	    jr z,turbo_skip_toggle
-turbo_active_no_toggle = $+1
-	    ld a,(turbo_active)
+	    ld hl,turbo_active
+	    ld a,(hl)
 	    xor 1
-	    ld (turbo_active),a
+	    ld (hl),a
 turbo_skip_toggle:
-	    ld a,(turbo_keypress_smc)
+	    ld hl,turbo_keypress_smc
+	    ld a,(hl)
 	    xor 8
-	    ld (turbo_keypress_smc),a
+	    ld (hl),a
 _
 	    
 	    ld a,$FF
@@ -762,6 +757,19 @@ _
 	ex de,hl
 	dec a
 	jr nz,-_
+	ret
+
+apply_frameskip_smc_skipped:
+	xor a
+apply_frameskip_smc_offset:
+	;LD R,A if frame should be rendered, otherwise RSMIX
+	add a,$7E
+apply_frameskip_smc:
+	ld (z80codebase+updateSTAT_enable_catchup_smc),a
+	ld (z80codebase+updateSTAT_full_enable_catchup_smc),a
+	ld (z80codebase+ppu_mode0_enable_catchup_smc),a
+	ld (z80codebase+ppu_mode2_enable_catchup_smc),a
+	ld (z80codebase+ppu_lyc_enable_catchup_smc),a
 	ret
 
 sync_frame_flip_or_wait:

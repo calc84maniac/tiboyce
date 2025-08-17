@@ -1956,6 +1956,7 @@ originalLcdSettings:
 	.dl 0
 	; SPI settings
 	.dw spiSetupDefault
+originalLcdTiming:
 	; LcdTiming0
 	.block 12
 	

@@ -154,17 +154,19 @@ _
 	ld (ix+8),a
 	ld a,(mpKeypadIntMask)
 	ld (ix+9),a
-	ld a,(mpLcdImsc)
-	ld (ix+10),a
 	ld a,(mpRtcCtrl)
 	ld (ix+11),a
 	ld hl,(mpSpiCtrl1)
 	ld (ix+12),hl
+	ld hl,mpLcdImsc
+	ld a,(hl)
+	ld (ix+10),a
 	; Backup original LCD settings
-	ld hl,(mpLcdCtrl)
-	ld (ix-originalHardwareSettings+originalLcdSettings),hl
-	ld hl,mpLcdTiming0
-	lea de,ix-originalHardwareSettings+originalLcdSettings+5
+	ld l,mpLcdCtrl & $FF
+	ld de,(hl)
+	ld (ix-originalHardwareSettings+originalLcdSettings),de
+	ld l,h ;mpLcdTiming0 & $FF
+	lea de,ix-originalHardwareSettings+originalLcdTiming
 	ld bc,12
 	ldir
 
