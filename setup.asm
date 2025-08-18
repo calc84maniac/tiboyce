@@ -62,6 +62,8 @@ _
 #endif
 
 	call _RunIndicOff
+	; Prevent auto-power-down, which messes with SPI settings
+	call _DisableAPD
 	
 CalculateEpochLoop:
 	; Grab current day count
@@ -170,6 +172,23 @@ _
 	ld bc,12
 	ldir
 
+	ld a,(iy+hookflags2)
+	ld (ix-originalHardwareSettings+originalGetKeyHook),a
+	ld hl,(getKeyHookPtr)
+	ld (ix-originalHardwareSettings+originalGetKeyHook+1),hl
+
+	; Check certificate for Python model
+	ld de,$0330
+	call _FindFirstCertField
+	jr nz,NoPythonInit
+	call _GetFieldSizeFromType
+	ld de,$0430
+	call _FindField
+	jr nz,NoPythonInit
+	; Reinitializes Python hardware, probably (routine available on rev M+ boot code)
+	; Without this, LCD SPI transfers start failing a short time after init
+	call $000654
+
 	; Magic initialization sequence to return SPI to a known state on Python models
 	ld de,$1828
 _
@@ -184,9 +203,12 @@ _
 	ld e,$2B
 	jr z,-_
 	ld l,$21
-	ld (mpSpiIntCtrl), hl
+	ld (mpSpiIntCtrl),hl
+NoPythonInit:
+	ld a,$0B
+	ld (mpSpiCtrl0),a
 	ld hl,$100
-	ld (mpSpiCtrl2), hl
+	ld (mpSpiCtrl2),hl
 
 	ld hl,GlobalErrorHandler
 	call _PushErrorHandler
@@ -271,13 +293,16 @@ RestoreHomeScreen:
 	ldir
 	; Mark graph dirty
 	set graphDraw,(iy+graphFlags)
+	; Reset ON interrupt flag (prevents ERR: BREAK)
+	res onInterrupt,(iy+onFlags)
 	; Restore the frame buffer
 	call _ClrScrnFull
 	call _DrawStatusBar
 	call _HomeUp
 	; Restore screen brightness
-	ld a,(brightness)
-	ld (mpBlLevel),a
+	call _RestoreLCDBrightness
+	; Enable APD
+	call _EnableAPD
 	; Change the LCD settings to fullscreen 16-bit
 	AJUMP(RestoreOriginalLcdSettings)
 	

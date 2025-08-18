@@ -371,6 +371,7 @@ GBC_OBJ_OPAQUE_COLORS = GBC_OBJ_HIGH_PRIO_COLORS + 3
 _sprintf = $0000BC
 __frameset0 = $000130
 _GetFieldSizeFromType = $00030C
+_FindFirstCertField = $000310
 _FindField = $000314
 _Delay10ms = $0003B4
 _OSHeader = $020000
@@ -389,9 +390,13 @@ _PopErrorHandler = $02079C
 _ClrScrnFull = $020810
 _HomeUp = $020828
 _RunIndicOff = $020848
+_DisableAPD = $021134
+_EnableAPD = $021138
+_SetGetCSCHook = $0213E0
 _DelVarArc = $021434
 _Arc_Unarc = $021448
 _DrawStatusBar = $021A3C
+_RestoreLCDBrightness = $021AB8
 _DivHLByA = $021D90
 _ChkInRam = $021F98
 _FindFreeArcSpot = $022078
@@ -409,6 +414,7 @@ FPS = $D0258D
 OPS = $D02593
 pTemp = $D0259A
 progPtr = $D0259D
+getKeyHookPtr = $D025DE
 drawFGColor = $D026AC
 pixelShadow = $D031F6 ; Start of SafeRAM
 usbArea	= $D13FD8 ; End of SafeRAM
@@ -430,6 +436,12 @@ E_Validation = 40
 ; OS flags used
 graphFlags = $03
 graphDraw = 0		;0=graph is valid, 1=redraw graph(dirty)
+
+onFlags = $09
+onInterrupt = 4
+
+hookflags2 = $34
+getCSCHookActive = 0
 
 ; 84+CE IO definitions
 mpFlashWaitStates = $E00005
@@ -1132,6 +1144,8 @@ Arc_Unarc_Safe:
 _
 	; No free spot, so prepare for Garbage Collect message
 	ACALL(RestoreHomeScreen)
+	; Disable auto-power-down, which the above call enables
+	call _DisableAPD
 	; Set Z flag
 	cp a
 _
@@ -1146,12 +1160,21 @@ _
 	 push af
 	  ld hl,Arc_Unarc_ErrorHandler
 	  call _PushErrorHandler
+	  ld hl,GarbageCollectKeyHook
+	  call _SetGetCSCHook
 	  call _Arc_Unarc
 	  call _PopErrorHandler
 	 pop af
 	 ccf
 	 push af
 Arc_Unarc_ErrorHandler:
+	  ld hl,originalGetKeyHook
+	  ld a,(hl)
+	  ld (iy+hookflags2),a
+	  inc hl
+	  ld hl,(hl)
+	  ld (getKeyHookPtr),hl
+
 	  ld hl,SelfName
 	  call _Mov9ToOP1
 	  call _chkFindSym
@@ -1203,7 +1226,23 @@ GlobalErrorHandler:
 	pop af
 	res 7,a
 	jp _JError
-	
+
+	; Prevent pressing 2nd or Alpha in the Garbage Collect prompt,
+	; because it looks weird and the user could also turn off the calculator
+GarbageCollectKeyHook:
+	.db $83
+	cp $1B
+	ret nz
+	ld a,b
+	cp 48
+	jr z,_
+	cp 54
+	ret nz
+_
+	or a
+	ld a,0
+	ret
+
 DelVarByName:
 	call _Mov9ToOP1
 	call _chkFindSym
@@ -1959,7 +1998,13 @@ originalLcdSettings:
 originalLcdTiming:
 	; LcdTiming0
 	.block 12
-	
+
+originalGetKeyHook:
+	; Hook flag
+	.db 0
+	; Hook pointer
+	.dl 0
+
 screenRotationParam:
 	; C6             ; Memory Data Address Control
 	SPI_PARAM($08)   ;  BGR Swap
