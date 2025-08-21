@@ -202,4 +202,4 @@ Report issues / bugs to the issue tracker, found here:
 ## License
 
 TI-Boy CE — a Game Boy emulator for the TI-84 Plus CE calculator family.
-Copyright © 2018 – 2022 Brendan Fletcher
+Copyright © 2018 – 2025 Brendan Fletcher

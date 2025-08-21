@@ -1,7 +1,42 @@
 # TI-Boy CE Changelog
 All notable changes to this project will be documented in this file.
 
-## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.3.0...HEAD)
+## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.3.1...HEAD)
+
+## [Alpha v0.3.1 — 2025-08-22](https://github.com/calc84maniac/tiboyce/releases/tag/v0.3.1)
+
+### Added
+-   Linear upscaling mode for fullscreen, using flicker-based blending.
+    -   The previous, slightly faster, nearest-neighbor upscaling mode is still available.
+-   Enhanced ROM trimming, allowing the ROM converter to further reduce the size of certain ROMs.
+-   Joypad interrupt support, along with increased key polling rate.
+-   Screen rotation option, to allow flipping the calculator 180 degrees to put the arrow keys on the left.
+    -   The configured arrow keys are also automatically rotated in this mode.
+
+### Changed
+-   Online ROM converter is now compiled to WASM instead of JavaScript.
+-   User-configured A, B, Menu buttons can now be used to control the menu.
+    -   Also, the control configuration menu can now be navigated using all four arrow keys.
+-   Expansion of 15-bit color to 18-bit now uses an intensity bit, producing more consistent grays.
+-   LCD SPI initialization for Python models now uses a direct method instead of reinitializing all hardware.
+-   Various optimizations.
+    -   Use the hardware stack protector to optimize call stack emulation.
+    -   Reduce complexity of DAA emulation, with more consistent timing for different cases.
+    -   Optimize zero flag reset for ADD SP instructions.
+-   Internal restructuring to ease development of future features.
+    -   Modularize large code files into smaller, categorized files.
+    -   Make direct memory reads hookable, which supports the enhanced ROM trimming but has more potential uses.
+    -   Make accesses to save state data indirect, allowing for prior memory insertion (e.g. dynamic library loading).
+
+### Fixed
+-   Fix incorrect rounding for ROM bank trim length. Fixes Dragon Warriors Monsters 2: Cobi's Journey.
+-   Treat STOP opcode as 2 bytes. Fixes Dr. Rin ni Kiitemite! - Koi no Rin Fuusui.
+-   Fix stack usage in RST slow case, fix direct stack pointer adjustment. Fixes The Machine.
+    -   Also, prevent hard crashes if a bug causes the SPS and SPL stacks to desync.
+-   Allow throttling non-rendered frames to reduce dropped inputs.
+-   Fix flickering in screen transitions and menu redrawing.
+-   Fix some cases where the emulator message overlay would become corrupted.
+-   Prevent turning off the calculator during the Garbage Collect prompt, which would leak memory.
 
 ## [Alpha v0.3.0 — 2022-12-04](https://github.com/calc84maniac/tiboyce/releases/tag/v0.3.0)
 
