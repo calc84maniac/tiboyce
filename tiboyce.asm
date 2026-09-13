@@ -370,10 +370,13 @@ GBC_OBJ_OPAQUE_COLORS = GBC_OBJ_HIGH_PRIO_COLORS + 3
 ; System calls used
 _sprintf = $0000BC
 __frameset0 = $000130
+__indcall = $00015C
 _GetFieldSizeFromType = $00030C
 _FindFirstCertField = $000310
 _FindField = $000314
 _Delay10ms = $0003B4
+_KeypadScanFull = $0003D4
+_CheckIfEmulated = $000578
 _OSHeader = $020000
 _Mov9ToOP1 = $020320
 _MemChk = $0204FC
@@ -1318,7 +1321,9 @@ _
 	; If the strings match entirely, return the length comparison
 	ex af,af'
 	ret
-	
+
+memcmp_inline:
+	pop de
 ; Compares the buffers at HL and DE, with size BC. Returns Z if equal.
 ; HL and DE point after the first non-matching characters
 ; (or the end if all characters match)

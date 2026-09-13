@@ -38,7 +38,7 @@ _
 #else
 	ACALL(port_setup)
 	ld a,E_Validation
-	jp c,_JError
+	jp nz,_JError
 
 	; Get the calculator type from ports
 	push iy
