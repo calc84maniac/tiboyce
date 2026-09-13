@@ -3,6 +3,11 @@ All notable changes to this project will be documented in this file.
 
 ## [HEAD](https://github.com/calc84maniac/tiboyce/compare/v0.3.1...HEAD)
 
+## [Alpha v0.3.1a — 2026-09-12](https://github.com/calc84maniac/tiboyce/releases/tag/v0.3.1a)
+
+### Fixed
+-   Update port unlock for latest boot code.
+
 ## [Alpha v0.3.1 — 2025-08-22](https://github.com/calc84maniac/tiboyce/releases/tag/v0.3.1)
 
 ### Added
